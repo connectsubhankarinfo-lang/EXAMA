@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EXAMA</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #e5e7eb; }
+        .hidden-view { display: none !important; }
+        
+        /* Mobile App Frame Styling */
+        .app-frame {
+            max-width: 420px; margin: 0 auto; background-color: #f9fafb;
+            height: 100vh; position: relative; overflow: hidden;
+            display: flex; flex-direction: column;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        @media (min-width: 480px) {
+            .app-frame { height: 90vh; margin-top: 5vh; border-radius: 2.5rem; border: 8px solid #111827; }
+        }
+
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        .slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        .slide-left { animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes slideLeft { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .segment-active { background-color: #fff; color: #4f46e5; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .segment-inactive { color: #6b7280; }
+        
+        .pulse-red { animation: pulseRed 2s infinite; }
+        @keyframes pulseRed { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+
+        /* Custom Loader */
+        .loader-spinner { border-top-color: #4f46e5; animation: spinner 1s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="app-frame" id="app">
+
+        <!-- ==================== GLOBAL LOADER ==================== -->
+        <div id="global-loader" class="hidden-view absolute inset-0 bg-white/90 backdrop-blur-md z-[100] flex flex-col justify-center items-center fade-in">
+            <div class="w-14 h-14 border-4 border-indigo-100 border-t-indigo-600 rounded-full loader-spinner mb-5 shadow-lg shadow-indigo-200"></div>
+            <h3 class="text-indigo-600 font-extrabold text-2xl tracking-tight mb-1">Let's Crack It!</h3>
+            <p class="text-xs text-gray-500 font-medium uppercase tracking-wider" id="loader-text">Loading Exama...</p>
+        </div>
+
+        <!-- ==================== WARNING MODAL (ABSENT) ==================== -->
+        <div id="warning-modal" class="hidden-view absolute inset-0 z-50 flex items-center justify-center p-6 backdrop-blur-sm bg-gray-900/60 fade-in">
+            <div class="bg-white p-6 rounded-3xl shadow-2xl w-full max-w-sm text-center">
+                <div class="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 animate-bounce">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <h3 class="text-xl font-black text-gray-900 mb-2">Absent Warning!</h3>
+                <p class="text-sm text-gray-500 mb-6 font-medium" id="warning-text">You have been marked ABSENT for past exams.</p>
+                <button onclick="document.getElementById('warning-modal').classList.add('hidden-view')" class="w-full bg-red-600 text-white font-bold py-3 rounded-xl active:scale-95 transition-transform shadow-lg shadow-red-200">I Understand</button>
+            </div>
+        </div>
+
+        <!-- ==================== 1. LOGIN SCREEN ==================== -->
+        <div id="login-view" class="h-full flex flex-col justify-center px-6 bg-white fade-in z-10">
+            <div class="text-center mb-10">
+                <div class="w-20 h-20 bg-indigo-600 rounded-[24px] mx-auto flex items-center justify-center mb-6 shadow-lg shadow-indigo-200">
+                    <i class="fa-solid fa-graduation-cap text-white text-3xl"></i>
+                </div>
+                <h1 class="text-5xl font-black text-gray-900 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">EXAMA</h1>
+                <p class="text-gray-400 mt-2 font-bold tracking-widest text-[10px] uppercase">An App By SUBHANKAR SARKAR</p>
+            </div>
+            
+            <form id="login-form" class="space-y-4">
+                <div class="relative">
+                    <i class="fa-solid fa-mobile-screen absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    <input type="tel" id="mobile" required placeholder="Mobile Number" class="w-full pl-11 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-gray-900">
+                </div>
+                <div class="relative">
+                    <i class="fa-solid fa-lock absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    <input type="password" id="password" required placeholder="Password" class="w-full pl-11 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium">
+                </div>
+                <div class="relative">
+                    <i class="fa-solid fa-user-shield absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    <select id="role" class="w-full pl-11 pr-4 py-4 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none appearance-none font-medium text-gray-700">
+                        <option value="student">Login as Student</option>
+                        <option value="admin">Login as Super Admin</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-xl shadow-indigo-200 mt-4">
+                    Secure Login
+                </button>
+            </form>
+        </div>
+
+        <!-- ==================== 2. STUDENT DASHBOARD ==================== -->
+        <div id="student-view" class="hidden-view h-full flex flex-col fade-in relative bg-gray-50 z-0">
+            <div class="bg-indigo-600 text-white pt-10 pb-16 px-6 rounded-b-[2rem] shadow-md relative z-0">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p class="text-indigo-200 text-xs font-bold tracking-widest uppercase mb-1">EXAMA</p>
+                        <h2 class="text-2xl font-bold" id="student-name-display">Student</h2>
+                    </div>
+                    <button onclick="logout()" class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:bg-white/30">
+                        <i class="fa-solid fa-power-off text-white"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto no-scrollbar px-5 -mt-10 pb-24 relative z-10 space-y-6">
+                <!-- Stats -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
+                        <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">Avg Score</div>
+                        <div class="text-2xl font-extrabold text-gray-900" id="student-avg">0<span class="text-lg text-gray-400">%</span></div>
+                    </div>
+                    <div class="bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
+                        <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">Overall Rank</div>
+                        <div class="text-2xl font-extrabold text-indigo-600" id="student-overall-rank">#-</div>
+                    </div>
+                </div>
+
+                <!-- Live / Pending Exams -->
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-3 px-1 flex items-center gap-2">
+                        <i class="fa-solid fa-clock text-indigo-500"></i> Pending & Live Exams
+                    </h3>
+                    <div id="student-pending-exams" class="space-y-3"></div>
+                </div>
+
+                <!-- Histogram -->
+                <div class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-gray-900">Performance</h3>
+                    </div>
+                    <div class="h-40 w-full relative"><canvas id="studentChart"></canvas></div>
+                </div>
+
+                <!-- Dynamic Records -->
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-3 px-1">My Completed Exams</h3>
+                    <div id="student-records-list" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <!-- Student FAB -->
+            <button onclick="openBottomSheet()" class="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-300 flex items-center justify-center text-xl hover:scale-105 active:scale-95 transition-transform z-20">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        </div>
+
+        <!-- ==================== 3. ADMIN DASHBOARD ==================== -->
+        <div id="admin-view" class="hidden-view h-full flex flex-col fade-in relative bg-gray-50 z-0">
+            <div class="bg-gray-900 text-white pt-8 pb-4 px-5 flex justify-between items-center shadow-md relative z-10">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold leading-tight">Admin Panel</h2>
+                        <p class="text-[10px] text-gray-400 font-bold tracking-widest uppercase">EXAMA</p>
+                    </div>
+                </div>
+                <button onclick="logout()" class="text-sm font-medium text-gray-400">Logout</button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto no-scrollbar p-5 pb-24 space-y-6">
+                <!-- Manage Exams -->
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-3 px-1">Exam Management</h3>
+                    <div id="admin-exams-list" class="space-y-3"></div>
+                </div>
+
+                <!-- Student Directory -->
+                <div>
+                    <div class="flex justify-between items-end mb-2">
+                        <h3 class="font-bold text-gray-900 text-lg">Student Directory</h3>
+                    </div>
+                    <div id="admin-students-directory" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <!-- Admin FAB -->
+            <button onclick="openBottomSheet()" class="absolute bottom-6 right-6 w-14 h-14 bg-gray-900 text-white rounded-full shadow-lg flex items-center justify-center text-xl hover:scale-105 active:scale-95 transition-transform z-20">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+        </div>
+
+        <!-- ==================== 4. ADMIN: FULL STUDENT PROFILE VIEW ==================== -->
+        <div id="admin-profile-view" class="hidden-view absolute inset-0 bg-gray-50 z-30 flex flex-col slide-left">
+            <div class="bg-gray-900 text-white pt-10 pb-6 px-5 flex items-center gap-4 shadow-md">
+                <button onclick="closeAdminProfile()" class="w-10 h-10 flex items-center justify-center bg-gray-800 rounded-full active:scale-95 transition-transform">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <div>
+                    <h2 id="ap-name" class="text-xl font-bold">Student Name</h2>
+                    <p id="ap-mobile" class="text-xs text-gray-400">Mobile</p>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto no-scrollbar p-5 pb-24 space-y-6">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
+                        <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">Avg Score</div>
+                        <div class="text-2xl font-extrabold text-gray-900" id="ap-avg">0<span class="text-lg text-gray-400">%</span></div>
+                    </div>
+                    <div class="bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
+                        <div class="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">Overall Rank</div>
+                        <div class="text-2xl font-extrabold text-indigo-600" id="ap-rank">#-</div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
+                    <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-gray-900">Performance History</h3></div>
+                    <div class="h-40 w-full relative"><canvas id="adminProfileChart"></canvas></div>
+                </div>
+
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-3 px-1">Exam Breakdown</h3>
+                    <div id="ap-records-list" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 5. FULL SCREEN ACTIVE EXAM TIMER ==================== -->
+        <div id="active-exam-view" class="hidden-view absolute inset-0 bg-gray-900 z-[35] flex flex-col slide-left text-white">
+            <div class="px-5 pt-10 pb-4 flex justify-between items-center bg-gray-900">
+                <button onclick="closeActiveExam()" class="w-10 h-10 bg-gray-800 rounded-full flex items-center justify-center active:scale-95 transition-transform text-white shadow-md">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <span class="font-bold tracking-widest text-xs uppercase text-gray-400">Live Exam</span>
+                <div class="w-10"></div>
+            </div>
+
+            <div class="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                <h2 id="active-exam-name" class="text-3xl font-black mb-2 text-white">Exam Name</h2>
+                <p id="active-exam-details" class="text-gray-400 mb-12 font-medium tracking-wide">Total Marks: 100 • Pass: 40% • 60 mins</p>
+
+                <!-- Pulsing Timer Circle -->
+                <div id="active-exam-circle" class="relative flex items-center justify-center w-64 h-64 bg-gray-800 rounded-full shadow-[0_0_50px_rgba(79,70,229,0.2)] mb-12 border-4 border-gray-700 transition-all duration-500">
+                    <div id="active-exam-timer" class="text-7xl font-mono font-black text-white tracking-tighter transition-colors duration-500">00:00</div>
+                </div>
+                
+                <button onclick="submitFromActiveExam()" class="bg-indigo-600 w-full max-w-xs py-4 rounded-2xl font-bold text-lg active:scale-95 transition-transform shadow-lg shadow-indigo-600/30">
+                    Submit Marks Now
+                </button>
+            </div>
+        </div>
+
+        <!-- ==================== 6. DYNAMIC BOTTOM SHEET ==================== -->
+        <div id="modal-overlay" class="hidden-view absolute inset-0 bg-gray-900/60 backdrop-blur-sm z-40 transition-opacity" onclick="closeBottomSheet()"></div>
+        
+        <div id="action-sheet" class="hidden-view absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl z-50 slide-up shadow-2xl flex flex-col" style="max-height: 90%;">
+            <div class="w-full flex justify-center pt-3 pb-2" onclick="closeBottomSheet()">
+                <div class="w-12 h-1.5 bg-gray-300 rounded-full"></div>
+            </div>
+            
+            <div class="px-6 pb-8 pt-2 overflow-y-auto no-scrollbar">
+                
+                <div id="admin-tabs" class="hidden bg-gray-100 p-1 rounded-xl flex mb-6">
+                    <button onclick="switchTab('log-result')" id="tab-log" class="flex-1 py-2 text-[11px] font-bold rounded-lg segment-active transition-all">Log Marks</button>
+                    <button onclick="switchTab('create-exam')" id="tab-create-exam" class="flex-1 py-2 text-[11px] font-bold rounded-lg segment-inactive transition-all">New Exam</button>
+                    <button onclick="switchTab('create-student')" id="tab-create-student" class="flex-1 py-2 text-[11px] font-bold rounded-lg segment-inactive transition-all">New Student</button>
+                </div>
+
+                <h3 id="sheet-title" class="text-xl font-extrabold text-gray-900 mb-6">Action</h3>
+                
+                <!-- LOG RESULT FORM -->
+                <form id="form-log-result" class="space-y-4" onsubmit="event.preventDefault(); submitResult(false);">
+                    <div id="field-student-dropdown" class="hidden">
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Select Student</label>
+                        <div class="relative">
+                            <select id="select-student" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-gray-900 appearance-none"></select>
+                            <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Select Exam</label>
+                        <div class="relative">
+                            <select id="select-exam" required class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-gray-900 appearance-none"></select>
+                            <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Marks Obtained</label>
+                        <input type="number" id="input-obtained" placeholder="e.g. 85" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-bold text-gray-900 text-lg">
+                    </div>
+                    <div class="flex gap-3 mt-6">
+                        <button type="submit" class="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-xl active:scale-95 transition-transform shadow-lg shadow-indigo-200">Submit Marks</button>
+                        <button type="button" onclick="submitResult(true)" class="bg-red-50 text-red-600 border border-red-200 font-bold px-5 rounded-xl active:scale-95 transition-transform">Mark Absent</button>
+                    </div>
+                </form>
+
+                <!-- CREATE EXAM FORM -->
+                <form id="form-create-exam" class="hidden space-y-4" onsubmit="event.preventDefault(); submitExam();">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Exam Name</label>
+                        <input type="text" id="new-exam-name" required placeholder="e.g. Advanced Physics" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Date</label>
+                        <input type="date" id="new-exam-date" required class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-gray-700">
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Total Marks</label>
+                            <input type="number" id="new-exam-total" required placeholder="100" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Pass Perc (%)</label>
+                            <input type="number" id="new-exam-pass" required placeholder="40" value="40" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Duration (Min)</label>
+                        <input type="number" id="new-exam-duration" required placeholder="60" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                    </div>
+                    <button type="submit" class="w-full bg-gray-900 text-white font-bold py-4 rounded-xl mt-6 active:scale-95 transition-transform shadow-lg shadow-gray-300">Create Exam</button>
+                </form>
+
+                <!-- EDIT EXAM FORM -->
+                <form id="form-edit-exam" class="hidden space-y-4" onsubmit="event.preventDefault(); submitEditExam();">
+                    <input type="hidden" id="edit-exam-id">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Exam Name</label>
+                        <input type="text" id="edit-exam-name" required class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Date</label>
+                        <input type="date" id="edit-exam-date" required class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-gray-700">
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Total Marks</label>
+                            <input type="number" id="edit-exam-total" required class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                        </div>
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Pass Perc (%)</label>
+                            <input type="number" id="edit-exam-pass" required class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Duration (Min)</label>
+                        <input type="number" id="edit-exam-duration" required class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl mt-6 active:scale-95 transition-transform shadow-lg shadow-indigo-300">Save Changes</button>
+                </form>
+
+                <!-- CREATE STUDENT FORM -->
+                <form id="form-create-student" class="hidden space-y-4" onsubmit="event.preventDefault(); submitStudent();">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Full Name</label>
+                        <input type="text" id="new-stu-name" required placeholder="e.g. John Doe" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Mobile Number (Login ID)</label>
+                        <input type="tel" id="new-stu-mobile" required placeholder="e.g. 9876543210" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-gray-700">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Login Password</label>
+                        <input type="text" id="new-stu-password" required placeholder="Assign a secure password" class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-medium text-gray-700">
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl mt-6 active:scale-95 transition-transform shadow-lg shadow-indigo-300">Create Student</button>
+                </form>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== FIREBASE & LOGIC ==================== -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBGmVplT3n_5Jrb4powBC5KAcw9ylJibGo",
+            authDomain: "exama-cfb56.firebaseapp.com",
+            projectId: "exama-cfb56",
+            storageBucket: "exama-cfb56.firebasestorage.app",
+            messagingSenderId: "670163422803",
+            appId: "1:670163422803:web:20fb4d598783dbd215c0a6",
+            measurementId: "G-GZ2L1G71QX"
+        };
+
+        const isFirebaseConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
+        let db;
+        if (isFirebaseConfigured) {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+        }
+
+        // Global State Arrays
+        window.studentsDB = []; window.examsDB = []; window.resultsDB = [];
+        window.currentRole = ''; window.loggedInMobile = '';
+        window.activeExamId = null; 
+        let chartInstance = null; let adminProfileChartInstance = null; let globalTimerInterval = null;
+
+        // =========================================================================
+        // 1. DATA SYNC & FIREBASE CONTROLLERS
+        // =========================================================================
+        async function fetchInitialData() {
+            if (isFirebaseConfigured) {
+                onSnapshot(collection(db, "students"), (snapshot) => { window.studentsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); refreshUI(); });
+                onSnapshot(collection(db, "exams"), (snapshot) => { window.examsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); refreshUI(); });
+                onSnapshot(collection(db, "results"), (snapshot) => { window.resultsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); refreshUI(); });
+                await new Promise(r => setTimeout(r, 1500));
+            } else {
+                window.studentsDB = [{ mobile: '123', password: '123', name: 'Demo Student' }];
+                window.examsDB = [{ id: 'e1', name: 'Demo Math Exam', date: '2026-08-05', totalMarks: 100, duration: 60, passPercentage: 40, startTime: null }];
+                window.resultsDB = [];
+                await new Promise(r => setTimeout(r, 1500)); refreshUI();
+            }
+        }
+
+        window.dbSubmitStudent = async function(obj) { if(isFirebaseConfigured) await setDoc(doc(db, "students", obj.mobile), obj); else { window.studentsDB.push(obj); refreshUI(); } }
+        window.dbSubmitExam = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "exams"), obj); else { window.examsDB.push({id: 'e'+Math.random(), ...obj}); refreshUI(); } }
+        window.dbUpdateExam = async function(id, obj) { if(isFirebaseConfigured) await updateDoc(doc(db, "exams", id), obj); else { const idx = window.examsDB.findIndex(e=>e.id===id); if(idx>-1) {window.examsDB[idx]={...window.examsDB[idx],...obj}; refreshUI();} } }
+        window.dbSubmitResult = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "results"), obj); else { window.resultsDB.push({id: 'r'+Math.random(), ...obj}); refreshUI(); } }
+        window.dbStartExam = async function(id) { if(isFirebaseConfigured) await updateDoc(doc(db, "exams", id), { startTime: Date.now() }); else { const ex = window.examsDB.find(e => e.id === id); if(ex) { ex.startTime = Date.now(); refreshUI(); } } }
+
+        // =========================================================================
+        // 2. ABSENT LOGIC
+        // =========================================================================
+        function getComputedResults() {
+            let all = [...window.resultsDB];
+            const today = new Date().toISOString().split('T')[0];
+            
+            window.studentsDB.forEach(stu => {
+                const takenIds = new Set(all.filter(r => r.mobile === stu.mobile).map(r => r.examId));
+                window.examsDB.forEach(ex => {
+                    if(!takenIds.has(ex.id) && ex.date < today) {
+                        all.push({ id: 'virt_'+ex.id+'_'+stu.mobile, examId: ex.id, mobile: stu.mobile, obtained: 0, total: ex.totalMarks, percentage: 0, status: 'ABSENT', isVirtual: true });
+                    }
+                });
+            });
+            return all;
+        }
+
+        // =========================================================================
+        // 3. AUTHENTICATION
+        // =========================================================================
+        function showLoader(text) { document.getElementById('loader-text').innerText = text; document.getElementById('global-loader').classList.remove('hidden-view'); }
+        function hideLoader() { document.getElementById('global-loader').classList.add('hidden-view'); }
+
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const role = document.getElementById('role').value; const mob = document.getElementById('mobile').value; const pass = document.getElementById('password').value;
+            showLoader("Loading Exama..."); await fetchInitialData();
+
+            if (role === 'admin') {
+                if (mob !== '9475757821' || pass !== 'Subhankar@0513') { hideLoader(); alert("Invalid Super Admin Credentials!"); return; }
+            } else {
+                const stu = window.studentsDB.find(s => s.mobile === mob && s.password === pass);
+                if (!stu) { hideLoader(); alert("Invalid Student Credentials!"); return; }
+            }
+
+            window.currentRole = role; window.loggedInMobile = mob;
+            document.getElementById('login-view').classList.add('hidden-view');
+            
+            if (window.currentRole === 'student') {
+                document.getElementById('student-view').classList.remove('hidden-view');
+                document.getElementById('student-name-display').innerText = window.studentsDB.find(s => s.mobile === window.loggedInMobile).name;
+                
+                const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
+                const absentCount = myComputed.filter(r => r.status === 'ABSENT').length;
+                if(absentCount > 0) {
+                    document.getElementById('warning-text').innerText = `You have been marked ABSENT for ${absentCount} past exam(s). This drastically lowers your average and rank.`;
+                    document.getElementById('warning-modal').classList.remove('hidden-view');
+                }
+            } else { document.getElementById('admin-view').classList.remove('hidden-view'); }
+            
+            refreshUI(); startTimerEngine(); hideLoader();
+        });
+
+        window.logout = function() {
+            document.getElementById('student-view').classList.add('hidden-view');
+            document.getElementById('admin-view').classList.add('hidden-view');
+            document.getElementById('admin-profile-view').classList.add('hidden-view');
+            document.getElementById('active-exam-view').classList.add('hidden-view');
+            document.getElementById('login-view').classList.remove('hidden-view');
+            document.getElementById('login-form').reset();
+            if(globalTimerInterval) clearInterval(globalTimerInterval);
+            window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null;
+        }
+
+        // =========================================================================
+        // 4. UI RENDERING & RANKING
+        // =========================================================================
+        function refreshUI() {
+            if(!window.currentRole) return;
+            if(window.currentRole === 'student') renderStudentDashboard();
+            if(window.currentRole === 'admin') renderAdminDashboard();
+        }
+
+        function calculateClassRank(examId, mobile) {
+            const examResults = getComputedResults().filter(r => r.examId === examId);
+            examResults.sort((a, b) => b.percentage - a.percentage);
+            const rankIndex = examResults.findIndex(r => r.mobile === mobile);
+            return rankIndex === -1 ? '-' : (rankIndex + 1);
+        }
+
+        function getStudentOverallRank(mobile) {
+            const studentAverages = {};
+            getComputedResults().forEach(r => {
+                if(!studentAverages[r.mobile]) studentAverages[r.mobile] = { mobile: r.mobile, totalPerc: 0, count: 0 };
+                studentAverages[r.mobile].totalPerc += r.percentage; studentAverages[r.mobile].count += 1;
+            });
+            const leaderboard = Object.values(studentAverages).map(s => ({ ...s, avg: (s.totalPerc / s.count).toFixed(1) }));
+            leaderboard.sort((a, b) => b.avg - a.avg);
+            const idx = leaderboard.findIndex(s => s.mobile === mobile);
+            return idx !== -1 ? `#${idx + 1}` : '#-';
+        }
+
+        function buildRecordHTML(r, exam, rank) {
+            const isAbsent = r.status === 'ABSENT';
+            const c = isAbsent ? 'red' : (r.status === 'PASS' ? 'green' : 'red');
+            const dot = isAbsent ? `<div class="absolute left-3 top-[22px] w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shadow-md"></div>` : '';
+            const leftPad = isAbsent ? 'ml-6' : 'ml-2';
+
+            return `
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
+                    <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-${c}-500"></div>
+                    ${dot}
+                    <div class="flex justify-between items-start ${leftPad}">
+                        <div>
+                            <h4 class="font-bold text-gray-900 text-sm">${exam.name}</h4>
+                            <p class="text-[10px] text-gray-400 mt-1">${exam.date} • Pass: ${exam.passPercentage || 40}%</p>
+                            ${rank ? `<p class="text-xs font-medium text-gray-500 mt-2">Class Rank: <span class="text-indigo-600 font-bold">#${rank}</span></p>` : ''}
+                        </div>
+                        <div class="text-right">
+                            <div class="font-black text-lg text-gray-900">${r.obtained}<span class="text-sm text-gray-400">/${r.total}</span></div>
+                            <div class="text-[10px] font-bold text-${c}-600 bg-${c}-50 px-2 py-1 rounded inline-block mt-1">${isAbsent ? 'ABSENT' : r.status} (${r.percentage.toFixed(0)}%)</div>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function renderStudentDashboard() {
+            const pendingList = document.getElementById('student-pending-exams');
+            const recordsList = document.getElementById('student-records-list');
+            pendingList.innerHTML = ''; recordsList.innerHTML = '';
+            
+            const myRecords = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
+            let totalPerc = 0; const chartLabels = []; const chartData = []; const chartStatuses = [];
+            const today = new Date().toISOString().split('T')[0];
+
+            window.examsDB.forEach(exam => {
+                if(!myRecords.find(r => r.examId === exam.id) && exam.date >= today) {
+                    let actionHtml = !exam.startTime ? 
+                        `<button onclick="handleStartExam('${exam.id}')" class="bg-indigo-100 text-indigo-700 px-4 py-2 rounded-xl text-xs font-bold active:scale-95 transition-transform shadow-sm">Start Now</button>` :
+                        (exam.startTime === -1 ? `<span class="text-xs text-red-500 font-bold bg-red-50 px-2 py-1 rounded">Finished</span>` :
+                        `<button onclick="openActiveExam('${exam.id}')" class="bg-red-100 text-red-700 px-3 py-1.5 rounded-xl text-xs font-bold active:scale-95 flex items-center gap-2 shadow-sm shadow-red-200">
+                            <span class="live-timer font-mono" data-id="${exam.id}">00:00</span><i class="fa-solid fa-expand"></i>
+                        </button>`);
+                    pendingList.innerHTML += `
+                        <div class="bg-white p-3 rounded-2xl shadow-sm border border-indigo-100 flex justify-between items-center">
+                            <div><h4 class="font-bold text-gray-900 text-sm">${exam.name}</h4><p class="text-[10px] text-gray-500">${exam.duration} mins • ${exam.totalMarks} Marks</p></div>
+                            ${actionHtml}
+                        </div>`;
+                }
+            });
+
+            myRecords.forEach(r => {
+                const exam = window.examsDB.find(e => e.id === r.examId);
+                totalPerc += r.percentage; 
+                chartLabels.push(exam.name.substring(0,6) + '...'); 
+                chartData.push(r.percentage);
+                chartStatuses.push(r.status); // PASS, FAIL, or ABSENT
+                recordsList.innerHTML += buildRecordHTML(r, exam, calculateClassRank(exam.id, r.mobile));
+            });
+
+            document.getElementById('student-avg').innerHTML = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) + '<span class="text-lg text-gray-400">%</span>' : '0%';
+            document.getElementById('student-overall-rank').innerText = getStudentOverallRank(window.loggedInMobile);
+            updateChart('studentChart', chartInstance, chartLabels, chartData, chartStatuses, inst => chartInstance = inst);
+        }
+
+        function renderAdminDashboard() {
+            const examList = document.getElementById('admin-exams-list');
+            const stuList = document.getElementById('admin-students-directory');
+            examList.innerHTML = ''; stuList.innerHTML = '';
+
+            window.examsDB.forEach(exam => {
+                let actionHtml = !exam.startTime ? `<button onclick="handleStartExam('${exam.id}')" class="bg-gray-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold active:scale-95">Start</button>` :
+                                 (exam.startTime === -1 ? `<span class="text-xs text-gray-400 font-bold mr-2">Ended</span>` :
+                                 `<div class="live-timer font-mono text-red-600 font-bold text-sm bg-red-50 px-2 py-1 rounded pulse-red inline-block mr-2" data-id="${exam.id}">00:00</div>`);
+                
+                examList.innerHTML += `
+                    <div class="bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center">
+                        <div>
+                            <h4 class="font-bold text-gray-900 text-sm">${exam.name}</h4>
+                            <p class="text-[10px] text-gray-500">${exam.date} • ${exam.duration}m • Pass: ${exam.passPercentage || 40}%</p>
+                        </div>
+                        <div class="flex items-center">
+                            ${actionHtml}
+                            <button onclick="window.openEditExam('${exam.id}')" class="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold active:scale-95"><i class="fa-solid fa-pen"></i></button>
+                        </div>
+                    </div>`;
+            });
+
+            window.studentsDB.forEach(stu => {
+                const stuRecords = getComputedResults().filter(r => r.mobile === stu.mobile);
+                const examsTaken = stuRecords.length;
+                let avgStr = 'No exams';
+                if(examsTaken > 0) avgStr = `Avg: ${(stuRecords.reduce((a, r) => a + r.percentage, 0)/examsTaken).toFixed(1)}%`;
+
+                stuList.innerHTML += `
+                    <div onclick="openAdminProfile('${stu.mobile}')" class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center active:bg-gray-50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm">${stu.name.substring(0,2).toUpperCase()}</div>
+                            <div><h4 class="font-bold text-gray-900 text-sm">${stu.name}</h4><p class="text-[10px] text-gray-400">${stu.mobile}</p></div>
+                        </div>
+                        <div class="text-right"><p class="text-xs font-bold text-indigo-600">${avgStr}</p><p class="text-[10px] text-gray-400">${examsTaken} records <i class="fa-solid fa-chevron-right ml-1"></i></p></div>
+                    </div>`;
+            });
+        }
+
+        window.openAdminProfile = function(mobile) {
+            const stu = window.studentsDB.find(s => s.mobile === mobile);
+            document.getElementById('ap-name').innerText = stu.name; document.getElementById('ap-mobile').innerText = stu.mobile;
+            document.getElementById('ap-rank').innerText = getStudentOverallRank(mobile);
+            
+            const myRecords = getComputedResults().filter(r => r.mobile === mobile);
+            const recordsList = document.getElementById('ap-records-list'); recordsList.innerHTML = '';
+            
+            let totalPerc = 0; const chartLabels = []; const chartData = []; const chartStatuses = [];
+            myRecords.forEach(r => {
+                const exam = window.examsDB.find(e => e.id === r.examId);
+                totalPerc += r.percentage; chartLabels.push(exam.name.substring(0,6) + '...'); chartData.push(r.percentage);
+                chartStatuses.push(r.status);
+                recordsList.innerHTML += buildRecordHTML(r, exam, calculateClassRank(exam.id, r.mobile));
+            });
+            document.getElementById('ap-avg').innerHTML = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) + '<span class="text-lg text-gray-400">%</span>' : '0%';
+            document.getElementById('admin-profile-view').classList.remove('hidden-view');
+            updateChart('adminProfileChart', adminProfileChartInstance, chartLabels, chartData, chartStatuses, inst => adminProfileChartInstance = inst);
+        }
+        window.closeAdminProfile = function() { document.getElementById('admin-profile-view').classList.add('hidden-view'); }
+
+        // =========================================================================
+        // 5. SUBMIT WRAPPERS & ADMIN CONTROLS
+        // =========================================================================
+        window.submitStudent = async function() {
+            showLoader("Saving Student...");
+            await window.dbSubmitStudent({ name: document.getElementById('new-stu-name').value, mobile: document.getElementById('new-stu-mobile').value, password: document.getElementById('new-stu-password').value });
+            hideLoader(); closeBottomSheet(); document.getElementById('form-create-student').reset();
+        }
+
+        window.submitExam = async function() {
+            showLoader("Creating Exam...");
+            await window.dbSubmitExam({ 
+                name: document.getElementById('new-exam-name').value, date: document.getElementById('new-exam-date').value, 
+                totalMarks: parseFloat(document.getElementById('new-exam-total').value), 
+                passPercentage: parseFloat(document.getElementById('new-exam-pass').value) || 40,
+                duration: parseFloat(document.getElementById('new-exam-duration').value), startTime: null 
+            });
+            hideLoader(); closeBottomSheet(); document.getElementById('form-create-exam').reset();
+        }
+
+        window.openEditExam = function(id) {
+            const ex = window.examsDB.find(e => e.id === id); if(!ex) return;
+            document.getElementById('edit-exam-id').value = ex.id; document.getElementById('edit-exam-name').value = ex.name;
+            document.getElementById('edit-exam-date').value = ex.date; document.getElementById('edit-exam-total').value = ex.totalMarks; 
+            document.getElementById('edit-exam-pass').value = ex.passPercentage || 40;
+            document.getElementById('edit-exam-duration').value = ex.duration;
+            document.getElementById('sheet-title').innerText = "Edit Exam"; document.getElementById('admin-tabs').classList.add('hidden');
+            window.switchForms('edit-exam'); document.getElementById('modal-overlay').classList.remove('hidden-view'); document.getElementById('action-sheet').classList.remove('hidden-view');
+        }
+
+        window.submitEditExam = async function() {
+            showLoader("Updating Exam...");
+            const id = document.getElementById('edit-exam-id').value;
+            await window.dbUpdateExam(id, { 
+                name: document.getElementById('edit-exam-name').value, date: document.getElementById('edit-exam-date').value, 
+                totalMarks: parseFloat(document.getElementById('edit-exam-total').value), 
+                passPercentage: parseFloat(document.getElementById('edit-exam-pass').value) || 40,
+                duration: parseFloat(document.getElementById('edit-exam-duration').value) 
+            });
+            hideLoader(); closeBottomSheet(); document.getElementById('form-edit-exam').reset();
+        }
+
+        window.submitResult = async function(isManualAbsent = false) {
+            const examId = document.getElementById('select-exam').value;
+            const mobile = window.currentRole === 'admin' ? document.getElementById('select-student').value : window.loggedInMobile;
+            
+            if(!examId || !mobile) { alert("Please select required fields."); return; }
+            const exam = window.examsDB.find(e => e.id === examId);
+            const passLimit = exam.passPercentage || 40;
+            
+            let obtained = 0; let status = 'ABSENT'; let percentage = 0;
+            if(!isManualAbsent) {
+                obtained = parseFloat(document.getElementById('input-obtained').value);
+                if(isNaN(obtained)) { alert("Please enter marks."); return; }
+                if(obtained > exam.totalMarks) { alert(`Marks cannot exceed total (${exam.totalMarks})`); return; }
+                percentage = (obtained / exam.totalMarks) * 100;
+                status = percentage >= passLimit ? 'PASS' : 'FAIL';
+            }
+            
+            showLoader("Logging Result...");
+            await window.dbSubmitResult({ examId, mobile, obtained, total: exam.totalMarks, percentage, status });
+            hideLoader(); closeBottomSheet(); 
+            if(window.activeExamId) window.closeActiveExam(); 
+            document.getElementById('form-log-result').reset();
+        }
+
+        window.handleStartExam = async function(examId) { 
+            showLoader("Starting Engine..."); await window.dbStartExam(examId); hideLoader(); 
+            if (window.currentRole === 'student') window.openActiveExam(examId);
+        }
+
+        // =========================================================================
+        // 6. FULL SCREEN ACTIVE EXAM LOGIC
+        // =========================================================================
+        window.openActiveExam = function(examId) {
+            window.activeExamId = examId;
+            const exam = window.examsDB.find(e => e.id === examId);
+            document.getElementById('active-exam-name').innerText = exam.name;
+            document.getElementById('active-exam-details').innerText = `Total Marks: ${exam.totalMarks} • Pass: ${exam.passPercentage || 40}% • ${exam.duration} mins`;
+            document.getElementById('active-exam-view').classList.remove('hidden-view');
+            updateActiveTimerDisplay(); 
+        }
+
+        window.closeActiveExam = function() {
+            document.getElementById('active-exam-view').classList.add('hidden-view');
+            window.activeExamId = null;
+        }
+
+        window.submitFromActiveExam = function() {
+            window.openBottomSheet();
+            setTimeout(() => { document.getElementById('select-exam').value = window.activeExamId; }, 50);
+        }
+
+        function updateActiveTimerDisplay() {
+            if (!window.activeExamId) return;
+            const exam = window.examsDB.find(e => e.id === window.activeExamId);
+            const el = document.getElementById('active-exam-timer');
+            const circle = document.getElementById('active-exam-circle');
+            
+            if (exam && exam.startTime && exam.startTime !== -1) {
+                const now = Date.now();
+                const remainingMs = (exam.duration * 60 * 1000) - (now - exam.startTime);
+                
+                if (remainingMs <= 0) {
+                    el.innerText = "00:00"; el.classList.add('text-red-500');
+                    circle.classList.add('border-red-500', 'shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.remove('border-gray-700', 'shadow-[0_0_50px_rgba(79,70,229,0.2)]');
+                } else {
+                    const m = Math.floor(remainingMs / 60000).toString().padStart(2, '0');
+                    const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
+                    el.innerText = `${m}:${s}`;
+                    
+                    if (remainingMs <= 60000) { 
+                        el.classList.add('text-red-500');
+                        circle.classList.add('border-red-500', 'shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.remove('border-gray-700', 'shadow-[0_0_50px_rgba(79,70,229,0.2)]');
+                    } else {
+                        el.classList.remove('text-red-500');
+                        circle.classList.remove('border-red-500', 'shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.add('border-gray-700', 'shadow-[0_0_50px_rgba(79,70,229,0.2)]');
+                    }
+                }
+            }
+        }
+
+        // --- TIMER ENGINE ---
+        function startTimerEngine() {
+            if(globalTimerInterval) clearInterval(globalTimerInterval);
+            globalTimerInterval = setInterval(() => {
+                const now = Date.now(); let needsRefresh = false;
+                
+                document.querySelectorAll('.live-timer').forEach(el => {
+                    const exam = window.examsDB.find(e => e.id === el.dataset.id);
+                    if (exam && exam.startTime && exam.startTime !== -1) {
+                        const remainingMs = (exam.duration * 60 * 1000) - (now - exam.startTime);
+                        if (remainingMs <= 0) {
+                            el.innerHTML = `<span class="text-red-500 font-bold text-xs">TIME UP</span>`; exam.startTime = -1; needsRefresh = true;
+                        } else {
+                            const m = Math.floor(remainingMs / 60000).toString().padStart(2, '0'); const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
+                            el.innerHTML = `<i class="fa-solid fa-circle text-[8px] text-red-500 mr-1 pulse-red"></i> ${m}:${s}`;
+                        }
+                    }
+                });
+                
+                if (window.activeExamId) updateActiveTimerDisplay();
+                if(needsRefresh) refreshUI();
+            }, 1000);
+        }
+
+        // --- DYNAMIC CHART HELPER ---
+        function updateChart(canvasId, instance, labels, data, statuses, saveInstanceCB) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            if(instance) instance.destroy(); 
+            let passGrad = ctx.createLinearGradient(0, 0, 0, 400); passGrad.addColorStop(0, '#4f46e5'); passGrad.addColorStop(1, '#818cf8');
+            let failGrad = ctx.createLinearGradient(0, 0, 0, 400); failGrad.addColorStop(0, '#ef4444'); failGrad.addColorStop(1, '#f87171');
+            
+            const newInst = new Chart(ctx, { 
+                type: 'bar', 
+                data: { 
+                    labels: labels, 
+                    datasets: [{ 
+                        data: data, 
+                        // Dynamically look at the exact PASS/FAIL/ABSENT string for this specific bar
+                        backgroundColor: c => statuses[c.dataIndex] === 'PASS' ? passGrad : failGrad, 
+                        borderRadius: 8, barPercentage: 0.5 
+                    }] 
+                }, 
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { max: 100, ticks: { display: false }, grid: { drawBorder: false } }, x: { grid: { display: false }, ticks: { font: { size: 10 } } } } } 
+            });
+            saveInstanceCB(newInst);
+        }
+
+        // --- BOTTOM SHEET UI HELPERS ---
+        window.openBottomSheet = function() {
+            const selExam = document.getElementById('select-exam');
+            selExam.innerHTML = '<option value="" disabled selected>-- Select Exam --</option>';
+            window.examsDB.forEach(e => selExam.innerHTML += `<option value="${e.id}">${e.name} (Max: ${e.totalMarks})</option>`);
+            
+            const selStu = document.getElementById('select-student');
+            selStu.innerHTML = '<option value="" disabled selected>-- Select Student --</option>';
+            window.studentsDB.forEach(s => selStu.innerHTML += `<option value="${s.mobile}">${s.name} (${s.mobile})</option>`);
+
+            document.getElementById('admin-tabs').classList.remove('hidden'); 
+            if(window.currentRole === 'admin') {
+                document.getElementById('field-student-dropdown').classList.remove('hidden'); document.getElementById('select-student').required = true; window.switchTab('log-result');
+            } else {
+                document.getElementById('admin-tabs').classList.add('hidden'); document.getElementById('field-student-dropdown').classList.add('hidden'); document.getElementById('select-student').required = false; document.getElementById('sheet-title').innerText = "Submit My Marks"; window.switchTab('log-result');
+            }
+            document.getElementById('modal-overlay').classList.remove('hidden-view'); document.getElementById('action-sheet').classList.remove('hidden-view');
+        }
+
+        window.closeBottomSheet = function() { document.getElementById('modal-overlay').classList.add('hidden-view'); document.getElementById('action-sheet').classList.add('hidden-view'); }
+        window.switchTab = function(tab) {
+            ['log', 'create-exam', 'create-student'].forEach(t => document.getElementById('tab-' + t).className = "flex-1 py-2 text-[11px] font-bold rounded-lg segment-inactive transition-all");
+            document.getElementById('tab-' + tab.replace('create-exam', 'create-exam').replace('create-student', 'create-student').replace('log-result', 'log')).className = "flex-1 py-2 text-[11px] font-bold rounded-lg segment-active transition-all";
+            if(tab === 'log-result') document.getElementById('sheet-title').innerText = "Log Student Result";
+            if(tab === 'create-exam') document.getElementById('sheet-title').innerText = "Create New Exam";
+            if(tab === 'create-student') document.getElementById('sheet-title').innerText = "Create Student Profile";
+            window.switchForms(tab);
+        }
+        window.switchForms = function(activeId) {
+            ['form-log-result', 'form-create-exam', 'form-edit-exam', 'form-create-student'].forEach(id => document.getElementById(id).classList.add('hidden'));
+            document.getElementById('form-' + activeId).classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
