@@ -1648,7 +1648,77 @@
                     callback: (tokenResponse) => {
                         if (tokenResponse && tokenResponse.access_token) {
                             window.gdriveAccessToken = tokenResponse.access_token;
-                            window.executeDriveUpload();
+                            window.executeDriveUpload = function() {
+            const file = document.getElementById('gdrive-file-input').files[0];
+            if (!file) return;
+
+            // 1. Get the status text element and set initial UI state
+            const statusEl = document.getElementById('gdrive-upload-status');
+            statusEl.innerText = "Preparing upload...";
+            statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600');
+            statusEl.classList.add('text-blue-600'); // Make it blue while uploading
+
+            const metadata = {
+                'name': file.name,
+                'mimeType': file.type
+            };
+            
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', file);
+
+            // 2. Use XMLHttpRequest to track progress
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
+            xhr.setRequestHeader('Authorization', 'Bearer ' + window.gdriveAccessToken);
+
+            // 3. Update the percentage text live
+            xhr.upload.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const percentComplete = Math.round((event.loaded / event.total) * 100);
+                    statusEl.innerText = `Uploading to Drive... ${percentComplete}%`;
+                }
+            };
+
+            // 4. Handle Upload Completion
+            xhr.onload = function() {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        if (data.webViewLink) {
+                            document.getElementById('mat-ext-link').value = data.webViewLink;
+                            statusEl.innerText = "Uploaded to Drive! Link auto-filled.";
+                            statusEl.classList.remove('text-blue-600', 'text-red-600');
+                            statusEl.classList.add('text-green-600');
+                        } else {
+                            throw new Error("No link returned.");
+                        }
+                    } catch (err) {
+                        statusEl.innerText = "Upload Error: " + err.message;
+                        statusEl.classList.remove('text-blue-600', 'text-green-600');
+                        statusEl.classList.add('text-red-600');
+                    }
+                } else {
+                    statusEl.innerText = "Drive Upload Failed. Check permissions.";
+                    statusEl.classList.remove('text-blue-600', 'text-green-600');
+                    statusEl.classList.add('text-red-600');
+                }
+                
+                // Reset the input so they can upload another file if needed
+                document.getElementById('gdrive-file-input').value = '';
+            };
+
+            // 5. Handle Network Errors
+            xhr.onerror = function() {
+                statusEl.innerText = "Network Error occurred during upload.";
+                statusEl.classList.remove('text-blue-600', 'text-green-600');
+                statusEl.classList.add('text-red-600');
+                document.getElementById('gdrive-file-input').value = '';
+            };
+
+            // Start the upload
+            xhr.send(form);
+        }
                         }
                     }
                 });
