@@ -1149,36 +1149,50 @@
         }
 
         // ONESIGNAL API WITH CORS PROXY
-        async function sendOneSignalPush(title, message) {
-            const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
-            const ONESIGNAL_REST_KEY = "os_v2_app_fr3l3ktsnfcznakrma576babay4qynff5kvucmeop2njrzldgitc274yx2vv34zdyaqytmxwswcmmb6o7xbkkvlauewqadpyw5auxaq";
-            
-            const payload = {
-                app_id: ONESIGNAL_APP_ID,
-                included_segments: ["All"], 
-                headings: { "en": title },
-                contents: { "en": message },
-                target_channel: "push"
-            };
+       async function sendOneSignalPush(title, message) {
+    const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
+    const ONESIGNAL_REST_KEY = "os_v2_app_fr3l3ktsnfcznakrma576babay4qynff5kvucmeop2njrzldgitc274yx2vv34zdyaqytmxwswcmmb6o7xbkkvlauewqadpyw5auxaq";
+    
+    const payload = {
+        app_id: ONESIGNAL_APP_ID,
+        // FIX 1: Use the correct default segment name. If this fails, try ["Subscribed Users"]
+        included_segments: ["Total Subscriptions"], 
+        headings: { "en": title },
+        contents: { "en": message }
+    };
 
-            const targetUrl = encodeURIComponent("https://onesignal.com/api/v1/notifications");
-            const proxyUrl = `https://corsproxy.io/?${targetUrl}`;
+    // FIX 2: Use the official api subdomain
+    const targetUrl = encodeURIComponent("https://api.onesignal.com/api/v1/notifications");
+    
+    // Using an alternative proxy formulation if corsproxy.io still blocks the auth header
+    const proxyUrl = `https://corsproxy.io/?${targetUrl}`;
 
-            try {
-                const response = await fetch(proxyUrl, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json; charset=utf-8",
-                        "Authorization": `Basic ${ONESIGNAL_REST_KEY}`
-                    },
-                    body: JSON.stringify(payload)
-                });
-                if (!response.ok) throw new Error("OneSignal API rejected the request.");
-            } catch (e) {
-                console.warn("OneSignal push failed, using local fallback notification instead.", e);
-                sendPushNotification(title, message);
-            }
+    try {
+        const response = await fetch(proxyUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json; charset=utf-8",
+                "Authorization": `Basic ${ONESIGNAL_REST_KEY}`,
+                // FIX 3: This header helps prevent some proxies from dropping the request
+                "x-requested-with": "XMLHttpRequest" 
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            console.error("OneSignal API Error Details:", data);
+            throw new Error("OneSignal API rejected the request.");
         }
+        console.log("Push Notification Sent Successfully!", data);
+        
+    } catch (e) {
+        console.warn("OneSignal push failed, using local fallback notification instead.", e);
+        // Fallback to the browser's native notification system
+        sendPushNotification(title, message);
+    }
+}
 
         window.showLoader = function(message) {
             const loaderText = document.getElementById('loader-text');
