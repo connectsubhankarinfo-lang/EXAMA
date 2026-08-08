@@ -9,7 +9,7 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- HTML2PDF for Generating Reports -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/htmlf2pdf.bundle.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts -->
@@ -1708,15 +1708,32 @@
                     statusEl.innerText = `Uploading to Drive... ${percentComplete}%`;
                 }
             };
-
-            // Handle Upload Completion
-            xhr.onload = function() {
+// Handle Upload Completion & Make Public
+            xhr.onload = async function() {
                 if (xhr.status >= 200 && xhr.status < 300) {
                     try {
                         const data = JSON.parse(xhr.responseText);
-                        if (data.webViewLink) {
+                        if (data.id && data.webViewLink) {
+                            
+                            // 1. Tell the user we are updating permissions
+                            statusEl.innerText = "Making file public...";
+                            
+                            // 2. Call Google Drive API to make the file public ("Anyone with the link")
+                            await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': 'Bearer ' + window.gdriveAccessToken,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    role: 'reader',
+                                    type: 'anyone'
+                                })
+                            });
+
+                            // 3. Finish up!
                             document.getElementById('mat-ext-link').value = data.webViewLink;
-                            statusEl.innerText = "Uploaded to Drive! Link auto-filled.";
+                            statusEl.innerText = "Uploaded & made Public! Link auto-filled.";
                             statusEl.classList.remove('text-blue-600', 'text-red-600');
                             statusEl.classList.add('text-green-600');
                         } else {
@@ -1734,14 +1751,6 @@
                 }
                 
                 // Reset the input so they can upload another file if needed
-                document.getElementById('gdrive-file-input').value = '';
-            };
-
-            // Handle Network Errors
-            xhr.onerror = function() {
-                statusEl.innerText = "Network Error occurred during upload.";
-                statusEl.classList.remove('text-blue-600', 'text-green-600');
-                statusEl.classList.add('text-red-600');
                 document.getElementById('gdrive-file-input').value = '';
             };
 
