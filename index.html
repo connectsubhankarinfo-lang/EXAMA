@@ -1640,34 +1640,40 @@
         window.tokenClient = null;
         window.gdriveAccessToken = null;
 
-        function initGoogleDriveAPI() {
+       function initGoogleDriveAPI() {
             if(window.google && google.accounts) {
                 window.tokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', // REPLACE THIS WITH YOUR GOOGLE CLIENT ID
+                    client_id: 'YOUR_GOOGLE_CLIENT_ID', // <--- PASTE YOUR CLIENT ID HERE
                     scope: 'https://www.googleapis.com/auth/drive.file',
                     callback: (tokenResponse) => {
                         if (tokenResponse && tokenResponse.access_token) {
                             window.gdriveAccessToken = tokenResponse.access_token;
-                            window.executeDriveUpload();
+                            // Login successful! Now open the file picker automatically
+                            document.getElementById('gdrive-file-input').click();
                         }
                     }
                 });
             } else {
-                setTimeout(initGoogleDriveAPI, 500); // Retry if script isn't loaded yet
+                setTimeout(initGoogleDriveAPI, 500); 
             }
         }
 
         window.uploadDirectToDrive = function() {
-            document.getElementById('gdrive-file-input').click();
+            // Check for Google login FIRST, right when the button is clicked
+            if (!window.gdriveAccessToken) {
+                if(!window.tokenClient) return alert("Google API is still loading or Client ID is missing.");
+                // Trigger the pop-up directly from the click
+                window.tokenClient.requestAccessToken({prompt: 'consent'});
+            } else {
+                // Already logged in? Just open the file picker
+                document.getElementById('gdrive-file-input').click();
+            }
         }
 
         document.getElementById('gdrive-file-input').addEventListener('change', function(e) {
+            // Since we already checked for login before this opens, just upload it!
             if (this.files.length > 0) {
-                if (!window.gdriveAccessToken) {
-                    window.tokenClient.requestAccessToken({prompt: 'consent'});
-                } else {
-                    window.executeDriveUpload();
-                }
+                window.executeDriveUpload();
             }
         });
 
@@ -1675,7 +1681,7 @@
             const file = document.getElementById('gdrive-file-input').files[0];
             if (!file) return;
 
-            // 1. Get the status text element and set initial UI state
+            // Get the status text element and set initial UI state
             const statusEl = document.getElementById('gdrive-upload-status');
             statusEl.innerText = "Preparing upload...";
             statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600');
@@ -1690,12 +1696,12 @@
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
             form.append('file', file);
 
-            // 2. Use XMLHttpRequest to track progress
+            // Use XMLHttpRequest to track progress
             const xhr = new XMLHttpRequest();
             xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
             xhr.setRequestHeader('Authorization', 'Bearer ' + window.gdriveAccessToken);
 
-            // 3. Update the percentage text live
+            // Update the percentage text live
             xhr.upload.onprogress = function(event) {
                 if (event.lengthComputable) {
                     const percentComplete = Math.round((event.loaded / event.total) * 100);
@@ -1703,7 +1709,7 @@
                 }
             };
 
-            // 4. Handle Upload Completion
+            // Handle Upload Completion
             xhr.onload = function() {
                 if (xhr.status >= 200 && xhr.status < 300) {
                     try {
@@ -1731,7 +1737,7 @@
                 document.getElementById('gdrive-file-input').value = '';
             };
 
-            // 5. Handle Network Errors
+            // Handle Network Errors
             xhr.onerror = function() {
                 statusEl.innerText = "Network Error occurred during upload.";
                 statusEl.classList.remove('text-blue-600', 'text-green-600');
@@ -1742,7 +1748,6 @@
             // Start the upload
             xhr.send(form);
         }
-
         // FITNESS / RUNNING MONITOR FUNCTIONS
         window.submitFitnessLog = async function() {
             const distance = parseFloat(document.getElementById('fit-dist').value);
