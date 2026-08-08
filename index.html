@@ -2404,17 +2404,45 @@ window.markChatAsRead = async function() {
         }
 
         window.restartExam = async function(id) {
-            if(!confirm("Are you sure? This resets the timer and deletes ALL student results for this exam.")) return;
+            if(!confirm("Are you sure? This resets the timer, deletes ALL student results, AND removes uploaded Q&A materials for this exam.")) return;
             showLoader("Resetting Exam Data...");
+            
+            // Find the exam name for the notification
+            const ex = window.examsDB.find(e => e.id === id);
+            
+            // 1. Reset the timer
             await window.dbUpdateExam(id, { globalStartTime: null, isPaused: false, pausedElapsed: 0 });
             
             if(isFirebaseConfigured) {
-                const q1 = query(collection(db, "results"), where("examId", "==", id)); const snap1 = await getDocs(q1);
+                // 2. Delete all student results for this exam
+                const q1 = query(collection(db, "results"), where("examId", "==", id)); 
+                const snap1 = await getDocs(q1);
                 snap1.forEach(async (docSnap) => { await deleteDoc(doc(db, "results", docSnap.id)); });
+                
+                // 3. Delete all Peer Q&A materials for this exam
+                const q2 = query(collection(db, "peer_exams"), where("examId", "==", id));
+                const snap2 = await getDocs(q2);
+                snap2.forEach(async (docSnap) => { await deleteDoc(doc(db, "peer_exams", docSnap.id)); });
             } else { 
                 window.resultsDB = window.resultsDB.filter(r => r.examId !== id); 
+                window.peerMaterialsDB = window.peerMaterialsDB.filter(m => m.examId !== id);
             }
+            
+            // 4. Send Notifications to Students
+            if (ex) {
+                const title = `Exam Reset: ${ex.name}`;
+                const msg = `The admin has reset the exam timer and cleared previous data. You must re-attach your Q&A materials to unlock the exam room again.`;
+                
+                // Trigger Phone Push Notification
+                sendOneSignalPush(title, msg);
+                
+                // Post directly to the Notice Board so they see it in the app
+                const d = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                await window.dbSendNotice({ title: title, text: msg, date: d, timestamp: Date.now() });
+            }
+            
             hideLoader();
+            alert("Exam reset successfully. All results and Q&A materials have been cleared.");
         }
 
         window.deleteExam = async function(id) {
