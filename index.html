@@ -2362,24 +2362,36 @@ window.markChatAsRead = async function() {
             hideLoader(); closeBottomSheet(); document.getElementById('form-create-student').reset();
         }
 
-        window.submitExam = async function() {
+       window.submitExam = async function() {
             showLoader("Creating Exam...");
             const examName = document.getElementById('new-exam-name').value;
             const examDate = document.getElementById('new-exam-date').value;
             const googleMeetUrl = document.getElementById('new-exam-meet').value.trim();
+            const duration = document.getElementById('new-exam-duration').value;
+            const totalMarks = document.getElementById('new-exam-total').value;
 
             await window.dbSubmitExam({ 
                 name: examName, date: examDate, 
-                totalMarks: parseFloat(document.getElementById('new-exam-total').value), passPercentage: parseFloat(document.getElementById('new-exam-pass').value) || 40,
-                duration: parseFloat(document.getElementById('new-exam-duration').value), examPin: document.getElementById('new-exam-pin').value,
+                totalMarks: parseFloat(totalMarks), passPercentage: parseFloat(document.getElementById('new-exam-pass').value) || 40,
+                duration: parseFloat(duration), examPin: document.getElementById('new-exam-pin').value,
                 googleMeetUrl: googleMeetUrl,
                 globalStartTime: null, isPaused: false, pausedElapsed: 0
             });
             
-            sendOneSignalPush("New Exam Added", `${examName} is scheduled on ${examDate}.`);
+            // 1. Send Phone Push Notification
+            sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`);
+            
+            // 2. Post automatically to the App's Notice Board
+            const d = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            await window.dbSendNotice({ 
+                title: `🗓️ New Exam Scheduled: ${examName}`, 
+                text: `A new exam "${examName}" has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nTotal Marks: ${totalMarks}\n\nPlease check your dashboard to review the details and attach your peer materials early!`, 
+                date: d, 
+                timestamp: Date.now() 
+            });
+
             hideLoader(); closeBottomSheet(); document.getElementById('form-create-exam').reset();
         }
-
         window.openEditExam = function(id) {
             const ex = window.examsDB.find(e => e.id === id); if(!ex) return;
             document.getElementById('edit-exam-id').value = ex.id; document.getElementById('edit-exam-name').value = ex.name;
