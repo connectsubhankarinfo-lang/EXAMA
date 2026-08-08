@@ -1079,7 +1079,7 @@
                     document.getElementById('chat-alert-banner').classList.add('hidden-view');
                     if(window.currentRole === 'student') document.getElementById('chat-share-btn').classList.remove('hidden');
                     else document.getElementById('chat-share-btn').classList.add('hidden');
-                    window.updateChatVisit(); renderChat(); 
+                    window.markChatAsRead(); renderChat(); 
                     break;
                 case 'notices':
                     if(window.currentRole === 'admin') document.getElementById('add-notice-btn').classList.remove('hidden'); 
@@ -1282,20 +1282,41 @@
             }
         }
         setInterval(window.updatePresence, 5000); 
-
-        window.updateChatVisit = async function() {
+window.markChatAsRead = async function() {
             if(!window.loggedInMobile) return;
-            const now = Date.now();
-            localStorage.setItem('lastChatVisit', now.toString());
-            if(window.currentRole === 'student') {
-                if(isFirebaseConfigured) {
-                    try { await updateDoc(doc(db, "students", window.loggedInMobile), { lastChatVisit: now }); } catch(e) {}
+            const myMobile = window.loggedInMobile;
+            
+            // Find all messages not sent by me, and not yet read by me
+            const unreadMsgs = window.chatDB.filter(m => m.mobile !== myMobile && !(m.readBy && m.readBy.includes(myMobile)));
+            
+            if (unreadMsgs.length > 0) {
+                if (isFirebaseConfigured) {
+                    // Update Firestore database in real-time
+                    unreadMsgs.forEach(async (msg) => {
+                        try { await updateDoc(doc(db, "chat", msg.id), { readBy: arrayUnion(myMobile) }); } catch(e) {}
+                    });
                 } else {
-                    const s = window.studentsDB.find(s=>s.mobile===window.loggedInMobile);
-                    if(s) s.lastChatVisit = now;
+                    unreadMsgs.forEach(msg => {
+                        if(!msg.readBy) msg.readBy = [];
+                        msg.readBy.push(myMobile);
+                    });
                 }
             }
             updateChatUnreadCount();
+        }
+
+        function updateChatUnreadCount() {
+            if(!window.currentRole || !window.loggedInMobile) return;
+            const myMobile = window.loggedInMobile;
+            
+            // Count messages where I am not the sender AND my mobile is missing from the readBy array
+            const unreadCount = window.chatDB.filter(m => m.mobile !== myMobile && !(m.readBy && m.readBy.includes(myMobile))).length;
+            
+            const badges = document.querySelectorAll('.chat-unread-badge');
+            badges.forEach(b => {
+                if (unreadCount > 0) { b.innerText = unreadCount; b.classList.remove('hidden'); } 
+                else { b.classList.add('hidden'); }
+            });
         }
 
         // 1. DATA SYNC
@@ -1338,7 +1359,7 @@
 
                     if(!document.getElementById('community-chat-view').classList.contains('hidden-view')) {
                         renderChat();
-                        window.updateChatVisit();
+                        window.markChatAsRead();
                     } else {
                         updateChatUnreadCount();
                     }
@@ -1372,7 +1393,11 @@
         window.dbUpdateExam = async function(id, obj) { if(isFirebaseConfigured) await updateDoc(doc(db, "exams", id), obj); else { const idx = window.examsDB.findIndex(e=>e.id===id); if(idx>-1) {window.examsDB[idx]={...window.examsDB[idx],...obj}; refreshUI();} } }
         window.dbSubmitResult = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "results"), obj); else { window.resultsDB.push({id: 'r'+Math.random(), ...obj}); refreshUI(); } }
         window.dbDeleteExam = async function(id) { if(isFirebaseConfigured) { await deleteDoc(doc(db, "exams", id)); } else { window.examsDB = window.examsDB.filter(e => e.id !== id); refreshUI(); } }
-        window.dbSendChat = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "chat"), obj); else { window.chatDB.push({id: Math.random().toString(), ...obj}); renderChat(); updateChatUnreadCount(); } }
+        window.dbSendChat = async function(obj) { 
+            obj.readBy = []; // Initialize empty read array in DB
+            if(isFirebaseConfigured) await addDoc(collection(db, "chat"), obj); 
+            else { window.chatDB.push({id: Math.random().toString(), ...obj}); renderChat(); updateChatUnreadCount(); } 
+        }
         window.dbSendNotice = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "notices"), { ...obj, readBy: [] }); else { window.noticesDB.unshift({id: Math.random().toString(), ...obj, readBy: []}); renderNotices(); checkUnreadNotices(); } }
         window.dbSendMaterial = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "materials"), obj); else { window.materialsDB.unshift({id: Math.random().toString(), ...obj}); renderStudyMaterials(); } }
         window.dbSendFitnessLog = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "fitness_logs"), obj); else { window.fitnessDB.unshift({id: Math.random().toString(), ...obj}); renderFitnessMonitor(); } }
@@ -2701,7 +2726,7 @@
                     
                     sendOneSignalPush(`New Photo from ${senderName}`, "Tap to view in Discus.");
                     
-                    window.updateChatVisit();
+                    window.markChatAsRead();
                     cancelChatReply();
                 }
                 hideLoader(); event.target.value = '';
@@ -2753,10 +2778,7 @@
                 `;
 
                 const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                let isRead = false;
-                if (otherStudents.length > 0) {
-                    isRead = otherStudents.every(s => (s.lastChatVisit || 0) >= msg.timestamp);
-                }
+                let isRead = msg.readBy && msg.readBy.length > 0;
                 const ticks = isMe ? `<i class="fa-solid fa-check-double text-[11px] ml-1 ${isRead ? 'text-[#53bdeb]' : 'text-gray-400'}"></i>` : '';
                 const adminBadge = msgAdmin ? `<span class="bg-indigo-600 text-white text-[8px] px-1.5 py-0.5 rounded ml-1 tracking-widest font-black">ADMIN</span>` : '';
                 
@@ -2822,7 +2844,7 @@
             await window.dbSendChat({ text, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
             
             sendOneSignalPush(`New Message from ${senderName}`, text);
-            window.updateChatVisit();
+            window.markChatAsRead();
             cancelChatReply();
         }
 
@@ -2863,7 +2885,7 @@
 
             await window.dbSendChat({ type: 'performance', stats: statsPayload, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
             sendOneSignalPush(`Performance Shared`, `${senderName} just shared their performance card.`);
-            window.updateChatVisit();
+            window.markChatAsRead();
             cancelChatReply();
         }
 
