@@ -1292,14 +1292,16 @@ window.markChatAsRead = async function() {
             
             if (unreadMsgs.length > 0) {
                 if (isFirebaseConfigured) {
-                    // Update Firestore database in real-time
-                    unreadMsgs.forEach(async (msg) => {
-                        try { await updateDoc(doc(db, "chat", msg.id), { readBy: arrayUnion(myMobile) }); } catch(e) {}
+                    // Update Firebase database for ALL unread messages instantly
+                    const updatePromises = unreadMsgs.map(msg => {
+                        return updateDoc(doc(db, "chat", msg.id), { readBy: arrayUnion(myMobile) });
                     });
+                    await Promise.all(updatePromises);
                 } else {
+                    // Local fallback
                     unreadMsgs.forEach(msg => {
                         if(!msg.readBy) msg.readBy = [];
-                        msg.readBy.push(myMobile);
+                        if(!msg.readBy.includes(myMobile)) msg.readBy.push(myMobile);
                     });
                 }
             }
@@ -1342,7 +1344,7 @@ window.markChatAsRead = async function() {
                     if(!document.getElementById('fitness-view').classList.contains('hidden-view')) renderFitnessMonitor();
                 });
 
-                onSnapshot(query(collection(db, "chat"), orderBy("timestamp", "asc")), (snapshot) => {
+               onSnapshot(query(collection(db, "chat"), orderBy("timestamp", "asc")), (snapshot) => {
                     const oldLen = window.chatDB.length;
                     window.chatDB = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
                     
@@ -1360,6 +1362,7 @@ window.markChatAsRead = async function() {
 
                     if(!document.getElementById('community-chat-view').classList.contains('hidden-view')) {
                         renderChat();
+                        // CRITICAL FIX: Instantly sync "Seen" to database if user is actively viewing chat!
                         window.markChatAsRead();
                     } else {
                         updateChatUnreadCount();
@@ -1404,8 +1407,8 @@ window.markChatAsRead = async function() {
         window.dbSendFitnessLog = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "fitness_logs"), obj); else { window.fitnessDB.unshift({id: Math.random().toString(), ...obj}); renderFitnessMonitor(); } }
 
         // 2. UNREAD LOGIC (NOTICES & CHAT WITH FIRESTORE SYNC)
-        function checkUnreadNotices() {
-            if(!window.currentRole) return;
+       function checkUnreadNotices() {
+            if(!window.currentRole || !window.loggedInMobile) return;
             const myMobile = window.loggedInMobile;
             const unread = window.noticesDB.filter(n => !(n.readBy && n.readBy.includes(myMobile)));
             
@@ -1419,15 +1422,31 @@ window.markChatAsRead = async function() {
                 const latest = unread[0]; 
                 document.getElementById('notice-popup-title').innerText = latest.title;
                 document.getElementById('notice-popup-text').innerText = latest.text;
-                document.getElementById('notice-popup-btn').onclick = async () => {
+                
+                const btn = document.getElementById('notice-popup-btn');
+                
+                // Directly attach the Database save to the physical button click
+                btn.onclick = async () => {
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i>Saving...`;
+                    btn.disabled = true; // Prevent double-clicking
+
+                    // 1. SAVE TO DATABASE
                     if (isFirebaseConfigured && latest.id) {
-                        try { await updateDoc(doc(db, "notices", latest.id), { readBy: arrayUnion(myMobile) }); } catch(e){}
-                    } else {
-                        if (!latest.readBy) latest.readBy = [];
-                        latest.readBy.push(myMobile);
-                    }
+                        try { 
+                            await updateDoc(doc(db, "notices", latest.id), { readBy: arrayUnion(myMobile) }); 
+                        } catch(e) { console.error("Notice Save Error:", e); }
+                    } 
+                    
+                    // 2. SAVE LOCALLY (so it closes instantly)
+                    if (!latest.readBy) latest.readBy = [];
+                    if (!latest.readBy.includes(myMobile)) latest.readBy.push(myMobile);
+                    
+                    // 3. RESET UI AND CHECK FOR MORE NOTICES
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
                     document.getElementById('notice-popup-modal').classList.add('hidden-view');
-                    checkUnreadNotices(); 
+                    checkUnreadNotices(); // Recursively checks if there's another unread notice waiting!
                 };
                 document.getElementById('notice-popup-modal').classList.remove('hidden-view');
             }
