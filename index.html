@@ -1913,10 +1913,9 @@ window.markChatAsRead = async function() {
             const rank = myRankIdx !== -1 ? `#${myRankIdx+1}` : '#-';
             const percentile = lb.length > 1 ? (((lb.length - (myRankIdx+1)) / (lb.length - 1)) * 100).toFixed(0) : 100;
 
-            // FIXED HTML: Removed all 'display: flex' to prevent the html2canvas infinite loop freeze.
-            // Using standard 'display: table' which is 100% safe for PDF rendering.
+            // Safe HTML string using display: table (no flexbox to freeze the browser)
             let html = `
-                <div style="padding: 40px; font-family: Helvetica, Arial, sans-serif; color: #0f172a; width: 800px; margin: 0 auto; background: white;">
+                <div style="padding: 40px; font-family: Helvetica, Arial, sans-serif; color: #0f172a; width: 800px; background: white;">
                     <div style="text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px;">
                         <div style="width: 60px; height: 60px; background: #4f46e5; border-radius: 12px; margin: 0 auto 10px auto; color: white; font-size: 40px; font-weight: bold; line-height: 60px; text-align: center;">E</div>
                         <h1 style="font-size: 32px; font-weight: bold; color: #4f46e5; margin: 0;">EXAMA</h1>
@@ -1994,37 +1993,30 @@ window.markChatAsRead = async function() {
                 </div>
             `;
 
+            // Get today's date formatted safely for filenames (e.g., 2026-08-08)
+            const downloadDate = new Date().toISOString().split('T')[0];
+
             const opt = { 
                 margin: 0, 
-                filename: `${student.name.replace(/\s+/g, '_')}_Exama_Report.pdf`, 
+                // Dynamically injected Name + Date for the file name!
+                filename: `${student.name.replace(/\s+/g, '_')}_Exama_Report_${downloadDate}.pdf`, 
                 image: { type: 'jpeg', quality: 0.98 }, 
                 html2canvas: { scale: 2, useCORS: true, logging: false }, 
                 jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } 
             };
-            
-            // Render it by explicitly attaching to DOM
-            const wrapper = document.createElement('div');
-            wrapper.style.position = 'absolute';
-            wrapper.style.left = '-9999px';
-            wrapper.style.top = '-9999px';
-            wrapper.innerHTML = html;
-            document.body.appendChild(wrapper);
 
-            // Safety fallback
             const safeTimeout = setTimeout(() => { 
-                if(document.body.contains(wrapper)) document.body.removeChild(wrapper);
                 hideLoader(); 
                 alert("The PDF generation took too long or was blocked. Please try again."); 
             }, 8000);
 
-            html2pdf().set(opt).from(wrapper).save().then(() => { 
+            // Pass the raw string directly! The library handles the background sizing perfectly.
+            html2pdf().set(opt).from(html).save().then(() => { 
                 clearTimeout(safeTimeout);
-                if(document.body.contains(wrapper)) document.body.removeChild(wrapper);
                 hideLoader(); 
             }).catch(err => { 
                 console.error(err);
                 clearTimeout(safeTimeout);
-                if(document.body.contains(wrapper)) document.body.removeChild(wrapper);
                 hideLoader(); 
                 alert("Failed to generate PDF. Check browser console."); 
             });
