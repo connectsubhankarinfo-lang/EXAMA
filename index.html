@@ -1149,47 +1149,38 @@
         }
 
         // ONESIGNAL API WITH CORS PROXY
-       async function sendOneSignalPush(title, message) {
+       // =========================================================================
+// ONESIGNAL PUSH NOTIFICATION API (SECURE CLOUDFLARE PROXY BYPASS)
+// =========================================================================
+async function sendOneSignalPush(title, message) {
     const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
-    const ONESIGNAL_REST_KEY = "os_v2_app_fr3l3ktsnfcznakrma576babay4qynff5kvucmeop2njrzldgitc274yx2vv34zdyaqytmxwswcmmb6o7xbkkvlauewqadpyw5auxaq";
+    // REST API KEY REMOVED FROM FRONTEND FOR SECURITY
     
     const payload = {
         app_id: ONESIGNAL_APP_ID,
-        // FIX 1: Use the correct default segment name. If this fails, try ["Subscribed Users"]
-        included_segments: ["Total Subscriptions"], 
+        included_segments: ["All"], // Target all devices
         headings: { "en": title },
-        contents: { "en": message }
+        contents: { "en": message },
+        target_channel: "push"
     };
 
-    // FIX 2: Use the official api subdomain
-    const targetUrl = encodeURIComponent("https://api.onesignal.com/api/v1/notifications");
+    // Paste your newly generated Cloudflare Worker URL here
+    const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
     
-    // Using an alternative proxy formulation if corsproxy.io still blocks the auth header
-    const proxyUrl = `https://corsproxy.io/?${targetUrl}`;
-
     try {
-        const response = await fetch(proxyUrl, {
+        const response = await fetch(secureProxyUrl, {
             method: "POST",
             headers: {
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": `Basic ${ONESIGNAL_REST_KEY}`,
-                // FIX 3: This header helps prevent some proxies from dropping the request
-                "x-requested-with": "XMLHttpRequest" 
+                "Content-Type": "application/json"
             },
             body: JSON.stringify(payload)
         });
-
-        const data = await response.json();
         
-        if (!response.ok) {
-            console.error("OneSignal API Error Details:", data);
-            throw new Error("OneSignal API rejected the request.");
-        }
-        console.log("Push Notification Sent Successfully!", data);
+        if (!response.ok) throw new Error("Push blocked or failed");
         
     } catch (e) {
-        console.warn("OneSignal push failed, using local fallback notification instead.", e);
-        // Fallback to the browser's native notification system
+        console.warn("API Push Failed, falling back to local browser notification.");
+        // Fallback to local API if offline
         sendPushNotification(title, message);
     }
 }
