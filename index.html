@@ -2183,8 +2183,9 @@ window.markChatAsRead = async function() {
                 }
             }
 
-            window.examsDB.forEach(exam => {
-                if(!myRecords.find(r => r.examId === exam.id) && exam.date >= today) {
+           window.examsDB.forEach(exam => {
+                // Ignore exams that have already ended!
+                if(!myRecords.find(r => r.examId === exam.id) && exam.date >= today && !exam.isEnded)  {
                     let actionHtml = '';
                     const hasUploaded = window.peerMaterialsDB.some(m => m.examId === exam.id && m.mobile === window.loggedInMobile);
 
@@ -2264,19 +2265,28 @@ window.markChatAsRead = async function() {
             window.examsDB.forEach(exam => {
                 const pinIcon = exam.examPin ? `<i class="fa-solid fa-key text-indigo-400 ml-2 text-xs" title="Passkey Protected: ${exam.examPin}"></i>` : '';
                 
-                let statusBadge = `<span class="bg-gray-100 text-gray-500 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm">Ready</span>`;
-                if(exam.globalStartTime && !exam.isPaused) statusBadge = `<span class="bg-green-100 text-green-600 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm pulse-red">Running</span>`;
-                if(exam.isPaused) statusBadge = `<span class="bg-red-100 text-red-600 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm">Paused</span>`;
-
-                let timerControls = '';
-                if (!exam.globalStartTime && !exam.isPaused) {
-                    timerControls = `<button onclick="window.startGlobalExam('${exam.id}')" class="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all"><i class="fa-solid fa-play mr-1"></i>Start For All</button>`;
-                } else if (exam.globalStartTime && !exam.isPaused) {
-                    timerControls = `<button onclick="window.pauseGlobalExam('${exam.id}')" class="bg-amber-100 hover:bg-amber-200 text-amber-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all"><i class="fa-solid fa-pause mr-1"></i>Pause Timer</button>`;
-                } else if (exam.isPaused) {
-                    timerControls = `<button onclick="window.resumeGlobalExam('${exam.id}')" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all"><i class="fa-solid fa-play mr-1"></i>Resume Timer</button>`;
+              let statusBadge = `<span class="bg-gray-100 text-gray-500 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm">Ready</span>`;
+                if(exam.isEnded) {
+                    statusBadge = `<span class="bg-purple-100 text-purple-600 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm">Ended</span>`;
+                } else if(exam.globalStartTime && !exam.isPaused) {
+                    statusBadge = `<span class="bg-green-100 text-green-600 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm pulse-red">Running</span>`;
+                } else if(exam.isPaused) {
+                    statusBadge = `<span class="bg-red-100 text-red-600 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm">Paused</span>`;
                 }
 
+                let timerControls = '';
+                if(exam.isEnded) {
+                     timerControls = `<span class="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1.5 rounded-lg"><i class="fa-solid fa-lock"></i> Exam Closed</span>`;
+                } else if (!exam.globalStartTime && !exam.isPaused) {
+                    timerControls = `<button onclick="window.startGlobalExam('${exam.id}')" class="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all"><i class="fa-solid fa-play mr-1"></i>Start</button>
+                                     <button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all ml-2"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`;
+                } else if (exam.globalStartTime && !exam.isPaused) {
+                    timerControls = `<button onclick="window.pauseGlobalExam('${exam.id}')" class="bg-amber-100 hover:bg-amber-200 text-amber-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all"><i class="fa-solid fa-pause mr-1"></i>Pause</button>
+                                     <button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all ml-2"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`;
+                } else if (exam.isPaused) {
+                    timerControls = `<button onclick="window.resumeGlobalExam('${exam.id}')" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all"><i class="fa-solid fa-play mr-1"></i>Resume</button>
+                                     <button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all ml-2"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`;
+                }
                 examList.innerHTML += `
                     <div class="glass-card p-5 rounded-[2rem] flex flex-col gap-3 group hover:-translate-y-1 transition-all duration-300">
                         <div class="flex justify-between items-start">
@@ -2375,23 +2385,21 @@ window.markChatAsRead = async function() {
                 totalMarks: parseFloat(totalMarks), passPercentage: parseFloat(document.getElementById('new-exam-pass').value) || 40,
                 duration: parseFloat(duration), examPin: document.getElementById('new-exam-pin').value,
                 googleMeetUrl: googleMeetUrl,
-                globalStartTime: null, isPaused: false, pausedElapsed: 0
+                globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false
             });
             
-            // 1. Send Phone Push Notification
+            // Send Phone Push Notification & Post to Notice Board (Blue Theme)
             sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`);
-            
-            // 2. Post automatically to the App's Notice Board
             const d = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             await window.dbSendNotice({ 
-                title: `🗓️ New Exam Scheduled: ${examName}`, 
-                text: `A new exam "${examName}" has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nTotal Marks: ${totalMarks}\n\nPlease check your dashboard to review the details and attach your peer materials early!`, 
-                date: d, 
-                timestamp: Date.now() 
+                title: `🗓️ New Exam: ${examName}`, 
+                text: `A new exam has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard and attach your peer materials early!`, 
+                date: d, type: 'new_exam', timestamp: Date.now() 
             });
 
             hideLoader(); closeBottomSheet(); document.getElementById('form-create-exam').reset();
         }
+
         window.openEditExam = function(id) {
             const ex = window.examsDB.find(e => e.id === id); if(!ex) return;
             document.getElementById('edit-exam-id').value = ex.id; document.getElementById('edit-exam-name').value = ex.name;
@@ -2416,45 +2424,67 @@ window.markChatAsRead = async function() {
         }
 
         window.restartExam = async function(id) {
-            if(!confirm("Are you sure? This resets the timer, deletes ALL student results, AND removes uploaded Q&A materials for this exam.")) return;
+            if(!confirm("Are you sure? This resets the timer, deletes ALL student results, and clears all Q&A uploads for this exam.")) return;
             showLoader("Resetting Exam Data...");
             
-            // Find the exam name for the notification
-            const ex = window.examsDB.find(e => e.id === id);
-            
-            // 1. Reset the timer
-            await window.dbUpdateExam(id, { globalStartTime: null, isPaused: false, pausedElapsed: 0 });
+            const exam = window.examsDB.find(e => e.id === id);
+            await window.dbUpdateExam(id, { globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false });
             
             if(isFirebaseConfigured) {
-                // 2. Delete all student results for this exam
+                // FIXED TIMING BUG: Using Promise.all so the loader waits until the database ACTUALLY finishes deleting!
                 const q1 = query(collection(db, "results"), where("examId", "==", id)); 
                 const snap1 = await getDocs(q1);
-                snap1.forEach(async (docSnap) => { await deleteDoc(doc(db, "results", docSnap.id)); });
-                
-                // 3. Delete all Peer Q&A materials for this exam
-                const q2 = query(collection(db, "peer_exams"), where("examId", "==", id));
+                await Promise.all(snap1.docs.map(docSnap => deleteDoc(doc(db, "results", docSnap.id))));
+
+                const q2 = query(collection(db, "peer_exams"), where("examId", "==", id)); 
                 const snap2 = await getDocs(q2);
-                snap2.forEach(async (docSnap) => { await deleteDoc(doc(db, "peer_exams", docSnap.id)); });
+                await Promise.all(snap2.docs.map(docSnap => deleteDoc(doc(db, "peer_exams", docSnap.id))));
             } else { 
                 window.resultsDB = window.resultsDB.filter(r => r.examId !== id); 
                 window.peerMaterialsDB = window.peerMaterialsDB.filter(m => m.examId !== id);
             }
             
-            // 4. Send Notifications to Students
-            if (ex) {
-                const title = `Exam Reset: ${ex.name}`;
-                const msg = `The admin has reset the exam timer and cleared previous data. You must re-attach your Q&A materials to unlock the exam room again.`;
-                
-                // Trigger Phone Push Notification
+            // Notice Board Alert (Red Theme)
+            if (exam) {
+                const title = `⚠️ Exam Reset: ${exam.name}`;
+                const msg = `The admin has fully reset "${exam.name}". All previous submissions have been cleared. You MUST re-upload your Q&A materials to unlock the exam again!`;
                 sendOneSignalPush(title, msg);
-                
-                // Post directly to the Notice Board so they see it in the app
                 const d = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                await window.dbSendNotice({ title: title, text: msg, date: d, timestamp: Date.now() });
+                await window.dbSendNotice({ title: title, text: msg, date: d, type: 'reset_exam', timestamp: Date.now() });
             }
             
-            hideLoader();
-            alert("Exam reset successfully. All results and Q&A materials have been cleared.");
+            hideLoader(); alert("Exam reset successfully. All Q&A and results cleared.");
+        }
+
+        window.endExam = async function(id) {
+            if(!confirm("Are you sure? This will END the exam permanently and mark all students who haven't submitted as ABSENT.")) return;
+            showLoader("Ending Exam...");
+            const exam = window.examsDB.find(e => e.id === id);
+            
+            // Mark exam as ended
+            await window.dbUpdateExam(id, { isEnded: true, globalStartTime: null, isPaused: false });
+            
+            // Mark all missing students as ABSENT simultaneously
+            const absentPromises = [];
+            window.studentsDB.forEach(stu => {
+                if(!window.resultsDB.some(r => r.examId === id && r.mobile === stu.mobile)) {
+                    absentPromises.push(window.dbSubmitResult({
+                        examId: id, mobile: stu.mobile, obtained: 0, total: exam.totalMarks,
+                        percentage: 0, status: 'ABSENT', timeTaken: 0, timeSaved: 0
+                    }));
+                }
+            });
+            await Promise.all(absentPromises);
+            
+            // Notice Board Alert (Purple Theme)
+            const d = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            await window.dbSendNotice({ 
+                title: `🏁 Exam Ended: ${exam.name}`, 
+                text: `The exam "${exam.name}" has officially ended. All pending submissions have been graded as ABSENT. Please check your performance history.`, 
+                date: d, type: 'exam_ended', timestamp: Date.now() 
+            });
+            
+            hideLoader(); alert("Exam ended and absentees marked.");
         }
 
         window.deleteExam = async function(id) {
@@ -2467,10 +2497,7 @@ window.markChatAsRead = async function() {
             showLoader("Starting Exam for All...");
             await window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 });
             hideLoader();
-            
-            if (ex) {
-                sendOneSignalPush("Exam Started", `Enter the room now to begin ${ex.name}!`);
-            }
+            if (ex) sendOneSignalPush("Exam Started", `Enter the room now to begin ${ex.name}!`);
         }
         window.pauseGlobalExam = async function(id) {
             const ex = window.examsDB.find(e => e.id === id); if(!ex) return;
@@ -2484,7 +2511,6 @@ window.markChatAsRead = async function() {
             await window.dbUpdateExam(id, { isPaused: false, globalStartTime: Date.now() });
             hideLoader();
         }
-
         window.handleStartExam = function(examId) {
             const exam = window.examsDB.find(e => e.id === examId);
             if(exam.examPin) {
@@ -2961,20 +2987,32 @@ window.markChatAsRead = async function() {
             if(isFirebaseConfigured) await deleteDoc(doc(db, "notices", id));
             else { window.noticesDB = window.noticesDB.filter(n => n.id !== id); renderNotices(); checkUnreadNotices(); }
         }
-
-        window.renderNotices = function() {
+window.renderNotices = function() {
             const list = document.getElementById('notice-list'); list.innerHTML = '';
             window.noticesDB.forEach(n => {
                 const delBtn = window.currentRole === 'admin' ? `<button onclick="deleteNotice('${n.id}')" class="text-red-400 hover:text-red-600 ml-3 transition-colors" title="Delete"><i class="fa-solid fa-trash"></i></button>` : '';
+                
+                // Color Logic Based on Type
+                let borderColor = 'border-amber-200'; let bgCard = 'bg-white';
+                let iconColor = 'text-amber-500'; let badgeBg = 'bg-amber-100 text-amber-700';
+                
+                if (n.type === 'new_exam') {
+                    borderColor = 'border-blue-300'; bgCard = 'bg-blue-50/50'; iconColor = 'text-blue-500'; badgeBg = 'bg-blue-100 text-blue-700';
+                } else if (n.type === 'reset_exam') {
+                    borderColor = 'border-red-300'; bgCard = 'bg-red-50/50'; iconColor = 'text-red-500'; badgeBg = 'bg-red-100 text-red-700';
+                } else if (n.type === 'exam_ended') {
+                    borderColor = 'border-purple-300'; bgCard = 'bg-purple-50/50'; iconColor = 'text-purple-500'; badgeBg = 'bg-purple-100 text-purple-700';
+                }
+
                 list.innerHTML += `
-                    <div class="glass-card p-5 rounded-[2rem] space-y-2 border-amber-200 shadow-md bg-white">
-                        <div class="flex justify-between items-center border-b border-amber-100 pb-3 mb-2">
-                            <h4 class="font-black text-gray-900 text-[15px] flex items-center gap-2 leading-tight">
-                                <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-6 h-6 rounded-full object-cover shadow-sm">
+                    <div class="glass-card p-5 rounded-[2rem] space-y-2 ${borderColor} ${bgCard} shadow-sm">
+                        <div class="flex justify-between items-center border-b border-gray-200/50 pb-3 mb-2">
+                            <h4 class="font-black text-gray-900 text-[14px] flex items-center gap-2 leading-tight">
+                                <i class="fa-solid fa-circle-exclamation ${iconColor}"></i>
                                 ${n.title}
                             </h4>
                             <div class="flex items-center shrink-0">
-                                <span class="text-[9px] font-black text-amber-600 bg-amber-100 px-2.5 py-1 rounded-md shadow-sm uppercase tracking-widest">${n.date || 'Recent'}</span>
+                                <span class="text-[9px] font-black ${badgeBg} px-2.5 py-1 rounded-md shadow-sm uppercase tracking-widest">${n.date || 'Recent'}</span>
                                 ${delBtn}
                             </div>
                         </div>
@@ -2982,7 +3020,6 @@ window.markChatAsRead = async function() {
                     </div>`;
             });
         }
-
         window.submitNotice = async function() {
             const title = document.getElementById('notice-title').value.trim(); const text = document.getElementById('notice-body').value.trim();
             if(!title || !text) return; showLoader("Posting Notice...");
