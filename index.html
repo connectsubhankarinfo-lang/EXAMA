@@ -152,7 +152,7 @@
                 </div>
                 <h3 class="text-2xl font-black text-gray-900 mb-2">Absent Warning!</h3>
                 <p class="text-sm text-gray-600 mb-8 font-medium leading-relaxed" id="warning-text">You have been marked ABSENT for past exams.</p>
-                <button onclick="document.getElementById('warning-modal').classList.add('hidden-view')" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-4 rounded-2xl active:scale-95 transition-all shadow-xl shadow-red-500/30">I Understand</button>
+                <button id="btn-acknowledge-absent" onclick="acknowledgeAbsentWarning()" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-4 rounded-2xl active:scale-95 transition-all shadow-xl shadow-red-500/30">I Understand</button>
             </div>
         </div>
 
@@ -2088,7 +2088,7 @@ window.markChatAsRead = async function() {
             executeLoginUI(role, mob); hideLoader();
         });
 
-        function executeLoginUI(role, mob) {
+   function executeLoginUI(role, mob) {
             window.updatePresence(); 
             requestNotificationPermission(); 
             
@@ -2113,13 +2113,57 @@ window.markChatAsRead = async function() {
             if(role === 'student') {
                 document.getElementById('student-greeting').innerText = getGreeting();
                 document.getElementById('student-name-display').innerText = window.studentsDB.find(s => s.mobile === mob).name;
-                const myComputed = getComputedResults().filter(r => r.mobile === mob);
-                const absentCount = myComputed.filter(r => r.status === 'ABSENT').length;
-                if(absentCount > 0) {
-                    document.getElementById('warning-text').innerText = `You have been marked ABSENT for ${absentCount} past exam(s). This lowers your overall score.`;
-                    document.getElementById('warning-modal').classList.remove('hidden-view');
+                
+                // Trigger the new Database-backed warning check
+                checkAbsentWarning();
+            }
+        }
+
+        window.checkAbsentWarning = function() {
+            if(window.currentRole !== 'student' || !window.loggedInMobile) return;
+            const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+            if(!student) return;
+
+            const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
+            const absentRecords = myComputed.filter(r => r.status === 'ABSENT');
+            
+            // Find absences that the student hasn't officially acknowledged yet in the database
+            const ack = student.acknowledgedAbsences || [];
+            const unack = absentRecords.filter(r => !ack.includes(r.examId));
+
+            if(unack.length > 0) {
+                document.getElementById('warning-text').innerText = `You have been marked ABSENT for ${unack.length} recent exam(s). This severely lowers your overall score.`;
+                document.getElementById('warning-modal').classList.remove('hidden-view');
+                window.unackAbsences = unack.map(r => r.examId); // Save list of specific exam IDs to sync
+            }
+        }
+
+        window.acknowledgeAbsentWarning = async function() {
+            const btn = document.getElementById('btn-acknowledge-absent');
+            const origText = btn.innerHTML;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i>Saving...`;
+            btn.disabled = true;
+
+            // Save the acknowledgment permanently to the student's profile in Firestore
+            if (isFirebaseConfigured && window.unackAbsences && window.unackAbsences.length > 0) {
+                try {
+                    await updateDoc(doc(db, "students", window.loggedInMobile), { 
+                        acknowledgedAbsences: arrayUnion(...window.unackAbsences) 
+                    });
+                } catch(e) { console.error("Absent Save Error", e); }
+            } else {
+                // Local fallback testing
+                const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+                if(student) {
+                    if(!student.acknowledgedAbsences) student.acknowledgedAbsences = [];
+                    student.acknowledgedAbsences.push(...(window.unackAbsences || []));
                 }
             }
+
+            btn.innerHTML = origText;
+            btn.disabled = false;
+            document.getElementById('warning-modal').classList.add('hidden-view');
+            window.unackAbsences = []; // Reset
         }
 
         window.logout = function() {
