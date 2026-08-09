@@ -1824,23 +1824,43 @@ onSnapshot(collection(db, "student_tasks"), (snapshot) => {
         window.tokenClient = null;
         window.gdriveAccessToken = null;
 
-       function initGoogleDriveAPI() {
-            if(window.google && google.accounts) {
-                window.tokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', // <--- PASTE YOUR CLIENT ID HERE
-                    scope: 'https://www.googleapis.com/auth/drive.file',
-                    callback: (tokenResponse) => {
-                        if (tokenResponse && tokenResponse.access_token) {
-                            window.gdriveAccessToken = tokenResponse.access_token;
-                            // Login successful! Now open the file picker automatically
-                            document.getElementById('gdrive-file-input').click();
-                        }
-                    }
-                });
-            } else {
-                setTimeout(initGoogleDriveAPI, 500); 
+       let googleLoadAttempts = 0;
+function initGoogleDriveAPI() {
+    if(window.google && google.accounts) {
+        window.tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', 
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: (tokenResponse) => {
+                if (tokenResponse && tokenResponse.access_token) {
+                    window.gdriveAccessToken = tokenResponse.access_token;
+                    document.getElementById('gdrive-file-input').click();
+                }
             }
-        } 
+        });
+        console.log("Google API Initialized Successfully.");
+    } else {
+        googleLoadAttempts++;
+        if (googleLoadAttempts < 20) { // Try for 10 seconds
+            setTimeout(initGoogleDriveAPI, 500); 
+        } else {
+            console.error("Google API failed to load after 10 seconds. Blocked by WebView.");
+            // We change the alert so you know exactly what failed
+            window.googleApiBlocked = true; 
+        }
+    }
+}
+
+window.uploadDirectToDrive = function() {
+    if (window.googleApiBlocked) {
+        return alert("Google is blocking the login script inside this app wrapper. Please use Firebase upload instead.");
+    }
+    if (!window.gdriveAccessToken) {
+        if(!window.tokenClient) return alert("Still connecting to Google... please wait a few seconds and try again.");
+        window.tokenClient.requestAccessToken({prompt: 'consent'});
+    } else {
+        document.getElementById('gdrive-file-input').click();
+    }
+}
         // Kickstart the Google API immediately
         initGoogleDriveAPI();
 
