@@ -2795,10 +2795,11 @@ window.renderWeeklyTargets = function() {
             let totalPerc = 0; let totalSaved = 0; const chartLabels = []; const chartData = []; const chartStatuses = [];
             const today = new Date().toISOString().split('T')[0];
 
-            const savedTarget = localStorage.getItem(`exama_target_${window.loggedInMobile}`);
-            let neededForNextExam = null;
-            if(savedTarget) {
-                const targetPerc = parseFloat(savedTarget);
+            const currentStudent = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+const savedTarget = currentStudent ? currentStudent.targetPercentage : null;
+let neededForNextExam = null;
+if(savedTarget) {
+    const targetPerc = parseFloat(savedTarget);
                 const myTaken = myRecords.filter(r => !r.isVirtual);
                 const currentTotal = myTaken.reduce((acc, r) => acc + r.percentage, 0);
                 const remCount = window.examsDB.length - myTaken.length;
@@ -3348,13 +3349,25 @@ window.renderWeeklyTargets = function() {
             `;
         }
 
-        window.calculateTargetRequired = function() {
-            const target = parseFloat(document.getElementById('target-percentage-input').value);
-            if(isNaN(target)) return;
-            
-            localStorage.setItem(`exama_target_${window.loggedInMobile}`, target);
-            
-            const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
+        window.calculateTargetRequired = async function() {
+    const target = parseFloat(document.getElementById('target-percentage-input').value);
+    if(isNaN(target)) return;
+    
+    // --- NEW FIREBASE SAVE LOGIC ---
+    showLoader("Saving Target...");
+    if (isFirebaseConfigured) {
+        try {
+            await updateDoc(doc(db, "students", window.loggedInMobile), { targetPercentage: target });
+        } catch(e) { console.error("Target Save Error:", e); }
+    } else {
+        const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+        if(stu) stu.targetPercentage = target;
+    }
+    hideLoader();
+    // -------------------------------
+    
+    const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
+// ... rest of the code remains exactly the same
             const myTaken = myComputed.filter(r => !r.isVirtual);
             const takenCount = myTaken.length;
             const totalExamsCount = window.examsDB.length; 
