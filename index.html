@@ -1303,6 +1303,7 @@ window.weeklyTasksDB = []; window.studentTasksDB = []; window.currentWeekViewOff
                     generateExamAnalysis(); document.getElementById('exam-analysis-view').classList.remove('hidden-view');
                     break;
                 case 'target-calc':
+                    window.renderTargetCalc(); // Pull data from Firebase first
                     document.getElementById('target-calc-view').classList.remove('hidden-view');
                     break;
                 case 'leaderboard':
@@ -1564,11 +1565,9 @@ window.markChatAsRead = async function() {
                 onSnapshot(collection(db, "weekly_tasks"), (snapshot) => { 
     window.weeklyTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
     if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets(); 
+                    if(!document.getElementById('target-calc-view')?.classList.contains('hidden-view')) window.renderTargetCalc();
 });
-onSnapshot(collection(db, "student_tasks"), (snapshot) => { 
-    window.studentTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
-    if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets(); 
-});
+
 
                onSnapshot(query(collection(db, "chat"), orderBy("timestamp", "asc")), (snapshot) => {
                     const oldLen = window.chatDB.length;
@@ -3373,22 +3372,37 @@ if(savedTarget) {
             `;
         }
 
-        window.calculateTargetRequired = async function() {
+       window.renderTargetCalc = function() {
+            const currentStudent = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+            
+            if (currentStudent && currentStudent.targetPercentage) {
+                // Fill the input with the saved target
+                document.getElementById('target-percentage-input').value = currentStudent.targetPercentage;
+                // Calculate the path automatically without saving to database again
+                window.calculateTargetRequired(true); 
+            } else {
+                // Clear it if they have no target
+                document.getElementById('target-percentage-input').value = '';
+                document.getElementById('target-result-card').classList.add('hidden');
+            }
+        }
+        window.calculateTargetRequired = async function(isAutoLoad = false) {
     const target = parseFloat(document.getElementById('target-percentage-input').value);
     if(isNaN(target)) return;
     
-    // --- NEW FIREBASE SAVE LOGIC ---
-    showLoader("Saving Target...");
-    if (isFirebaseConfigured) {
-        try {
-            await updateDoc(doc(db, "students", window.loggedInMobile), { targetPercentage: target });
-        } catch(e) { console.error("Target Save Error:", e); }
-    } else {
-        const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
-        if(stu) stu.targetPercentage = target;
+    // ONLY save to Firebase if the user actually clicked the button
+    if (!isAutoLoad) {
+        showLoader("Saving Target...");
+        if (isFirebaseConfigured) {
+            try {
+                await updateDoc(doc(db, "students", window.loggedInMobile), { targetPercentage: target });
+            } catch(e) { console.error("Target Save Error:", e); }
+        } else {
+            const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+            if(stu) stu.targetPercentage = target;
+        }
+        hideLoader();
     }
-    hideLoader();
-    // -------------------------------
     
     const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
 // ... rest of the code remains exactly the same
