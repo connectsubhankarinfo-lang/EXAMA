@@ -1825,22 +1825,35 @@ onSnapshot(collection(db, "student_tasks"), (snapshot) => {
         window.gdriveAccessToken = null;
 
        function initGoogleDriveAPI() {
-            if(window.google && google.accounts) {
-                window.tokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', // <--- PASTE YOUR CLIENT ID HERE
-                    scope: 'https://www.googleapis.com/auth/drive.file',
-                    callback: (tokenResponse) => {
-                        if (tokenResponse && tokenResponse.access_token) {
-                            window.gdriveAccessToken = tokenResponse.access_token;
-                            // Login successful! Now open the file picker automatically
-                            document.getElementById('gdrive-file-input').click();
-                        }
-                    }
-                });
-            } else {
-                setTimeout(initGoogleDriveAPI, 500); 
+    // 1. Detect if running natively inside the Median app
+    const isMedianApp = window.median || window.gonative || navigator.userAgent.toLowerCase().includes('median') || navigator.userAgent.toLowerCase().includes('gonative');
+    
+    if (isMedianApp) {
+        console.log("Running in Median App: Google Web OAuth is unsupported. Hiding Drive option.");
+        // Find and hide the Direct Drive Upload button and its "OR" text
+        const driveBtn = document.querySelector('button[onclick="uploadDirectToDrive()"]');
+        if(driveBtn) {
+            driveBtn.parentElement.style.display = 'none';
+        }
+        return; // Stop trying to load the Google API
+    }
+
+    // 2. Standard web initialization for desktop/mobile browsers
+    if(window.google && google.accounts) {
+        window.tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com',
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: (tokenResponse) => {
+                if (tokenResponse && tokenResponse.access_token) {
+                    window.gdriveAccessToken = tokenResponse.access_token;
+                    document.getElementById('gdrive-file-input').click();
+                }
             }
-        } 
+        });
+    } else {
+        setTimeout(initGoogleDriveAPI, 500); 
+    }
+}
         // Kickstart the Google API immediately
         initGoogleDriveAPI();
 
