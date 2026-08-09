@@ -1303,12 +1303,8 @@ window.weeklyTasksDB = []; window.studentTasksDB = []; window.currentWeekViewOff
                     generateExamAnalysis(); document.getElementById('exam-analysis-view').classList.remove('hidden-view');
                     break;
                 case 'target-calc':
-    const curStu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
-    if (curStu && curStu.targetPercentage) {
-        document.getElementById('target-percentage-input').value = curStu.targetPercentage;
-    }
-    document.getElementById('target-calc-view').classList.remove('hidden-view');
-    break;
+                    document.getElementById('target-calc-view').classList.remove('hidden-view');
+                    break;
                 case 'leaderboard':
                     document.getElementById('leaderboard-view').classList.remove('hidden-view'); renderLeaderboard();
                     break;
@@ -3029,10 +3025,8 @@ if(savedTarget) {
             document.getElementById('ap-rank').innerText = rIdx !== -1 ? `#${rIdx + 1}` : '#-';
 
             // Fetch Target
-            const currentStudent = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
-const savedTarget = currentStudent ? currentStudent.targetPercentage : null;
-           const savedTarget = stu.targetPercentage || null;
-document.getElementById('ap-target').innerText = savedTarget ? `${savedTarget}%` : 'N/A';
+            const savedTarget = localStorage.getItem(`exama_target_${mobile}`);
+            document.getElementById('ap-target').innerText = savedTarget ? `${savedTarget}%` : 'N/A';
 
             // Weekly Task Completion Progress
             const stuTasksAssigned = window.weeklyTasksDB.filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile));
@@ -3311,8 +3305,7 @@ document.getElementById('ap-target').innerText = savedTarget ? `${savedTarget}%`
                 }
             } else { trajectoryHtml = `<p class="text-xs text-gray-500 font-medium">Take more exams to unlock trend analysis.</p>`; }
 
-           const currentStudent = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
-const savedTarget = currentStudent ? currentStudent.targetPercentage : null;
+            const savedTarget = localStorage.getItem(`exama_target_${window.loggedInMobile}`);
             let targetAnalysisHtml = '';
             if(savedTarget) {
                 const target = parseFloat(savedTarget);
@@ -3376,9 +3369,9 @@ const savedTarget = currentStudent ? currentStudent.targetPercentage : null;
 
         window.calculateTargetRequired = async function() {
     const target = parseFloat(document.getElementById('target-percentage-input').value);
-    if(isNaN(target)) return alert("Please enter a valid percentage.");
+    if(isNaN(target)) return;
     
-    // Save directly to Firestore / Local DB State
+    // --- NEW FIREBASE SAVE LOGIC ---
     showLoader("Saving Target...");
     if (isFirebaseConfigured) {
         try {
@@ -3389,90 +3382,92 @@ const savedTarget = currentStudent ? currentStudent.targetPercentage : null;
         if(stu) stu.targetPercentage = target;
     }
     hideLoader();
-
+    // -------------------------------
+    
     const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
-    const myTaken = myComputed.filter(r => !r.isVirtual);
-    const takenCount = myTaken.length;
-    const totalExamsCount = window.examsDB.length; 
-    const remainingCount = totalExamsCount - takenCount;
-    
-    if(takenCount === 0) { alert("Please complete at least one exam to use the predictor."); return; }
-    if(remainingCount <= 0) { alert("You have completed all scheduled exams! No pending exams remaining."); return; }
-    
-    const currentTotal = myTaken.reduce((acc, r) => acc + r.percentage, 0); 
-    const requiredTotal = target * totalExamsCount; 
-    const neededForRemaining = (requiredTotal - currentTotal) / remainingCount;
-    
-    const maxPossibleWithScheduled = currentTotal + (100 * remainingCount);
-    const maxPossibleAvg = maxPossibleWithScheduled / totalExamsCount;
-
-    const resCard = document.getElementById('target-result-card'); 
-    const scoreDisplay = document.getElementById('target-needed-score'); 
-    const advice = document.getElementById('target-advice');
-    const imaginaryCard = document.getElementById('target-imaginary-card');
-    const futureBreakdown = document.getElementById('target-future-breakdown');
-    
-    resCard.classList.remove('hidden');
-
-    if (target > maxPossibleAvg && target <= 100) {
-        let extraExams = Math.ceil(((target * totalExamsCount) - maxPossibleWithScheduled) / (100 - target));
-        if(extraExams < 1 || !isFinite(extraExams)) extraExams = 1;
-
-        scoreDisplay.innerText = `Requires > 100%`; 
-        scoreDisplay.className = "text-2xl font-black text-red-500 mt-1 leading-tight"; 
-        advice.innerText = `Target is mathematically impossible within the remaining ${remainingCount} scheduled exams.`; 
-        
-        imaginaryCard.classList.remove('hidden');
-        futureBreakdown.classList.add('hidden');
-        imaginaryCard.innerHTML = `
-            <h4 class="font-black text-red-800 text-sm flex items-center gap-1"><i class="fa-solid fa-bolt text-red-500"></i> Imaginary Horizon</h4>
-            <p class="text-xs text-red-700 mt-1 font-medium leading-relaxed">Even if you score 100% on the remaining scheduled exams, you will max out at an average of <strong>${maxPossibleAvg.toFixed(1)}%</strong>.</p>
-            <p class="text-xs text-red-700 mt-2 font-medium leading-relaxed">To successfully hit <strong>${target}%</strong>, you would need the administration to schedule <strong>${extraExams} additional exams</strong> and you must score a perfect 100% on all of them.</p>
-        `;
-    } else if (target > 100) {
-        scoreDisplay.innerText = "Invalid Target"; 
-        scoreDisplay.className = "text-2xl font-black text-red-500 mt-1"; 
-        advice.innerText = "Target cannot exceed 100%.";
-        imaginaryCard.classList.add('hidden');
-        futureBreakdown.classList.add('hidden');
-    } else if(neededForRemaining <= 0) { 
-        scoreDisplay.innerText = "0%"; 
-        scoreDisplay.className = "text-4xl font-black text-green-500 mt-1"; 
-        advice.innerText = "You have already secured enough marks to safely hit this target!"; 
-        imaginaryCard.classList.add('hidden');
-        futureBreakdown.classList.remove('hidden');
-    } else { 
-        scoreDisplay.innerText = `${neededForRemaining.toFixed(1)}%`; 
-        scoreDisplay.className = "text-4xl font-black text-indigo-600 mt-1"; 
-        advice.innerText = `You need to average ${neededForRemaining.toFixed(1)}% in your remaining ${remainingCount} scheduled exam(s).`; 
-        imaginaryCard.classList.add('hidden');
-        futureBreakdown.classList.remove('hidden');
-    }
-
-    if(target <= maxPossibleAvg) {
-        const grid = document.getElementById('target-scenarios-grid');
-        grid.innerHTML = '';
-        
-        const takenIds = myTaken.map(r => r.examId);
-        const upcomingExams = window.examsDB.filter(e => !takenIds.includes(e.id));
-        
-        upcomingExams.forEach(e => {
-            let requiredMarks = (neededForRemaining / 100) * e.totalMarks;
-            let c = 'text-indigo-700'; let txt = requiredMarks.toFixed(1);
+// ... rest of the code remains exactly the same
+            const myTaken = myComputed.filter(r => !r.isVirtual);
+            const takenCount = myTaken.length;
+            const totalExamsCount = window.examsDB.length; 
+            const remainingCount = totalExamsCount - takenCount;
             
-            if(requiredMarks <= 0) { c = 'text-green-500'; txt = '0'; }
+            if(takenCount === 0) { alert("Please complete at least one exam to use the predictor."); return; }
+            if(remainingCount <= 0) { alert("You have completed all scheduled exams! No pending exams remaining."); return; }
             
-            grid.innerHTML += `
-                <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-200 shadow-sm">
-                    <span class="text-xs font-bold text-gray-800 tracking-tight">${e.name}</span>
-                    <span class="text-xs font-black ${c}">${txt} <span class="text-gray-400 font-bold">/ ${e.totalMarks}</span></span>
-                </div>
-            `;
-        });
-    }
-    
-    renderStudentDashboard();
-}
+            const currentTotal = myTaken.reduce((acc, r) => acc + r.percentage, 0); 
+            const requiredTotal = target * totalExamsCount; 
+            const neededForRemaining = (requiredTotal - currentTotal) / remainingCount;
+            
+            const maxPossibleWithScheduled = currentTotal + (100 * remainingCount);
+            const maxPossibleAvg = maxPossibleWithScheduled / totalExamsCount;
+
+            const resCard = document.getElementById('target-result-card'); 
+            const scoreDisplay = document.getElementById('target-needed-score'); 
+            const advice = document.getElementById('target-advice');
+            const imaginaryCard = document.getElementById('target-imaginary-card');
+            const futureBreakdown = document.getElementById('target-future-breakdown');
+            
+            resCard.classList.remove('hidden');
+
+            if (target > maxPossibleAvg && target <= 100) {
+                let extraExams = Math.ceil(((target * totalExamsCount) - maxPossibleWithScheduled) / (100 - target));
+                if(extraExams < 1 || !isFinite(extraExams)) extraExams = 1;
+
+                scoreDisplay.innerText = `Requires > 100%`; 
+                scoreDisplay.className = "text-2xl font-black text-red-500 mt-1 leading-tight"; 
+                advice.innerText = `Target is mathematically impossible within the remaining ${remainingCount} scheduled exams.`; 
+                
+                imaginaryCard.classList.remove('hidden');
+                futureBreakdown.classList.add('hidden');
+                imaginaryCard.innerHTML = `
+                    <h4 class="font-black text-red-800 text-sm flex items-center gap-1"><i class="fa-solid fa-bolt text-red-500"></i> Imaginary Horizon</h4>
+                    <p class="text-xs text-red-700 mt-1 font-medium leading-relaxed">Even if you score 100% on the remaining scheduled exams, you will max out at an average of <strong>${maxPossibleAvg.toFixed(1)}%</strong>.</p>
+                    <p class="text-xs text-red-700 mt-2 font-medium leading-relaxed">To successfully hit <strong>${target}%</strong>, you would need the administration to schedule <strong>${extraExams} additional exams</strong> and you must score a perfect 100% on all of them.</p>
+                `;
+            } else if (target > 100) {
+                scoreDisplay.innerText = "Invalid Target"; 
+                scoreDisplay.className = "text-2xl font-black text-red-500 mt-1"; 
+                advice.innerText = "Target cannot exceed 100%.";
+                imaginaryCard.classList.add('hidden');
+                futureBreakdown.classList.add('hidden');
+            } else if(neededForRemaining <= 0) { 
+                scoreDisplay.innerText = "0%"; 
+                scoreDisplay.className = "text-4xl font-black text-green-500 mt-1"; 
+                advice.innerText = "You have already secured enough marks to safely hit this target!"; 
+                imaginaryCard.classList.add('hidden');
+                futureBreakdown.classList.remove('hidden');
+            } else { 
+                scoreDisplay.innerText = `${neededForRemaining.toFixed(1)}%`; 
+                scoreDisplay.className = "text-4xl font-black text-indigo-600 mt-1"; 
+                advice.innerText = `You need to average ${neededForRemaining.toFixed(1)}% in your remaining ${remainingCount} scheduled exam(s).`; 
+                imaginaryCard.classList.add('hidden');
+                futureBreakdown.classList.remove('hidden');
+            }
+
+            if(target <= maxPossibleAvg) {
+                const grid = document.getElementById('target-scenarios-grid');
+                grid.innerHTML = '';
+                
+                const takenIds = myTaken.map(r => r.examId);
+                const upcomingExams = window.examsDB.filter(e => !takenIds.includes(e.id));
+                
+                upcomingExams.forEach(e => {
+                    let requiredMarks = (neededForRemaining / 100) * e.totalMarks;
+                    let c = 'text-indigo-700'; let txt = requiredMarks.toFixed(1);
+                    
+                    if(requiredMarks <= 0) { c = 'text-green-500'; txt = '0'; }
+                    
+                    grid.innerHTML += `
+                        <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-200 shadow-sm">
+                            <span class="text-xs font-bold text-gray-800 tracking-tight">${e.name}</span>
+                            <span class="text-xs font-black ${c}">${txt} <span class="text-gray-400 font-bold">/ ${e.totalMarks}</span></span>
+                        </div>
+                    `;
+                });
+            }
+            
+            renderStudentDashboard();
+        }
 
         // C. DISCUS CHAT
         window.openChat = function() { window.location.hash = 'chat'; }
