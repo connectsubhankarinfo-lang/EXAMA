@@ -1542,7 +1542,7 @@ window.markChatAsRead = async function() {
         }
 
         // 1. DATA SYNC
-        async function fetchInitialData() {
+      async function fetchInitialData() {
             if (isFirebaseConfigured) {
                 onSnapshot(collection(db, "students"), (snapshot) => { window.studentsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); refreshUI(); });
                 onSnapshot(collection(db, "exams"), (snapshot) => { window.examsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); refreshUI(); });
@@ -1563,11 +1563,20 @@ window.markChatAsRead = async function() {
                     if(!document.getElementById('fitness-view').classList.contains('hidden-view')) renderFitnessMonitor();
                 });
                 onSnapshot(collection(db, "weekly_tasks"), (snapshot) => { 
-    window.weeklyTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
-    if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets(); 
+                    window.weeklyTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
+                    if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets(); 
                     if(!document.getElementById('target-calc-view')?.classList.contains('hidden-view')) window.renderTargetCalc();
-});
-
+                });
+                
+                // ---- THE FIX IS ADDED HERE ----
+                onSnapshot(collection(db, "student_tasks"), (snapshot) => {
+                    window.studentTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+                    if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets();
+                    if(!document.getElementById('admin-profile-view').classList.contains('hidden-view') && window.selectedAdminProfile) {
+                        renderAdminProfile(window.selectedAdminProfile);
+                    }
+                });
+                // --------------------------------
 
                onSnapshot(query(collection(db, "chat"), orderBy("timestamp", "asc")), (snapshot) => {
                     const oldLen = window.chatDB.length;
@@ -1587,7 +1596,6 @@ window.markChatAsRead = async function() {
 
                     if(!document.getElementById('community-chat-view').classList.contains('hidden-view')) {
                         renderChat();
-                        // CRITICAL FIX: Instantly sync "Seen" to database if user is actively viewing chat!
                         window.markChatAsRead();
                     } else {
                         updateChatUnreadCount();
@@ -1611,7 +1619,7 @@ window.markChatAsRead = async function() {
             } else {
                 window.studentsDB = [{ mobile: '123', password: '123', name: 'Demo Student' }];
                 window.examsDB = [{ id: 'e1', name: 'Demo Math Exam', date: '2026-08-05', totalMarks: 100, duration: 60, passPercentage: 40, examPin: '', globalStartTime: null, isPaused: false, pausedElapsed: 0, googleMeetUrl: '' }];
-                window.resultsDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.materialsDB = []; window.fitnessDB = [];
+                window.resultsDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];
                 window.chatDB = [{id: '1', mobile: 'admin', name: 'Admin', text: 'Welcome to Exama Community!', timestamp: Date.now()}];
                 await new Promise(r => setTimeout(r, 1000)); refreshUI(); checkUnreadNotices(); updateChatUnreadCount();
             }
