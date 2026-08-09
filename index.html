@@ -2146,16 +2146,22 @@ onSnapshot(collection(db, "student_tasks"), (snapshot) => {
 
 function getTargetWeekInfo(offset = 0) {
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize time to prevent mid-day shifts
     const day = today.getDay();
     const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(today.setDate(diff));
     
-    monday.setDate(monday.getDate() + (offset * 7));
+    const monday = new Date(today);
+    monday.setDate(diff + (offset * 7));
     
     const sunday = new Date(monday);
     sunday.setDate(sunday.getDate() + 6);
 
-    const weekKey = monday.toISOString().split('T')[0];
+    // Fix: Generate Local YYYY-MM-DD instead of UTC ISOString
+    const year = monday.getFullYear();
+    const month = String(monday.getMonth() + 1).padStart(2, '0');
+    const date = String(monday.getDate()).padStart(2, '0');
+    const weekKey = `${year}-${month}-${date}`;
+
     const displayStr = `${monday.toLocaleDateString('en-US', {month:'short', day:'numeric'})} - ${sunday.toLocaleDateString('en-US', {month:'short', day:'numeric'})}`;
     
     return { weekKey, displayStr };
@@ -3024,10 +3030,9 @@ if(savedTarget) {
             const rIdx = lb.findIndex(l => l.mobile === mobile);
             document.getElementById('ap-rank').innerText = rIdx !== -1 ? `#${rIdx + 1}` : '#-';
 
-            // Fetch Target
-            const savedTarget = localStorage.getItem(`exama_target_${mobile}`);
+           // Fetch Target Directly from Firebase (studentsDB)
+            const savedTarget = stu.targetPercentage;
             document.getElementById('ap-target').innerText = savedTarget ? `${savedTarget}%` : 'N/A';
-
             // Weekly Task Completion Progress
             const stuTasksAssigned = window.weeklyTasksDB.filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile));
             const totalStuTasks = stuTasksAssigned.length;
@@ -3305,7 +3310,8 @@ if(savedTarget) {
                 }
             } else { trajectoryHtml = `<p class="text-xs text-gray-500 font-medium">Take more exams to unlock trend analysis.</p>`; }
 
-            const savedTarget = localStorage.getItem(`exama_target_${window.loggedInMobile}`);
+            const currentStudent = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+            const savedTarget = currentStudent ? currentStudent.targetPercentage : null;
             let targetAnalysisHtml = '';
             if(savedTarget) {
                 const target = parseFloat(savedTarget);
