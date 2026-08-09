@@ -2595,34 +2595,47 @@ window.renderWeeklyTargets = function() {
 
         // 5. PERSISTENT AUTHENTICATION
         window.onload = async function() {
-            showLoader("Let's Crack !t");
-            await fetchInitialData();
-            initGoogleDriveAPI(); // Initialize Drive API on load
+    showLoader("Let's Crack !t");
+    await fetchInitialData();
+    initGoogleDriveAPI();
 
-            const savedRole = localStorage.getItem('exama_role'); 
-            const savedMob = localStorage.getItem('exama_mob'); 
-            const savedPass = localStorage.getItem('exama_pass');
+    const savedRole = localStorage.getItem('exama_role'); 
+    const savedMob = localStorage.getItem('exama_mob'); 
+    const savedPass = localStorage.getItem('exama_pass');
+    
+    if (savedRole && savedMob && savedPass) {
+        let isValid = false;
+        
+        if (savedRole === 'admin' && savedMob === '9475757821' && savedPass === 'Subhankar@0513') { 
+            isValid = true; 
+        } else if (savedRole === 'student') {
+            // Check if student exists in the database
+            const stu = window.studentsDB.find(s => s.mobile === savedMob && s.password === savedPass);
             
-            if (savedRole && savedMob && savedPass) {
-                let isValid = false;
-                if (savedRole === 'admin' && savedMob === '9475757821' && savedPass === 'Subhankar@0513') { isValid = true; } 
-                else if (savedRole === 'student') {
-                    const stu = window.studentsDB.find(s => s.mobile === savedMob && s.password === savedPass);
-                    if(stu) isValid = true;
-                }
-
-                if (isValid) {
-                    window.currentRole = savedRole; window.loggedInMobile = savedMob;
-                    executeLoginUI(savedRole, savedMob); 
-                    hideLoader(); 
-                    return;
-                } else { localStorage.clear(); }
+            if (stu) {
+                isValid = true;
+            } else if (window.studentsDB.length === 0) {
+                // Network delay / Offline mode fallback: Trust stored localStorage credentials instead of wiping them out
+                isValid = true;
+                // Inject minimal local user object so UI doesn't crash before network sync
+                window.studentsDB.push({ mobile: savedMob, password: savedPass, name: 'Student' });
             }
-            hideLoader(); 
-            window.location.hash = 'login';
-            handleHashChange();
-        };
+        }
 
+        if (isValid) {
+            window.currentRole = savedRole; 
+            window.loggedInMobile = savedMob;
+            executeLoginUI(savedRole, savedMob); 
+            hideLoader(); 
+            return;
+        }
+    }
+
+    // Only hide loader and show login screen if no valid saved credentials exist
+    hideLoader(); 
+    window.location.hash = 'login';
+    handleHashChange();
+};
         document.getElementById('login-form').addEventListener('submit', async function(e) {
             e.preventDefault();
             const role = document.getElementById('role').value; const mob = document.getElementById('mobile').value; const pass = document.getElementById('password').value;
