@@ -2305,16 +2305,89 @@ window.renderWeeklyTargets = function() {
                 </h4>
                 <div class="space-y-3 pl-2">
         `;
-        
         Object.keys(grouped[subject]).forEach(topic => {
-            let tasksHtml = '';
-            grouped[subject][topic].forEach(task => {
-                const isAdmin = window.currentRole === 'admin';
-                const checkClass = task.isCompleted ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-100 border-gray-300 text-transparent';
-                const textClass = task.isCompleted ? 'line-through text-gray-400' : 'text-gray-800';
-                
-                const delBtn = isAdmin ? `<button onclick="deleteWeeklyTask('${task.id}')" class="ml-auto text-red-400 hover:text-white hover:bg-red-500 w-6 h-6 rounded flex items-center justify-center transition-all"><i class="fa-solid fa-trash text-[10px]"></i></button>` : '';
+    let tasksHtml = '';
+    
+    grouped[subject][topic].forEach(task => {
+        const isAdmin = window.currentRole === 'admin';
+        let checkClass = '';
+        let textClass = '';
+        let adminProgressHtml = '';
 
+        const delBtn = isAdmin ? `` : '';
+
+        let assignBadge = '';
+        if (isAdmin && task.assignedTo && !task.assignedTo.includes('All')) {
+            const studentNames = task.assignedTo.map(mob => {
+                const s = window.studentsDB.find(stu => stu.mobile === mob);
+                return s ? s.name : mob;
+            });
+            assignBadge = `👤 Selected Students`;
+        }
+
+        if (isAdmin) {
+            // Admin View: Calculate cohort progress for this specific task
+            let assignedStudents = (!task.assignedTo || task.assignedTo.includes('All')) 
+                ? window.studentsDB 
+                : window.studentsDB.filter(s => task.assignedTo.includes(s.mobile));
+
+            const totalAssigned = assignedStudents.length;
+            
+            // Get all completions for this specific task ID
+            const completions = window.studentTasksDB.filter(st => st.taskId === task.id);
+            const completedMobiles = completions.map(c => c.mobile);
+            
+            const completedStudents = assignedStudents.filter(s => completedMobiles.includes(s.mobile));
+            const completedCount = completedStudents.length;
+            const perc = totalAssigned > 0 ? Math.round((completedCount / totalAssigned) * 100) : 0;
+            const completedNames = completedStudents.map(s => s.name).join(', ');
+
+            checkClass = perc === 100 ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-100 border-gray-300 text-transparent';
+            textClass = 'text-gray-900';
+
+            adminProgressHtml = `
+                
+                    
+                        Student Progress (${completedCount}/${totalAssigned})
+                        ${perc}%
+                    
+                    
+                        
+                    
+                    ${completedCount > 0 
+                        ? `Done by: ${completedNames}` 
+                        : `No completions yet`}
+                
+            `;
+        } else {
+            // Student View: Check if the logged-in student completed it
+            checkClass = task.isCompleted ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-100 border-gray-300 text-transparent';
+            textClass = task.isCompleted ? 'line-through text-gray-400' : 'text-gray-800';
+        }
+
+        tasksHtml += `
+            
+                
+                    
+                        
+                    
+                    
+                        ${task.taskDesc} ${assignBadge}
+                    
+                    ${delBtn}
+                
+                ${adminProgressHtml}
+            
+        `;
+    });
+
+    subjectHtml += `
+        
+            ${topic}
+            ${tasksHtml}
+        
+    `;
+});
                 // Map assigned mobile numbers to actual student names for Admin view
                 let assignBadge = '';
                 if (isAdmin && task.assignedTo && !task.assignedTo.includes('All')) {
