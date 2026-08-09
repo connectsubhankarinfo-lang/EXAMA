@@ -2279,9 +2279,12 @@ window.renderWeeklyTargets = function() {
         return;
     }
 
-    const grouped = {};
+   const grouped = {};
     let totalTasks = 0;
     let completedTasks = 0;
+
+    // 1. Sort tasks chronologically (First added stays on top)
+    weeksTasks.sort((a, b) => a.timestamp - b.timestamp);
 
     weeksTasks.forEach(task => {
         totalTasks++;
@@ -2297,8 +2300,21 @@ window.renderWeeklyTargets = function() {
     const progPerc = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
     document.getElementById('wt-progress-text').innerText = `${progPerc}%`;
     document.getElementById('wt-progress-bar').style.width = `${progPerc}%`;
+// 2. Define the strict ordering rules
+    const subjectOrder = ['Calculation', 'Vocabulary', 'English', 'Mathematics', 'Shorthand', 'General Knowledge', 'Reasoning'];
+    const topicOrder = ['Practice', 'Revision', 'Classes'];
 
-    Object.keys(grouped).forEach(subject => {
+    // Sort subjects based on the custom list
+    const sortedSubjects = Object.keys(grouped).sort((a, b) => {
+        const idxA = subjectOrder.indexOf(a);
+        const idxB = subjectOrder.indexOf(b);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.localeCompare(b); // Any unlisted subjects fall to the bottom
+    });
+
+    sortedSubjects.forEach(subject => {
         let subjectHtml = `
             <div class="mb-6">
                 <h4 class="font-black text-gray-900 text-lg border-b-2 border-teal-500 pb-1 mb-3 flex items-center gap-2">
@@ -2307,8 +2323,19 @@ window.renderWeeklyTargets = function() {
                 <div class="space-y-3 pl-2">
         `;
         
-        Object.keys(grouped[subject]).forEach(topic => {
+        // Sort topics inside this subject based on the custom list
+        const sortedTopics = Object.keys(grouped[subject]).sort((a, b) => {
+            const idxA = topicOrder.indexOf(a);
+            const idxB = topicOrder.indexOf(b);
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return a.localeCompare(b); // Any unlisted topics fall to the bottom
+        });
+
+        sortedTopics.forEach(topic => {
             let tasksHtml = '';
+            
             grouped[subject][topic].forEach(task => {
                 const isAdmin = window.currentRole === 'admin';
                 const checkClass = task.isCompleted ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-100 border-gray-300 text-transparent';
@@ -2316,7 +2343,6 @@ window.renderWeeklyTargets = function() {
                 
                 const delBtn = isAdmin ? `<button onclick="deleteWeeklyTask('${task.id}')" class="ml-auto text-red-400 hover:text-white hover:bg-red-500 w-6 h-6 rounded flex items-center justify-center transition-all"><i class="fa-solid fa-trash text-[10px]"></i></button>` : '';
 
-                // Map assigned mobile numbers to actual student names for Admin view
                 let assignBadge = '';
                 if (isAdmin && task.assignedTo && !task.assignedTo.includes('All')) {
                     const studentNames = task.assignedTo.map(mob => {
