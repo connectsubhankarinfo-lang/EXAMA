@@ -384,6 +384,18 @@
                             </div>
                         </div>
                     </div>
+                    <!-- LIVE SESSIONS BUTTON (Single 1x1 Grid) -->
+<div class="grid grid-cols-1 mt-3">
+    <div onclick="window.location.hash='session-timer'" class="glass-card p-3.5 rounded-[1.5rem] flex items-center justify-center gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-orange-200/50 hover:bg-orange-50/50">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-orange-400 to-red-500 text-white flex items-center justify-center shadow-md">
+            <i class="fa-solid fa-stopwatch text-lg"></i>
+        </div>
+        <div>
+            <h4 class="text-sm font-black text-gray-900 leading-tight">Focus Sessions</h4>
+            <p class="text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">Track live study & break hours</p>
+        </div>
+    </div>
+</div>
 
                     <!-- WEEKLY TARGETS BUTTON (Single 1x1 Grid) -->
                     <div class="grid grid-cols-1 mt-3">
@@ -397,6 +409,7 @@
                             </div>
                         </div>
                     </div>
+                    
                     <!-- PRINT PDF BUTTON -->
                     <div class="grid grid-cols-1 md:grid-cols-2 mt-3">
                         <div onclick="generatePDFReport()" class="glass-card p-3.5 rounded-[1.5rem] flex items-center justify-center gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-emerald-200/50 hover:bg-emerald-50/50 md:col-span-2">
@@ -410,6 +423,7 @@
                         </div>
                     </div>
                 </div>
+                
 
                 <!-- Live / Pending Exams -->
                 <div>
@@ -1194,7 +1208,61 @@
     </div>
 
     <!-- FIREBASE & CORE LOGIC -->
-    <script type="module">
+   
+   <!-- SESSION TIMER VIEW -->
+<div id="session-timer-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left md:rounded-[2.5rem]">
+    <div class="bg-gradient-to-r from-orange-500 to-red-600 text-white pt-12 pb-4 px-5 flex items-center gap-4 shadow-lg relative z-10 shrink-0">
+        <button onclick="safeBack()" class="w-10 h-10 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+            <i class="fa-solid fa-arrow-left text-lg"></i>
+        </button>
+        <div>
+            <h2 class="text-xl font-black tracking-tight">Focus Sessions</h2>
+            <p class="text-[10px] text-orange-100 font-bold tracking-widest uppercase" id="current-session-name">Determining Session...</p>
+        </div>
+    </div>
+    
+    <div class="flex-1 overflow-y-auto no-scrollbar p-5 space-y-6 relative md:w-3/4 md:mx-auto">
+        <!-- My Active Timer Card -->
+        <div class="glass-card p-6 rounded-[2rem] border-orange-200 shadow-md bg-white text-center">
+            <h3 class="font-black text-gray-900 text-sm mb-4">My Current Status</h3>
+            <div class="flex justify-center gap-6 mb-6">
+                <div>
+                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Study Time</p>
+                    <div id="st-study-time" class="text-4xl font-mono font-black text-orange-600">00:00:00</div>
+                </div>
+                <div>
+                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Break Time</p>
+                    <div id="st-break-time" class="text-xl font-mono font-bold text-gray-600 mt-2">00:00:00</div>
+                </div>
+            </div>
+            
+            <div id="session-controls" class="flex flex-wrap gap-2 justify-center">
+                <!-- Controls injected by JS -->
+            </div>
+        </div>
+
+        <!-- Live Peers Section -->
+        <div>
+            <h3 class="font-bold text-gray-900 mb-3 px-2 flex items-center gap-2 tracking-tight text-sm">
+                <i class="fa-solid fa-satellite-dish text-green-500 animate-pulse"></i> Live Peers Now
+            </h3>
+            <div id="live-peers-list" class="space-y-3"></div>
+        </div>
+
+        <!-- Chart Section -->
+        <div class="glass-card p-5 rounded-[2rem] border-orange-100 shadow-sm bg-white">
+            <h3 class="font-bold text-gray-900 mb-3 text-sm">This Week's Performance</h3>
+            <div class="h-32 w-full relative"><canvas id="sessionChart"></canvas></div>
+        </div>
+
+        <!-- History List -->
+        <div>
+            <h3 class="font-bold text-gray-900 mb-3 px-2 text-sm tracking-tight">Past Sessions</h3>
+            <div id="session-history-list" class="space-y-3"></div>
+        </div>
+    </div>
+</div>
+   <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
@@ -1206,7 +1274,263 @@
             appId: "1:670163422803:web:20fb4d598783dbd215c0a6",
             measurementId: "G-GZ2L1G71QX"
         };
+// ==========================================
+// LIVE SESSION TIMER LOGIC (UPDATED WITH REVERSE TIMER & MANUAL SELECTION)
+// ==========================================
+let sessionTimerInterval = null;
+let sessionChartInstance = null;
+const TOTAL_SESSION_MS = 14400000; // 4 Hours in milliseconds
 
+// Format MS to HH:MM:SS
+function formatTime(ms) {
+    if(ms < 0) ms = 0;
+    const totalSecs = Math.floor(ms / 1000);
+    const h = String(Math.floor(totalSecs / 3600)).padStart(2, '0');
+    const m = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0');
+    const s = String(totalSecs % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+}
+
+window.toggleSessionState = async function(action) {
+    const mobile = window.loggedInMobile;
+    const dateStr = new Date().toLocaleDateString('en-US');
+    let sessionType = '';
+
+    if(action === 'START' || action === 'ABSENT') {
+        const selectEl = document.getElementById('session-type-select');
+        if(!selectEl || !selectEl.value) {
+            alert("Please select a session first!");
+            return;
+        }
+        sessionType = selectEl.value;
+    } else {
+        // Find the active session to stop/break/resume
+        const active = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK'));
+        if(active) sessionType = active.sessionType;
+        else return; // Failsafe
+    }
+
+    showLoader("Updating Session...");
+    const id = `${mobile}_${dateStr.replace(/\//g,'-')}_${sessionType.split(' ')[0]}`;
+    
+    let existing = window.sessionsDB.find(s => s.id === id);
+    const now = Date.now();
+
+    // Prevent restarting a completed session
+    if (action === 'START' && existing && existing.status === 'COMPLETED') {
+        hideLoader();
+        alert(`You have already completed the ${sessionType.split(' ')[0]} session today!`);
+        return;
+    }
+
+    if (!existing) {
+        existing = {
+            id, mobile, dateStr, sessionType,
+            name: window.studentsDB.find(s => s.mobile === mobile).name,
+            status: action === 'START' ? 'STUDYING' : 'ABSENT',
+            lastToggleTime: now,
+            totalStudyMs: 0,
+            totalBreakMs: 0,
+            timestamp: now
+        };
+    } else {
+        // Calculate accrued time based on previous status
+        const elapsed = now - existing.lastToggleTime;
+        if (existing.status === 'STUDYING') existing.totalStudyMs += elapsed;
+        if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
+        
+        if (action === 'START' || action === 'RESUME') existing.status = 'STUDYING';
+        if (action === 'BREAK') existing.status = 'BREAK';
+        if (action === 'STOP') existing.status = 'COMPLETED';
+        if (action === 'ABSENT') existing.status = 'ABSENT';
+        
+        existing.lastToggleTime = now;
+    }
+
+    if (isFirebaseConfigured) await setDoc(doc(db, "sessions", id), existing);
+    else {
+        window.sessionsDB = window.sessionsDB.filter(s => s.id !== id);
+        window.sessionsDB.push(existing);
+    }
+    
+    // --- NEW: PUSH NOTIFICATION LOGIC (No Notice Board) ---
+    const timeString = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const sessionShortName = sessionType.split(' ')[0]; // Gets "Morning", "Afternoon", etc.
+
+    if (action === 'START') {
+        sendOneSignalPush("Focus Session Started 🚀", `${existing.name} started their ${sessionShortName} at ${timeString}.`);
+    } else if (action === 'BREAK') {
+        sendOneSignalPush("Session Pause ☕", `${existing.name} took a break at ${timeString}.`);
+    } else if (action === 'RESUME') {
+        sendOneSignalPush("Session Resumed ⚡", `${existing.name} resumed studying at ${timeString}.`);
+    } else if (action === 'STOP') {
+        sendOneSignalPush("Session Ended 🏁", `${existing.name} ended their ${sessionShortName} at ${timeString}.`);
+    }
+    // ------------------------------------------------------
+    hideLoader();
+    renderSessionTimer();
+};
+window.renderSessionTimer = function() {
+    if(sessionTimerInterval) clearInterval(sessionTimerInterval);
+    
+    const mobile = window.loggedInMobile;
+    const dateStr = new Date().toLocaleDateString('en-US');
+    
+    // Check if the student has a session actively running right now
+    let mySession = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK'));
+    
+    const controlDiv = document.getElementById('session-controls');
+    
+    if (!mySession) {
+        document.getElementById('current-session-name').innerText = "Select a Session";
+        document.getElementById('st-study-time').innerText = "04:00:00";
+        document.getElementById('st-break-time').innerText = "00:00:00";
+        
+        // Show selection dropdown
+        controlDiv.innerHTML = `
+            <select id="session-type-select" class="w-full mb-4 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-700 outline-none cursor-pointer">
+                <option value="" disabled selected>-- Select Session to Start --</option>
+                <option value="Morning Session (6 AM - 12 PM)">Morning Session (6 AM - 12 PM)</option>
+                <option value="Afternoon Session (12 PM - 6 PM)">Afternoon Session (12 PM - 6 PM)</option>
+                <option value="Evening Session (6 PM - 12 AM)">Evening Session (6 PM - 12 AM)</option>
+            </select>
+            <div class="flex gap-2 w-full">
+                <button onclick="toggleSessionState('START')" class="flex-[2] bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-3.5 rounded-xl shadow-lg active:scale-95 transition-all"><i class="fa-solid fa-play mr-2"></i>Start Timer</button>
+                <button onclick="toggleSessionState('ABSENT')" class="flex-1 bg-gray-100 text-gray-500 font-bold py-3.5 rounded-xl border border-gray-200 active:scale-95 transition-all">Absent</button>
+            </div>
+        `;
+    } else {
+        document.getElementById('current-session-name').innerText = mySession.sessionType;
+        
+        // Show pause/stop controls
+        if (mySession.status === 'STUDYING') {
+            controlDiv.innerHTML = `
+                <button onclick="toggleSessionState('BREAK')" class="flex-1 bg-amber-100 text-amber-700 font-bold py-3.5 rounded-xl border border-amber-200 active:scale-95 transition-all"><i class="fa-solid fa-mug-hot mr-2"></i>Take Break</button>
+                <button onclick="toggleSessionState('STOP')" class="flex-1 bg-red-100 text-red-700 font-bold py-3.5 rounded-xl border border-red-200 active:scale-95 transition-all"><i class="fa-solid fa-stop mr-2"></i>End Session</button>
+            `;
+        } else if (mySession.status === 'BREAK') {
+            controlDiv.innerHTML = `
+                <button onclick="toggleSessionState('RESUME')" class="flex-1 bg-green-100 text-green-700 font-bold py-3.5 rounded-xl border border-green-200 active:scale-95 transition-all"><i class="fa-solid fa-play mr-2"></i>Resume</button>
+                <button onclick="toggleSessionState('STOP')" class="flex-1 bg-red-100 text-red-700 font-bold py-3.5 rounded-xl border border-red-200 active:scale-95 transition-all"><i class="fa-solid fa-stop mr-2"></i>End Session</button>
+            `;
+        }
+    }
+
+    // Start Live Ticker
+    sessionTimerInterval = setInterval(() => {
+        updateLiveTimers(mySession);
+    }, 1000);
+    updateLiveTimers(mySession); // Immediate run
+    
+    renderSessionHistory();
+};
+
+function updateLiveTimers(mySession) {
+    const now = Date.now();
+    
+    // 1. Update My Reverse Timers
+    if (mySession) {
+        let studyMs = mySession.totalStudyMs;
+        let breakMs = mySession.totalBreakMs;
+        
+        if (mySession.status === 'STUDYING') studyMs += (now - mySession.lastToggleTime);
+        if (mySession.status === 'BREAK') breakMs += (now - mySession.lastToggleTime);
+        
+        // Reverse calculation (4 Hours - Elapsed)
+        let remainingStudyMs = TOTAL_SESSION_MS - studyMs;
+        if (remainingStudyMs <= 0) remainingStudyMs = 0; // Prevent negative time
+        
+        document.getElementById('st-study-time').innerText = formatTime(remainingStudyMs);
+        document.getElementById('st-break-time').innerText = formatTime(breakMs); // Break still counts up
+    }
+
+    // 2. Update Live Peers
+    const peersDiv = document.getElementById('live-peers-list');
+    const activePeers = window.sessionsDB.filter(s => 
+        s.dateStr === new Date().toLocaleDateString('en-US') &&
+        (s.status === 'STUDYING' || s.status === 'BREAK') && 
+        s.mobile !== window.loggedInMobile
+    );
+
+    if (activePeers.length === 0) {
+        peersDiv.innerHTML = `<p class="text-xs text-gray-500 font-medium text-center py-2 border border-dashed border-gray-300 rounded-xl">No peers are currently live.</p>`;
+        return;
+    }
+
+    let peersHtml = '';
+    activePeers.forEach(peer => {
+        let pStudy = peer.totalStudyMs;
+        
+        if (peer.status === 'STUDYING') pStudy += (now - peer.lastToggleTime);
+        
+        let pRem = TOTAL_SESSION_MS - pStudy;
+        if (pRem < 0) pRem = 0;
+        
+        const badgeColor = peer.status === 'STUDYING' ? 'bg-green-100 text-green-700 border-green-200 pulse-red' : 'bg-amber-100 text-amber-700 border-amber-200';
+        
+        peersHtml += `
+            <div class="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-xs shadow-inner">${peer.name.substring(0,2).toUpperCase()}</div>
+                    <div>
+                        <h4 class="font-bold text-gray-900 text-xs">${peer.name} <span class="text-[9px] text-gray-400 font-medium ml-1">(${peer.sessionType.split(' ')[0]})</span></h4>
+                        <p class="text-[9px] text-orange-500 font-bold uppercase mt-0.5 tracking-widest"><i class="fa-solid fa-stopwatch mr-1"></i>${formatTime(pRem)} remaining</p>
+                    </div>
+                </div>
+                <div class="text-[9px] font-black px-2 py-1 rounded uppercase shadow-sm border ${badgeColor}">${peer.status}</div>
+            </div>`;
+    });
+    peersDiv.innerHTML = peersHtml;
+}
+
+function renderSessionHistory() {
+    const myHistory = window.sessionsDB.filter(s => s.mobile === window.loggedInMobile).sort((a,b) => b.timestamp - a.timestamp);
+    const histDiv = document.getElementById('session-history-list');
+    histDiv.innerHTML = '';
+    
+    const chartLabels = [];
+    const chartData = [];
+    
+    myHistory.forEach((session, idx) => {
+        // Collect data for chart (Last 7 sessions)
+        if(idx < 7 && session.status !== 'ABSENT') {
+            chartLabels.unshift(session.dateStr.substring(0,5) + ' ' + session.sessionType.substring(0, 3));
+            chartData.unshift((session.totalStudyMs / 3600000).toFixed(2)); // Hours
+        }
+
+        let statusColor = 'text-gray-500 bg-gray-100';
+        if(session.status === 'COMPLETED' || session.status === 'STUDYING') statusColor = 'text-green-600 bg-green-100';
+        if(session.status === 'ABSENT') statusColor = 'text-red-600 bg-red-100';
+
+        histDiv.innerHTML += `
+            <div class="glass-card p-3 rounded-2xl flex justify-between items-center shadow-sm">
+                <div>
+                    <h4 class="font-bold text-gray-900 text-xs mb-1">${session.sessionType}</h4>
+                    <p class="text-[9px] text-gray-400 font-bold uppercase tracking-widest">${session.dateStr}</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-[10px] font-black ${statusColor} px-2 py-0.5 rounded uppercase inline-block mb-1">${session.status}</p>
+                    <p class="text-[10px] text-gray-600 font-bold">⏱ ${formatTime(session.totalStudyMs)} Studied</p>
+                </div>
+            </div>`;
+    });
+
+    if(myHistory.length === 0) histDiv.innerHTML = `<p class="text-xs text-gray-500 font-medium text-center">No past sessions found.</p>`;
+
+    // Render Chart
+    const ctx = document.getElementById('sessionChart').getContext('2d');
+    if(sessionChartInstance) sessionChartInstance.destroy();
+    
+    let grad = ctx.createLinearGradient(0, 0, 0, 150);
+    grad.addColorStop(0, '#f97316'); // Orange
+    grad.addColorStop(1, '#ef4444'); // Red
+
+    sessionChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: chartLabels, datasets: [{ label: 'Study Hrs', data: chartData, backgroundColor: grad, borderRadius: 6 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 4, ticks: { font: {size:9} } }, x: { ticks: { font: {size:9} } } } }
+    });
+}
         const isFirebaseConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
         let db; 
         if (isFirebaseConfigured) {
@@ -1214,7 +1538,7 @@
             db = getFirestore(app);
         }
 
-       window.studentsDB = []; window.examsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.materialsDB = []; window.fitnessDB = [];
+       window.studentsDB = []; window.examsDB = [];window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.materialsDB = []; window.fitnessDB = [];
 window.weeklyTasksDB = []; window.studentTasksDB = []; window.currentWeekViewOffset = 0;
         window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;
         let chartInstance = null; let adminProfileChartInstance = null; let analysisChartInstance = null; let fitnessChartInstance = null; let globalTimerInterval = null;
@@ -1277,6 +1601,10 @@ window.weeklyTasksDB = []; window.studentTasksDB = []; window.currentWeekViewOff
                     else document.getElementById('add-notice-btn').classList.add('hidden');
                     document.getElementById('notice-board-view').classList.remove('hidden-view'); renderNotices(); 
                     break;
+                    case 'session-timer':
+    document.getElementById('session-timer-view').classList.remove('hidden-view');
+    renderSessionTimer();
+    break;
                 case 'materials':
                     if (window.currentRole === 'admin') {
                         document.getElementById('btn-upload-material').classList.remove('hidden');
@@ -1577,7 +1905,12 @@ window.markChatAsRead = async function() {
                     }
                 });
                 // --------------------------------
-
+onSnapshot(collection(db, "sessions"), (snapshot) => {
+    window.sessionsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    if(!document.getElementById('session-timer-view')?.classList.contains('hidden-view')) {
+        renderSessionTimer();
+    }
+});
                onSnapshot(query(collection(db, "chat"), orderBy("timestamp", "asc")), (snapshot) => {
                     const oldLen = window.chatDB.length;
                     window.chatDB = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
