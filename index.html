@@ -468,7 +468,7 @@
             <div class="flex-1 overflow-y-auto no-scrollbar p-5 pb-28 space-y-8">
                 <div>
                     <h3 class="font-bold text-gray-900 mb-4 px-2 tracking-tight text-lg">Exam Management</h3>
-                    <div id="admin-exams-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                   <div id="admin-exams-list" class="space-y-6"></div>
                 </div>
                 <div>
                     <div class="flex justify-between items-end mb-4 px-2">
@@ -2930,10 +2930,31 @@ if(savedTarget) {
             const stuList = document.getElementById('admin-students-directory');
             examList.innerHTML = ''; stuList.innerHTML = '';
 
+            // 1. Group Exams
+            const todayStr = new Date().toISOString().split('T')[0];
+            let todayExams = [];
+            let upcomingExams = [];
+            let doneExams = [];
+
             window.examsDB.forEach(exam => {
+                if (exam.isEnded || exam.date < todayStr) {
+                    doneExams.push(exam);
+                } else if (exam.date === todayStr) {
+                    todayExams.push(exam);
+                } else {
+                    upcomingExams.push(exam);
+                }
+            });
+
+            // Sort upcoming (closest first) and done (most recent first)
+            upcomingExams.sort((a, b) => new Date(a.date) - new Date(b.date));
+            doneExams.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            // 2. Helper function to generate individual Exam Cards
+            const generateCard = (exam) => {
                 const pinIcon = exam.examPin ? `<i class="fa-solid fa-key text-indigo-400 ml-2 text-xs" title="Passkey Protected: ${exam.examPin}"></i>` : '';
                 
-              let statusBadge = `<span class="bg-gray-100 text-gray-500 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm">Ready</span>`;
+                let statusBadge = `<span class="bg-gray-100 text-gray-500 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm">Ready</span>`;
                 if(exam.isEnded) {
                     statusBadge = `<span class="bg-purple-100 text-purple-600 text-[9px] font-black tracking-widest px-2 py-1 rounded uppercase shadow-sm">Ended</span>`;
                 } else if(exam.globalStartTime && !exam.isPaused) {
@@ -2955,7 +2976,8 @@ if(savedTarget) {
                     timerControls = `<button onclick="window.resumeGlobalExam('${exam.id}')" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all"><i class="fa-solid fa-play mr-1"></i>Resume</button>
                                      <button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1 rounded-lg text-[10px] font-bold shadow-sm transition-all ml-2"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`;
                 }
-                examList.innerHTML += `
+
+                return `
                     <div class="glass-card p-5 rounded-[2rem] flex flex-col gap-3 group hover:-translate-y-1 transition-all duration-300">
                         <div class="flex justify-between items-start">
                             <div>
@@ -2973,8 +2995,37 @@ if(savedTarget) {
                             </div>
                         </div>
                     </div>`;
-            });
+            };
 
+            // 3. Helper function to wrap sections with titles
+            const buildSection = (title, icon, textColor, borderColor, exams) => {
+                if (exams.length === 0) return '';
+                const cardsHtml = exams.map(e => generateCard(e)).join('');
+                return `
+                    <div class="mb-4">
+                        <h4 class="text-sm font-black ${textColor} uppercase tracking-widest mb-3 flex items-center gap-2 border-b ${borderColor} pb-2">
+                            <i class="${icon}"></i> ${title} 
+                            <span class="bg-gray-100 text-gray-600 text-[9px] px-2 py-0.5 rounded-md shadow-sm ml-auto">${exams.length}</span>
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            ${cardsHtml}
+                        </div>
+                    </div>`;
+            };
+
+            // 4. Render Everything
+            let finalHtml = '';
+            finalHtml += buildSection("Today's Exams", "fa-solid fa-bolt", "text-rose-600", "border-rose-200", todayExams);
+            finalHtml += buildSection("Upcoming Exams", "fa-solid fa-calendar-day", "text-blue-600", "border-blue-200", upcomingExams);
+            finalHtml += buildSection("Completed / Past Exams", "fa-solid fa-check-double", "text-purple-600", "border-purple-200", doneExams);
+
+            if (!finalHtml) {
+                finalHtml = `<div class="text-xs text-gray-500 font-medium italic p-6 text-center border border-dashed border-gray-300 rounded-2xl w-full">No exams available. Create one using the floating + button!</div>`;
+            }
+
+            examList.innerHTML = finalHtml;
+
+            // --- Render Student Directory (unchanged) ---
             window.studentsDB.forEach(stu => {
                 const stuRecords = getComputedResults().filter(r => r.mobile === stu.mobile);
                 const examsTaken = stuRecords.length; let avgStr = 'No exams';
