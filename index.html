@@ -737,9 +737,12 @@
                     <h2 class="text-[16px] font-bold leading-tight flex items-center gap-1">Discus Community <i class="fa-solid fa-circle-check text-blue-200 text-xs"></i></h2>
                     <p id="chat-online-count" class="text-[11px] text-[#baf1e9] font-medium flex items-center gap-1"></p>
                 </div>
-                <button id="chat-share-btn" onclick="sharePerformance()" class="w-8 h-8 rounded-full flex items-center justify-center text-white active:bg-white/20 transition-all" title="Share My Stats">
-                    <i class="fa-solid fa-trophy"></i>
-                </button>
+                <!-- WhatsApp Style Video Call & Performance Buttons -->
+                <div class="flex items-center gap-1">
+                    <button onclick="startDiscusVideoCall()" class="w-8 h-8 rounded-full flex items-center justify-center text-white active:bg-white/20 transition-all" title="Video Call">
+                        <i class="fa-solid fa-video text-base"></i>
+                    </button>
+                </div>
             </div>
             
             <div id="chat-messages" class="flex-1 overflow-y-auto no-scrollbar p-4 chat-bg flex flex-col pb-4"></div>
@@ -755,16 +758,38 @@
                 
                 <form onsubmit="event.preventDefault(); sendChatMessage();" class="flex gap-2 items-end">
                     <div class="flex-1 bg-white rounded-[24px] flex items-center px-2 py-1 shadow-sm overflow-hidden">
-                        <label class="text-gray-400 hover:text-[#128C7E] cursor-pointer p-2 transition-colors shrink-0">
+                        
+                        <!-- Share Image Paperclip -->
+                        <label class="text-gray-400 hover:text-[#128C7E] cursor-pointer p-2 transition-colors shrink-0" title="Share Photos">
                             <i class="fa-solid fa-paperclip text-xl"></i>
                             <input type="file" accept="image/*" multiple class="hidden" onchange="uploadChatImages(event)">
                         </label>
-                        <textarea id="chat-input" placeholder="Type a message" rows="1" class="flex-1 bg-transparent px-2 py-2 outline-none font-medium text-gray-900 resize-none max-h-24 min-h-[40px] text-[15px]"></textarea>
+                        
+                        <!-- Share Performance Trophy (Side-by-side) -->
+                        <button type="button" id="chat-share-btn" onclick="sharePerformance()" class="text-gray-400 hover:text-[#128C7E] p-2 transition-colors shrink-0" title="Share Stats">
+                            <i class="fa-solid fa-trophy text-lg"></i>
+                        </button>
+
+                        <textarea id="chat-input" placeholder="Type a message..." rows="1" class="flex-1 bg-transparent px-2 py-2 outline-none font-medium text-gray-900 resize-none max-h-24 min-h-[40px] text-[15px]"></textarea>
                     </div>
                     <button type="submit" class="w-11 h-11 bg-[#128C7E] text-white rounded-full flex items-center justify-center hover:bg-[#075E54] active:scale-95 transition-all shadow-sm shrink-0 mb-0.5">
                         <i class="fa-solid fa-paper-plane text-[15px] ml-[-2px]"></i>
                     </button>
                 </form>
+            </div>
+            
+            <!-- DISCUS AUTO VIDEO CALL MODAL -->
+            <div id="discus-video-modal" class="hidden-view absolute inset-0 z-[100] bg-black/95 flex flex-col slide-left md:rounded-[2.5rem]">
+                <div class="bg-gray-900 px-4 py-3 flex justify-between items-center border-b border-gray-800 shrink-0">
+                    <div class="flex items-center gap-2 text-white">
+                        <i class="fa-solid fa-video text-green-400 animate-pulse"></i>
+                        <span class="font-bold text-sm">Discus Live Video Call</span>
+                    </div>
+                    <button onclick="closeDiscusVideoCall()" class="w-8 h-8 bg-white/20 hover:bg-white/40 text-white rounded-full flex items-center justify-center transition-all active:scale-90">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div id="discus-jitsi-container" class="flex-1 w-full bg-black relative"></div>
             </div>
         </div>
 
@@ -1647,6 +1672,10 @@ window.weeklyTasksDB = []; window.studentTasksDB = []; window.currentWeekViewOff
             if (window.jitsiApi) {
                 window.jitsiApi.dispose();
                 window.jitsiApi = null;
+            }
+            if (window.chatJitsiApi) {
+                window.chatJitsiApi.dispose();
+                window.chatJitsiApi = null;
             }
         }
 
@@ -3245,7 +3274,7 @@ window.renderWeeklyTargets = function() {
                 </div>`;
         }
 
-       function renderStudentDashboard() {
+        function renderStudentDashboard() {
             const curStu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
             if (curStu) {
                 document.getElementById('student-name-display').innerText = curStu.name;
@@ -4368,7 +4397,7 @@ window.renderWeeklyTargets = function() {
                 
                 // FORCE the iframe to join the meeting instantly without waiting for a user click
                 window.jitsiApi.executeCommand('join');
-           
+            
             } else {
                 proctorPanel.classList.add('hidden');
                 meetContainer.innerHTML = '';
@@ -4586,6 +4615,54 @@ window.renderWeeklyTargets = function() {
                     </div>`;
             });
         }
+        
+        window.chatJitsiApi = null;
+
+        window.startDiscusVideoCall = function() {
+            const container = document.getElementById('discus-jitsi-container');
+            const modal = document.getElementById('discus-video-modal');
+            modal.classList.remove('hidden-view');
+            container.innerHTML = '';
+
+            if (window.chatJitsiApi) {
+                window.chatJitsiApi.dispose();
+                window.chatJitsiApi = null;
+            }
+
+            const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || 'Student';
+
+            const options = {
+                roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall',
+                parentNode: container,
+                width: '100%',
+                height: '100%',
+                configOverwrite: {
+                    prejoinPageEnabled: false,
+                    prejoinConfig: { enabled: false },
+                    requireDisplayName: false,
+                    startWithAudioMuted: false,
+                    startWithVideoMuted: false,
+                    disableDeepLinking: true
+                },
+                interfaceConfigOverwrite: {
+                    TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'hangup', 'tileview'],
+                    SHOW_JITSI_WATERMARK: false
+                },
+                userInfo: { displayName: senderName }
+            };
+
+            // Auto initialize and auto-join instantly
+            window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options);
+            window.chatJitsiApi.executeCommand('join');
+        };
+
+        window.closeDiscusVideoCall = function() {
+            if (window.chatJitsiApi) {
+                window.chatJitsiApi.dispose();
+                window.chatJitsiApi = null;
+            }
+            document.getElementById('discus-video-modal').classList.add('hidden-view');
+        };
     </script>
 </body>
 </html>
