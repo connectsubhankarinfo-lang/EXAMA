@@ -4618,7 +4618,7 @@ window.renderWeeklyTargets = function() {
         
         window.chatJitsiApi = null;
 
-        window.startDiscusVideoCall = function() {
+        window.startDiscusVideoCall = async function() {
             const container = document.getElementById('discus-jitsi-container');
             const modal = document.getElementById('discus-video-modal');
             modal.classList.remove('hidden-view');
@@ -4629,7 +4629,7 @@ window.renderWeeklyTargets = function() {
                 window.chatJitsiApi = null;
             }
 
-            const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || 'Student';
+            const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'Admin' : 'Student');
 
             const options = {
                 roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall',
@@ -4646,7 +4646,8 @@ window.renderWeeklyTargets = function() {
                 },
                 interfaceConfigOverwrite: {
                     TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'hangup', 'tileview'],
-                    SHOW_JITSI_WATERMARK: false
+                    SHOW_JITSI_WATERMARK: false,
+                    SHOW_PROMOTIONAL_CLOSE_PAGE: false
                 },
                 userInfo: { displayName: senderName }
             };
@@ -4654,10 +4655,19 @@ window.renderWeeklyTargets = function() {
             // Auto initialize and auto-join instantly
             window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options);
             window.chatJitsiApi.executeCommand('join');
-            
-            // --- NEW: SEND PUSH NOTIFICATION TO EVERYONE ---
-            sendOneSignalPush("📹 Live Video Call Started", `${senderName} just started a video call in the Discus Community. Tap to join!`);
-        
+
+            // --- NEW: SEND AUTOMATED CHAT MESSAGE ---
+            const callMessage = "📹 I have joined the Live Video Call. Tap the video icon at the top to join me!";
+            await window.dbSendChat({ 
+                text: callMessage, 
+                mobile: window.loggedInMobile, 
+                name: senderName, 
+                timestamp: Date.now(), 
+                replyTo: null 
+            });
+
+            // --- NEW: SEND PUSH NOTIFICATION ---
+            sendOneSignalPush("📹 Live Video Call", `${senderName} started a video call in the Discus Community!`);
         };
 
         window.closeDiscusVideoCall = function() {
