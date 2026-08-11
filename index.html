@@ -315,7 +315,7 @@
                 <!-- Advanced Stats Grid -->
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="glass-card p-5 rounded-[2rem] hover:-translate-y-1 transition-all duration-300 md:col-span-2">
-                        <div class="flex items-center gap-2 mb-2"><i class="fa-solid fa-chart-pie text-indigo-500 text-xs"></i><span class="text-gray-500 text-[10px] font-bold uppercase tracking-widest">This Week's Avg</span></div>
+                        <div class="flex items-center gap-2 mb-2"><i class="fa-solid fa-chart-pie text-indigo-500 text-xs"></i><span class="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Avg Score</span></div>
                         <div class="text-3xl font-black text-gray-900 flex items-baseline gap-1" id="student-avg">0<span class="text-xl text-gray-400 font-bold">%</span></div>
                         <div id="student-saved-time" class="text-[10px] font-bold text-emerald-500 mt-1">⏱ Total Early: 0m</div>
                     </div>
@@ -1201,33 +1201,7 @@
         }
 
         window.addEventListener('hashchange', handleHashChange);
-        window.isThisWeek = function(dateStr) {
-    if (!dateStr || !dateStr.includes('/')) return false;
-    
-    const parts = dateStr.split('/');
-    // 1. Get Exam Date
-    const exDate = new Date(parts[2], parts[1] - 1, parts[0]);
-    exDate.setHours(0,0,0,0);
-    
-    // 2. Get Today's Date
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    
-    // 3. Find the Monday of THIS week
-    const currentDay = today.getDay();
-    const currentDiff = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
-    const currentMonday = new Date(today);
-    currentMonday.setDate(currentDiff);
-    
-    // 4. Find the Monday of the EXAM'S week
-    const exDay = exDate.getDay();
-    const exDiff = exDate.getDate() - exDay + (exDay === 0 ? -6 : 1);
-    const exMonday = new Date(exDate);
-    exMonday.setDate(exDiff);
-    
-    // 5. If they share the exact same Monday, they are in the same week!
-    return currentMonday.getTime() === exMonday.getTime();
-};
+        
         // --- GLOBAL DATE FORMATTER ---
         window.formatDateDDMMYYYY = function(dateObj = new Date()) {
             const d = String(dateObj.getDate()).padStart(2, '0');
@@ -1758,13 +1732,7 @@
 
         function getOverallLeaderboard() {
             const studentAverages = {}; window.studentsDB.forEach(s => studentAverages[s.mobile] = { mobile: s.mobile, name: s.name, totalPerc: 0, count: 0 });
-            getComputedResults().forEach(r => { 
-                const exam = window.examsDB.find(e => e.id === r.examId);
-                if(exam && window.isThisWeek(exam.date) && studentAverages[r.mobile]) { 
-                    studentAverages[r.mobile].totalPerc += r.percentage; 
-                    studentAverages[r.mobile].count += 1; 
-                } 
-            });
+            getComputedResults().forEach(r => { if(studentAverages[r.mobile]) { studentAverages[r.mobile].totalPerc += r.percentage; studentAverages[r.mobile].count += 1; } });
             const leaderboard = Object.values(studentAverages).map(s => ({ ...s, avg: s.count > 0 ? (s.totalPerc / s.count).toFixed(1) : 0, count: s.count }));
             leaderboard.sort((a, b) => b.avg - a.avg); return leaderboard;
         }
@@ -2106,7 +2074,7 @@ function refreshUI() {
             });
 
             myRecords.forEach(r => { const exam = window.examsDB.find(e => e.id === r.examId); if(!exam) return; totalPerc += r.percentage; if(r.timeSaved) totalSaved += r.timeSaved; chartLabels.push(exam.name.substring(0,6) + '...'); chartData.push(r.percentage); chartStatuses.push(r.status); recordsList.innerHTML += buildRecordHTML(r, exam, calculateClassRank(exam.id, r.mobile)); });
-            const weeklyRecords = myRecords.filter(r => { const ex = window.examsDB.find(e => e.id === r.examId); return ex && window.isThisWeek(ex.date); }); const weeklyTotal = weeklyRecords.reduce((acc, r) => acc + r.percentage, 0); document.getElementById('student-avg').innerHTML = weeklyRecords.length > 0 ? (weeklyTotal / weeklyRecords.length).toFixed(1) + '<span class="text-xl text-gray-400 font-bold">%</span>' : '0<span class="text-xl text-gray-400 font-bold">%</span>';
+            document.getElementById('student-avg').innerHTML = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) + '<span class="text-xl text-gray-400 font-bold">%</span>' : '0<span class="text-xl text-gray-400 font-bold">%</span>';
             document.getElementById('student-saved-time').innerText = `⏱ Total Early: ${totalSaved}m`;
             
             // Global Exam Rank
