@@ -1175,10 +1175,10 @@
                     <div><p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Study Time</p><div id="st-study-time" class="text-4xl font-mono font-black text-orange-600">00:00:00</div></div>
                 </div>
                 <!-- Added Total Break Time below Total Study Time as requested -->
-                <div class="mb-6"><p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Break Time</p><div id="st-break-time" class="text-xl font-mono font-bold text-amber-600 mt-0.5">00:00:00</div></div>
+                <div class="mb-6"><p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest"> Break time</p><div id="st-break-time" class="text-xl font-mono font-bold text-amber-600 mt-0.5">00:00:00</div></div>
                 
                 <div id="session-controls" class="flex flex-wrap gap-2 justify-center"></div>
-                <div class="mt-5 pt-4 border-t border-orange-100 flex flex-col gap-2 px-2">
+                <<div class="mt-5 pt-4 border-t border-orange-100 flex flex-col gap-2 px-2">
                     <div class="flex justify-between items-center">
                         <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest"><i class="fa-solid fa-calendar-day mr-1 text-orange-500"></i> Total Study Today</span>
                         <span id="st-total-today" class="text-lg font-black text-gray-900 font-mono">00:00:00</span>
@@ -1188,6 +1188,34 @@
                         <span id="st-total-break-today" class="text-lg font-black text-amber-600 font-mono">00:00:00</span>
                     </div>
                 </div>
+            </div>
+
+            <!-- RESTORED: Live Peers, Timeline, and History Charts -->
+            <div>
+                <h3 class="font-bold text-gray-900 mb-3 px-2 flex items-center gap-2 tracking-tight text-sm">
+                    <i class="fa-solid fa-satellite-dish text-green-500 animate-pulse"></i> Live Peers Now
+                </h3>
+                <div id="live-peers-list" class="space-y-3"></div>
+            </div>
+            
+            <div id="session-timeline-card" class="hidden glass-card p-5 rounded-[2rem] border-orange-100 shadow-sm bg-white mb-6">
+                <h3 class="font-bold text-gray-900 mb-3 text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-list-ul text-orange-500"></i> Today's Activity Log
+                </h3>
+                <div id="session-timeline-list" class="space-y-2"></div>
+            </div>
+            
+            <div class="glass-card p-5 rounded-[2rem] border-orange-100 shadow-sm bg-white">
+                <h3 class="font-bold text-gray-900 mb-3 text-sm">This Week's Performance</h3>
+                <div class="h-32 w-full relative"><canvas id="sessionChart"></canvas></div>
+            </div>
+            
+            <div>
+                <h3 class="font-bold text-gray-900 mb-3 px-2 text-sm tracking-tight">Past Sessions</h3>
+                <div id="session-history-list" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
@@ -1312,15 +1340,18 @@
         };
 
         // --- 1. SESSION TIMER LOGIC (Total Break Added) ---
+       // --- FULLY MERGED SESSION TIMER LOGIC ---
         function updateLiveTimers(mySession) {
             const now = Date.now(); const todayStr = window.formatDateDDMMYYYY();
             
             if (mySession) {
-                let studyMs = mySession.totalStudyMs; let breakMs = mySession.totalBreakMs;
+                let studyMs = mySession.totalStudyMs; let breakMs = mySession.totalBreakMs || 0;
                 if (mySession.status === 'STUDYING') studyMs += (now - mySession.lastToggleTime);
                 if (mySession.status === 'BREAK') breakMs += (now - mySession.lastToggleTime);
                 let remainingStudyMs = TOTAL_SESSION_MS - studyMs; if (remainingStudyMs <= 0) remainingStudyMs = 0; 
-                document.getElementById('st-study-time').innerText = formatTime(remainingStudyMs); document.getElementById('st-break-time').innerText = formatTime(breakMs); 
+                
+                document.getElementById('st-study-time').innerText = formatTime(remainingStudyMs); 
+                document.getElementById('st-break-time').innerText = formatTime(breakMs); 
 
                 if (remainingStudyMs <= 0 && !mySession.congratulated) {
                     mySession.congratulated = true;
@@ -1329,10 +1360,11 @@
                 }
             }
 
+            // Update Total Today & Break Today Variables
             const todaysSessions = window.sessionsDB.filter(s => s.mobile === window.loggedInMobile && s.dateStr === todayStr);
             let totalTodayMs = 0; let totalBreakTodayMs = 0;
             todaysSessions.forEach(s => { 
-                let sStudy = s.totalStudyMs; let sBreak = s.totalBreakMs;
+                let sStudy = s.totalStudyMs; let sBreak = s.totalBreakMs || 0;
                 if (s.status === 'STUDYING') sStudy += (now - s.lastToggleTime); 
                 if (s.status === 'BREAK') sBreak += (now - s.lastToggleTime); 
                 totalTodayMs += sStudy; 
@@ -1341,116 +1373,42 @@
             const totalTodayEl = document.getElementById('st-total-today'); if(totalTodayEl) totalTodayEl.innerText = formatTime(totalTodayMs);
             const totalBreakTodayEl = document.getElementById('st-total-break-today'); if(totalBreakTodayEl) totalBreakTodayEl.innerText = formatTime(totalBreakTodayMs);
 
-            // ... (keep the rest of your updateLiveTimers logic for Live Peers and timeline)
-        }
+            // Restore Live Peers
+            const peersDiv = document.getElementById('live-peers-list');
+            const activePeers = window.sessionsDB.filter(s => s.dateStr === todayStr && (s.status === 'STUDYING' || s.status === 'BREAK') && s.mobile !== window.loggedInMobile);
 
-        // --- 2. LEADERBOARD NEW SUB-TAB LOGIC ---
-        window.lbMainTab = 'score';
-        window.lbSubTab = 'weekly';
-
-        window.switchLbMainTab = function(tab) { 
-            window.lbMainTab = tab; 
-            document.getElementById('lb-main-score').className = `flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${tab === 'score' ? 'segment-active' : 'segment-inactive'}`; 
-            document.getElementById('lb-main-study').className = `flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${tab === 'study' ? 'segment-active' : 'segment-inactive'}`; 
-            
-            // Adjust colors of sub-tabs depending on the main category
-            const wkBtn = document.getElementById('lb-sub-weekly');
-            const totBtn = document.getElementById('lb-sub-total');
-            const activeColor = tab === 'score' ? 'text-indigo-600 bg-indigo-50 border-indigo-100' : 'text-teal-600 bg-teal-50 border-teal-100';
-            
-            if(window.lbSubTab === 'weekly') {
-                wkBtn.className = `px-6 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-sm border ${activeColor}`;
-                totBtn.className = "px-6 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
-            } else {
-                totBtn.className = `px-6 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-sm border ${activeColor}`;
-                wkBtn.className = "px-6 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
+            if (peersDiv) {
+                if (activePeers.length === 0) { peersDiv.innerHTML = `<p class="text-xs text-gray-500 font-medium text-center py-2 border border-dashed border-gray-300 rounded-xl">No peers are currently live.</p>`; } 
+                else {
+                    let peersHtml = '';
+                    activePeers.forEach(peer => {
+                        let pStudy = peer.totalStudyMs; if (peer.status === 'STUDYING') pStudy += (now - peer.lastToggleTime);
+                        let pRem = TOTAL_SESSION_MS - pStudy; if (pRem < 0) pRem = 0;
+                        const badgeColor = peer.status === 'STUDYING' ? 'bg-green-100 text-green-700 border-green-200 pulse-red' : 'bg-amber-100 text-amber-700 border-amber-200';
+                        peersHtml += `<div class="flex items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-gray-100"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-xs shadow-inner">${peer.name.substring(0,2).toUpperCase()}</div><div><h4 class="font-bold text-gray-900 text-xs">${peer.name} <span class="text-[9px] text-gray-400 font-medium ml-1">(${peer.sessionType.split(' ')[0]})</span></h4><p class="text-[9px] text-orange-500 font-bold uppercase mt-0.5 tracking-widest"><i class="fa-solid fa-stopwatch mr-1"></i>${formatTime(pRem)} remaining</p></div></div><div class="text-[9px] font-black px-2 py-1 rounded uppercase shadow-sm border ${badgeColor}">${peer.status}</div></div>`;
+                    });
+                    peersDiv.innerHTML = peersHtml;
+                }
             }
-            renderLeaderboard(); 
-        }
 
-        window.switchLbSubTab = function(tab) { 
-            window.lbSubTab = tab; 
-            const wkBtn = document.getElementById('lb-sub-weekly');
-            const totBtn = document.getElementById('lb-sub-total');
-            const activeColor = window.lbMainTab === 'score' ? 'text-indigo-600 bg-indigo-50 border-indigo-100' : 'text-teal-600 bg-teal-50 border-teal-100';
-
-            if(tab === 'weekly') {
-                wkBtn.className = `px-6 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-sm border ${activeColor}`;
-                totBtn.className = "px-6 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
-            } else {
-                totBtn.className = `px-6 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-sm border ${activeColor}`;
-                wkBtn.className = "px-6 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
-            }
-            renderLeaderboard(); 
-        }
-
-        window.renderLeaderboard = function() {
-            const list = document.getElementById('leaderboard-list'); list.innerHTML = '';
-            
-            if (window.lbMainTab === 'score') {
-                const leaderboard = getOverallLeaderboard();
-                let sortedList = window.lbSubTab === 'weekly' ? [...leaderboard].sort((a, b) => b.weeklyAvg - a.weeklyAvg) : [...leaderboard].sort((a, b) => b.avg - a.avg);
-
-                sortedList.forEach((s, idx) => {
-                    const rank = idx + 1;
-                    const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyAvg : s.avg;
-                    const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Avg' : 'Life Avg';
-                    const secondaryVal = window.lbSubTab === 'weekly' ? `Total Av: ${s.avg}%` : `Wk Avg: ${s.weeklyAvg}%`;
-
-                    let badge = ''; let bg = 'glass-card';
-                    if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-amber-100/80 to-amber-200/80 border-amber-300'; } 
-                    else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; } 
-                    else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; } 
-                    else { badge = `#${rank}`; }
-
-                    const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-indigo-50/90 border-indigo-200';
-                    list.innerHTML += `
-                        <div class="${bg} p-4 rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300">
-                            <div class="flex items-center gap-4">
-                                <div class="w-12 h-12 rounded-2xl bg-white/60 flex items-center justify-center font-black text-lg shadow-sm border border-white/50">${badge}</div>
-                                <div>
-                                    <h4 class="font-bold text-gray-900 text-[15px]">${s.name} ${isMe ? '<span class="text-indigo-600 text-xs ml-1">(You)</span>' : ''}</h4>
-                                    <span class="bg-indigo-100/80 text-indigo-700 text-[9px] font-black px-2 py-0.5 rounded uppercase mt-1 inline-block">${subLabel} Rank</span>
-                                </div>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-2xl font-black text-gray-900">${valToDisplay}<span class="text-sm text-gray-500 font-bold">%</span></p>
-                                <p class="text-[10px] text-gray-500 font-bold mt-0.5">${secondaryVal}</p>
-                            </div>
-                        </div>`;
-                });
-            } else {
-                const leaderboard = getStudyLeaderboard();
-                let sortedList = window.lbSubTab === 'weekly' ? [...leaderboard].sort((a, b) => b.weeklyStudyMs - a.weeklyStudyMs) : [...leaderboard].sort((a, b) => b.totalStudyMs - a.totalStudyMs);
-
-                sortedList.forEach((s, idx) => {
-                    const rank = idx + 1;
-                    const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyHours : s.totalHours;
-                    const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Focus' : 'Total Focus';
-                    const secondaryVal = window.lbSubTab === 'weekly' ? `Total: ${s.totalHours}h` : `Wk: ${s.weeklyHours}h`;
-
-                    let badge = ''; let bg = 'glass-card';
-                    if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-emerald-100/80 to-teal-200/80 border-teal-300'; } 
-                    else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; } 
-                    else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; } 
-                    else { badge = `#${rank}`; }
-
-                    const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-teal-50/90 border-teal-200';
-                    list.innerHTML += `
-                        <div class="${bg} p-4 rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300">
-                            <div class="flex items-center gap-4">
-                                <div class="w-12 h-12 rounded-2xl bg-white/60 flex items-center justify-center font-black text-lg shadow-sm border border-white/50">${badge}</div>
-                                <div>
-                                    <h4 class="font-bold text-gray-900 text-[15px]">${s.name} ${isMe ? '<span class="text-teal-600 text-xs ml-1">(You)</span>' : ''}</h4>
-                                    <span class="bg-teal-100/80 text-teal-700 text-[9px] font-black px-2 py-0.5 rounded uppercase mt-1 inline-block">${subLabel} Rank</span>
-                                </div>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-2xl font-black text-gray-900">${valToDisplay}<span class="text-sm text-gray-500 font-bold">h</span></p>
-                                <p class="text-[10px] text-gray-500 font-bold mt-0.5">${secondaryVal}</p>
-                            </div>
-                        </div>`;
-                });
+            // Restore Activity Timeline
+            const timelineCard = document.getElementById('session-timeline-card'); const timelineList = document.getElementById('session-timeline-list');
+            if (timelineCard && timelineList) {
+                let allTodayLogs = [];
+                todaysSessions.forEach(session => { if (session.logs && session.logs.length > 0) { session.logs.forEach(log => { allTodayLogs.push({ ...log, sessionName: session.sessionType }); }); } });
+                if (allTodayLogs.length > 0) {
+                    timelineCard.classList.remove('hidden'); let logHtml = '';
+                    allTodayLogs.sort((a, b) => b.time - a.time).forEach(log => {
+                        const t = new Date(log.time).toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'});
+                        let icon = 'fa-play'; let color = 'text-green-500'; let bg = 'bg-green-100'; let text = 'Started Session';
+                        if(log.action === 'BREAK') { icon = 'fa-mug-hot'; color = 'text-amber-500'; bg = 'bg-amber-100'; text = 'Took a Break'; }
+                        if(log.action === 'RESUME') { icon = 'fa-play'; color = 'text-green-500'; bg = 'bg-green-100'; text = 'Resumed Studying'; }
+                        if(log.action === 'STOP') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Ended Session'; }
+                        const shortName = log.sessionName.split(' ')[0];
+                        logHtml += `<div class="flex items-center gap-3 bg-gray-50 p-2.5 rounded-xl border border-gray-100 shadow-sm"><div class="w-8 h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0"><i class="fa-solid ${icon} text-[10px]"></i></div><div class="flex-1"><p class="text-xs font-bold text-gray-800">${text}</p><p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest">${shortName} Session</p></div><div class="text-[10px] font-black text-gray-400">${t}</div></div>`;
+                    });
+                    timelineList.innerHTML = logHtml;
+                } else { timelineCard.classList.add('hidden'); }
             }
         }
 
