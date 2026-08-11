@@ -636,7 +636,7 @@
                 <!-- SUB TABS -->
                 <div class="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm w-max mx-auto">
                     <button onclick="switchLbSubTab('weekly')" id="lb-sub-weekly" class="px-6 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg bg-indigo-50 text-indigo-600 transition-all shadow-sm border border-indigo-100">Weekly</button>
-                    <button onclick="switchLbSubTab('total')" id="lb-sub-total" class="px-6 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent">Total Average</button>
+                    <button onclick="switchLbSubTab('total')" id="lb-sub-total" class="px-6 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent">life Average</button>
                 </div>
             </div>
 
@@ -1394,8 +1394,8 @@
                 sortedList.forEach((s, idx) => {
                     const rank = idx + 1;
                     const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyAvg : s.avg;
-                    const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Avg' : 'Total Avg';
-                    const secondaryVal = window.lbSubTab === 'weekly' ? `Total Avg: ${s.avg}%` : `Wk Avg: ${s.weeklyAvg}%`;
+                    const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Avg' : 'Life Avg';
+                    const secondaryVal = window.lbSubTab === 'weekly' ? `Total Av: ${s.avg}%` : `Wk Avg: ${s.weeklyAvg}%`;
 
                     let badge = ''; let bg = 'glass-card';
                     if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-amber-100/80 to-amber-200/80 border-amber-300'; } 
@@ -2382,7 +2382,7 @@
             const wkAvg = weeklyCount > 0 ? (weeklyPerc / weeklyCount).toFixed(1) : 0;
             
             document.getElementById('student-weekly-avg').innerHTML = `${wkAvg}<span class="text-xl text-gray-400 font-bold">%</span><span class="text-[10px] font-bold text-indigo-500 ml-2 uppercase">Weekly</span>`;
-            document.getElementById('student-total-avg').innerText = `Total Avg: ${totAvg}%`;
+            document.getElementById('student-total-avg').innerText = `Life Average: ${totAvg}%`;
             
             // ----------------------------------------------------
             // GLOBAL RANKS RESOLUTION
@@ -2397,7 +2397,7 @@
             const myTotExamRank = totalSortedExam.findIndex(s => s.mobile === window.loggedInMobile);
 
             document.getElementById('student-weekly-exam-rank').innerHTML = myWkExamRank !== -1 ? `#${myWkExamRank+1} <span class="text-[8px] text-gray-400 font-normal">Wk</span>` : '#- <span class="text-[8px] text-gray-400 font-normal">Wk</span>';
-            document.getElementById('student-total-exam-rank').innerText = myTotExamRank !== -1 ? `Total: #${myTotExamRank+1}` : 'Total: #-';
+            document.getElementById('student-total-exam-rank').innerText = myTotExamRank !== -1 ? `Lifetime: #${myTotExamRank+1}` : 'Total: #-';
 
             // Study Ranks
             const sLb = getStudyLeaderboard();
@@ -2408,7 +2408,7 @@
             const myTotStudyRank = totalSortedStudy.findIndex(s => s.mobile === window.loggedInMobile);
 
             document.getElementById('student-weekly-study-rank').innerHTML = myWkStudyRank !== -1 ? `#${myWkStudyRank+1} <span class="text-[8px] text-gray-400 font-normal">Wk</span>` : '#- <span class="text-[8px] text-gray-400 font-normal">Wk</span>';
-            document.getElementById('student-total-study-rank').innerText = myTotStudyRank !== -1 ? `Total: #${myTotStudyRank+1}` : 'Total: #-';
+            document.getElementById('student-total-study-rank').innerText = myTotStudyRank !== -1 ? `Lifetime: #${myTotStudyRank+1}` : 'Total: #-';
             
             window.updateChart('studentChart', chartInstance, chartLabels, chartData, chartStatuses, inst => chartInstance = inst);
         }
@@ -2762,23 +2762,119 @@
             await window.dbSendChat({ text, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
             sendOneSignalPush(`New Message from ${senderName}`, text); window.markChatAsRead(); cancelChatReply();
         }
+window.sharePerformance = async function() {
+    if (window.currentRole === 'admin') return; 
+    
+    const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || 'Student';
+    
+    const parseDDMM = (dStr) => { 
+        if(!dStr || !dStr.includes('/')) return new Date(0);
+        const parts = dStr.split('/'); 
+        return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10), 0, 0, 0, 0); 
+    };
 
-        window.sharePerformance = async function() {
-            if (window.currentRole === 'admin') return; const avg = document.getElementById('student-avg').innerText; const rank = document.getElementById('student-overall-rank').innerText; const senderName = window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name;
-            const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
-            const myRecords = getComputedResults().filter(r => r.mobile === window.loggedInMobile && !r.isVirtual);
-            myRecords.sort((a, b) => { const exA = window.examsDB.find(e => e.id === a.examId); const exB = window.examsDB.find(e => e.id === b.examId); if(!exA || !exB) return 0; return parseDDMM(exB.date) - parseDDMM(exA.date); });
-            
-            let presents = 0; let totalSaved = 0; myRecords.forEach(r => { if(r.status !== 'ABSENT') presents++; if(r.timeSaved) totalSaved+=r.timeSaved; });
-            const attRate = myRecords.length > 0 ? ((presents/myRecords.length)*100).toFixed(0) : 0;
-            let latestE = null; let latestR = null; let classRank = null;
-            if(myRecords.length > 0) { latestR = myRecords[0]; latestE = window.examsDB.find(e => e.id === latestR.examId); classRank = calculateClassRank(latestE.id, window.loggedInMobile); }
+    const myRecords = getComputedResults().filter(r => r.mobile === window.loggedInMobile && !r.isVirtual);
+    myRecords.sort((a, b) => { 
+        const exA = window.examsDB.find(e => e.id === a.examId); 
+        const exB = window.examsDB.find(e => e.id === b.examId); 
+        if(!exA || !exB) return 0; 
+        return parseDDMM(exB.date) - parseDDMM(exA.date); 
+    });
 
-            const statsPayload = { avg, rank, latestName: latestE ? latestE.name : null, latestScore: latestR ? `${latestR.obtained}/${latestR.total}` : null, latestPerc: latestR ? `${latestR.percentage.toFixed(1)}%` : null, latestStatus: latestR ? latestR.status : null, classRank: classRank, examsTaken: myRecords.length, attRate: attRate, timeSaved: totalSaved };
-            await window.dbSendChat({ type: 'performance', stats: statsPayload, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-            sendOneSignalPush(`Performance Shared`, `${senderName} shared their performance card.`); window.markChatAsRead(); cancelChatReply();
+    // 1. Exam Averages & Ranks
+    const { mondayMs, sundayMs } = window.getWeeklyRange();
+    let totalPerc = 0; let weeklyPerc = 0; let weeklyCount = 0; let presents = 0; let totalSaved = 0;
+    
+    myRecords.forEach(r => { 
+        totalPerc += r.percentage; 
+        if(r.status !== 'ABSENT') presents++; 
+        if(r.timeSaved) totalSaved += r.timeSaved; 
+        
+        const exam = window.examsDB.find(e => e.id === r.examId);
+        if(exam && exam.date) {
+            const eTime = parseDDMM(exam.date).getTime();
+            if(eTime >= mondayMs && eTime <= sundayMs) {
+                weeklyPerc += r.percentage;
+                weeklyCount++;
+            }
         }
+    });
 
+    const totalAvg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : '0';
+    const weeklyAvg = weeklyCount > 0 ? (weeklyPerc / weeklyCount).toFixed(1) : '0';
+    const attRate = myRecords.length > 0 ? ((presents / myRecords.length) * 100).toFixed(0) : '0';
+
+    // Ranks
+    const lb = getOverallLeaderboard();
+    const myExamRankIdx = lb.findIndex(s => s.mobile === window.loggedInMobile);
+    const examRank = myExamRankIdx !== -1 ? `#${myExamRankIdx + 1}` : '#-';
+
+    // 2. Fitness Metrics (Total & Weekly)
+    const myLogs = window.fitnessDB.filter(l => l.mobile === window.loggedInMobile);
+    let totalDist = 0; let weeklyDist = 0; let totalCals = 0; let weeklyCals = 0;
+    myLogs.forEach(l => {
+        if(!l.isAbsent) {
+            totalDist += l.distance;
+            totalCals += l.cals;
+            if(l.timestamp >= mondayMs && l.timestamp <= sundayMs) {
+                weeklyDist += l.distance;
+                weeklyCals += l.cals;
+            }
+        }
+    });
+
+    // 3. Focus Session Hours (Total & Weekly)
+    const mySessions = window.sessionsDB.filter(s => s.mobile === window.loggedInMobile && s.status !== 'ABSENT');
+    let totalStudyMs = 0; let weeklyStudyMs = 0;
+    mySessions.forEach(s => {
+        totalStudyMs += (s.totalStudyMs || 0);
+        if(s.timestamp >= mondayMs && s.timestamp <= sundayMs) {
+            weeklyStudyMs += (s.totalStudyMs || 0);
+        }
+    });
+    const totalStudyHrs = (totalStudyMs / 3600000).toFixed(1);
+    const weeklyStudyHrs = (weeklyStudyMs / 3600000).toFixed(1);
+
+    let latestE = null; let latestR = null; let classRank = null;
+    if(myRecords.length > 0) { 
+        latestR = myRecords[0]; 
+        latestE = window.examsDB.find(e => e.id === latestR.examId); 
+        classRank = calculateClassRank(latestE.id, window.loggedInMobile); 
+    }
+
+    const statsPayload = { 
+        totalAvg, 
+        weeklyAvg, 
+        examRank, 
+        totalStudyHrs, 
+        weeklyStudyHrs, 
+        totalDist: totalDist.toFixed(1), 
+        weeklyDist: weeklyDist.toFixed(1), 
+        totalCals, 
+        weeklyCals,
+        latestName: latestE ? latestE.name : null, 
+        latestScore: latestR ? `${latestR.obtained}/${latestR.total}` : null, 
+        latestPerc: latestR ? `${latestR.percentage.toFixed(1)}%` : null, 
+        latestStatus: latestR ? latestR.status : null, 
+        classRank: classRank, 
+        examsTaken: myRecords.length, 
+        attRate: attRate, 
+        timeSaved: totalSaved 
+    };
+
+    await window.dbSendChat({ 
+        type: 'performance', 
+        stats: statsPayload, 
+        mobile: window.loggedInMobile, 
+        name: senderName, 
+        timestamp: Date.now(), 
+        replyTo: window.replyingTo ? window.replyingTo : null 
+    });
+    
+    sendOneSignalPush(`Performance Card Shared`, `${senderName} shared their full academic & fitness profile.`); 
+    window.markChatAsRead(); 
+    cancelChatReply();
+}
         function renderChat() {
             const list = document.getElementById('chat-messages'); list.innerHTML = '';
             const isAdminView = window.currentRole === 'admin'; let lastDateStr = '';
@@ -2801,9 +2897,70 @@
                 
                 let textContent = '';
                 if(msg.type === 'performance' && msg.stats) {
-                    const statusColor = msg.stats.latestStatus === 'PASS' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; const scoreColor = msg.stats.latestStatus === 'PASS' ? 'text-green-600' : 'text-red-600';
-                    textContent = `<div class="w-[260px] bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden my-1 pb-4 relative"><div class="bg-gradient-to-r from-gray-900 to-gray-800 px-3 py-2 flex items-center justify-between"><span class="text-[9px] font-black text-white tracking-widest uppercase"><i class="fa-solid fa-id-card text-indigo-400 mr-1"></i> Performance Profile</span><i class="fa-solid fa-ranking-star text-white/50 text-sm"></i></div><div class="p-3 space-y-3"><p class="text-xs font-black text-indigo-900 border-b border-gray-100 pb-1.5">${msg.name}'s Report Card</p><div class="grid grid-cols-2 gap-2"><div><p class="text-[8px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Avg Score</p><p class="text-lg font-black text-gray-900 leading-none">${msg.stats.avg}</p></div><div><p class="text-[8px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Global Rank</p><p class="text-lg font-black text-indigo-600 leading-none">${msg.stats.rank}</p></div><div><p class="text-[8px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Exams Taken</p><p class="text-xs font-black text-gray-700 leading-none">${msg.stats.examsTaken} (${msg.stats.attRate}% Att.)</p></div><div><p class="text-[8px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Time Saved</p><p class="text-xs font-black text-emerald-600 leading-none">${msg.stats.timeSaved}m early</p></div></div>${msg.stats.latestName ? `<div class="bg-gray-50 rounded-lg p-2 border border-gray-100"><p class="text-[8px] text-gray-500 font-bold tracking-widest uppercase mb-1"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Latest Exam</p><p class="text-[10px] font-bold text-gray-800 line-clamp-1 mb-1.5">${msg.stats.latestName}</p><div class="flex justify-between items-center"><span class="font-black ${scoreColor} text-xs">${msg.stats.latestPerc} <span class="text-[9px] text-gray-400 font-bold ml-0.5">(${msg.stats.latestScore})</span></span><span class="text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${statusColor}">${msg.stats.latestStatus}</span></div></div>` : ''}</div></div>`;
-                } else if (msg.text) { textContent = `<span class="whitespace-pre-wrap break-words font-medium text-[14.5px] leading-[1.3] text-[#111b21] pb-1 pr-14 inline-block">${msg.text}</span>`; }
+                    const statusColor = msg.stats.latestStatus === 'PASS' ? 'bg-emerald-500/20 text-emerald-700 border-emerald-300' : 'bg-rose-500/20 text-rose-700 border-rose-300'; 
+                    const scoreColor = msg.stats.latestStatus === 'PASS' ? 'text-emerald-600' : 'text-rose-600';
+                    
+                    textContent = `
+                    <div class="w-[280px] md:w-[320px] rounded-2xl overflow-hidden my-1 shadow-xl border border-white/80 relative bg-gradient-to-br from-white/80 via-indigo-50/40 to-purple-50/50 backdrop-blur-xl p-4 text-gray-900">
+                        <!-- Header Banner -->
+                        <div class="flex items-center justify-between border-b border-indigo-100/60 pb-2.5 mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-md shadow-indigo-500/30">
+                                    <i class="fa-solid fa-trophy"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-black text-xs text-indigo-950 tracking-tight leading-none">${msg.name}'s Profile</h4>
+                                    <p class="text-[8px] text-indigo-600 font-bold uppercase tracking-widest mt-0.5">EXAMA Verified Report</p>
+                                </div>
+                            </div>
+                            <span class="text-[9px] font-black bg-indigo-600 text-white px-2 py-0.5 rounded-full shadow-sm">Rank ${msg.stats.examRank}</span>
+                        </div>
+
+                        <!-- Grid 1: Academic Scores -->
+                        <div class="mb-3">
+                            <p class="text-[8px] font-black text-indigo-900 uppercase tracking-widest mb-1.5 flex items-center gap-1"><i class="fa-solid fa-graduation-cap"></i> Academics</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="bg-white/70 backdrop-blur rounded-xl p-2 border border-white/60 shadow-sm">
+                                    <p class="text-[8px] text-gray-500 font-bold uppercase">Weekly Avg</p>
+                                    <p class="text-base font-black text-indigo-600 mt-0.5">${msg.stats.weeklyAvg}%</p>
+                                </div>
+                                <div class="bg-white/70 backdrop-blur rounded-xl p-2 border border-white/60 shadow-sm">
+                                    <p class="text-[8px] text-gray-500 font-bold uppercase">Total Avg</p>
+                                    <p class="text-base font-black text-gray-900 mt-0.5">${msg.stats.totalAvg}%</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Grid 2: Focus Sessions & Fitness -->
+                        <div class="mb-3">
+                            <p class="text-[8px] font-black text-teal-900 uppercase tracking-widest mb-1.5 flex items-center gap-1"><i class="fa-solid fa-stopwatch"></i> Focus & Fitness</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="bg-white/70 backdrop-blur rounded-xl p-2 border border-white/60 shadow-sm">
+                                    <p class="text-[8px] text-gray-500 font-bold uppercase">Weekly Focus</p>
+                                    <p class="text-sm font-black text-teal-700 mt-0.5">${msg.stats.weeklyStudyHrs}h <span class="text-[9px] text-gray-400 font-normal">(Tot: ${msg.stats.totalStudyHrs}h)</span></p>
+                                </div>
+                                <div class="bg-white/70 backdrop-blur rounded-xl p-2 border border-white/60 shadow-sm">
+                                    <p class="text-[8px] text-gray-500 font-bold uppercase">Weekly Run</p>
+                                    <p class="text-sm font-black text-rose-600 mt-0.5">${msg.stats.weeklyDist} KM <span class="text-[9px] text-gray-400 font-normal">(Tot: ${msg.stats.totalDist})</span></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Latest Exam Box -->
+                        ${msg.stats.latestName ? `
+                        <div class="bg-white/80 backdrop-blur rounded-xl p-2.5 border border-indigo-100 shadow-sm">
+                            <p class="text-[8px] text-indigo-500 font-black uppercase tracking-widest mb-1 flex items-center justify-between">
+                                <span><i class="fa-solid fa-clock-rotate-left mr-1"></i>Latest Exam</span>
+                                <span class="text-[8px] font-bold text-gray-400">Class Rank: #${msg.stats.classRank}</span>
+                            </p>
+                            <p class="text-[11px] font-bold text-gray-900 truncate mb-1.5">${msg.stats.latestName}</p>
+                            <div class="flex justify-between items-center">
+                                <span class="font-black ${scoreColor} text-xs">${msg.stats.latestPerc} <span class="text-[9px] text-gray-400 font-bold">(${msg.stats.latestScore})</span></span>
+                                <span class="text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider border ${statusColor}">${msg.stats.latestStatus}</span>
+                            </div>
+                        </div>` : ''}
+                    </div>`;
+                }else if (msg.text) { textContent = `<span class="whitespace-pre-wrap break-words font-medium text-[14.5px] leading-[1.3] text-[#111b21] pb-1 pr-14 inline-block">${msg.text}</span>`; }
 
                 const wrapper = document.createElement('div'); wrapper.className = `flex w-full group ${isMe ? 'justify-end' : 'justify-start'} mb-1.5`;
                 wrapper.innerHTML = `<div class="flex flex-col ${isMe ? 'items-end' : 'items-start'} w-full relative">${!isMe ? `<span class="text-[10px] text-indigo-700 font-bold ml-2 mb-0.5 drop-shadow-sm">${msg.name} ${adminBadge}</span>` : ''}<div class="flex items-center gap-1.5 relative max-w-[85%]">${isMe ? actionsHtml : ''}<div class="px-2.5 py-1.5 shadow-sm w-fit flex flex-col relative ${isMe ? 'chat-bubble-mine' : 'chat-bubble-other'}">${replyHtml}${imgHtml}${audioHtml}<div class="relative w-fit text-left min-w-[70px]">${textContent}<span class="text-[9.5px] ${msg.type === 'performance' ? 'text-gray-400' : 'text-gray-400/90'} whitespace-nowrap absolute bottom-0.5 right-0.5 flex items-center justify-end leading-none">${timeStr} ${msg.type !== 'performance' ? ticks : ''}</span></div></div>${!isMe ? actionsHtml : ''}</div></div>`;
