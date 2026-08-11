@@ -1758,16 +1758,18 @@
             }
         }
 
-        window.renderAdminProfile = function(mobile) {
+       window.renderAdminProfile = function(mobile) {
     const student = window.studentsDB.find(s => s.mobile === mobile);
     if (!student) return safeBack();
 
     document.getElementById('ap-name').innerText = student.name;
-    document.getElementById('ap-mobile').innerText = student.mobile;
+    // Visibly exposes student Login Password to Admin for complete control
+    document.getElementById('ap-mobile').innerHTML = `${student.mobile} <span class="text-gray-400 mx-2">|</span> <span class="text-indigo-300 font-normal">PIN: ${student.password}</span>`;
 
-    // 1. Exam Stats & History
+    // --- 1. Exam Performance & Modern Log Cards ---
     const myRecords = getComputedResults().filter(r => r.mobile === mobile);
     const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
+    
     myRecords.sort((a, b) => {
         const exA = window.examsDB.find(e => e.id === a.examId);
         const exB = window.examsDB.find(e => e.id === b.examId);
@@ -1775,7 +1777,7 @@
         return parseDDMM(exB.date) - parseDDMM(exA.date);
     });
 
-    let totalPerc = 0; let passes = 0;
+    let totalPerc = 0; let passes = 0; let totalSaved = 0;
     const chartLabels = []; const chartData = []; const chartStatuses = [];
     const recordsList = document.getElementById('ap-records-list');
     recordsList.innerHTML = '';
@@ -1785,10 +1787,36 @@
         if(!exam) return;
         totalPerc += r.percentage;
         if(r.status === 'PASS') passes++;
+        if(r.timeSaved) totalSaved += r.timeSaved;
+        
         chartLabels.unshift(exam.name.substring(0, 6) + '..');
         chartData.unshift(r.percentage);
         chartStatuses.unshift(r.status);
-        recordsList.innerHTML += buildRecordHTML(r, exam, calculateClassRank(exam.id, r.mobile));
+        
+        // Build customized, modern HTML specifically for Admin Profile
+        const isAbsent = r.status === 'ABSENT'; 
+        const c = isAbsent ? 'red' : (r.status === 'PASS' ? 'green' : 'red'); 
+        const rank = calculateClassRank(exam.id, r.mobile);
+        
+        recordsList.innerHTML += `
+            <div class="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all mb-3 relative overflow-hidden group">
+                <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-${c}-500"></div>
+                <div class="flex justify-between items-start ml-3">
+                    <div>
+                        <h4 class="font-black text-gray-900 text-sm group-hover:text-indigo-600 transition-colors">${exam.name}</h4>
+                        <p class="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • Dur: ${exam.duration}m</p>
+                        <div class="flex gap-2 mt-2.5">
+                            <span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[9px] font-black uppercase shadow-sm">Rank #${rank}</span>
+                            ${!isAbsent && r.timeSaved > 0 ? `<span class="bg-emerald-50 text-emerald-600 border border-emerald-100 px-2 py-0.5 rounded text-[9px] font-black uppercase shadow-sm">Saved ${r.timeSaved}m</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-black text-xl text-gray-900 leading-none">${r.obtained}<span class="text-xs text-gray-400">/${r.total}</span></div>
+                        <div class="text-[9px] font-black text-${c}-700 bg-${c}-50 px-2 py-1 rounded border border-${c}-100 inline-block mt-2 tracking-widest uppercase shadow-sm">${isAbsent ? 'ABSENT' : r.status} (${r.percentage.toFixed(0)}%)</div>
+                    </div>
+                </div>
+            </div>
+        `;
     });
 
     const avg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : 0;
@@ -1802,15 +1830,16 @@
 
     window.updateChart('adminProfileChart', window.adminProfileChartInstance, chartLabels, chartData, chartStatuses, inst => window.adminProfileChartInstance = inst);
 
-    // 2. Syllabus Task Progress
+    // --- 2. Syllabus Task Progress ---
     const allTasks = window.weeklyTasksDB || [];
+    const myTasks = allTasks.filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile));
     const myCompleted = window.studentTasksDB.filter(st => st.mobile === mobile && st.completed);
-    const tPerc = allTasks.length > 0 ? Math.round((myCompleted.length / allTasks.length) * 100) : 0;
-    document.getElementById('ap-task-count').innerText = `${myCompleted.length} / ${allTasks.length} Tasks`;
+    const tPerc = myTasks.length > 0 ? Math.round((myCompleted.length / myTasks.length) * 100) : 0;
+    document.getElementById('ap-task-count').innerText = `${myCompleted.length} / ${myTasks.length} Tasks`;
     document.getElementById('ap-task-perc').innerText = `${tPerc}%`;
     document.getElementById('ap-task-bar').style.width = `${tPerc}%`;
 
-    // 3. Fitness Stats
+    // --- 3. Fitness Stats ---
     const fLogs = window.fitnessDB.filter(l => l.mobile === mobile && !l.isAbsent);
     let fDist = 0, fCals = 0, fTime = 0;
     fLogs.forEach(l => { fDist += l.distance; fCals += l.cals; fTime += l.time; });
@@ -1820,7 +1849,7 @@
     const pS = fDist > 0 ? Math.round(((fTime / fDist) - pM) * 60).toString().padStart(2, '0') : '00';
     document.getElementById('ap-fit-pace').innerText = `${pM}:${pS}`;
 
-    // 4. Focus Sessions
+    // --- 4. Deep Focus Sessions Tracking (Detailed Timelines) ---
     const sLogs = window.sessionsDB.filter(s => s.mobile === mobile);
     let sToday = 0, sWeek = 0, sTotal = 0;
     const todayStr = window.formatDateDDMMYYYY();
@@ -1834,17 +1863,72 @@
         if(s.timestamp >= weekAgo) sWeek += ms;
     });
 
-    document.getElementById('ap-session-today').innerText = (sToday / 3600000).toFixed(1) + 'h';
-    document.getElementById('ap-session-week').innerText = (sWeek / 3600000).toFixed(1) + 'h';
-    document.getElementById('ap-session-total').innerText = (sTotal / 3600000).toFixed(1) + 'h';
+    document.getElementById('ap-session-today').innerText = (sToday / 3600000).toFixed(2) + 'h';
+    document.getElementById('ap-session-week').innerText = (sWeek / 3600000).toFixed(2) + 'h';
+    document.getElementById('ap-session-total').innerText = (sTotal / 3600000).toFixed(2) + 'h';
     
     const histDiv = document.getElementById('ap-session-history');
-    histDiv.innerHTML = sLogs.length === 0 ? '<p class="text-[10px] text-gray-400 text-center">No recent sessions.</p>' : '';
-    sLogs.sort((a,b) => b.timestamp - a.timestamp).slice(0, 5).forEach(s => {
-        let color = s.status === 'ABSENT' ? 'text-red-500' : 'text-green-500';
-        let val = s.status === 'ABSENT' ? 'ABSENT' : (s.totalStudyMs / 3600000).toFixed(1) + 'h';
-        histDiv.innerHTML += `<div class="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100"><div class="flex flex-col"><span class="text-[10px] font-bold text-gray-800">${s.sessionType.split(' ')[0]}</span><span class="text-[8px] text-gray-400 font-bold tracking-widest uppercase">${s.dateStr}</span></div><span class="text-xs font-black ${color}">${val}</span></div>`;
+    histDiv.className = "space-y-4 max-h-[400px] overflow-y-auto pr-1 no-scrollbar mt-4"; // Taller view for timelines
+    histDiv.innerHTML = sLogs.length === 0 ? '<div class="text-center p-6 text-gray-400 text-xs font-bold border-2 border-dashed border-gray-200 rounded-2xl">No live tracking data found for this student.</div>' : '';
+    
+    sLogs.sort((a,b) => b.timestamp - a.timestamp).slice(0, 10).forEach(s => {
+        
+        // Build the granular Timeline HTML based on Student's Live Clicks
+        let timelineHtml = '';
+        if (s.logs && s.logs.length > 0) {
+            timelineHtml = `<div class="mt-4 pl-3 border-l-[3px] border-orange-200/60 space-y-3 relative">`;
+            s.logs.forEach(log => {
+                const t = new Date(log.time).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit', second: '2-digit'});
+                let icon, color, bg, text;
+                
+                if(log.action === 'START') { icon = 'fa-play'; color = 'text-emerald-500'; bg = 'bg-emerald-100'; text = 'Session Started'; }
+                else if(log.action === 'BREAK') { icon = 'fa-mug-hot'; color = 'text-amber-500'; bg = 'bg-amber-100'; text = 'Took a Break'; }
+                else if(log.action === 'RESUME') { icon = 'fa-rotate-right'; color = 'text-blue-500'; bg = 'bg-blue-100'; text = 'Resumed Studying'; }
+                else if(log.action === 'STOP') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Session Terminated'; }
+                else if(log.action === 'ABSENT') { icon = 'fa-bed'; color = 'text-gray-500'; bg = 'bg-gray-200'; text = 'Marked Absent'; }
+                else { icon = 'fa-bolt'; color = 'text-orange-500'; bg = 'bg-orange-100'; text = log.action; }
+
+                timelineHtml += `
+                    <div class="flex items-center gap-3 relative group">
+                        <div class="absolute -left-[24px] w-[20px] h-[20px] rounded-full ${bg} ${color} flex items-center justify-center border-2 border-white shadow-sm transition-transform group-hover:scale-125 z-10">
+                            <i class="fa-solid ${icon} text-[8px]"></i>
+                        </div>
+                        <div class="flex-1 bg-white p-2 rounded-lg border border-orange-50 shadow-sm flex justify-between items-center group-hover:border-orange-200 transition-colors">
+                            <span class="text-[11px] font-bold text-gray-700">${text}</span>
+                            <span class="text-[9px] font-black text-gray-400 bg-gray-50 px-2 py-1 rounded shadow-inner border border-gray-100 tracking-wider">${t}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            timelineHtml += `</div>`;
+        }
+
+        let statusColor = s.status === 'ABSENT' ? 'bg-red-100 text-red-600 border-red-200' : 'bg-green-100 text-green-600 border-green-200';
+        if (s.status === 'STUDYING' || s.status === 'BREAK') statusColor = 'bg-amber-100 text-amber-600 border-amber-200 animate-pulse';
+
+        let studyTime = (s.totalStudyMs / 3600000).toFixed(2);
+        let breakTime = s.totalBreakMs ? (s.totalBreakMs / 60000).toFixed(0) : 0;
+
+        histDiv.innerHTML += `
+            <div class="bg-gradient-to-b from-white to-orange-50/20 p-4 rounded-[1.5rem] border border-orange-100 shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex justify-between items-start border-b border-orange-100/50 pb-3">
+                    <div>
+                        <h5 class="text-xs font-black text-gray-900">${s.sessionType}</h5>
+                        <p class="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1"><i class="fa-regular fa-calendar text-orange-400 mr-1"></i>${s.dateStr}</p>
+                    </div>
+                    <div class="flex flex-col items-end gap-1.5">
+                        <span class="${statusColor} border px-2 py-0.5 rounded text-[9px] font-black tracking-widest uppercase shadow-sm">${s.status}</span>
+                        <div class="flex gap-2 items-center mt-1">
+                            <span class="text-[10px] font-black text-orange-600 bg-orange-100/50 px-2 py-0.5 rounded"><i class="fa-solid fa-stopwatch mr-1"></i>${studyTime}h</span>
+                            ${breakTime > 0 ? `<span class="text-[9px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded"><i class="fa-solid fa-mug-hot mr-1"></i>${breakTime}m</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                ${timelineHtml}
+            </div>
+        `;
     });
+};
 };
         window.downloadAdminStudentReport = function() { if(window.selectedAdminProfile) { generatePDFReport(window.selectedAdminProfile); } }
         window.generatePDFReport = function(targetMobile = null) {
