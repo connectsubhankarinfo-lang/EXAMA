@@ -1202,15 +1202,31 @@
 
         window.addEventListener('hashchange', handleHashChange);
         window.isThisWeek = function(dateStr) {
-    if (!dateStr) return false;
-    const [d, m, y] = dateStr.split('/');
-    const examDate = new Date(`${y}-${m}-${d}T00:00:00`).getTime();
+    if (!dateStr || !dateStr.includes('/')) return false;
+    
+    const parts = dateStr.split('/');
+    // 1. Get Exam Date
+    const exDate = new Date(parts[2], parts[1] - 1, parts[0]);
+    exDate.setHours(0,0,0,0);
+    
+    // 2. Get Today's Date
     const today = new Date();
-    const day = today.getDay();
-    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-    const startOfWeek = new Date(today.setDate(diff)).setHours(0,0,0,0);
-    const endOfWeek = startOfWeek + (6 * 24 * 60 * 60 * 1000) + (23*3600000 + 59*60000 + 59000);
-    return examDate >= startOfWeek && examDate <= endOfWeek;
+    today.setHours(0,0,0,0);
+    
+    // 3. Find the Monday of THIS week
+    const currentDay = today.getDay();
+    const currentDiff = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1);
+    const currentMonday = new Date(today);
+    currentMonday.setDate(currentDiff);
+    
+    // 4. Find the Monday of the EXAM'S week
+    const exDay = exDate.getDay();
+    const exDiff = exDate.getDate() - exDay + (exDay === 0 ? -6 : 1);
+    const exMonday = new Date(exDate);
+    exMonday.setDate(exDiff);
+    
+    // 5. If they share the exact same Monday, they are in the same week!
+    return currentMonday.getTime() === exMonday.getTime();
 };
         // --- GLOBAL DATE FORMATTER ---
         window.formatDateDDMMYYYY = function(dateObj = new Date()) {
