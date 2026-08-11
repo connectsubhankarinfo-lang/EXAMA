@@ -1758,6 +1758,94 @@
             }
         }
 
+        window.renderAdminProfile = function(mobile) {
+    const student = window.studentsDB.find(s => s.mobile === mobile);
+    if (!student) return safeBack();
+
+    document.getElementById('ap-name').innerText = student.name;
+    document.getElementById('ap-mobile').innerText = student.mobile;
+
+    // 1. Exam Stats & History
+    const myRecords = getComputedResults().filter(r => r.mobile === mobile);
+    const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
+    myRecords.sort((a, b) => {
+        const exA = window.examsDB.find(e => e.id === a.examId);
+        const exB = window.examsDB.find(e => e.id === b.examId);
+        if (!exA || !exB) return 0;
+        return parseDDMM(exB.date) - parseDDMM(exA.date);
+    });
+
+    let totalPerc = 0; let passes = 0;
+    const chartLabels = []; const chartData = []; const chartStatuses = [];
+    const recordsList = document.getElementById('ap-records-list');
+    recordsList.innerHTML = '';
+
+    myRecords.forEach(r => {
+        const exam = window.examsDB.find(e => e.id === r.examId);
+        if(!exam) return;
+        totalPerc += r.percentage;
+        if(r.status === 'PASS') passes++;
+        chartLabels.unshift(exam.name.substring(0, 6) + '..');
+        chartData.unshift(r.percentage);
+        chartStatuses.unshift(r.status);
+        recordsList.innerHTML += buildRecordHTML(r, exam, calculateClassRank(exam.id, r.mobile));
+    });
+
+    const avg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : 0;
+    document.getElementById('ap-avg').innerHTML = `${avg}<span class="text-sm text-gray-400">%</span>`;
+    document.getElementById('ap-pass-rate').innerText = myRecords.length > 0 ? `${Math.round((passes / myRecords.length) * 100)}%` : '0%';
+    document.getElementById('ap-target').innerText = student.targetPercentage ? `${student.targetPercentage}%` : 'N/A';
+
+    const lb = getOverallLeaderboard();
+    const rankIdx = lb.findIndex(s => s.mobile === mobile);
+    document.getElementById('ap-rank').innerText = rankIdx !== -1 ? `#${rankIdx + 1}` : '#-';
+
+    window.updateChart('adminProfileChart', window.adminProfileChartInstance, chartLabels, chartData, chartStatuses, inst => window.adminProfileChartInstance = inst);
+
+    // 2. Syllabus Task Progress
+    const allTasks = window.weeklyTasksDB || [];
+    const myCompleted = window.studentTasksDB.filter(st => st.mobile === mobile && st.completed);
+    const tPerc = allTasks.length > 0 ? Math.round((myCompleted.length / allTasks.length) * 100) : 0;
+    document.getElementById('ap-task-count').innerText = `${myCompleted.length} / ${allTasks.length} Tasks`;
+    document.getElementById('ap-task-perc').innerText = `${tPerc}%`;
+    document.getElementById('ap-task-bar').style.width = `${tPerc}%`;
+
+    // 3. Fitness Stats
+    const fLogs = window.fitnessDB.filter(l => l.mobile === mobile && !l.isAbsent);
+    let fDist = 0, fCals = 0, fTime = 0;
+    fLogs.forEach(l => { fDist += l.distance; fCals += l.cals; fTime += l.time; });
+    document.getElementById('ap-fit-dist').innerText = fDist.toFixed(1);
+    document.getElementById('ap-fit-cals').innerText = fCals;
+    const pM = fDist > 0 ? Math.floor(fTime / fDist) : 0;
+    const pS = fDist > 0 ? Math.round(((fTime / fDist) - pM) * 60).toString().padStart(2, '0') : '00';
+    document.getElementById('ap-fit-pace').innerText = `${pM}:${pS}`;
+
+    // 4. Focus Sessions
+    const sLogs = window.sessionsDB.filter(s => s.mobile === mobile);
+    let sToday = 0, sWeek = 0, sTotal = 0;
+    const todayStr = window.formatDateDDMMYYYY();
+    const weekAgo = Date.now() - 604800000;
+    
+    sLogs.forEach(s => {
+        let ms = s.totalStudyMs;
+        if(s.status === 'STUDYING' && s.dateStr === todayStr) ms += (Date.now() - s.lastToggleTime);
+        sTotal += ms;
+        if(s.dateStr === todayStr) sToday += ms;
+        if(s.timestamp >= weekAgo) sWeek += ms;
+    });
+
+    document.getElementById('ap-session-today').innerText = (sToday / 3600000).toFixed(1) + 'h';
+    document.getElementById('ap-session-week').innerText = (sWeek / 3600000).toFixed(1) + 'h';
+    document.getElementById('ap-session-total').innerText = (sTotal / 3600000).toFixed(1) + 'h';
+    
+    const histDiv = document.getElementById('ap-session-history');
+    histDiv.innerHTML = sLogs.length === 0 ? '<p class="text-[10px] text-gray-400 text-center">No recent sessions.</p>' : '';
+    sLogs.sort((a,b) => b.timestamp - a.timestamp).slice(0, 5).forEach(s => {
+        let color = s.status === 'ABSENT' ? 'text-red-500' : 'text-green-500';
+        let val = s.status === 'ABSENT' ? 'ABSENT' : (s.totalStudyMs / 3600000).toFixed(1) + 'h';
+        histDiv.innerHTML += `<div class="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100"><div class="flex flex-col"><span class="text-[10px] font-bold text-gray-800">${s.sessionType.split(' ')[0]}</span><span class="text-[8px] text-gray-400 font-bold tracking-widest uppercase">${s.dateStr}</span></div><span class="text-xs font-black ${color}">${val}</span></div>`;
+    });
+};
         window.downloadAdminStudentReport = function() { if(window.selectedAdminProfile) { generatePDFReport(window.selectedAdminProfile); } }
         window.generatePDFReport = function(targetMobile = null) {
             const mobileToUse = typeof targetMobile === 'string' ? targetMobile : window.loggedInMobile; showLoader("Generating Report...");
