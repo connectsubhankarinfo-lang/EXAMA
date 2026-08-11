@@ -2082,9 +2082,13 @@ function refreshUI() {
         window.generateExamAnalysis = function() {
             const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
             const myRecords = getComputedResults().filter(r => r.mobile === window.loggedInMobile && !r.isVirtual);
-            myRecords.sort((a, b) => { const exA = window.examsDB.find(e => e.id === a.examId); const exB = window.examsDB.find(e => e.id === b.examId); if(!exA || !exB) return 0; return parseDDMM(exA.date) - parseDDMM(exB.date); });
+            
+            // CHANGED: Sorts from Newest to Oldest
+            myRecords.sort((a, b) => { const exA = window.examsDB.find(e => e.id === a.examId); const exB = window.examsDB.find(e => e.id === b.examId); if(!exA || !exB) return 0; return parseDDMM(exB.date) - parseDDMM(exA.date); });
+            
             const contentDiv = document.getElementById('analysis-content'); const bestDiv = document.getElementById('analysis-best'); const worstDiv = document.getElementById('analysis-worst'); const metricsDiv = document.getElementById('analysis-deep-metrics');
             if (myRecords.length === 0) { contentDiv.innerHTML = `<p class="text-sm text-gray-600 font-medium">Not enough data yet. Take some exams to generate NOVA insights!</p>`; bestDiv.innerText = "--"; worstDiv.innerText = "--"; metricsDiv.innerHTML = ''; return; }
+            
             let best = myRecords[0]; let worst = myRecords[0]; let total = 0; const labels = []; const lineData = [];
             myRecords.forEach(r => { const exam = window.examsDB.find(e => e.id === r.examId); labels.push(exam ? exam.name.substring(0, 5) + '..' : 'Exam'); lineData.push(r.percentage); if (r.percentage > best.percentage) best = r; if (r.percentage < worst.percentage) worst = r; total += r.percentage; });
             const avg = total / myRecords.length; const bestExam = window.examsDB.find(e => e.id === best.examId); const worstExam = window.examsDB.find(e => e.id === worst.examId);
@@ -2094,8 +2098,10 @@ function refreshUI() {
             if (myRecords.length >= 2) {
                 const mid = Math.floor(myRecords.length / 2); const firstHalf = myRecords.slice(0, mid); const secondHalf = myRecords.slice(mid);
                 const firstAvg = firstHalf.reduce((acc, r) => acc + r.percentage, 0) / firstHalf.length; const secondAvg = secondHalf.reduce((acc, r) => acc + r.percentage, 0) / secondHalf.length;
-                if (secondAvg > firstAvg + 5) { trajectoryHtml = `<div class="flex items-center gap-3 p-4 bg-green-50 rounded-xl text-green-700 border border-green-200"><i class="fa-solid fa-arrow-trend-up text-2xl"></i><div><h4 class="font-black text-sm">Upward Trend</h4><p class="text-xs font-medium mt-1">Your recent scores are improving! Keep up the momentum.</p></div></div>`; } 
-                else if (secondAvg < firstAvg - 5) { trajectoryHtml = `<div class="flex items-center gap-3 p-4 bg-red-50 rounded-xl text-red-700 border border-red-200"><i class="fa-solid fa-arrow-trend-down text-2xl"></i><div><h4 class="font-black text-sm">Downward Trend</h4><p class="text-xs font-medium mt-1">Your recent scores have dropped. Focus on revision.</p></div></div>`; } 
+                
+                // CHANGED: Swapped firstAvg and secondAvg logic to match the new sorting
+                if (firstAvg > secondAvg + 5) { trajectoryHtml = `<div class="flex items-center gap-3 p-4 bg-green-50 rounded-xl text-green-700 border border-green-200"><i class="fa-solid fa-arrow-trend-up text-2xl"></i><div><h4 class="font-black text-sm">Upward Trend</h4><p class="text-xs font-medium mt-1">Your recent scores are improving! Keep up the momentum.</p></div></div>`; } 
+                else if (firstAvg < secondAvg - 5) { trajectoryHtml = `<div class="flex items-center gap-3 p-4 bg-red-50 rounded-xl text-red-700 border border-red-200"><i class="fa-solid fa-arrow-trend-down text-2xl"></i><div><h4 class="font-black text-sm">Downward Trend</h4><p class="text-xs font-medium mt-1">Your recent scores have dropped. Focus on revision.</p></div></div>`; } 
                 else { trajectoryHtml = `<div class="flex items-center gap-3 p-4 bg-indigo-50 rounded-xl text-indigo-700 border border-indigo-200"><i class="fa-solid fa-minus text-2xl"></i><div><h4 class="font-black text-sm">Consistent Performer</h4><p class="text-xs font-medium mt-1">You are maintaining a steady performance level.</p></div></div>`; }
             } else { trajectoryHtml = `<p class="text-xs text-gray-500 font-medium">Take more exams to unlock trend analysis.</p>`; }
 
