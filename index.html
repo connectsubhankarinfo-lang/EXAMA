@@ -1853,36 +1853,31 @@
             window.location.hash = 'login'; document.getElementById('login-form').reset();
         }
 function refreshUI() {
-    if (!window.currentRole) return;
+            if(!window.currentRole) return;
+            if(window.currentRole === 'student') renderStudentDashboard();
+            if(window.currentRole === 'admin') renderAdminDashboard();
+            
+            if(!document.getElementById('leaderboard-view')?.classList.contains('hidden-view')) window.renderLeaderboard();
+            if(!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) renderChat();
+            if(!document.getElementById('materials-view')?.classList.contains('hidden-view')) renderStudyMaterials();
+            if(!document.getElementById('fitness-view')?.classList.contains('hidden-view')) renderFitnessMonitor();
+            updateChatUnreadCount();
+            if(!document.getElementById('weekly-targets-view')?.classList.contains('hidden-view')) window.renderWeeklyTargets();
+        }
 
-    // 1. Update global UI badges
-    updateChatUnreadCount();
+        function calculateClassRank(examId, mobile) {
+            const examResults = getComputedResults().filter(r => r.examId === examId);
+            examResults.sort((a, b) => b.percentage - a.percentage);
+            const rankIndex = examResults.findIndex(r => r.mobile === mobile);
+            return rankIndex === -1 ? '-' : (rankIndex + 1);
+        }
 
-    // 2. Only re-render the CURRENTLY ACTIVE view. 
-    // This prevents Chart.js from crashing on hidden canvases and ensures all screens get fresh data!
-    if (!document.getElementById('student-view')?.classList.contains('hidden-view')) renderStudentDashboard();
-    if (!document.getElementById('admin-view')?.classList.contains('hidden-view')) renderAdminDashboard();
-    
-    if (!document.getElementById('leaderboard-view')?.classList.contains('hidden-view')) window.renderLeaderboard();
-    if (!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) renderChat();
-    if (!document.getElementById('materials-view')?.classList.contains('hidden-view')) renderStudyMaterials();
-    if (!document.getElementById('fitness-view')?.classList.contains('hidden-view')) renderFitnessMonitor();
-    if (!document.getElementById('weekly-targets-view')?.classList.contains('hidden-view')) window.renderWeeklyTargets();
-    
-    // --> Newly added views that were missing from the original refresh loop:
-    if (!document.getElementById('notice-board-view')?.classList.contains('hidden-view')) window.renderNotices();
-    if (!document.getElementById('target-calc-view')?.classList.contains('hidden-view')) window.renderTargetCalc();
-    if (!document.getElementById('exam-analysis-view')?.classList.contains('hidden-view')) window.generateExamAnalysis();
-    if (!document.getElementById('session-timer-view')?.classList.contains('hidden-view')) window.renderSessionTimer();
-    if (!document.getElementById('active-exam-view')?.classList.contains('hidden-view') && window.activeExamId) {
-        window.renderActiveExam(window.activeExamId);
-    }
+        function buildRecordHTML(r, exam, rank) {
+            if(!exam) return ''; const isAbsent = r.status === 'ABSENT'; const c = isAbsent ? 'red' : (r.status === 'PASS' ? 'green' : 'red'); const dot = isAbsent ? `<div class="absolute left-4 top-[26px] w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shadow-md"></div>` : ''; const leftPad = isAbsent ? 'ml-7' : 'ml-3';
+            let timeDisplay = ''; if(!isAbsent) { if(r.timeSaved > 0) { timeDisplay = `<div class="text-[9px] font-bold text-emerald-600 mt-1.5 text-right">⏱ ${r.timeTaken}m taken <span class="text-gray-400 font-medium">(Saved ${r.timeSaved}m)</span></div>`; } else { timeDisplay = `<div class="text-[9px] font-bold text-gray-500 mt-1.5 text-right">⏱ ${r.timeTaken !== undefined ? r.timeTaken : exam.duration}m taken</div>`; } }
+            return `<div class="glass-card p-5 rounded-[2rem] relative overflow-hidden hover:-translate-y-1 transition-all duration-300"><div class="absolute left-0 top-0 bottom-0 w-2 bg-gradient-to-b from-${c}-400 to-${c}-600"></div>${dot}<div class="flex justify-between items-start ${leftPad}"><div><h4 class="font-bold text-gray-900 text-[15px]">${exam.name}</h4><p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-1.5"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • Pass: ${exam.passPercentage || 40}%</p>${rank ? `<p class="text-[11px] font-bold text-gray-600 mt-3 bg-gray-100/50 inline-block px-2 py-1 rounded-lg border border-gray-200/50 shadow-sm">Class Rank: <span class="text-indigo-600">#${rank}</span></p>` : ''}</div><div class="text-right"><div class="font-black text-2xl text-gray-900">${r.obtained}<span class="text-xs text-gray-400 font-bold">/${r.total}</span></div><div class="text-[10px] font-black text-${c}-700 bg-${c}-100/80 px-2 py-1.5 rounded-lg border border-${c}-200 inline-block mt-2 tracking-wider shadow-sm">${isAbsent ? 'ABSENT' : r.status} (${r.percentage.toFixed(0)}%)</div>${timeDisplay}</div></div></div>`;
+        }
 
-    // Safety fallback for Admin Profile to prevent app-breaking ReferenceErrors
-    if (!document.getElementById('admin-profile-view')?.classList.contains('hidden-view') && window.selectedAdminProfile) {
-        if (typeof renderAdminProfile === 'function') renderAdminProfile(window.selectedAdminProfile);
-    }
-}
         function renderStudentDashboard() {
             const curStu = window.studentsDB.find(s => s.mobile === window.loggedInMobile); if (curStu) { document.getElementById('student-name-display').innerText = curStu.name; }
             const pendingList = document.getElementById('student-pending-exams'); const recordsList = document.getElementById('student-records-list'); pendingList.innerHTML = ''; recordsList.innerHTML = '';
