@@ -3821,32 +3821,40 @@ window.sharePerformance = async function() {
         window.declineIncomingCall = function() { stopRingtone(); document.getElementById('incoming-call-modal').classList.add('hidden-view'); window.currentIncomingCall = null; };
 
         window.startDiscusVideoCall = async function(isAnswering = false) {
-            const container = document.getElementById('discus-jitsi-container'); const modal = document.getElementById('discus-video-modal');
-            document.getElementById('call-icon-indicator').className = "fa-solid fa-video text-green-400 animate-pulse"; document.getElementById('call-title-indicator').innerText = "Discus Live Video Call";
-            modal.classList.remove('hidden-view'); container.innerHTML = ''; if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
-            const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'Admin' : 'Student');
-            const options = { roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall', parentNode: container, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: false, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: senderName } };
-            window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options); window.chatJitsiApi.executeCommand('join');
-            if (!isAnswering) {
-                const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'video', status: 'ringing', timestamp: Date.now() };
-                if (isFirebaseConfigured) await setDoc(doc(db, "active_calls", "discus_call"), callPayload);
-                await window.dbSendChat({ type: 'call_log', callType: 'video', text: "Started a Video Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
-            }
-        };
+    const container = document.getElementById('discus-jitsi-container'); const modal = document.getElementById('discus-video-modal');
+    document.getElementById('call-icon-indicator').className = "fa-solid fa-video text-green-400 animate-pulse"; document.getElementById('call-title-indicator').innerText = "Discus Live Video Call";
+    modal.classList.remove('hidden-view'); container.innerHTML = ''; if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
+    const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'Admin' : 'Student');
+    const options = { roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall', parentNode: container, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: false, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: senderName } };
+    window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options); window.chatJitsiApi.executeCommand('join');
+    
+    if (!isAnswering) {
+        const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'video', status: 'ringing', timestamp: Date.now() };
+        if (isFirebaseConfigured) await setDoc(doc(db, "active_calls", "discus_call"), callPayload);
+        await window.dbSendChat({ type: 'call_log', callType: 'video', text: "Started a Video Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
+        
+        // Add this line to send the push notification
+        sendOneSignalPush(`🎥 Incoming Video Call`, `${senderName} started a live video call in Discus Community.`);
+    }
+};
 
-        window.startDiscusAudioCall = async function(isAnswering = false) {
-            const container = document.getElementById('discus-jitsi-container'); const modal = document.getElementById('discus-video-modal');
-            document.getElementById('call-icon-indicator').className = "fa-solid fa-phone-volume text-green-400 animate-pulse"; document.getElementById('call-title-indicator').innerText = "Discus Live Audio Call";
-            modal.classList.remove('hidden-view'); container.innerHTML = ''; if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
-            const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'Admin' : 'Student');
-            const options = { roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall', parentNode: container, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: true, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: senderName } };
-            window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options); window.chatJitsiApi.executeCommand('join');
-            if (!isAnswering) {
-                const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'audio', status: 'ringing', timestamp: Date.now() };
-                if (isFirebaseConfigured) await setDoc(doc(db, "active_calls", "discus_call"), callPayload);
-                await window.dbSendChat({ type: 'call_log', callType: 'audio', text: "Started an Audio Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
-            }
-        };
+       window.startDiscusAudioCall = async function(isAnswering = false) {
+    const container = document.getElementById('discus-jitsi-container'); const modal = document.getElementById('discus-video-modal');
+    document.getElementById('call-icon-indicator').className = "fa-solid fa-phone-volume text-green-400 animate-pulse"; document.getElementById('call-title-indicator').innerText = "Discus Live Audio Call";
+    modal.classList.remove('hidden-view'); container.innerHTML = ''; if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
+    const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'Admin' : 'Student');
+    const options = { roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall', parentNode: container, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: true, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: senderName } };
+    window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options); window.chatJitsiApi.executeCommand('join');
+    
+    if (!isAnswering) {
+        const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'audio', status: 'ringing', timestamp: Date.now() };
+        if (isFirebaseConfigured) await setDoc(doc(db, "active_calls", "discus_call"), callPayload);
+        await window.dbSendChat({ type: 'call_log', callType: 'audio', text: "Started an Audio Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
+        
+        // Add this line to send the push notification
+        sendOneSignalPush(`📞 Incoming Audio Call`, `${senderName} started a live audio call in Discus Community.`);
+    }
+};
 
        window.closeDiscusVideoCall = function() {
             stopRingtone(); if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; } document.getElementById('discus-video-modal').classList.add('hidden-view');
