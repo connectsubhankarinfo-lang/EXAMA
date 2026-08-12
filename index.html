@@ -734,9 +734,10 @@
             <!-- Tab Switcher for Leaderboard -->
             <div class="px-4 sm:px-5 pt-4 sm:pt-5 pb-2 relative z-10 bg-[#f8fafc] shrink-0">
                 <!-- MAIN TABS -->
-                <div class="flex bg-gray-200/50 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-gray-200 mb-2 sm:mb-3">
-                    <button onclick="switchLbMainTab('score')" id="lb-main-score" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-active transition-all"><i class="fa-solid fa-graduation-cap mr-1"></i> Score Rank</button>
-                    <button onclick="switchLbMainTab('study')" id="lb-main-study" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-inactive transition-all"><i class="fa-solid fa-stopwatch mr-1"></i> Study Rank</button>
+                <div class="flex bg-gray-200/50 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-gray-200 mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+                    <button onclick="switchLbMainTab('score')" id="lb-main-score" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-active transition-all whitespace-nowrap px-2"><i class="fa-solid fa-graduation-cap mr-1"></i> Score</button>
+                    <button onclick="switchLbMainTab('study')" id="lb-main-study" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-inactive transition-all whitespace-nowrap px-2"><i class="fa-solid fa-stopwatch mr-1"></i> Focus</button>
+                    <button onclick="switchLbMainTab('target')" id="lb-main-target" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-inactive transition-all whitespace-nowrap px-2"><i class="fa-solid fa-list-check mr-1"></i> Targets</button>
                 </div>
                 <!-- SUB TABS -->
                 <div class="flex bg-white p-1 rounded-lg sm:rounded-xl border border-gray-200 shadow-sm w-max mx-auto">
@@ -899,6 +900,9 @@
             <div id="chat-messages" class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-4 chat-bg flex flex-col pb-4"></div>
             
             <div class="w-full bg-[#f0f2f5] p-2 flex flex-col shrink-0 relative md:rounded-b-[2.5rem]">
+               <!-- MENTIONS DROPDOWN -->
+                <div id="mention-dropdown" class="hidden absolute bottom-full left-2 mb-2 w-48 sm:w-64 bg-white/95 backdrop-blur-xl border border-gray-200 rounded-xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] max-h-40 overflow-y-auto flex-col z-50 divide-y divide-gray-100"></div>
+               
                 <div id="chat-audio-preview" class="hidden mx-1 sm:mx-2 mb-2 p-2 bg-white border border-gray-200 rounded-lg flex items-center justify-between shadow-sm">
                     <audio id="audio-playback" controls class="h-8 max-w-[150px] sm:max-w-[200px] outline-none"></audio>
                     <div class="flex gap-1.5 sm:gap-2">
@@ -1383,18 +1387,22 @@
         window.studentsDB = []; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;
         let chartInstance = null; let adminProfileChartInstance = null; let analysisChartInstance = null; let fitnessChartInstance = null; let globalTimerInterval = null; window.replyingTo = null; window.activeSubjectFilter = 'All'; window.jitsiApi = null; window.chatJitsiApi = null;
 
-      // --- 2. LEADERBOARD NEW SUB-TAB LOGIC ---
+     // --- 2. LEADERBOARD NEW SUB-TAB LOGIC ---
         window.lbMainTab = 'score';
         window.lbSubTab = 'weekly';
 
         window.switchLbMainTab = function(tab) { 
             window.lbMainTab = tab; 
-            document.getElementById('lb-main-score').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all ${tab === 'score' ? 'segment-active' : 'segment-inactive'}`; 
-            document.getElementById('lb-main-study').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all ${tab === 'study' ? 'segment-active' : 'segment-inactive'}`; 
+            document.getElementById('lb-main-score').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all whitespace-nowrap px-2 ${tab === 'score' ? 'segment-active' : 'segment-inactive'}`; 
+            document.getElementById('lb-main-study').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all whitespace-nowrap px-2 ${tab === 'study' ? 'segment-active' : 'segment-inactive'}`; 
+            document.getElementById('lb-main-target').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all whitespace-nowrap px-2 ${tab === 'target' ? 'segment-active' : 'segment-inactive'}`; 
             
             const wkBtn = document.getElementById('lb-sub-weekly');
             const totBtn = document.getElementById('lb-sub-total');
-            const activeColor = tab === 'score' ? 'text-indigo-600 bg-indigo-50 border-indigo-100' : 'text-teal-600 bg-teal-50 border-teal-100';
+            
+            let activeColor = 'text-indigo-600 bg-indigo-50 border-indigo-100'; // Defaults for 'score'
+            if(tab === 'study') activeColor = 'text-teal-600 bg-teal-50 border-teal-100';
+            if(tab === 'target') activeColor = 'text-purple-600 bg-purple-50 border-purple-100';
             
             if(window.lbSubTab === 'weekly') {
                 wkBtn.className = `px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-md sm:rounded-lg transition-all shadow-sm border ${activeColor}`;
@@ -1410,7 +1418,10 @@
             window.lbSubTab = tab; 
             const wkBtn = document.getElementById('lb-sub-weekly');
             const totBtn = document.getElementById('lb-sub-total');
-            const activeColor = window.lbMainTab === 'score' ? 'text-indigo-600 bg-indigo-50 border-indigo-100' : 'text-teal-600 bg-teal-50 border-teal-100';
+            
+            let activeColor = 'text-indigo-600 bg-indigo-50 border-indigo-100';
+            if(window.lbMainTab === 'study') activeColor = 'text-teal-600 bg-teal-50 border-teal-100';
+            if(window.lbMainTab === 'target') activeColor = 'text-purple-600 bg-purple-50 border-purple-100';
 
             if(tab === 'weekly') {
                 wkBtn.className = `px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-md sm:rounded-lg transition-all shadow-sm border ${activeColor}`;
@@ -1420,7 +1431,7 @@
                 wkBtn.className = "px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest rounded-md sm:rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
             }
             renderLeaderboard(); 
-        } 
+        }
        
         // --- HELPER: MON-SUN WEEK CALCULATOR ---
        window.getWeeklyRange = function(d = new Date()) {
@@ -2290,14 +2301,54 @@
             return leaderboard;
         }
 
-        // --- 3. DYNAMIC LEADERBOARD RENDERER ---
+        // --- 3. TARGET (WEEKLY TASKS) LEADERBOARD ENGINE ---
+        function getTargetLeaderboard() {
+            const studentTargets = {};
+            const { weekKey: currentWeekKey } = window.getTargetWeekInfo(0);
+
+            // Initialize all students
+            window.studentsDB.forEach(s => {
+                studentTargets[s.mobile] = { mobile: s.mobile, name: s.name, totalTasks: 0, completedTasks: 0, weeklyTasks: 0, weeklyCompleted: 0 };
+            });
+
+            // Calculate total and weekly tasks assigned per student
+            window.weeklyTasksDB.forEach(task => {
+                const isCurrentWeek = task.weekKey === currentWeekKey;
+                window.studentsDB.forEach(s => {
+                    if (!task.assignedTo || task.assignedTo.includes('All') || task.assignedTo.includes(s.mobile)) {
+                        studentTargets[s.mobile].totalTasks++;
+                        if (isCurrentWeek) studentTargets[s.mobile].weeklyTasks++;
+                    }
+                });
+            });
+
+            // Calculate completions
+            window.studentTasksDB.forEach(st => {
+                if (st.completed && studentTargets[st.mobile]) {
+                    const task = window.weeklyTasksDB.find(t => t.id === st.taskId);
+                    if (task) {
+                        studentTargets[st.mobile].completedTasks++;
+                        if (task.weekKey === currentWeekKey) {
+                            studentTargets[st.mobile].weeklyCompleted++;
+                        }
+                    }
+                }
+            });
+
+            // Calculate percentages
+            return Object.values(studentTargets).map(s => ({
+                ...s,
+                totalPerc: s.totalTasks > 0 ? Math.round((s.completedTasks / s.totalTasks) * 100) : 0,
+                weeklyPerc: s.weeklyTasks > 0 ? Math.round((s.weeklyCompleted / s.weeklyTasks) * 100) : 0
+            }));
+        }
+
+        // --- 4. DYNAMIC LEADERBOARD RENDERER ---
         window.renderLeaderboard = function() {
             const list = document.getElementById('leaderboard-list'); list.innerHTML = '';
             
             if (window.lbMainTab === 'score') {
                 const leaderboard = getOverallLeaderboard();
-                
-                // Sort Numerically based on selected Sub-Tab
                 let sortedList = window.lbSubTab === 'weekly' 
                     ? [...leaderboard].sort((a, b) => b.weeklyAvg - a.weeklyAvg) 
                     : [...leaderboard].sort((a, b) => b.avg - a.avg);
@@ -2330,10 +2381,8 @@
                             </div>
                         </div>`;
                 });
-            } else {
+            } else if (window.lbMainTab === 'study') {
                 const leaderboard = getStudyLeaderboard();
-                
-                // Sort Numerically using parseFloat for Hours
                 let sortedList = window.lbSubTab === 'weekly' 
                     ? [...leaderboard].sort((a, b) => parseFloat(b.weeklyHours) - parseFloat(a.weeklyHours)) 
                     : [...leaderboard].sort((a, b) => parseFloat(b.totalHours) - parseFloat(a.totalHours));
@@ -2362,6 +2411,42 @@
                             </div>
                             <div class="text-right shrink-0">
                                 <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">h</span></p>
+                                <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
+                            </div>
+                        </div>`;
+                });
+            } else if (window.lbMainTab === 'target') {
+                const leaderboard = getTargetLeaderboard();
+                let sortedList = window.lbSubTab === 'weekly' 
+                    ? [...leaderboard].sort((a, b) => b.weeklyPerc - a.weeklyPerc) 
+                    : [...leaderboard].sort((a, b) => b.totalPerc - a.totalPerc);
+
+                sortedList.forEach((s, idx) => {
+                    const rank = idx + 1;
+                    const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyPerc : s.totalPerc;
+                    const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Target' : 'Total Target';
+                    const secondaryVal = window.lbSubTab === 'weekly' 
+                        ? `${s.weeklyCompleted}/${s.weeklyTasks} Tasks (Tot: ${s.totalPerc}%)` 
+                        : `${s.completedTasks}/${s.totalTasks} Tasks (Wk: ${s.weeklyPerc}%)`;
+
+                    let badge = ''; let bg = 'glass-card';
+                    if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-purple-100/80 to-purple-200/80 border-purple-300'; } 
+                    else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; } 
+                    else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; } 
+                    else { badge = `#${rank}`; }
+
+                    const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-purple-50/90 border-purple-200';
+                    list.innerHTML += `
+                        <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2">
+                            <div class="flex items-center gap-2 sm:gap-4 min-w-0">
+                                <div class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl sm:rounded-2xl bg-white/60 flex items-center justify-center font-black text-base sm:text-lg shadow-sm border border-white/50">${badge}</div>
+                                <div class="min-w-0 pr-1">
+                                    <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-purple-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
+                                    <span class="bg-purple-100/80 text-purple-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">%</span></p>
                                 <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
                             </div>
                         </div>`;
@@ -3121,7 +3206,74 @@
             };
         }
 
-        document.getElementById('chat-input').addEventListener('input', toggleSendButton);
+        // ==========================================
+        // @ MENTION ENGINE
+        // ==========================================
+        window.mentionStartIndex = -1;
+        
+        document.getElementById('chat-input').addEventListener('input', function() {
+            toggleSendButton();
+            handleMentionInput(this);
+        });
+
+        window.handleMentionInput = function(textarea) {
+            const cursorPosition = textarea.selectionStart;
+            const textBeforeCursor = textarea.value.substring(0, cursorPosition);
+            
+            // Detect if typing a mention (e.g. "@Joh")
+            const mentionMatch = textBeforeCursor.match(/(?:^|\s)@([^\s]*)$/);
+            const dropdown = document.getElementById('mention-dropdown');
+
+            if (mentionMatch) {
+                const query = mentionMatch[1].toLowerCase();
+                window.mentionStartIndex = cursorPosition - mentionMatch[1].length - 1; 
+                showMentionDropdown(query);
+            } else {
+                dropdown.classList.add('hidden');
+                window.mentionStartIndex = -1;
+            }
+        };
+
+        window.showMentionDropdown = function(query) {
+            const dropdown = document.getElementById('mention-dropdown');
+            dropdown.innerHTML = '';
+            
+            // Build user list (All students + Admin)
+            let users = window.studentsDB.map(s => ({ name: s.name, mobile: s.mobile }));
+            users.push({ name: 'Admin', mobile: 'admin' });
+
+            // Filter users based on what is typed after @
+            const filtered = users.filter(u => u.name.toLowerCase().includes(query));
+
+            if (filtered.length === 0) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            dropdown.classList.remove('hidden');
+            
+            filtered.forEach(u => {
+                const dp = window.getStudentAvatar(u.mobile, u.name);
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2 p-2 hover:bg-indigo-50 cursor-pointer transition-colors';
+                div.innerHTML = `<img src="${dp}" class="w-6 h-6 rounded-full object-cover shrink-0"><span class="text-xs font-black text-gray-800">${u.name}</span>`;
+                
+                // When clicked, insert the name
+                div.onclick = function() {
+                    const textarea = document.getElementById('chat-input');
+                    const text = textarea.value;
+                    const beforeMention = text.substring(0, window.mentionStartIndex);
+                    const afterMention = text.substring(textarea.selectionStart);
+                    
+                    textarea.value = beforeMention + `@${u.name} ` + afterMention;
+                    
+                    dropdown.classList.add('hidden');
+                    textarea.focus();
+                    toggleSendButton();
+                };
+                dropdown.appendChild(div);
+            });
+        };
         function toggleSendButton() { const val = document.getElementById('chat-input').value.trim(); if (val.length > 0) { document.getElementById('mic-btn').classList.add('hidden'); document.getElementById('send-text-btn').classList.remove('hidden'); } else { document.getElementById('mic-btn').classList.remove('hidden'); document.getElementById('send-text-btn').classList.add('hidden'); } }
 
         window.uploadChatImages = async function(event) {
