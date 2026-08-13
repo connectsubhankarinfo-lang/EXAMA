@@ -348,7 +348,7 @@
                         <div class="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
                             <!-- Clickable DP Container -->
                             <div class="relative group cursor-pointer shrink-0" onclick="document.getElementById('dp-upload-input').click()" title="Change Profile Picture">
-                                <img id="student-nav-dp" src="https://ui-avatars.com/api/?name=Exama&background=4f46e5&color=fff&bold=true" class="w-10 h-10 sm:w-11 sm:h-11 rounded-full shadow-md border-2 border-white/30 object-cover group-hover:opacity-70 transition-all" onerror="this.src='https://ui-avatars.com/api/?name=Exama&background=4f46e5&color=fff&bold=true'">
+                                <img id="student-nav-dp" src="https://ui-avatars.com/api/?name=Exama&background=4f46e5&color=fff&bold=true" class="w-10 h-10 sm:w-11 sm:h-11 rounded-full shadow-md border-2 border-white/30 object-cover group-hover:opacity-70 transition-all bg-indigo-100" onerror="this.onerror=null; this.src='https://lh3.googleusercontent.com/a/default-user=s120-c';">
                                 <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><i class="fa-solid fa-camera text-white text-[10px] sm:text-[14px]"></i></div>
                             </div>
                             <input type="file" id="dp-upload-input" accept="image/*" class="hidden" onchange="uploadStudentDP(this)">
@@ -2828,8 +2828,31 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                 
                 // Load DP or generate Initials Avatar
                 const dpImg = document.getElementById('student-nav-dp');
-                const defaultDp = "https://ui-avatars.com/api/?name=" + encodeURIComponent(curStu.name) + "&background=4f46e5&color=fff&bold=true";
-                if(dpImg) dpImg.src = curStu.dpUrl || defaultDp;
+                if(dpImg) {
+                    // Double security: if both custom DP and ui-avatars fail, show Google default
+                    dpImg.onerror = function() {
+                        this.onerror = null;
+                        this.src = "https://lh3.googleusercontent.com/a/default-user=s120-c";
+                    };
+                    const defaultDp = "https://ui-avatars.com/api/?name=" + encodeURIComponent(curStu.name) + "&background=4f46e5&color=fff&bold=true";
+                    
+                    // 1. INSTANT LOAD: Grab the last known DP from cache
+                    const cachedDpUrl = localStorage.getItem(`exama_dp_${mob}`);
+                    if (cachedDpUrl) {
+                        dpImg.src = cachedDpUrl;
+                    } else {
+                        dpImg.src = defaultDp; // Show initials if completely new device
+                    }
+
+                    // 2. BACKGROUND SYNC: Check Firebase for the absolute latest DP
+                    const latestFirebaseDp = curStu.dpUrl || defaultDp;
+                    
+                    // 3. UPDATE: If Firebase has a newer image, swap it and save to cache
+                    if (dpImg.src !== latestFirebaseDp) {
+                        dpImg.src = latestFirebaseDp;
+                        localStorage.setItem(`exama_dp_${mob}`, latestFirebaseDp);
+                    }
+                }
 
                 // --- 365 DAILY MOTIVATIONAL QUOTES LOGIC ---
                 const motivationalQuotes = [
@@ -2929,7 +2952,23 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
 
         // --- 4. HOME DASHBOARD UPDATER ---
         function renderStudentDashboard() {
-            const curStu = window.studentsDB.find(s => s.mobile === window.loggedInMobile); if (curStu) { document.getElementById('student-name-display').innerText = curStu.name; }
+            const curStu = window.studentsDB.find(s => s.mobile === window.loggedInMobile); 
+            if (curStu) { 
+                document.getElementById('student-name-display').innerText = curStu.name; 
+                
+                // Keep DP and Cache synchronized on real-time database updates
+                const dpImg = document.getElementById('student-nav-dp');
+                if (dpImg) {
+                    const defaultDp = "https://ui-avatars.com/api/?name=" + encodeURIComponent(curStu.name) + "&background=4f46e5&color=fff&bold=true";
+                    const latestFirebaseDp = curStu.dpUrl || defaultDp;
+                    const cachedDpUrl = localStorage.getItem(`exama_dp_${window.loggedInMobile}`);
+                    
+                    if (latestFirebaseDp !== cachedDpUrl) {
+                        dpImg.src = latestFirebaseDp;
+                        localStorage.setItem(`exama_dp_${window.loggedInMobile}`, latestFirebaseDp);
+                    }
+                }
+            }
             const pendingList = document.getElementById('student-pending-exams'); const recordsList = document.getElementById('student-records-list'); pendingList.innerHTML = ''; recordsList.innerHTML = '';
             
             const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
@@ -4270,16 +4309,22 @@ window.sharePerformance = async function() {
             return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Exama')}&background=4f46e5&color=fff&bold=true`;
         };
 
-        window.uploadStudentDP = async function(input) {
+       window.uploadStudentDP = async function(input) {
             if (!input.files || input.files.length === 0) return;
-            const file = input.files[0];
-            showLoader("Updating Profile Picture...");
+            const originalFile = input.files[0];
             
-            const formData = new FormData();
-            formData.append("image", file);
-            const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
+            // Show loader indicating compression
+            showLoader("Optimizing & Uploading...");
             
             try {
+                // 1. Compress the image (Max 400x400px, 80% JPEG Quality)
+                const compressedFile = await window.compressImage(originalFile, 400, 400, 0.8);
+                
+                const formData = new FormData();
+                formData.append("image", compressedFile);
+                const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
+                
+                // 2. Upload the tiny compressed image
                 const res = await fetch(`https://api.imgbb.com/1/upload?expiration=15552000&key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
                 const data = await res.json();
                 
@@ -4293,10 +4338,14 @@ window.sharePerformance = async function() {
                         if(stu) stu.dpUrl = imageUrl;
                     }
                     
+                    // INSTANT CACHE UPDATE
+                    localStorage.setItem(`exama_dp_${window.loggedInMobile}`, imageUrl);
+                    
                     const navDp = document.getElementById('student-nav-dp');
                     if (navDp) navDp.src = imageUrl;
+                    
                     refreshUI();
-                    showToast("Success", "Profile Picture updated perfectly!", "info");
+                    showToast("Success", "Profile Picture updated lightning fast!", "info");
                 }
             } catch(e) {
                 console.error(e);
@@ -4612,6 +4661,54 @@ if(novaInput) {
             // window.location.reload() completely resets the HTML DOM, which naturally 
             // puts the spinner back into its default hidden state at the top.
         }
+        
+        // ==========================================
+        // CLIENT-SIDE IMAGE COMPRESSOR
+        // ==========================================
+        window.compressImage = function(file, maxWidth = 400, maxHeight = 400, quality = 0.8) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = event => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+
+                        // Calculate new dimensions while maintaining aspect ratio
+                        if (width > height) {
+                            if (width > maxWidth) {
+                                height *= maxWidth / width;
+                                width = maxWidth;
+                            }
+                        } else {
+                            if (height > maxHeight) {
+                                width *= maxHeight / height;
+                                height = maxHeight;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Convert canvas to a highly compressed JPEG blob
+                        canvas.toBlob(blob => {
+                            const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { 
+                                type: 'image/jpeg', 
+                                lastModified: Date.now() 
+                            });
+                            resolve(compressedFile);
+                        }, 'image/jpeg', quality);
+                    };
+                    img.onerror = error => reject(error);
+                };
+                reader.onerror = error => reject(error);
+            });
+        };
     </script>
 </body>
 </html>
