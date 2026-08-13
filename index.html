@@ -1923,23 +1923,45 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
         default: window.location.hash = window.currentRole || 'login'; break;
     }
 }
-      async function sendOneSignalPush(title, message, imageUrl = null, targetMobiles = null) {
+     // --- NEW HELPER: Get everyone's mobile EXCLUDING the sender ---
+window.getOtherMobilesForPush = function() {
+    let targets = window.studentsDB.map(s => s.mobile);
+    targets.push('9475757821'); // Add Admin's mobile
+    return targets.filter(mob => mob !== window.loggedInMobile);
+};
+
+// --- UPDATED PUSH ENGINE ---
+// --- UPDATED PUSH ENGINE (NO SENDER PUSH & SPECIFIC TARGETING) ---
+async function sendOneSignalPush(title, message, imageUrl = null, targetMobiles = null) {
     const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
     
+    // 1. Determine who should receive the notification
+    let finalTargets = [];
+
+    if (targetMobiles && Array.isArray(targetMobiles) && !targetMobiles.includes('All') && targetMobiles.length > 0) {
+        // A specific list of students was passed (e.g., Specific Exam or Notice)
+        finalTargets = targetMobiles;
+    } else {
+        // "All" was passed, or it's a general alert. Grab everyone from the database.
+        finalTargets = window.studentsDB.map(s => s.mobile);
+        finalTargets.push('9475757821'); // Include Admin's mobile
+    }
+
+    // 2. STRICTLY REMOVE THE SENDER FROM THE RECEIVER LIST
+    finalTargets = finalTargets.filter(mob => mob !== window.loggedInMobile);
+
+    // 3. If there is no one left to notify, stop the function
+    if (finalTargets.length === 0) return;
+
+    // 4. Build the targeted payload
     const payload = { 
         app_id: ONESIGNAL_APP_ID, 
         headings: { "en": title }, 
-        contents: { "en": message }
+        contents: { "en": message },
+        target_channel: "push",
+        // Force OneSignal to target exactly these specific mobile numbers
+        include_aliases: { external_id: finalTargets }
     };
-
-    // --- ROCK-SOLID TARGETING LOGIC ---
-    // If specific students are assigned, use include_external_user_ids
-    if (targetMobiles && Array.isArray(targetMobiles) && !targetMobiles.includes('All') && targetMobiles.length > 0) {
-        payload.include_external_user_ids = targetMobiles;
-    } else {
-        // Otherwise, broadcast to everyone 
-        payload.included_segments = ["All"];
-    }
 
     if (imageUrl) {
         payload.big_picture = imageUrl; 
@@ -1957,7 +1979,7 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
     } 
     catch (e) { 
         console.warn("API Push Failed", e); 
-        sendPushNotification(title, message); 
+        sendPushNotification(title, message); // Local browser fallback
     }
 }
         window.showLoader = function(message) { const loaderText = document.getElementById('loader-text'); if (loaderText && message) { loaderText.innerText = message; } document.getElementById('global-loader').classList.remove('hidden-view'); };
@@ -3185,7 +3207,7 @@ if (assignType === 'Specific') {
 
 await window.dbSubmitExam({ name: examName, date: examDate, totalMarks: parseFloat(totalMarks), passPercentage: parseFloat(document.getElementById('new-exam-pass').value) || 40, duration: parseFloat(duration), examPin: document.getElementById('new-exam-pin').value, isProctored: document.getElementById('new-exam-proctor').checked, globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false, assignedTo: assignedTo });
             sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`, null, assignedTo);
-            await window.dbSendNotice({ title: `🗓️ New Exam: ${examName}`, text: `A new exam has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard and attach your peer materials early!`, date: window.formatDateDDMMYYYY(), type: 'new_exam', timestamp: Date.now() });
+            await window.dbSendNotice({ title: `🗓️ New Exam: ${examName}`, text: `A new exam has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard and attach your peer materials early!`, date: window.formatDateDDMMYYYY(), type: 'new_exam', timestamp: Date.now(), assignedTo: assignedTo });
             hideLoader(); closeBottomSheet(); document.getElementById('form-create-exam').reset();
         }
 
@@ -3502,7 +3524,7 @@ await window.dbUpdateExam(id, { name: document.getElementById('edit-exam-name').
                 const base64Audio = reader.result;
                 const senderName = window.currentRole === 'student' ? window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name : 'Admin';
                 await window.dbSendChat({ text: '', audioUrl: base64Audio, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-                sendOneSignalPush(`New Voice Note from ${senderName}`, "Tap to listen in Discus."); window.markChatAsRead(); cancelAudioRecord(); hideLoader();
+                sendOneSignalPush(`New Voice Note from ${senderName}`, "Tap to listen in Discus.", null, window.getOtherMobilesForPush());
             };
         }
 
@@ -3585,7 +3607,7 @@ await window.dbUpdateExam(id, { name: document.getElementById('edit-exam-name').
                 if(urls.length > 0) {
                     const senderName = window.currentRole === 'student' ? window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name : 'Admin';
                     await window.dbSendChat({ text: '', imgUrls: urls, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-                    sendOneSignalPush(`New Photo from ${senderName}`, "Tap to view in Discus."); window.markChatAsRead(); cancelChatReply();
+                    sendOneSignalPush(`New Photo from ${senderName}`, "Tap to view in Discus.", null, window.getOtherMobilesForPush());
                 }
                 hideLoader(); event.target.value = '';
             } catch(e) { console.error(e); hideLoader(); alert("Failed to upload images."); }
@@ -3595,7 +3617,7 @@ await window.dbUpdateExam(id, { name: document.getElementById('edit-exam-name').
             const input = document.getElementById('chat-input'); const text = input.value.trim(); if(!text) return; input.value = ''; toggleSendButton();
             const senderName = window.currentRole === 'student' ? window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name : 'Admin';
             await window.dbSendChat({ text, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-            sendOneSignalPush(`New Message from ${senderName}`, text); window.markChatAsRead(); cancelChatReply();
+            sendOneSignalPush(`New Message from ${senderName}`, text, null, window.getOtherMobilesForPush());
         }
 window.sharePerformance = async function() {
     if (window.currentRole === 'admin') return; 
@@ -3706,7 +3728,7 @@ window.sharePerformance = async function() {
         replyTo: window.replyingTo ? window.replyingTo : null 
     });
     
-    sendOneSignalPush(`Performance Card Shared`, `${senderName} shared their full academic & fitness profile.`); 
+    sendOneSignalPush(`Performance Card Shared`, `${senderName} shared their full academic.`, null, window.getOtherMobilesForPush());
     window.markChatAsRead(); 
     cancelChatReply();
 }
@@ -4116,7 +4138,7 @@ window.sharePerformance = async function() {
         await window.dbSendChat({ type: 'call_log', callType: 'video', text: "Started a Video Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
         
         // Add this line to send the push notification
-        sendOneSignalPush(`🎥 Incoming Video Call`, `${senderName} started a live video call in Discus Community.`);
+        sendOneSignalPush(`🎥 Incoming Video Call`, `${senderName} started a live video call in Discus Community.`, null, window.getOtherMobilesForPush());
     }
 };
 
@@ -4134,7 +4156,7 @@ window.sharePerformance = async function() {
         await window.dbSendChat({ type: 'call_log', callType: 'audio', text: "Started an Audio Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
         
         // Add this line to send the push notification
-        sendOneSignalPush(`📞 Incoming Audio Call`, `${senderName} started a live audio call in Discus Community.`);
+        sendOneSignalPush(`📞 Incoming Audio Call`, `${senderName} started a live audio call in Discus Community.`, null, window.getOtherMobilesForPush());
     }
 };
 
