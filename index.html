@@ -1909,18 +1909,43 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
         default: window.location.hash = window.currentRole || 'login'; break;
     }
 }
-       async function sendOneSignalPush(title, message, imageUrl = null) {
-            const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
-            const payload = { app_id: ONESIGNAL_APP_ID, included_segments: ["All"], headings: { "en": title }, contents: { "en": message }, target_channel: "push" };
-            if (imageUrl) {
-                payload.big_picture = imageUrl; 
-                payload.ios_attachments = { "id1": imageUrl }; 
-            }
-            const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
-            try { const response = await fetch(secureProxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (!response.ok) throw new Error("Push blocked or failed"); } 
-            catch (e) { console.warn("API Push Failed"); sendPushNotification(title, message); }
-        }
+      async function sendOneSignalPush(title, message, imageUrl = null, targetMobiles = null) {
+    const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
+    
+    const payload = { 
+        app_id: ONESIGNAL_APP_ID, 
+        headings: { "en": title }, 
+        contents: { "en": message }
+    };
 
+    // --- ROCK-SOLID TARGETING LOGIC ---
+    // If specific students are assigned, use include_external_user_ids
+    if (targetMobiles && Array.isArray(targetMobiles) && !targetMobiles.includes('All') && targetMobiles.length > 0) {
+        payload.include_external_user_ids = targetMobiles;
+    } else {
+        // Otherwise, broadcast to everyone 
+        payload.included_segments = ["All"];
+    }
+
+    if (imageUrl) {
+        payload.big_picture = imageUrl; 
+        payload.ios_attachments = { "id1": imageUrl }; 
+    }
+
+    const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
+    try { 
+        const response = await fetch(secureProxyUrl, { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify(payload) 
+        }); 
+        if (!response.ok) throw new Error("Push blocked or failed"); 
+    } 
+    catch (e) { 
+        console.warn("API Push Failed", e); 
+        sendPushNotification(title, message); 
+    }
+}
         window.showLoader = function(message) { const loaderText = document.getElementById('loader-text'); if (loaderText && message) { loaderText.innerText = message; } document.getElementById('global-loader').classList.remove('hidden-view'); };
         window.hideLoader = function() { document.getElementById('global-loader').classList.add('hidden-view'); };
         
@@ -3127,7 +3152,7 @@ if (assignType === 'Specific') {
 }
 
 await window.dbSubmitExam({ name: examName, date: examDate, totalMarks: parseFloat(totalMarks), passPercentage: parseFloat(document.getElementById('new-exam-pass').value) || 40, duration: parseFloat(duration), examPin: document.getElementById('new-exam-pin').value, isProctored: document.getElementById('new-exam-proctor').checked, globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false, assignedTo: assignedTo });
-            sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`);
+            sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`, null, assignedTo);
             await window.dbSendNotice({ title: `🗓️ New Exam: ${examName}`, text: `A new exam has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard and attach your peer materials early!`, date: window.formatDateDDMMYYYY(), type: 'new_exam', timestamp: Date.now() });
             hideLoader(); closeBottomSheet(); document.getElementById('form-create-exam').reset();
         }
