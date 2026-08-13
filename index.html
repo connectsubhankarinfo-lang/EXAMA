@@ -1505,8 +1505,15 @@
                 existing = { id, mobile, dateStr, sessionType, name: window.studentsDB.find(s => s.mobile === mobile).name, status: action === 'START' ? 'STUDYING' : 'ABSENT', lastToggleTime: now, totalStudyMs: 0, totalBreakMs: 0, timestamp: now, logs: [{ action: action, time: now }], overtimePrompted: false };
             } else {
                 const elapsed = now - existing.lastToggleTime;
-                if (existing.status === 'STUDYING') existing.totalStudyMs += elapsed; 
-                if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
+               if (existing.status === 'STUDYING') {
+    existing.totalStudyMs += elapsed;
+    
+    // NEW: Lock the timer exactly at 4 hours (14,400,000 ms) when the modal pops up
+    if (action === 'OVERTIME_PAUSE') {
+        existing.totalStudyMs = 14400000;
+    }
+}
+if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                 
                 if (action === 'START' || action === 'RESUME') existing.status = 'STUDYING'; 
                 if (action === 'BREAK') existing.status = 'BREAK'; 
@@ -1561,14 +1568,18 @@
             }
         };
 
-        window.handleOvertimeChoice = function(choice) {
-            document.getElementById('session-overtime-modal').classList.add('hidden-view');
-            if (choice === 'STOP') {
-                toggleSessionState('STOP');
-            } else if (choice === 'CONTINUE') {
-                toggleSessionState('RESUME');
-            }
-        };
+       window.handleOvertimeChoice = function(choice) {
+    // Hide the popup modal
+    document.getElementById('session-overtime-modal').classList.add('hidden-view');
+    
+    if (choice === 'STOP') {
+        // Ends the session and saves progress
+        toggleSessionState('STOP');
+    } else if (choice === 'CONTINUE') {
+        // Resumes the session to count upwards (+00:00:01...)
+        toggleSessionState('RESUME');
+    }
+};
 
         function updateLiveTimers(mySession) {
             const now = Date.now(); const todayStr = window.formatDateDDMMYYYY();
@@ -1595,15 +1606,18 @@
                 let studyTimeEl = document.getElementById('st-study-time');
 
                 if (isOvertime) {
-                    let extraMs = studyMs - TOTAL_SESSION_MS;
-                    displayStr = "+" + formatTime(extraMs);
-                    studyTimeEl.className = "text-4xl sm:text-5xl md:text-6xl font-mono font-black tracking-tighter text-emerald-500 drop-shadow-sm leading-none py-1 break-words";
-                } else {
-                    let remainingStudyMs = TOTAL_SESSION_MS - studyMs;
-                    displayStr = formatTime(remainingStudyMs);
-                    studyTimeEl.className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words";
-                }
-
+    let extraMs = studyMs - TOTAL_SESSION_MS;
+    
+    // NEW: Safety guard to prevent negative zero rendering
+    if (extraMs < 0) extraMs = 0; 
+    
+    displayStr = "+" + formatTime(extraMs);
+    studyTimeEl.className = "text-4xl sm:text-5xl md:text-6xl font-mono font-black tracking-tighter text-emerald-500 drop-shadow-sm leading-none py-1 break-words";
+} else {
+    let remainingStudyMs = TOTAL_SESSION_MS - studyMs;
+    displayStr = formatTime(remainingStudyMs);
+    studyTimeEl.className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words";
+}
                 studyTimeEl.innerText = displayStr;
                 document.getElementById('st-break-time').innerText = formatTime(breakMs); 
             }
