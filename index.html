@@ -992,7 +992,21 @@
                         <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 ml-1 break-words"><i class="fa-regular fa-image text-amber-500 mr-1"></i> Attach Image (Optional)</label>
                         <input type="file" id="notice-image" accept="image/*" class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1 sm:file:py-1.5 file:px-2 sm:file:px-3 file:rounded-md sm:file:rounded-lg file:border-0 file:text-[9px] sm:file:text-[10px] file:font-bold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer">
                     </div>
-
+<!-- NEW: Assign Notice Dropdown -->
+                    <div class="bg-white/80 p-1.5 sm:p-2 rounded-lg sm:rounded-xl border border-gray-200 mt-2">
+                        <div class="flex justify-between items-center mb-1 px-1"><label class="text-[9px] sm:text-[10px] font-bold text-amber-800 uppercase tracking-widest break-words leading-tight">Assign Notice To:</label></div>
+                        <select id="notice-assign-type" onchange="toggleNoticeStudentSelection()" class="w-full px-2 py-1.5 sm:py-2 bg-white rounded-md sm:rounded-lg outline-none font-bold text-amber-800 text-[10px] sm:text-xs border border-amber-100 shadow-sm cursor-pointer break-words">
+                            <option value="All">All Students (Default)</option>
+                            <option value="Specific">Select Specific Students...</option>
+                        </select>
+                        <div id="notice-student-wrapper" class="hidden mt-2">
+                            <div class="flex gap-2 mb-1.5 px-1">
+                                <button type="button" onclick="selectAllStudents('notice', true)" class="text-[9px] bg-amber-500 text-white px-2.5 py-1 rounded shadow-sm font-bold active:scale-95 transition-transform">Select All</button>
+                                <button type="button" onclick="selectAllStudents('notice', false)" class="text-[9px] bg-white border border-gray-300 text-gray-700 px-2.5 py-1 rounded shadow-sm font-bold active:scale-95 transition-transform">Clear All</button>
+                            </div>
+                            <div id="notice-student-checkboxes" class="max-h-24 sm:max-h-28 overflow-y-auto space-y-1 p-1 border-t border-gray-100 bg-white rounded-md sm:rounded-lg shadow-inner"></div>
+                        </div>
+                    </div>
                     <textarea id="notice-body" placeholder="Write notice message..." class="w-full px-3 py-2 sm:px-4 sm:py-3 bg-white rounded-lg sm:rounded-xl font-medium text-[11px] sm:text-xs outline-none border border-gray-200 h-16 sm:h-20"></textarea>
                     <button onclick="submitNotice()" class="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm sm:text-base font-black py-2.5 sm:py-3 rounded-lg sm:rounded-xl shadow-md active:scale-95 transition-all mt-1">Post Notice</button>
                 </div>
@@ -2269,6 +2283,24 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
     }
 };
 
+window.toggleNoticeStudentSelection = function() {
+    const type = document.getElementById('notice-assign-type').value; 
+    const wrapper = document.getElementById('notice-student-wrapper');
+    const cbContainer = document.getElementById('notice-student-checkboxes');
+    
+    if (type === 'Specific') {
+        wrapper.classList.remove('hidden');
+        if (cbContainer.children.length === 0) {
+            cbContainer.innerHTML = ''; 
+            window.studentsDB.forEach(s => {
+                cbContainer.innerHTML += `<label class="flex items-center gap-2 p-1.5 hover:bg-amber-50 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-amber-100"><input type="checkbox" value="${s.mobile}" class="notice-exam-student-cb w-3.5 h-3.5 text-amber-600 rounded border-gray-300"><span class="text-xs font-bold text-gray-700 break-words">${s.name} <span class="text-[9px] text-gray-400 font-normal ml-1">(${s.mobile})</span></span></label>`;
+            });
+        }
+    } else { 
+        wrapper.classList.add('hidden'); 
+    }
+};
+
         window.changeWeekView = function(offset) { window.currentWeekViewOffset += offset; if (window.currentRole === 'admin') { document.getElementById('admin-target-form').classList.remove('hidden'); } else { document.getElementById('admin-target-form').classList.add('hidden'); } renderWeeklyTargets(); }
         window.handleWeekPickerSelect = function(dateString) {
             if(!dateString) return; const [y, m, d] = dateString.split('-'); const selectedDate = new Date(y, m - 1, d); const today = new Date(); today.setHours(0,0,0,0);
@@ -3435,7 +3467,8 @@ await window.dbUpdateExam(id, { name: document.getElementById('edit-exam-name').
         window.replyToMessage = function(id, name, text) { window.replyingTo = { id, name, text: text.substring(0, 40) }; document.getElementById('chat-reply-banner').classList.remove('hidden'); document.getElementById('reply-name').innerText = name; document.getElementById('reply-text').innerText = window.replyingTo.text; toggleChatMenu(id); document.getElementById('chat-input').focus(); }
         window.cancelChatReply = function() { window.replyingTo = null; document.getElementById('chat-reply-banner').classList.add('hidden'); }
         
-        // Audio Recording
+       
+       // Audio Recording
         let mediaRecorder; let audioChunks = []; let audioBlob = null;
         window.toggleAudioRecord = async function() {
             const micBtn = document.getElementById('mic-btn'); const sendBtn = document.getElementById('send-text-btn'); const inputField = document.getElementById('chat-input').parentElement;
@@ -3849,57 +3882,93 @@ window.sharePerformance = async function() {
         window.openNotices = function() { window.location.hash = 'notices'; }
         window.toggleNoticeForm = function() { document.getElementById('admin-notice-form').classList.toggle('hidden'); }
         window.deleteNotice = async function(id) { if(!confirm("Delete this notice?")) return; if(isFirebaseConfigured) await deleteDoc(doc(db, "notices", id)); else { window.noticesDB = window.noticesDB.filter(n => n.id !== id); renderNotices(); checkUnreadNotices(); } }
-       window.renderNotices = function() {
-            const list = document.getElementById('notice-list'); list.innerHTML = '';
-            window.noticesDB.forEach(n => {
-                const delBtn = window.currentRole === 'admin' ? `<button onclick="deleteNotice('${n.id}')" class="text-red-400 hover:text-red-600 ml-2 sm:ml-3 transition-colors shrink-0" title="Delete"><i class="fa-solid fa-trash text-xs sm:text-sm"></i></button>` : '';
-                let borderColor = 'border-amber-200'; let bgCard = 'bg-white'; let iconColor = 'text-amber-500'; let badgeBg = 'bg-amber-100 text-amber-700';
-                if (n.type === 'new_exam') { borderColor = 'border-blue-300'; bgCard = 'bg-blue-50/50'; iconColor = 'text-blue-500'; badgeBg = 'bg-blue-100 text-blue-700'; } 
-                else if (n.type === 'reset_exam') { borderColor = 'border-red-300'; bgCard = 'bg-red-50/50'; iconColor = 'text-red-500'; badgeBg = 'bg-red-100 text-red-700'; } 
-                else if (n.type === 'exam_ended') { borderColor = 'border-purple-300'; bgCard = 'bg-purple-50/50'; iconColor = 'text-purple-500'; badgeBg = 'bg-purple-100 text-purple-700'; }
-                
-                let imageHtml = n.imageUrl ? `<img src="${n.imageUrl}" onclick="window.openFullScreenImage(this.src)" class="w-full h-auto mt-2 sm:mt-3 rounded-lg sm:rounded-xl object-cover border border-gray-200 shadow-sm cursor-pointer hover:opacity-90 transition-opacity">` : '';
+      window.renderNotices = function() {
+    const list = document.getElementById('notice-list'); list.innerHTML = '';
+    
+    // --- NEW: Filter out notices that aren't assigned to this student
+    const visibleNotices = window.noticesDB.filter(n => {
+        if (window.currentRole === 'admin') return true;
+        return !n.assignedTo || n.assignedTo.includes('All') || n.assignedTo.includes(window.loggedInMobile);
+    });
 
-                list.innerHTML += `<div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] space-y-1.5 sm:space-y-2 ${borderColor} ${bgCard} shadow-sm"><div class="flex justify-between items-center border-b border-gray-200/50 pb-2 sm:pb-3 mb-1.5 sm:mb-2 gap-2"><h4 class="font-black text-gray-900 text-xs sm:text-[14px] flex items-center gap-1.5 sm:gap-2 leading-tight break-words min-w-0 pr-1"><i class="fa-solid fa-circle-exclamation ${iconColor} shrink-0"></i><span class="break-words">${n.title}</span></h4><div class="flex items-center shrink-0"><span class="text-[8px] sm:text-[9px] font-black ${badgeBg} px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md shadow-sm uppercase tracking-widest whitespace-nowrap">${n.date || 'Recent'}</span>${delBtn}</div></div><p class="text-[11px] sm:text-xs text-gray-700 font-medium leading-relaxed whitespace-pre-wrap break-words">${n.text}</p>${imageHtml}</div>`;
-            });
+    if (visibleNotices.length === 0) {
+        list.innerHTML = `<div class="text-center text-gray-500 font-medium py-6 text-xs bg-white rounded-xl shadow-sm border border-gray-100">No notices on the board right now.</div>`;
+        return;
+    }
+
+    visibleNotices.forEach(n => {
+        const delBtn = window.currentRole === 'admin' ? `<button onclick="deleteNotice('${n.id}')" class="text-red-400 hover:text-red-600 ml-2 sm:ml-3 transition-colors shrink-0" title="Delete"><i class="fa-solid fa-trash text-xs sm:text-sm"></i></button>` : '';
+        let borderColor = 'border-amber-200'; let bgCard = 'bg-white'; let iconColor = 'text-amber-500'; let badgeBg = 'bg-amber-100 text-amber-700';
+        if (n.type === 'new_exam') { borderColor = 'border-blue-300'; bgCard = 'bg-blue-50/50'; iconColor = 'text-blue-500'; badgeBg = 'bg-blue-100 text-blue-700'; } 
+        else if (n.type === 'reset_exam') { borderColor = 'border-red-300'; bgCard = 'bg-red-50/50'; iconColor = 'text-red-500'; badgeBg = 'bg-red-100 text-red-700'; } 
+        else if (n.type === 'exam_ended') { borderColor = 'border-purple-300'; bgCard = 'bg-purple-50/50'; iconColor = 'text-purple-500'; badgeBg = 'bg-purple-100 text-purple-700'; }
+        
+        let imageHtml = n.imageUrl ? `<img src="${n.imageUrl}" onclick="window.openFullScreenImage(this.src)" class="w-full h-auto mt-2 sm:mt-3 rounded-lg sm:rounded-xl object-cover border border-gray-200 shadow-sm cursor-pointer hover:opacity-90 transition-opacity">` : '';
+
+        // Add a small tag for Admin to see who it was assigned to
+        let assignBadge = '';
+        if (window.currentRole === 'admin' && n.assignedTo && !n.assignedTo.includes('All')) {
+            assignBadge = `<div class="mt-2 text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words"><i class="fa-solid fa-user-lock mr-1"></i> Private Notice</div>`;
         }
-       window.submitNotice = async function() {
-            const title = document.getElementById('notice-title').value.trim(); 
-            const text = document.getElementById('notice-body').value.trim(); 
-            const fileInput = document.getElementById('notice-image');
-            if(!title || !text) return; 
-            
-            let imageUrl = null;
 
-            if (fileInput.files.length > 0) {
-                showLoader("Uploading Notice Image...");
-                const file = fileInput.files[0];
-                const formData = new FormData();
-                formData.append("image", file);
-                const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
-                
-                try {
-                    const res = await fetch(`https://api.imgbb.com/1/upload?expiration=15552000&key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
-                    const data = await res.json();
-                    if(data.success) { imageUrl = data.data.url; }
-                } catch(e) {
-                    console.error(e);
-                    alert("Image upload failed! Notice will be posted without the image.");
-                }
-            }
+        list.innerHTML += `<div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] space-y-1.5 sm:space-y-2 ${borderColor} ${bgCard} shadow-sm"><div class="flex justify-between items-center border-b border-gray-200/50 pb-2 sm:pb-3 mb-1.5 sm:mb-2 gap-2"><h4 class="font-black text-gray-900 text-xs sm:text-[14px] flex items-center gap-1.5 sm:gap-2 leading-tight break-words min-w-0 pr-1"><i class="fa-solid fa-circle-exclamation ${iconColor} shrink-0"></i><span class="break-words">${n.title}</span></h4><div class="flex items-center shrink-0"><span class="text-[8px] sm:text-[9px] font-black ${badgeBg} px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md shadow-sm uppercase tracking-widest whitespace-nowrap">${n.date || 'Recent'}</span>${delBtn}</div></div><p class="text-[11px] sm:text-xs text-gray-700 font-medium leading-relaxed whitespace-pre-wrap break-words">${n.text}</p>${imageHtml}${assignBadge}</div>`;
+    });
+}
+      window.submitNotice = async function() {
+    const title = document.getElementById('notice-title').value.trim(); 
+    const text = document.getElementById('notice-body').value.trim(); 
+    const fileInput = document.getElementById('notice-image');
+    if(!title || !text) return; 
 
-            showLoader("Posting Notice...");
-            await window.dbSendNotice({ title, text, imageUrl, date: window.formatDateDDMMYYYY(), timestamp: Date.now() });
-            
-            sendOneSignalPush("New Notice", title, imageUrl); 
-            
-            document.getElementById('notice-title').value = ''; 
-            document.getElementById('notice-body').value = ''; 
-            fileInput.value = '';
-            document.getElementById('admin-notice-form').classList.add('hidden'); 
-            
-            hideLoader();
+    // --- NEW: Capture assigned students ---
+    const assignType = document.getElementById('notice-assign-type').value; 
+    let assignedTo = ['All'];
+    if (assignType === 'Specific') { 
+        const checkboxes = document.querySelectorAll('.notice-exam-student-cb:checked'); 
+        assignedTo = Array.from(checkboxes).map(cb => cb.value); 
+        if (assignedTo.length === 0) { return alert("Please select at least one student!"); }
+    }
+    
+    let imageUrl = null;
+    if (fileInput.files.length > 0) {
+        showLoader("Uploading Notice Image...");
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append("image", file);
+        const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
+        
+        try {
+            const res = await fetch(`https://api.imgbb.com/1/upload?expiration=15552000&key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
+            const data = await res.json();
+            if(data.success) { imageUrl = data.data.url; }
+        } catch(e) {
+            console.error(e);
+            alert("Image upload failed! Notice will be posted without the image.");
         }
+    }
+
+    showLoader("Posting Notice...");
+    
+    // Save to database with assignedTo array
+    await window.dbSendNotice({ title, text, imageUrl, date: window.formatDateDDMMYYYY(), timestamp: Date.now(), assignedTo: assignedTo });
+    
+    // Push Notification directly to targeted students
+    sendOneSignalPush("New Notice", title, imageUrl, assignedTo); 
+    
+    document.getElementById('notice-title').value = ''; 
+    document.getElementById('notice-body').value = ''; 
+    fileInput.value = '';
+    
+    // Reset Assignment dropdown
+    const assignSelect = document.getElementById('notice-assign-type');
+    if (assignSelect) {
+        assignSelect.value = 'All';
+        window.toggleNoticeStudentSelection();
+    }
+
+    document.getElementById('admin-notice-form').classList.add('hidden'); 
+    hideLoader();
+}
 
         // ==========================================
         // ACTIVE EXAM LOGIC & AUTO-SUBMIT
