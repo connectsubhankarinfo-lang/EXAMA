@@ -1930,37 +1930,38 @@ window.getOtherMobilesForPush = function() {
     return targets.filter(mob => mob !== window.loggedInMobile);
 };
 
-// --- UPDATED PUSH ENGINE ---
-// --- UPDATED PUSH ENGINE (NO SENDER PUSH & SPECIFIC TARGETING) ---
+// --- UPDATED PUSH ENGINE (STRICT SENDER EXCLUSION & TARGETING) ---
 async function sendOneSignalPush(title, message, imageUrl = null, targetMobiles = null) {
     const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
     
-    // 1. Determine who should receive the notification
+    // 1. Determine base recipients
     let finalTargets = [];
 
     if (targetMobiles && Array.isArray(targetMobiles) && !targetMobiles.includes('All') && targetMobiles.length > 0) {
-        // A specific list of students was passed (e.g., Specific Exam or Notice)
+        // Specific array of students (e.g. Specific Exam, Notice, or Discus Call)
         finalTargets = targetMobiles;
     } else {
-        // "All" was passed, or it's a general alert. Grab everyone from the database.
+        // Global broadcast (e.g. general notice or exam for everyone)
         finalTargets = window.studentsDB.map(s => s.mobile);
-        finalTargets.push('9475757821'); // Include Admin's mobile
+        finalTargets.push('9475757821'); // Ensure Admin is included
     }
 
-    // 2. STRICTLY REMOVE THE SENDER FROM THE RECEIVER LIST
-    finalTargets = finalTargets.filter(mob => mob !== window.loggedInMobile);
+    // 2. STRICTLY filter out the sender, remove duplicates, and ensure everything is a String
+    finalTargets = [...new Set(finalTargets)]
+        .map(String) // OneSignal rejects integers, IDs MUST be strings
+        .filter(mob => mob !== String(window.loggedInMobile)); // Exclude sender
 
-    // 3. If there is no one left to notify, stop the function
+    // 3. Stop if nobody is left to notify
     if (finalTargets.length === 0) return;
 
-    // 4. Build the targeted payload
+    // 4. Build payload using the most stable OneSignal targeting property
     const payload = { 
         app_id: ONESIGNAL_APP_ID, 
         headings: { "en": title }, 
         contents: { "en": message },
         target_channel: "push",
-        // Force OneSignal to target exactly these specific mobile numbers
-        include_aliases: { external_id: finalTargets }
+        // This natively targets devices linked via OneSignal.login(mobile)
+        include_external_user_ids: finalTargets 
     };
 
     if (imageUrl) {
