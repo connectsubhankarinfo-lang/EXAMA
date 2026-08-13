@@ -4519,6 +4519,9 @@ if(novaInput) {
         this.style.height = 'auto';
         this.style.height = (this.scrollHeight) + 'px';
     });
+    
+    }
+    
     // ==========================================
         // CUSTOM PULL-TO-REFRESH (NATIVE APP FEEL)
         // ==========================================
@@ -4546,6 +4549,7 @@ if(novaInput) {
             // Only allow pull to refresh if we are exactly at the top of the scroll container
             if (!scrollParent || scrollParent.scrollTop <= 0) {
                 ptrStartY = e.touches[0].clientY;
+                ptrCurrentY = ptrStartY; // Reset current Y to prevent ghost triggers
                 isPulling = true;
                 ptrEl.style.transition = 'none'; // Disable transition so it tracks finger 1:1
             }
@@ -4593,82 +4597,21 @@ if(novaInput) {
             }
         });
 
-        // ----------------------------------------------------
-        // FORCE FETCH DATA FROM FIREBASE ON PULL-TO-REFRESH
-        // ----------------------------------------------------
-        window.forceFetchAllData = async function() {
-            // Only run if Firebase is active
-            if (typeof db === 'undefined' || !db) return; 
-            
-            try {
-                // Using getDocs to force a hard refresh from the Firebase server
-                // We use Promise.all to fetch them all simultaneously for maximum speed
-                const [
-                    studentsSnap, examsSnap, resultsSnap, peerSnap, 
-                    materialsSnap, fitnessSnap, weeklyTasksSnap, studentTasksSnap, 
-                    sessionsSnap, chatSnap, noticesSnap
-                ] = await Promise.all([
-                    getDocs(collection(db, "students")),
-                    getDocs(collection(db, "exams")),
-                    getDocs(collection(db, "results")),
-                    getDocs(collection(db, "peer_exams")),
-                    getDocs(query(collection(db, "materials"), orderBy("timestamp", "desc"))),
-                    getDocs(query(collection(db, "fitness_logs"), orderBy("timestamp", "desc"))),
-                    getDocs(collection(db, "weekly_tasks")),
-                    getDocs(collection(db, "student_tasks")),
-                    getDocs(collection(db, "sessions")),
-                    getDocs(query(collection(db, "chat"), orderBy("timestamp", "asc"))),
-                    getDocs(query(collection(db, "notices"), orderBy("timestamp", "desc")))
-                ]);
-
-                // Overwrite all local arrays with the newly fetched data
-                window.studentsDB = studentsSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.examsDB = examsSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.resultsDB = resultsSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                
-                const now = Date.now();
-                const allMaterials = peerSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.peerMaterialsDB = allMaterials.filter(m => m.expiresAt > now);
-                
-                window.materialsDB = materialsSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.fitnessDB = fitnessSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.weeklyTasksDB = weeklyTasksSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.studentTasksDB = studentTasksSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.sessionsDB = sessionsSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.chatDB = chatSnap.docs.map(d => ({id: d.id, ...d.data()}));
-                window.noticesDB = noticesSnap.docs.map(d => ({id: d.id, ...d.data()}));
-
-            } catch (e) {
-                console.error("Manual fetch failed", e);
-            }
-        };
-
-        async function executeAppRefresh() {
+        function executeAppRefresh() {
             // Play a tiny haptic feedback vibration if supported by phone
             if (navigator.vibrate) navigator.vibrate(50);
             
-            // 1. Force a manual data pull from Firebase to ensure 100% fresh data
-            if (typeof window.forceFetchAllData === 'function') {
-                await window.forceFetchAllData();
-            } else {
-                await new Promise(res => setTimeout(res, 800)); // Fallback delay if Firebase isn't set up
-            }
-
-            // 2. Re-render DOM with newly fetched data
-            if (typeof refreshUI === 'function') refreshUI();
-            if (typeof checkUnreadNotices === 'function') checkUnreadNotices();
-            if (typeof updateChatUnreadCount === 'function') updateChatUnreadCount();
-            if (typeof window.updatePresence === 'function') window.updatePresence();
-
-            // 3. Hide the PTR indicator smoothly
-            ptrEl.style.transform = `translate(-50%, -150%)`;
-            
+            // We use a small 400ms timeout so the user visually sees the spinner 
+            // lock into place and spin before the screen flashes to reload.
             setTimeout(() => {
-                ptrIcon.classList.remove('fa-spin');
-                isRefreshing = false;
-            }, 300);
+                // Trigger a full hard reload of the webpage
+                window.location.reload(); 
+            }, 400);
+            
+            // Note: We don't need to manually hide the spinner using JS here because 
+            // window.location.reload() completely resets the HTML DOM, which naturally 
+            // puts the spinner back into its default hidden state at the top.
         }
-}
     </script>
 </body>
 </html>
