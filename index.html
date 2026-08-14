@@ -3101,53 +3101,74 @@ function getFitnessLeaderboard() {
 
             let todayExamsHtml = '';
             let upcomingExamsHtml = '';
-
-            window.examsDB.forEach(exam => {
-                // Hide if not assigned to this student
-                if (exam.assignedTo && !exam.assignedTo.includes('All') && !exam.assignedTo.includes(window.loggedInMobile)) {
-                    return; 
-                }
-
-                const eDate = parseDDMM(exam.date);
-                if(!myRecords.find(r => r.examId === exam.id) && (eDate >= todayDate) && !exam.isEnded) {
-                 
-                    // --- ACTION BUTTONS (MATCHING THEME) ---
-let actionHtml = ''; 
-const eType = exam.examType || 'self';
-
-if (eType === 'testbook') {
-    // Testbook: No timer, No Q&A, Direct submit
-    actionHtml = `
-    <button onclick="window.directSubmitTestbook('${exam.id}')" class="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white text-[10px] sm:text-xs font-black tracking-wide py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all">
-        <i class="fa-solid fa-clipboard-check"></i> Submit Marks
-    </button>`;
-} else if (eType === 'offline') {
-    // Offline: Timer only, No Q&A required to enter
-    actionHtml = `
-    <button onclick="window.handleStartExam('${exam.id}')" class="flex-1 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all">
-        Enter Room <i class="fa-solid fa-chevron-right text-[8px] opacity-80"></i>
-    </button>`;
-} else {
-    // Self Evaluation: Requires Q&A Upload
-    const hasUploaded = window.peerMaterialsDB.some(m => m.examId === exam.id && m.mobile === window.loggedInMobile);
-    if (!hasUploaded) { 
-        actionHtml = `
-        <button onclick="window.openPeerUpload('${exam.id}')" class="flex-1 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] sm:text-xs font-black tracking-wide py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all">
-            <i class="fa-solid fa-cloud-arrow-up text-indigo-500"></i> Submit Question
-        </button>
-        <button onclick="alert('Please Attach Peer Q&A first to unlock the exam!')" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-400 flex items-center justify-center text-[10px] sm:text-xs shrink-0 cursor-not-allowed shadow-sm" title="Locked">
-            <i class="fa-solid fa-lock"></i>
-        </button>`; 
-    } else { 
-        actionHtml = `
-        <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 text-[10px] sm:text-xs shrink-0 shadow-sm" title="Attached">
-            <i class="fa-solid fa-check"></i>
-        </span>
-        <button onclick="window.handleStartExam('${exam.id}')" class="flex-1 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all">
-            Enter Room <i class="fa-solid fa-chevron-right text-[8px] opacity-80"></i>
-        </button>`; 
+window.examsDB.forEach(exam => {
+    // Hide if not assigned to this student
+    if (exam.assignedTo && !exam.assignedTo.includes('All') && !exam.assignedTo.includes(window.loggedInMobile)) {
+        return; 
     }
-}
+
+    const eDate = parseDDMM(exam.date);
+    const todayDate = new Date(); todayDate.setHours(0,0,0,0);
+    
+    // NEW LOGIC: Check if the user has a result OR if they submitted answer scripts
+    const myRecords = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
+    const hasResult = myRecords.find(r => r.examId === exam.id);
+    const hasSubmittedAnswers = window.peerAnswerScriptsDB.some(s => s.examId === exam.id && s.solverMobile === window.loggedInMobile);
+    const isFinished = hasResult || hasSubmittedAnswers;
+    const eType = exam.examType || 'self';
+
+    // Show the card if the date is valid and exam isn't ended by admin
+    if ((eDate >= todayDate) && !exam.isEnded) {
+        
+        // --- ACTION BUTTONS (MATCHING THEME) ---
+        let actionHtml = ''; 
+
+        if (isFinished) {
+            // Student finished! Change buttons depending on exam type
+            if (eType === 'self') {
+                actionHtml = `
+                <button onclick="window.openPeerEvaluationRoom('${exam.id}')" class="flex-1 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white text-[10px] sm:text-xs font-black tracking-wide py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all">
+                    <i class="fa-solid fa-clipboard-user"></i> Evaluation Room
+                </button>`;
+            } else {
+                actionHtml = `
+                <button disabled class="flex-1 bg-gray-100 text-gray-400 text-[10px] sm:text-xs font-black tracking-wide py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm cursor-not-allowed">
+                    <i class="fa-solid fa-check-circle"></i> Completed
+                </button>`;
+            }
+        } else {
+            // Student hasn't finished yet. Show standard action buttons.
+            if (eType === 'testbook') {
+                actionHtml = `
+                <button onclick="window.directSubmitTestbook('${exam.id}')" class="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white text-[10px] sm:text-xs font-black tracking-wide py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all">
+                    <i class="fa-solid fa-clipboard-check"></i> Submit Marks
+                </button>`;
+            } else if (eType === 'offline') {
+                actionHtml = `
+                <button onclick="window.handleStartExam('${exam.id}')" class="flex-1 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all">
+                    Enter Room <i class="fa-solid fa-chevron-right text-[8px] opacity-80"></i>
+                </button>`;
+            } else {
+                const hasUploaded = window.peerMaterialsDB.some(m => m.examId === exam.id && m.mobile === window.loggedInMobile);
+                if (!hasUploaded) { 
+                    actionHtml = `
+                    <button onclick="window.openPeerUpload('${exam.id}')" class="flex-1 bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] sm:text-xs font-black tracking-wide py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all">
+                        <i class="fa-solid fa-cloud-arrow-up text-indigo-500"></i> Submit Question
+                    </button>
+                    <button onclick="alert('Please Attach Peer Q&A first to unlock the exam!')" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gray-100 border border-gray-200 text-gray-400 flex items-center justify-center text-[10px] sm:text-xs shrink-0 cursor-not-allowed shadow-sm" title="Locked">
+                        <i class="fa-solid fa-lock"></i>
+                    </button>`; 
+                } else { 
+                    actionHtml = `
+                    <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 text-[10px] sm:text-xs shrink-0 shadow-sm" title="Attached">
+                        <i class="fa-solid fa-check"></i>
+                    </span>
+                    <button onclick="window.handleStartExam('${exam.id}')" class="flex-1 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white text-[10px] sm:text-xs font-black uppercase tracking-widest py-2 sm:py-2.5 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all">
+                        Enter Room <i class="fa-solid fa-chevron-right text-[8px] opacity-80"></i>
+                    </button>`; 
+                }
+            }
+        }
 
 // --- TIMER STATUS BADGE ---
 let timerStatusHTML = '';
