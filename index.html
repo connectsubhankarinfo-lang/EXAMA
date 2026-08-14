@@ -160,7 +160,7 @@
         <p class="text-xs text-gray-500 mb-5 font-bold leading-tight break-words">Submit your answer scripts below. They will be sent directly to the student who created the questions.</p>
         <div id="answer-upload-list" class="space-y-4"></div>
         <button onclick="submitAllPeerAnswers()" class="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm sm:text-base font-black tracking-wide py-3 sm:py-4 rounded-2xl shadow-xl shadow-green-500/30 mt-4 active:scale-95 transition-all">
-            SUBMIT
+            SEND & GO
         </button>
     </div>
 </div>
@@ -3519,12 +3519,45 @@ window.submitEditExam = async function() {
 }
 
         window.restartExam = async function(id) {
-            if(!confirm("Are you sure? This resets the timer, deletes ALL student results, and clears all Q&A uploads for this exam.")) return; showLoader("Resetting Exam Data...");
-            const exam = window.examsDB.find(e => e.id === id); await window.dbUpdateExam(id, { globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false });
-            if(isFirebaseConfigured) { const q1 = query(collection(db, "results"), where("examId", "==", id)); const snap1 = await getDocs(q1); await Promise.all(snap1.docs.map(docSnap => deleteDoc(doc(db, "results", docSnap.id)))); const q2 = query(collection(db, "peer_exams"), where("examId", "==", id)); const snap2 = await getDocs(q2); await Promise.all(snap2.docs.map(docSnap => deleteDoc(doc(db, "peer_exams", docSnap.id)))); } else { window.resultsDB = window.resultsDB.filter(r => r.examId !== id); window.peerMaterialsDB = window.peerMaterialsDB.filter(m => m.examId !== id); }
-            if (exam) { const title = `⚠️ Exam Reset: ${exam.name}`; const msg = `The admin has fully reset "${exam.name}". All previous submissions have been cleared. You MUST re-upload your Q&A materials to unlock the exam again!`; sendOneSignalPush(title, msg); await window.dbSendNotice({ title: title, text: msg, date: window.formatDateDDMMYYYY(), type: 'reset_exam', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] }); }
-            hideLoader(); alert("Exam reset successfully. All Q&A and results cleared.");
-        }
+    if(!confirm("Are you sure? This resets the timer, deletes ALL student results, and clears all Q&A uploads for this exam.")) return; 
+    showLoader("Resetting Exam Data...");
+    
+    const exam = window.examsDB.find(e => e.id === id); 
+    await window.dbUpdateExam(id, { globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false });
+    
+    if(isFirebaseConfigured) { 
+        // 1. Delete Graded Results
+        const q1 = query(collection(db, "results"), where("examId", "==", id)); 
+        const snap1 = await getDocs(q1); 
+        await Promise.all(snap1.docs.map(docSnap => deleteDoc(doc(db, "results", docSnap.id)))); 
+        
+        // 2. Delete Uploaded Questions (Peer Exams)
+        const q2 = query(collection(db, "peer_exams"), where("examId", "==", id)); 
+        const snap2 = await getDocs(q2); 
+        await Promise.all(snap2.docs.map(docSnap => deleteDoc(doc(db, "peer_exams", docSnap.id)))); 
+
+        // 3. NEW: Delete Uploaded Answer Scripts
+        const q3 = query(collection(db, "peer_answer_scripts"), where("examId", "==", id)); 
+        const snap3 = await getDocs(q3); 
+        await Promise.all(snap3.docs.map(docSnap => deleteDoc(doc(db, "peer_answer_scripts", docSnap.id))));
+        
+    } else { 
+        window.resultsDB = window.resultsDB.filter(r => r.examId !== id); 
+        window.peerMaterialsDB = window.peerMaterialsDB.filter(m => m.examId !== id); 
+        window.peerAnswerScriptsDB = window.peerAnswerScriptsDB.filter(s => s.examId !== id); // NEW Local Cleanup
+    }
+    
+    if (exam) { 
+        const title = `⚠️ Exam Reset: ${exam.name}`; 
+        const msg = `The admin has fully reset "${exam.name}". All previous submissions have been cleared. You MUST re-upload your Q&A materials to unlock the exam again!`; 
+        sendOneSignalPush(title, msg); 
+        await window.dbSendNotice({ title: title, text: msg, date: window.formatDateDDMMYYYY(), type: 'reset_exam', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] }); 
+    }
+    
+    hideLoader(); 
+    alert("Exam reset successfully. All Q&A, results, and answer scripts cleared.");
+    refreshUI(); // Force the UI to update immediately
+}
 
         window.endExam = async function(id) {
             if(!confirm("Are you sure? This will END the exam permanently and mark all students who haven't submitted as ABSENT.")) return; showLoader("Ending Exam...");
