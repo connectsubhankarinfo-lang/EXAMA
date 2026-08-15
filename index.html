@@ -1319,8 +1319,8 @@
             </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- NEW: YOUTUBE NATIVE WATCH VIEW -->
+      <!-- ========================================== -->
+        <!-- YOUTUBE NATIVE WATCH VIEW -->
         <!-- ========================================== -->
         <div id="video-watch-view" class="hidden-view absolute inset-0 bg-gray-50 z-[90] flex flex-col slide-up md:rounded-[2.5rem] overflow-hidden">
             <!-- Sticky Edge-to-Edge Video Player Top -->
@@ -1339,24 +1339,29 @@
 
             <!-- Scrollable Details Below Video -->
             <div class="flex-1 overflow-y-auto no-scrollbar flex flex-col relative z-10 pb-10">
-                <!-- Video Info Card -->
+               <!-- Video Info Card -->
                 <div class="bg-white p-4 sm:p-5 border-b border-gray-200 shadow-sm shrink-0">
-                    <span id="watch-category" class="bg-red-50 text-red-600 border border-red-100 px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-black uppercase tracking-widest shadow-sm inline-block mb-2">Category</span>
                     <h2 id="watch-title" class="font-black text-gray-900 text-[15px] sm:text-lg leading-snug mb-3 break-words">Video Title</h2>
                     
                     <div class="flex items-center justify-between border-t border-gray-100 pt-3">
+                        
+                        <!-- UPLOADER INFO (YouTube Channel) -->
                         <div class="flex items-center gap-2.5 sm:gap-3">
-                            <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0 shadow-inner border border-red-200">
-                                <i class="fa-solid fa-chalkboard-user"></i>
+                            <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0 shadow-inner border border-red-100">
+                                <i class="fa-brands fa-youtube"></i>
                             </div>
                             <div class="min-w-0">
-                                <p id="watch-uploader" class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight">Uploader</p>
-                                <p id="watch-date" class="text-[9px] sm:text-[10px] text-gray-500 font-bold tracking-widest mt-0.5">Date</p>
+                                <p id="watch-uploader" class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight">YouTube Channel</p>
                             </div>
                         </div>
-                        <button onclick="shareVideo()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm">
-                            <i class="fa-solid fa-share-nodes"></i>
-                        </button>
+                        
+                        <!-- Mark as Watched Button (Share Button Removed) -->
+                        <div class="flex items-center gap-2">
+                            <button id="btn-mark-watched" onclick="toggleVideoWatched()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-transparent">
+                                <i id="icon-watched" class="fa-solid fa-eye mr-1.5"></i> <span id="text-watched">Mark Watched</span>
+                            </button>
+                        </div>
+
                     </div>
                 </div>
                 
@@ -1750,7 +1755,8 @@ window.submitVideo = async function() {
         title: ytInfo.title,
         category: category,
         thumbnail: thumbnailUrl,
-        uploader: ytInfo.channelName, // Auto-fetches the YouTube Channel Name!
+        uploader: ytInfo.channelName,
+        watchedBy: [], // <--- ADD THIS LINE// Auto-fetches the YouTube Channel Name!
         timestamp: Date.now()
     };
 
@@ -1821,6 +1827,8 @@ window.renderVideoFeed = function() {
     let feedHtml = '';
     filtered.forEach(vid => {
         const dateStr = new Date(vid.timestamp).toLocaleDateString('en-GB');
+        const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
+        const watchedBadge = isWatched ? `<span class="absolute top-2 left-2 bg-emerald-500/90 backdrop-blur-sm text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1 uppercase tracking-widest border border-emerald-400 z-10"><i class="fa-solid fa-check"></i> Watched</span>` : '';
         const delBtn = window.currentRole === 'admin' ? `<button onclick="event.stopPropagation(); deleteVideo('${vid.id}')" class="absolute top-2 right-2 w-7 h-7 bg-red-600/90 text-white rounded-full flex items-center justify-center hover:scale-110 transition-transform shadow-md z-10"><i class="fa-solid fa-trash text-[10px]"></i></button>` : '';
 
         // Changed onClick to pass ONLY the video ID to keep it clean
@@ -1828,6 +1836,7 @@ window.renderVideoFeed = function() {
         <div class="glass-card bg-white rounded-[1.25rem] overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer group border border-gray-200 flex flex-col" onclick="window.playVideo('${vid.id}')">
             <div class="relative w-full aspect-video bg-gray-900 overflow-hidden">
                 <img src="${vid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500">
+                ${watchedBadge} <!-- <--- Add this here! -->
                 ${delBtn}
                 <div class="absolute inset-0 flex items-center justify-center">
                     <div class="w-10 h-10 sm:w-12 sm:h-12 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 group-hover:bg-red-600 group-hover:border-red-600 transition-all duration-300 shadow-lg">
@@ -1850,24 +1859,86 @@ window.renderVideoFeed = function() {
 // ==========================================
 // IMMERSIVE NATIVE PLAYER LOGIC
 // ==========================================
+window.currentWatchVideoId = null;
+
+window.updateWatchedButtonUI = function(isWatched) {
+    const btn = document.getElementById('btn-mark-watched');
+    const icon = document.getElementById('icon-watched');
+    const text = document.getElementById('text-watched');
+
+    if (isWatched) {
+        btn.className = "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-emerald-200";
+        icon.className = "fa-solid fa-circle-check mr-1.5";
+        text.innerText = "Watched";
+    } else {
+        btn.className = "bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-transparent";
+        icon.className = "fa-solid fa-eye mr-1.5";
+        text.innerText = "Mark Watched";
+    }
+};
+
+window.toggleVideoWatched = async function() {
+    if (window.currentRole === 'admin') return alert("Only students can mark videos as watched.");
+    if (!window.currentWatchVideoId) return;
+
+    const vid = window.videosDB.find(v => v.id === window.currentWatchVideoId);
+    if (!vid) return;
+
+    let watchedList = vid.watchedBy || [];
+    const isWatched = watchedList.includes(window.loggedInMobile);
+
+    // Toggle logic
+    if (isWatched) {
+        watchedList = watchedList.filter(m => m !== window.loggedInMobile); // Remove from list
+    } else {
+        watchedList.push(window.loggedInMobile); // Add to list
+    }
+
+    // Update UI instantly
+    window.updateWatchedButtonUI(!isWatched);
+
+    // Save to Database
+    if (firebaseConfig.apiKey !== "YOUR_API_KEY") { // Check if Firebase is active
+        const { doc, updateDoc, getFirestore } = await import("https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js");
+        const db = getFirestore();
+        await updateDoc(doc(db, "videos", vid.id), { watchedBy: watchedList });
+    } else {
+        vid.watchedBy = watchedList; // Update local array if offline
+    }
+    
+    // Refresh the feed in the background so badges update
+    if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
+};
+
 window.playVideo = function(id) {
     const vid = window.videosDB.find(v => v.id === id);
     if(!vid) return;
 
-    // Populate Details below video
-    document.getElementById('watch-title').innerText = vid.title;
-    document.getElementById('watch-uploader').innerText = vid.uploader; // This is now the YouTube Channel Name
-    document.getElementById('watch-category').innerText = vid.category;
-    document.getElementById('watch-date').innerText = new Date(vid.timestamp).toLocaleDateString('en-GB');
-    
-    // Set iframe
-    const iframeUrl = `https://www.youtube.com/embed/${vid.youtubeId}?autoplay=1&controls=1&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3&color=white`;
-    document.getElementById('native-yt-iframe').src = iframeUrl;
+    // 1. Remember the video ID for the watched button
+    window.currentWatchVideoId = id;
 
-    // Render "Up Next" Feed
-    renderRelatedVideos(id);
+    // 2. Set the Watched button UI state when opening
+    const watchedList = vid.watchedBy || [];
+    const isWatched = watchedList.includes(window.loggedInMobile);
+    window.updateWatchedButtonUI(isWatched);
+
+    // 3. Populate Title and Uploader (YouTube Channel Name)
+    document.getElementById('watch-title').innerText = vid.title;
+    document.getElementById('watch-uploader').innerText = vid.uploader || "YouTube Channel";
     
-    // Navigate via Hash Router for physical back-button support
+    // 4. Set iframe safely
+    const iframeUrl = `https://www.youtube.com/embed/${vid.youtubeId}?autoplay=1&controls=1&modestbranding=1&rel=0&playsinline=1&iv_load_policy=3&color=white`;
+    const iframeEl = document.getElementById('native-yt-iframe');
+    if (iframeEl) {
+        iframeEl.src = iframeUrl;
+    }
+
+    // 5. Render "Up Next" Feed
+    if (typeof window.renderRelatedVideos === 'function') {
+        window.renderRelatedVideos(id);
+    }
+    
+    // 6. Navigate via Hash Router
     window.location.hash = 'watch-video';
 };
 
