@@ -5409,22 +5409,23 @@ window.openPeerEvaluationRoom = function(examId) {
     document.getElementById('peer-eval-room-modal').classList.remove('hidden-view');
     const evalList = document.getElementById('peer-eval-list');
     
-    // Initial Loading State
-    evalList.innerHTML = '<div class="text-center p-6 text-indigo-500 text-sm font-bold animate-pulse">Setting up evaluation desk...</div>';
-    
-    let lastRenderedScripts = ""; // NEW: Tracks what is currently on screen
+    let lastRenderedScripts = ""; // Tracks what is currently on screen
 
-    window.evalPollInterval = setInterval(() => {
+    // NEW: Package the checking logic into a reusable function
+    const checkAndRenderScripts = () => {
+        // Find scripts where targetPeerMobile is YOU and they haven't been graded yet
         const scriptsToGrade = window.peerAnswerScriptsDB.filter(s => s.examId === examId && s.targetPeerMobile === window.loggedInMobile && !s.isGraded);
         
-        // NEW: Create a signature of the current scripts
+        // Create a signature of the current scripts
         const currentSignature = scriptsToGrade.map(s => s.id).join(',');
         
-        // NEW: If the scripts haven't changed, DO NOT wipe the HTML (This fixes the keyboard bug!)
-        if (lastRenderedScripts === currentSignature) return;
+        // If the scripts haven't changed, DO NOT wipe the HTML (Prevents keyboard bug)
+        // We only skip if it's not the very first render
+        if (lastRenderedScripts === currentSignature && lastRenderedScripts !== "") return;
         lastRenderedScripts = currentSignature;
 
         if (scriptsToGrade.length === 0) {
+            // INSTANTLY SHOW WAITING WINDOW IF EMPTY
             evalList.innerHTML = `
                 <div class="glass-card p-6 text-center rounded-2xl border-dashed border-2 border-indigo-200 mt-10">
                     <i class="fa-solid fa-mug-hot text-indigo-300 text-4xl mb-4 animate-bounce"></i>
@@ -5433,6 +5434,7 @@ window.openPeerEvaluationRoom = function(examId) {
                     <button onclick="closePeerEvalRoom()" class="mt-6 px-6 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl font-bold text-sm border border-indigo-200 transition-all active:scale-95 shadow-sm">Exit for now (You can grade later)</button>
                 </div>`;
         } else {
+            // SHOW PAPERS
             evalList.innerHTML = '';
             scriptsToGrade.forEach(script => {
                 const solverName = window.studentsDB.find(s=>s.mobile===script.solverMobile)?.name || 'Peer';
@@ -5449,19 +5451,21 @@ window.openPeerEvaluationRoom = function(examId) {
                 evalList.innerHTML += `
                 <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-lg border border-indigo-100 mb-5 relative overflow-hidden" id="script-card-${script.id}">
                     <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
+                    
                     <div class="flex justify-between items-center mb-3 ml-2">
                         <span class="text-xs font-black text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-100 uppercase tracking-widest">
                             <i class="fa-solid fa-user-pen mr-1"></i> Solved by ${solverName}
                         </span>
                     </div>
+                    
                     <div class="grid grid-cols-2 gap-3 mb-4 max-h-60 overflow-y-auto p-3 bg-gray-50 rounded-xl border border-gray-200 ml-2">
                         ${imgsHtml}
                     </div>
+                    
                     <div class="flex gap-2 sm:gap-3 items-center ml-2">
                         <div class="relative flex-1">
                             <input type="number" id="marks-${script.id}" placeholder="Enter Marks..." class="w-full px-4 py-3 bg-indigo-50/50 rounded-xl border border-indigo-200 font-black text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm">
                         </div>
-                        <!-- NEW: Added 'this' to the function call so we can lock the button -->
                         <button onclick="submitPeerMarks('${script.id}', '${script.solverMobile}', '${examId}', this)" class="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-black px-5 py-3 rounded-xl active:scale-95 transition-all shadow-md text-sm shrink-0">
                             Submit Marks
                         </button>
@@ -5469,7 +5473,13 @@ window.openPeerEvaluationRoom = function(examId) {
                 </div>`;
             });
         }
-    }, 3000);
+    };
+
+    // 1. Check and render immediately when modal opens (Removes the loading delay)
+    checkAndRenderScripts();
+
+    // 2. Keep polling every 3 seconds for new submissions
+    window.evalPollInterval = setInterval(checkAndRenderScripts, 3000);
 }
 window.closePeerEvalRoom = function() {
     if(window.evalPollInterval) clearInterval(window.evalPollInterval);
