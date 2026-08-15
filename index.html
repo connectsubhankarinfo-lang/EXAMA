@@ -1718,13 +1718,16 @@ window.getYouTubeId = function(url) {
     return (match && match[2].length === 11) ? match[2] : null;
 };
 
-window.fetchYouTubeTitle = async function(url) {
+window.fetchYouTubeData = async function(url) {
     try {
         const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
         const data = await res.json();
-        return data.title || "Premium Lecture Video";
+        return {
+            title: data.title || "Premium Lecture Video",
+            channelName: data.author_name || "YouTube Channel"
+        };
     } catch (e) {
-        return "Premium Lecture Video";
+        return { title: "Premium Lecture Video", channelName: "YouTube Channel" };
     }
 };
 
@@ -1740,14 +1743,14 @@ window.submitVideo = async function() {
     showLoader("Fetching Video Data...");
 
     const thumbnailUrl = `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`;
-    const title = await window.fetchYouTubeTitle(url);
+    const ytInfo = await window.fetchYouTubeData(url); // Fetch both title and channel
 
     const payload = {
         youtubeId: ytId,
-        title: title,
+        title: ytInfo.title,
         category: category,
         thumbnail: thumbnailUrl,
-        uploader: window.studentsDB.find(s=>s.mobile===window.loggedInMobile)?.name || 'EXAMA',
+        uploader: ytInfo.channelName, // Auto-fetches the YouTube Channel Name!
         timestamp: Date.now()
     };
 
@@ -1853,7 +1856,7 @@ window.playVideo = function(id) {
 
     // Populate Details below video
     document.getElementById('watch-title').innerText = vid.title;
-    document.getElementById('watch-uploader').innerText = vid.uploader;
+    document.getElementById('watch-uploader').innerText = vid.uploader; // This is now the YouTube Channel Name
     document.getElementById('watch-category').innerText = vid.category;
     document.getElementById('watch-date').innerText = new Date(vid.timestamp).toLocaleDateString('en-GB');
     
