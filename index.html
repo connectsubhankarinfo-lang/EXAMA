@@ -5,6 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>EXAMA An App By Subhankar</title>
+   <!-- PDF.js Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- LocalForage for Offline Storage -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+   
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js -->
@@ -254,19 +259,19 @@
                 
                 <!-- Action Buttons -->
                 <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    <button onclick="downloadCustomPdf()" class="w-7 h-7 sm:w-8 sm:h-8 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-emerald-200" title="Force Download">
+                    <button onclick="window.downloadCustomPdf()" class="w-7 h-7 sm:w-8 sm:h-8 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-emerald-200" title="Force Download">
                         <i class="fa-solid fa-download text-xs sm:text-sm"></i>
                     </button>
-                    <button id="btn-pdf-fullscreen" onclick="togglePdfFullscreen()" class="w-7 h-7 sm:w-8 sm:h-8 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-blue-200" title="Toggle Fullscreen">
-        <i id="icon-pdf-fullscreen" class="fa-solid fa-expand text-xs sm:text-sm"></i>
-    </button>
-                    <button onclick="closeCustomPDFViewer()" class="w-7 h-7 sm:w-8 sm:h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-gray-200" title="Close Reader">
+                    <button id="btn-pdf-fullscreen" onclick="window.togglePdfFullscreen()" class="w-7 h-7 sm:w-8 sm:h-8 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-blue-200" title="Toggle Fullscreen">
+                        <i id="icon-pdf-fullscreen" class="fa-solid fa-expand text-xs sm:text-sm"></i>
+                    </button>
+                    <button onclick="window.closeCustomPDFViewer()" class="w-7 h-7 sm:w-8 sm:h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-gray-200" title="Close Reader">
                         <i class="fa-solid fa-xmark text-sm"></i>
                     </button>
                 </div>
             </div>
 
-            <!-- PDF Container -->
+            <!-- PDF Container (Scrollable Area) -->
             <div class="flex-1 w-full bg-[#f1f5f9] relative overflow-auto no-scrollbar" id="pdf-scroll-wrapper">
                 <div id="pdf-loader" class="absolute inset-0 flex flex-col items-center justify-center bg-[#f1f5f9] z-0">
                     <i class="fa-solid fa-circle-notch fa-spin text-2xl sm:text-3xl text-indigo-500 mb-2 sm:mb-3 drop-shadow-md"></i>
@@ -275,16 +280,28 @@
                 
                 <div id="drive-popout-shield" class="hidden absolute top-0 right-0 w-20 sm:w-24 h-12 sm:h-14 bg-transparent z-[50]" title="Pop-out Disabled"></div>
                 
-                <div id="pdf-iframe-wrapper" class="w-full h-full min-h-full transition-transform duration-300 origin-top">
-                    <iframe id="custom-pdf-iframe" src="" class="w-full h-full border-0 relative z-10 shadow-inner" onload="document.getElementById('pdf-loader').classList.add('hidden')"></iframe>
-                </div>
-                
-                <div id="custom-zoom-controls" class="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 sm:gap-4 z-[60] bg-gray-900/85 backdrop-blur-md px-4 sm:px-5 py-2 sm:py-2.5 rounded-full shadow-[0_10px_25px_rgba(0,0,0,0.3)] border border-white/20">
-                    <button onclick="window.zoomCustomPdf(-1)" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-white hover:text-indigo-300 text-base sm:text-lg active:scale-90 transition-all"><i class="fa-solid fa-minus"></i></button>
-                    <div class="w-px h-4 sm:h-5 bg-white/30 my-auto"></div>
-                    <button onclick="window.zoomCustomPdf(1)" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-white hover:text-indigo-300 text-base sm:text-lg active:scale-90 transition-all"><i class="fa-solid fa-plus"></i></button>
+                <div id="pdf-iframe-wrapper" class="w-full flex flex-col items-center justify-start min-h-full pb-28 pt-4 transition-transform duration-300 origin-top">
+                    <!-- NATIVE CANVAS -->
+                    <canvas id="native-pdf-canvas" class="shadow-2xl relative z-10 transition-all duration-300 mx-auto"></canvas>
                 </div>
             </div>
+
+            <!-- COMBINED FLOATING TOOLBAR: PAGINATION + ZOOM -->
+            <div id="pdf-pagination-controls" class="hidden absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 sm:gap-3 z-[100] bg-gray-900/90 backdrop-blur-md px-4 sm:px-6 py-2 sm:py-2.5 rounded-full shadow-[0_10px_25px_rgba(0,0,0,0.4)] border border-white/20 w-max">
+                
+                <!-- Pagination Controls -->
+                <button onclick="window.onPdfPrevPage()" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 active:scale-90 transition-all text-sm"><i class="fa-solid fa-chevron-left"></i></button>
+                <span class="text-[10px] sm:text-xs font-bold font-mono tracking-widest text-white mx-1"><span id="pdf-page-num">1</span> / <span id="pdf-page-count">?</span></span>
+                <button onclick="window.onPdfNextPage()" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 active:scale-90 transition-all text-sm"><i class="fa-solid fa-chevron-right"></i></button>
+                
+                <!-- Vertical Divider -->
+                <div class="w-px h-5 sm:h-6 bg-white/30 mx-1"></div>
+                
+                <!-- Zoom Controls -->
+                <button onclick="window.zoomCustomPdf(-1)" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 text-sm sm:text-base active:scale-90 transition-all"><i class="fa-solid fa-minus"></i></button>
+                <button onclick="window.zoomCustomPdf(1)" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 text-sm sm:text-base active:scale-90 transition-all"><i class="fa-solid fa-plus"></i></button>
+            </div>
+            
         </div>
 
         <!-- WARNING MODAL -->
@@ -4715,197 +4732,241 @@ window.submitAllPeerAnswers = async function() {
         window.currentPdfRawUrl = '';
         window.isDriveLink = false;
 
-        window.openCustomPDFViewer = function(url, title = 'Material Reader') {
-            document.getElementById('pdf-viewer-title').innerText = title;
-            document.getElementById('pdf-loader').classList.remove('hidden');
+        // ==========================================
+// ==========================================
+// NATIVE PDF.js READER & OFFLINE SYNC ENGINE
+// ==========================================
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+window.pdfDoc = null;
+window.pdfPageNum = 1;
+window.pdfPageRendering = false;
+window.pdfPageNumPending = null;
+window.currentPdfScale = 1.2;
+window.currentPdfId = '';
+window.currentPdfRawUrl = '';
+
+const pdfCanvas = document.getElementById('native-pdf-canvas');
+const pdfCtx = pdfCanvas ? pdfCanvas.getContext('2d') : null;
+
+window.renderPdfPage = async function(num) {
+    window.pdfPageRendering = true;
+    const page = await window.pdfDoc.getPage(num);
+    
+    const viewport = page.getViewport({ scale: window.currentPdfScale });
+    pdfCanvas.height = viewport.height;
+    pdfCanvas.width = viewport.width;
+
+    const renderContext = { canvasContext: pdfCtx, viewport: viewport };
+    await page.render(renderContext).promise;
+    
+    window.pdfPageRendering = false;
+    document.getElementById('pdf-page-num').textContent = num;
+    
+    if (window.pdfPageNumPending !== null) {
+        window.renderPdfPage(window.pdfPageNumPending);
+        window.pdfPageNumPending = null;
+    }
+};
+
+window.queueRenderPage = function(num) {
+    if (window.pdfPageRendering) window.pdfPageNumPending = num;
+    else window.renderPdfPage(num);
+};
+
+window.onPdfPrevPage = function() {
+    if (window.pdfPageNum <= 1) return;
+    window.pdfPageNum--;
+    window.queueRenderPage(window.pdfPageNum);
+};
+
+window.onPdfNextPage = function() {
+    if (window.pdfPageNum >= window.pdfDoc.numPages) return;
+    window.pdfPageNum++;
+    window.queueRenderPage(window.pdfPageNum);
+};
+
+window.openCustomPDFViewer = async function(url, title = 'Material Reader') {
+    document.getElementById('pdf-viewer-title').innerText = title;
+    const loader = document.getElementById('pdf-loader');
+    const loaderText = loader.querySelector('p');
+    loader.classList.remove('hidden');
+    document.getElementById('custom-pdf-viewer-modal').classList.remove('hidden-view');
+    document.getElementById('pdf-pagination-controls').classList.add('hidden');
+    if(pdfCanvas) pdfCanvas.classList.add('hidden');
+    
+    // Default zoom for mobile viewing
+    window.currentPdfScale = 1.2;
+    window.pdfPageNum = 1;
+    window.currentPdfRawUrl = url;
+    
+    // Reset CSS Zoom Wrapper
+    const wrapper = document.getElementById('pdf-iframe-wrapper');
+    if(wrapper) {
+        wrapper.style.transform = `scale(1)`;
+        wrapper.style.width = `100%`;
+        wrapper.style.height = `100%`;
+    }
+    
+    // === FIX 1: THE CACHING BUG ===
+    // We now extract the exact Google Drive ID to prevent files from overwriting each other
+    let uniqueKey = url;
+    const driveMatch = url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+    if (driveMatch && driveMatch[1]) {
+        uniqueKey = driveMatch[1]; // Use exact Drive ID
+    } else {
+        // Fallback for non-drive URLs: Use the LAST 30 chars to ensure uniqueness
+        uniqueKey = btoa(encodeURIComponent(url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+    }
+    window.currentPdfId = uniqueKey; 
+
+    try {
+        let pdfArrayBuffer = null;
+
+        // 1. CHECK OFFLINE STORAGE FIRST
+        if (typeof localforage !== 'undefined') {
+            pdfArrayBuffer = await localforage.getItem(`exama_pdf_${window.currentPdfId}`);
+        }
+        
+        // 2. IF NOT OFFLINE, FETCH & STORE IT
+        if (!pdfArrayBuffer) {
+            loaderText.innerText = "Downloading for offline use...";
             
-            // Store raw URL and reset Zoom
-            window.currentPdfRawUrl = url;
-            window.currentPdfScale = 1;
-            document.getElementById('pdf-iframe-wrapper').style.transform = `scale(1)`;
-            document.getElementById('pdf-iframe-wrapper').style.width = '100%';
-            document.getElementById('pdf-iframe-wrapper').style.height = '100%';
-            
-            let finalUrl = url;
-            const popoutShield = document.getElementById('drive-popout-shield');
-            const zoomControls = document.getElementById('custom-zoom-controls');
-            
-            // Check if Google Drive Link (Web View)
-            if (url.includes('drive.google.com/file/d/')) {
-                window.isDriveLink = true;
-                const match = url.match(/\/d\/(.+?)\//);
-                if (match && match[1]) {
-                    finalUrl = `https://drive.google.com/file/d/${match[1]}/preview`;
-                } else {
-                    finalUrl = url.replace('/view', '/preview').replace('/edit', '/preview');
+            let fetchUrl = url; 
+
+            if (url.includes('drive.google.com')) {
+                if (driveMatch && driveMatch[1]) {
+                    const driveDownloadUrl = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+                    // Your personal Cloudflare Worker Proxy!
+                    const myWorkerUrl = "https://pdf-subhankar.connect-subhankar-info.workers.dev/"; 
+                    fetchUrl = `${myWorkerUrl}?url=${encodeURIComponent(driveDownloadUrl)}`;
                 }
-                
-                popoutShield.classList.remove('hidden');
-                zoomControls.classList.add('hidden'); // Hide CSS zoom, use Drive's native zoom!
-                
-            } else {
-                window.isDriveLink = false;
-                popoutShield.classList.add('hidden');
-                zoomControls.classList.remove('hidden'); // Show CSS zoom for direct PDFs
+            }
+
+            console.log("Fetching PDF from:", fetchUrl);
+            const response = await fetch(fetchUrl);
+            
+            if(!response.ok) {
+                if (response.status === 408) throw new Error("Proxy connection timed out.");
+                throw new Error(`HTTP Error: ${response.status}`);
             }
             
-            document.getElementById('custom-pdf-iframe').src = finalUrl;
-            document.getElementById('custom-pdf-viewer-modal').classList.remove('hidden-view');
-        };
+            pdfArrayBuffer = await response.arrayBuffer();
+            
+            // SECURITY CHECK: Did Google Drive send an HTML virus-scan warning instead of a PDF?
+            const headerString = new TextDecoder('utf-8').decode(pdfArrayBuffer.slice(0, 15));
+            if (headerString.toLowerCase().includes("<!doctype html>")) {
+                throw new Error("File too large for direct download (Google Drive virus scan block).");
+            }
+            
+            if (typeof localforage !== 'undefined' && pdfArrayBuffer) {
+                await localforage.setItem(`exama_pdf_${window.currentPdfId}`, pdfArrayBuffer);
+            }
+        }
 
-        window.closeCustomPDFViewer = function() {
-    // Force exit fullscreen if the user clicks the close 'X' while in fullscreen
+        if (!pdfArrayBuffer) throw new Error("File data is completely empty.");
+
+        loaderText.innerText = "Rendering Engine...";
+
+       // 3. PARSE WITH PDF.JS
+        const loadingTask = pdfjsLib.getDocument({ data: pdfArrayBuffer });
+        window.pdfDoc = await loadingTask.promise;
+        
+        document.getElementById('pdf-page-count').textContent = window.pdfDoc.numPages;
+
+        // --- NEW: AUTO-FIT TO SCREEN WIDTH ---
+        // Grab the first page to measure its default unzoomed size
+        const firstPage = await window.pdfDoc.getPage(1);
+        const unscaledViewport = firstPage.getViewport({ scale: 1 });
+        
+        // Measure the width of the student's actual screen/container
+        const containerWidth = document.getElementById('pdf-scroll-wrapper').clientWidth || window.innerWidth;
+        
+        // Calculate the perfect scale to fit the screen (minus 20px for a clean margin)
+        window.currentPdfScale = (containerWidth - 20) / unscaledViewport.width;
+        
+        // Set safe minimums and maximums so it doesn't get crazy on desktops
+        if (window.currentPdfScale > 1.5) window.currentPdfScale = 1.5;
+        if (window.currentPdfScale < 0.4) window.currentPdfScale = 0.4;
+        // -------------------------------------
+        
+        // 4. RENDER PAGE & SHOW UI
+        await window.renderPdfPage(window.pdfPageNum);
+        
+        if(pdfCanvas) pdfCanvas.classList.remove('hidden');
+        document.getElementById('pdf-pagination-controls').classList.remove('hidden');
+        loader.classList.add('hidden');
+
+    } catch (error) {
+        console.error("Native PDF Render Failed:", error);
+        
+        // SMART FALLBACK
+        loaderText.innerText = "Opening in browser...";
+        alert(`Native reader unavailable: ${error.message}\n\nOpening the standard viewer instead.`);
+        
+        window.open(window.currentPdfRawUrl, '_blank');
+        window.closeCustomPDFViewer(); 
+    }
+};
+
+window.closeCustomPDFViewer = function() {
     if (document.fullscreenElement) {
         if (document.exitFullscreen) document.exitFullscreen();
         else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     }
-
     document.getElementById('custom-pdf-viewer-modal').classList.add('hidden-view');
-    document.getElementById('custom-pdf-iframe').src = '';
-    document.getElementById('drive-popout-shield').classList.add('hidden');
+    if(pdfCanvas) pdfCanvas.classList.add('hidden'); // Clear Canvas visually
+    window.pdfDoc = null; // Clear memory
 };
-        
-        window.togglePdfFullscreen = function() {
-    const pdfModal = document.getElementById('custom-pdf-viewer-modal');
-    const icon = document.getElementById('icon-pdf-fullscreen');
 
-    if (!document.fullscreenElement) {
-        // Enter Fullscreen
-        if (pdfModal.requestFullscreen) {
-            pdfModal.requestFullscreen();
-        } else if (pdfModal.webkitRequestFullscreen) { /* Safari */
-            pdfModal.webkitRequestFullscreen();
-        } else if (pdfModal.msRequestFullscreen) { /* IE11 */
-            pdfModal.msRequestFullscreen();
-        }
+window.zoomCustomPdf = function(dir) {
+    if (!window.pdfDoc) return;
+    
+    // Smooth zoom step of 0.2
+    const zoomStep = 0.2; 
+
+    if (dir === 1) {
+        // Max zoom in limit (e.g., 400%)
+        window.currentPdfScale = Math.min(4.0, window.currentPdfScale + zoomStep);
     } else {
-        // Exit Fullscreen
-        if (document.exitFullscreen) {
-            document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) { /* Safari */
-            document.webkitExitFullscreen();
-        } else if (document.msExitFullscreen) { /* IE11 */
-            document.msExitFullscreen();
-        }
+        // Min zoom out limit (lowered to 0.2 so they can see the whole page)
+        window.currentPdfScale = Math.max(0.2, window.currentPdfScale - zoomStep);
     }
+    
+    // Re-render the canvas with the new high-resolution scale
+    window.queueRenderPage(window.pdfPageNum);
 };
 
-// Listen for fullscreen changes (e.g., when the user presses ESC) to update the icon
-document.addEventListener('fullscreenchange', () => {
-    const icon = document.getElementById('icon-pdf-fullscreen');
-    if (icon) {
-        if (document.fullscreenElement) {
-            icon.classList.replace('fa-expand', 'fa-compress');
+window.downloadCustomPdf = async function() {
+    if(!window.currentPdfId) return;
+    showLoader("Preparing Download...");
+    
+    try {
+        const data = await localforage.getItem(`exama_pdf_${window.currentPdfId}`);
+        if (data) {
+            const blob = new Blob([data], { type: "application/pdf" });
+            const url = window.URL.createObjectURL(blob);
+            
+            const a = document.createElement("a");
+            a.style.display = "none";
+            a.href = url;
+            a.download = document.getElementById('pdf-viewer-title').innerText + ".pdf";
+            document.body.appendChild(a);
+            a.click();
+            
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
         } else {
-            icon.classList.replace('fa-compress', 'fa-expand');
+            window.open(window.currentPdfRawUrl, '_blank');
         }
+    } catch(e) {
+        window.open(window.currentPdfRawUrl, '_blank');
     }
-});
-
-        window.downloadCustomPdf = function() {
-            if(!window.currentPdfRawUrl) return;
-            
-            showLoader("Starting Download...");
-            
-            if (window.isDriveLink) {
-                // Force direct Google Drive download bypassing the preview tab
-                const match = window.currentPdfRawUrl.match(/\/d\/(.+?)\//);
-                if (match && match[1]) {
-                    const downloadUrl = `https://drive.google.com/uc?export=download&id=${match[1]}`;
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.target = '_blank';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                } else {
-                    window.open(window.currentPdfRawUrl, '_blank');
-                }
-                setTimeout(() => hideLoader(), 1500);
-            } else {
-                // Force direct download for native PDFs/Images using Blob
-                fetch(window.currentPdfRawUrl)
-                    .then(resp => resp.blob())
-                    .then(blob => {
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.style.display = 'none';
-                        a.href = url;
-                        a.download = document.getElementById('pdf-viewer-title').innerText || 'material';
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-                        hideLoader();
-                    })
-                    .catch(() => {
-                        // Safe fallback if CORS blocks the direct download
-                        window.open(window.currentPdfRawUrl, '_blank');
-                        hideLoader();
-                    });
-            }
-        };
-
-        window.zoomCustomPdf = function(dir) {
-            if (dir === 1) {
-                window.currentPdfScale = Math.min(4.0, window.currentPdfScale + 0.25);
-            } else {
-                window.currentPdfScale = Math.max(0.5, window.currentPdfScale - 0.25);
-            }
-            
-            const wrapper = document.getElementById('pdf-iframe-wrapper');
-            wrapper.style.transform = `scale(${window.currentPdfScale})`;
-            wrapper.style.width = `${100 / window.currentPdfScale}%`;
-            wrapper.style.height = `${100 / window.currentPdfScale}%`;
-        };
-
-        // ==========================================
-        // TWO-FINGER PINCH-TO-ZOOM ENGINE
-        // ==========================================
-        const pdfScrollWrapper = document.getElementById('pdf-scroll-wrapper');
-        const pdfIframe = document.getElementById('custom-pdf-iframe');
-        let initialDistance = 0;
-        let initialScale = 1;
-
-        pdfScrollWrapper.addEventListener('touchstart', (e) => {
-            // Only activate if exactly 2 fingers touch AND it's NOT a Google Drive link
-            if (e.touches.length === 2 && !window.isDriveLink) {initialDistance = Math.hypot(
-                    e.touches[0].pageX - e.touches[1].pageX,
-                    e.touches[0].pageY - e.touches[1].pageY
-                );
-                initialScale = window.currentPdfScale;
-                // Temporarily disable iframe pointer events so it doesn't steal the pinch gesture
-                pdfIframe.style.pointerEvents = 'none'; 
-            }
-        }, { passive: false });
-
-        pdfScrollWrapper.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 2 && !window.isDriveLink) {
-                e.preventDefault(); // Stop native browser page zooming
-                
-                const currentDistance = Math.hypot(
-                    e.touches[0].pageX - e.touches[1].pageX,
-                    e.touches[0].pageY - e.touches[1].pageY
-                );
-                
-                // Calculate new scale based on how far fingers moved
-                let newScale = initialScale * (currentDistance / initialDistance);
-                window.currentPdfScale = Math.max(0.5, Math.min(newScale, 4.0)); // Limit between 0.5x and 4x
-                
-                // Apply the zoom visually
-                const wrapper = document.getElementById('pdf-iframe-wrapper');
-                wrapper.style.transform = `scale(${window.currentPdfScale})`;
-                wrapper.style.width = `${100 / window.currentPdfScale}%`;
-                wrapper.style.height = `${100 / window.currentPdfScale}%`;
-            }
-        }, { passive: false });
-
-        pdfScrollWrapper.addEventListener('touchend', (e) => {
-            // Once fingers leave the screen, restore iframe interaction so student can scroll again
-            if (e.touches.length < 2) {
-                pdfIframe.style.pointerEvents = 'auto'; 
-            }
-        });
+    hideLoader();
+};
+// ==========================================
+// END OF PDF ENGINE
+// ==========================================
 
  
         // ==========================================
