@@ -1945,7 +1945,7 @@ window.toggleVideoWatched = async function() {
     if (window.currentRole === 'admin') return alert("Only students can mark videos as watched.");
     if (!window.currentWatchVideoId) return;
 
-    const vid = window.videosDB.find(v => v.id === window.currentWatchVideoId);
+    const vid = window.videosDB.find(v => String(v.id) === String(window.currentWatchVideoId));
     if (!vid) return;
 
     let watchedList = vid.watchedBy || [];
@@ -1953,25 +1953,26 @@ window.toggleVideoWatched = async function() {
 
     // Toggle logic
     if (isWatched) {
-        watchedList = watchedList.filter(m => m !== window.loggedInMobile); // Remove from list
+        watchedList = watchedList.filter(m => m !== window.loggedInMobile); // Remove
     } else {
-        watchedList.push(window.loggedInMobile); // Add to list
+        watchedList.push(window.loggedInMobile); // Add
     }
 
     // Update UI instantly
     window.updateWatchedButtonUI(!isWatched);
 
     // Save to Database
-    if (firebaseConfig.apiKey !== "YOUR_API_KEY") { // Check if Firebase is active
+    if (isFirebaseConfigured) { 
         const { doc, updateDoc, getFirestore } = await import("https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js");
         const db = getFirestore();
         await updateDoc(doc(db, "videos", vid.id), { watchedBy: watchedList });
     } else {
-        vid.watchedBy = watchedList; // Update local array if offline
+        vid.watchedBy = watchedList; 
     }
     
-    // Refresh the feed in the background so badges update
+    // INSTANTLY REFRESH BOTH THE HUB AND THE UP-NEXT SECTION
     if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
+    if (typeof window.renderRelatedVideos === 'function') window.renderRelatedVideos(vid.id);
 };
 
 window.playVideo = function(id) {
@@ -2008,39 +2009,45 @@ document.querySelectorAll('#watch-uploader').forEach(el => el.innerText = vid.ca
     window.location.hash = 'watch-video';
 };
 
-// 2. Safe "Up Next" Renderer (Filtered by Subject)
-// 2. Safe "Up Next" Renderer (Filtered by Topic + Next Topic Button)
+// 2. Smart Progression "Up Next" Renderer
 window.renderRelatedVideos = function(excludeId) {
-    // 1. Find the video currently playing
     const currentVideo = window.videosDB.find(v => String(v.id) === String(excludeId));
     if (!currentVideo) return;
 
     const subject = currentVideo.category;
     const currentTopic = currentVideo.topic || 'General';
 
-    // 2. Get all videos in this subject to map out the topics
+    // 1. Get all videos in this subject
     const subjectVideos = window.videosDB.filter(v => v.category === subject);
-    
-    // Extract unique topics in order of appearance
+
+    // Helper function to check if a video is watched by the current student
+    const isWatched = (vid) => (vid.watchedBy || []).includes(window.loggedInMobile);
+
+    // 2. Filter "Up Next" to ONLY show UNWATCHED videos from the SAME topic
+    let unwatchedRelated = subjectVideos.filter(v => 
+        String(v.id) !== String(excludeId) && 
+        (v.topic || 'General') === currentTopic && 
+        !isWatched(v)
+    );
+
+    // 3. Evaluate Completions
+    const isCurrentTopicComplete = subjectVideos
+        .filter(v => (v.topic || 'General') === currentTopic)
+        .every(v => isWatched(v));
+
+    const isSubjectComplete = subjectVideos.every(v => isWatched(v));
+
+    // Get topics to map out the next chapter
     const allTopics = [...new Set(subjectVideos.map(v => v.topic || 'General'))];
-    
-    // Find the next topic in the list
     const currentTopicIndex = allTopics.indexOf(currentTopic);
     const nextTopic = (currentTopicIndex !== -1 && currentTopicIndex < allTopics.length - 1) 
         ? allTopics[currentTopicIndex + 1] : null;
 
-    // 3. Filter "Up Next" to ONLY show videos from the SAME topic
-    let related = subjectVideos.filter(v => 
-        String(v.id) !== String(excludeId) && 
-        (v.topic || 'General') === currentTopic
-    );
-    
     let relatedHtml = '';
     
-    if (related.length === 0) {
-        relatedHtml = `<p class="text-xs text-gray-500 font-medium italic mb-4">No other videos left in this topic.</p>`;
-    } else {
-        related.forEach(vid => {
+    // Render the unwatched videos in the current topic
+    if (unwatchedRelated.length > 0) {
+        unwatchedRelated.forEach(vid => {
             relatedHtml += `
             <div class="flex gap-3 items-start bg-white p-2 rounded-xl shadow-sm border border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors mb-3" onclick="window.playVideo('${vid.id}')">
                 <div class="relative w-32 aspect-video shrink-0 bg-gray-900 rounded-lg overflow-hidden">
@@ -2055,52 +2062,44 @@ window.renderRelatedVideos = function(excludeId) {
                 </div>
             </div>`;
         });
+    } else if (!isCurrentTopicComplete) {
+        // If there are no other unwatched videos, but the CURRENT video isn't marked watched yet
+        relatedHtml = `
+        <div class="mt-2 p-4 bg-amber-50 border border-amber-200 rounded-xl text-center shadow-sm">
+            <h4 class="font-black text-amber-800 text-sm mb-1"><i class="fa-solid fa-lock text-amber-600"></i> Chapter Locked</h4>
+            <p class="text-[10px] text-amber-700 font-medium">Mark this video as watched to unlock the next chapter!</p>
+        </div>`;
     }
 
-    // 4. Add the "Next Topic" Button at the very end
-    if (nextTopic) {
+    // Render Unlock Buttons / Completion Banners
+    if (isSubjectComplete) {
+        relatedHtml += `
+        <div class="mt-2 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center shadow-sm">
+            <h4 class="font-black text-emerald-800 text-sm mb-1">Subject Completed! 🎉</h4>
+            <p class="text-[10px] text-emerald-600 font-medium">You've mastered all lectures in ${subject}. Great job!</p>
+        </div>`;
+    } else if (isCurrentTopicComplete && nextTopic) {
         relatedHtml += `
         <div class="mt-2 p-4 bg-indigo-50 border border-indigo-200 rounded-xl text-center shadow-sm">
-            <h4 class="font-black text-indigo-900 text-sm mb-1">Finished with ${currentTopic}?</h4>
-            <p class="text-[10px] text-gray-600 font-medium mb-3">Continue your learning journey.</p>
+            <h4 class="font-black text-indigo-900 text-sm mb-1">Topic Completed! 🏆</h4>
+            <p class="text-[10px] text-gray-600 font-medium mb-3">Ready to move on?</p>
             <button onclick="goToNextTopic('${subject}', '${nextTopic.replace(/'/g, "\\'")}')" class="w-full bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-bold py-2.5 rounded-lg active:scale-95 transition-all shadow-md text-xs sm:text-sm">
                 Start Next Topic: ${nextTopic} <i class="fa-solid fa-arrow-right ml-1"></i>
             </button>
         </div>`;
-    } else {
+    } else if (isCurrentTopicComplete && !nextTopic) {
+        // If topic is complete, but they missed a video in an earlier topic
         relatedHtml += `
-        <div class="mt-2 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center shadow-sm">
-            <h4 class="font-black text-emerald-800 text-sm mb-1">Subject Completed! 🎉</h4>
-            <p class="text-[10px] text-gray-600 font-medium">You've reached the end of the ${subject} lectures.</p>
+        <div class="mt-2 p-4 bg-orange-50 border border-orange-200 rounded-xl text-center shadow-sm">
+            <h4 class="font-black text-orange-800 text-sm mb-1">Topic Finished!</h4>
+            <p class="text-[10px] text-orange-600 font-medium">You still have some unwatched videos in previous topics to complete the entire subject.</p>
         </div>`;
     }
 
-    // Inject into the HTML
+    // Inject into ALL duplicate lists
     document.querySelectorAll('#watch-related-list').forEach(list => {
         list.innerHTML = relatedHtml;
     });
-};
-
-window.closeWatchView = function() {
-    safeBack(); // Navigates backward in history, triggering Hash Router
-};
-window.goToNextTopic = function(subject, nextTopic) {
-    // 1. Stop the current video playing in the background
-    document.querySelectorAll('#native-yt-iframe').forEach(el => el.src = '');
-    
-    // 2. Hide the video player screen
-    document.querySelectorAll('#video-watch-view').forEach(el => el.classList.add('hidden-view'));
-    
-    // 3. Update the global variables to trick the router into opening the next topic folder
-    window.currentVideoSubject = subject;
-    window.currentVideoTopic = nextTopic;
-    
-    // 4. Trigger the back button to naturally return to the Video Hub interface
-    safeBack(); 
-};
-
-window.shareVideo = function() {
-    alert("Share functionality coming soon!");
 };
      
      // --- 2. LEADERBOARD NEW SUB-TAB LOGIC ---
