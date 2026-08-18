@@ -4141,29 +4141,51 @@ window.directSubmitTestbook = function(examId) {
 
 window.submitFromActiveExam = function() { 
     const exam = window.examsDB.find(e => e.id === window.activeExamId);
-    if(exam.isPaused || !exam.globalStartTime) return alert("Cannot submit while exam is paused or waiting.");
-    let elapsed = exam.pausedElapsed || 0; elapsed += Date.now() - exam.globalStartTime; let remMs = (exam.duration * 60 * 1000) - elapsed; if (remMs < 0) remMs = 0;
-    window.frozenTimeSaved = Math.floor(remMs / 60000); window.frozenTimeTaken = exam.duration - window.frozenTimeSaved;
+    
+    let isAnytime = exam.scheduleMode === 'anytime';
+    const localStartKey = `anytime_start_${exam.id}_${window.loggedInMobile}`;
+    let localStartTime = localStorage.getItem(localStartKey);
+    let effectiveStartTime = isAnytime ? parseInt(localStartTime) : exam.globalStartTime;
 
-    // Offline bypasses Answer Keys and goes straight to Log Marks
+    if(!isAnytime && (exam.isPaused || !exam.globalStartTime)) return alert("Cannot submit while exam is paused or waiting.");
+    
+    // 1. Freeze Time
+    let elapsed = exam.pausedElapsed || 0; 
+    elapsed += Date.now() - effectiveStartTime; 
+    let remMs = (exam.duration * 60 * 1000) - elapsed; 
+    if (remMs < 0) remMs = 0;
+    window.frozenTimeSaved = Math.floor(remMs / 60000); 
+    window.frozenTimeTaken = exam.duration - window.frozenTimeSaved;
+
+    // 2. Offline bypasses Answer Keys
     if (exam.examType === 'offline') {
         window.proceedToLogMarks();
         return;
     }
 
-    // Default Online Exam logic (Check for Answers)
-    const materials = window.peerMaterialsDB.filter(m => m.examId === window.activeExamId); let hasAnswers = false;
-    const container = document.getElementById('evaluation-images-container'); container.innerHTML = '';
-    materials.forEach(m => {
-        const uploader = window.studentsDB.find(s=>s.mobile===m.mobile)?.name || 'Peer';
-        let answers = m.aUrls || []; if(m.aUrl && answers.length === 0) answers = [m.aUrl]; if(answers.length > 0) hasAnswers = true;
-        answers.forEach((url, index) => {
-            const pageBadge = answers.length > 1 ? `<div class="absolute top-1.5 sm:top-2 right-1.5 sm:right-2 bg-gray-900/80 text-white text-[8px] sm:text-[10px] font-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-sm sm:rounded-md shadow-md border border-white/20 z-10 tracking-widest uppercase break-words">Page ${index + 1} of ${answers.length}</div>` : '';
-            const pageLabel = answers.length > 1 ? ` (Page ${index + 1})` : '';
-            container.innerHTML += `<div class="mb-4 sm:mb-5 flex flex-col items-center w-full"><span class="text-[8px] sm:text-[10px] font-bold text-gray-600 bg-white px-2.5 sm:px-4 py-1 sm:py-1.5 rounded-t-md sm:rounded-t-lg border border-gray-200 border-b-0 shadow-sm text-center z-10 -mb-[1px] break-words leading-tight max-w-[90%]">Answer Key by ${uploader}${pageLabel}</span><div class="relative w-full"><img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-auto rounded-xl sm:rounded-2xl border-2 border-gray-300 shadow-md cursor-pointer hover:opacity-90 transition-opacity">${pageBadge}</div></div>`;
+    // 3. Hide Exam Screen & Clean Jitsi
+    document.getElementById('active-exam-view').classList.add('hidden-view');
+    cleanupJitsi();
+
+    // 4. Setup Answer Upload Modal
+    const uploadList = document.getElementById('answer-upload-list');
+    uploadList.innerHTML = '';
+    
+    if (window.currentExamPeers && window.currentExamPeers.length > 0) {
+        const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
+        
+        uniquePeers.forEach(peer => {
+            uploadList.innerHTML += `
+            <div class="bg-indigo-50/80 p-4 rounded-xl border border-indigo-200 shadow-sm">
+                <label class="block text-[11px] font-black text-indigo-900 uppercase tracking-widest mb-2 break-words">Upload ${peer.name}'s Answer Script</label>
+                <p class="text-[9px] text-gray-500 mb-2 font-bold">Select the photos of your answers to ${peer.name}'s questions.</p>
+                <input type="file" id="ans-file-${peer.mobile}" accept="image/*" multiple class="w-full text-xs font-medium text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-black file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer bg-white rounded-lg shadow-inner">
+            </div>`;
         });
-    });
-    if(hasAnswers) { document.getElementById('evaluation-modal').classList.remove('hidden-view'); } else { proceedToLogMarks(); }
+        document.getElementById('answer-upload-modal').classList.remove('hidden-view');
+    } else {
+        window.openPeerEvaluationRoom(exam.id);
+    }
 }
       
 
@@ -4928,92 +4950,80 @@ function renderChat() {
         // ==========================================
         // ACTIVE EXAM LOGIC & AUTO-SUBMIT
         // ==========================================
-      window.renderActiveExam = function(examId) {
+window.renderActiveExam = function(examId) {
     const exam = window.examsDB.find(e => e.id === examId); if(!exam) return;
-    document.getElementById('active-exam-name').innerText = exam.name; document.getElementById('ae-total').innerText = `${exam.totalMarks} Marks`; document.getElementById('ae-pass').innerText = `Pass ${exam.passPercentage || 40}%`; document.getElementById('ae-dur').innerText = `${exam.duration} mins`;
+    document.getElementById('active-exam-name').innerText = exam.name; 
+    document.getElementById('ae-total').innerText = `${exam.totalMarks} Marks`; 
+    document.getElementById('ae-pass').innerText = `Pass ${exam.passPercentage || 40}%`; 
+    document.getElementById('ae-dur').innerText = `${exam.duration} mins`;
 
-    const meetContainer = document.getElementById('proctoring-iframe-container'); const proctorPanel = document.getElementById('live-proctoring-panel');
+    const meetContainer = document.getElementById('proctoring-iframe-container'); 
+    const proctorPanel = document.getElementById('live-proctoring-panel');
     cleanupJitsi();
     if (exam.isProctored) {
         proctorPanel.classList.remove('hidden'); meetContainer.innerHTML = '';
-        const domain = "8x8.vc"; const roomName = `vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_${examId.replace(/[^a-zA-Z0-9]/g, '')}`;
+        const domain = "8x8.vc"; 
+        const roomName = `vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_${examId.replace(/[^a-zA-Z0-9]/g, '')}`;
         const studentName = window.studentsDB.find(s=>s.mobile===window.loggedInMobile)?.name || 'Admin';
         const options = { roomName: roomName, parentNode: meetContainer, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: false, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: studentName } };
         window.jitsiApi = new window.JitsiMeetExternalAPI(domain, options); window.jitsiApi.executeCommand('join');
     } else { proctorPanel.classList.add('hidden'); meetContainer.innerHTML = ''; }
     
-    // --- THIS IS THE NEW PEER QUESTION LOGIC ---
     const qContainer = document.getElementById('active-exam-q-images'); qContainer.innerHTML = '';
-    
-    // NEW: Filter out questions uploaded by the currently logged-in student (You don't see your own questions)
     const materials = window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== window.loggedInMobile);
-    
-    // Store peers in a global array so we can generate the specific "Answer Upload" buttons later
     window.currentExamPeers = []; 
 
     if(materials.length === 0) {
-    if (exam.examType === 'offline') {
-        qContainer.innerHTML = `<div class="p-6 text-center text-indigo-300 text-xs font-bold border-2 border-dashed border-indigo-500/30 rounded-xl w-full bg-indigo-900/20">Offline Exam in progress. Please refer to your physical question paper.</div>`;
-    } else if (exam.examType === 'testbook') {
-        qContainer.innerHTML = `<div class="p-6 text-center text-indigo-300 text-xs font-bold border-2 border-dashed border-indigo-500/30 rounded-xl w-full bg-indigo-900/20">Testbook Exam in progress. Please solve the test on the Testbook App.</div>`;
-    } else {
-        qContainer.innerHTML = `<div class="p-6 text-center text-gray-400 text-xs font-bold border-2 border-dashed border-gray-600 rounded-xl w-full">No peers have uploaded questions for this exam yet. Waiting for others...</div>`;
+        if (exam.examType === 'offline') {
+            qContainer.innerHTML = `<div class="p-6 text-center text-indigo-300 text-xs font-bold border-2 border-dashed border-indigo-500/30 rounded-xl w-full bg-indigo-900/20">Offline Exam in progress. Please refer to your physical question paper.</div>`;
+        } else if (exam.examType === 'testbook') {
+            qContainer.innerHTML = `<div class="p-6 text-center text-indigo-300 text-xs font-bold border-2 border-dashed border-indigo-500/30 rounded-xl w-full bg-indigo-900/20">Testbook Exam in progress. Please solve the test on the Testbook App.</div>`;
+        } else {
+            qContainer.innerHTML = `<div class="p-6 text-center text-gray-400 text-xs font-bold border-2 border-dashed border-gray-600 rounded-xl w-full">No peers have uploaded questions for this exam yet. Waiting for others...</div>`;
+        }
     }
-}
 
     materials.forEach(m => {
         const uploaderName = window.studentsDB.find(s=>s.mobile===m.mobile)?.name || 'Peer';
-        
-        // Save the peer to our list
         window.currentExamPeers.push({ mobile: m.mobile, name: uploaderName }); 
 
         let questions = m.qUrls || []; if(m.qUrl && questions.length === 0) questions = [m.qUrl];
         questions.forEach((url, index) => {
             const pageBadge = questions.length > 1 ? `<div class="absolute top-2 sm:top-3 right-2 sm:right-3 bg-black/80 text-white text-[9px] sm:text-[11px] font-black px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg shadow-lg border border-white/20 z-10 tracking-widest break-words">PAGE ${index + 1} OF ${questions.length}</div>` : '';
             const pageLabel = questions.length > 1 ? ` (Page ${index + 1})` : '';
-            
             qContainer.innerHTML += `
             <div class="w-full max-w-sm flex flex-col items-center relative mb-4 sm:mb-6">
                 <span class="text-[8px] sm:text-[10px] font-bold text-indigo-200 bg-indigo-900/90 backdrop-blur-md px-3 sm:px-5 py-1.5 sm:py-2 rounded-t-lg sm:rounded-t-xl border border-indigo-500/50 border-b-0 shadow-sm uppercase tracking-widest z-10 -mb-[1px] relative text-center break-words leading-tight max-w-[90%]">
                     Question By ${uploaderName}${pageLabel}
                 </span>
                 <div class="relative w-full px-2 sm:px-0">
-                    <img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-auto rounded-xl sm:rounded-2xl border-2 border-indigo-500/50 shadow-[0_10px_20px_rgba(0,0,0,0.5)] sm:shadow-[0_10px_30px_rgba(0,0,0,0.5)] object-contain bg-gray-900 cursor-pointer hover:opacity-90 transition-opacity">
+                    <img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-auto rounded-xl sm:rounded-2xl border-2 border-indigo-500/50 shadow-[0_10px_20px_rgba(0,0,0,0.5)] object-contain bg-gray-900 cursor-pointer hover:opacity-90 transition-opacity">
                     ${pageBadge}
                 </div>
             </div>`;
         });
     });
-    // --- END PEER QUESTION LOGIC ---
 
-    // --- STEP 2: ANYTIME EXAM START LOGIC ---
     const startOverlayId = `anytime-start-overlay`;
     let startOverlay = document.getElementById(startOverlayId);
-    
-    // Create a unique key for this student and this specific exam
     const localStartKey = `anytime_start_${examId}_${window.loggedInMobile}`;
     const hasStartedAnytime = localStorage.getItem(localStartKey);
 
-    // If it's an anytime exam AND the student hasn't clicked start yet
     if (exam.scheduleMode === 'anytime' && !hasStartedAnytime) {
-        
-        // 1. Hide the questions, timer, and submit button
         qContainer.classList.add('hidden');
         document.getElementById('active-exam-circle').classList.add('hidden');
         document.getElementById('active-exam-submit-btn').classList.add('hidden');
         
-        // 2. Create the Start Screen Overlay if it doesn't exist
-        if (!startOverlay) {
+       if (!startOverlay) {
             startOverlay = document.createElement('div');
             startOverlay.id = startOverlayId;
             startOverlay.className = "w-full max-w-md mx-auto mt-10 glass-card p-6 rounded-3xl text-center border border-indigo-500/30 relative z-20";
-            // Insert it right above the hidden questions container
-            document.getElementById('active-exam-view').insertBefore(startOverlay, qContainer);
+            // Insert it right above the hidden questions container inside its actual parent container
+            qContainer.parentNode.insertBefore(startOverlay, qContainer);
         }
         
-        // 3. Show the Start Screen
         startOverlay.classList.remove('hidden');
-        startOverlay.innerHTML = `
+      startOverlay.innerHTML = `
             <div class="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-indigo-500/40">
                 <i class="fa-solid fa-clock text-indigo-400 text-3xl animate-pulse"></i>
             </div>
@@ -5023,30 +5033,24 @@ function renderChat() {
                 Click start when you are ready. The timer will begin immediately.
             </p>
             <button onclick="
-                // When clicked: Save start state, hide overlay, show everything, start timer
                 localStorage.setItem('${localStartKey}', Date.now());
                 document.getElementById('${startOverlayId}').classList.add('hidden');
                 document.getElementById('active-exam-q-images').classList.remove('hidden');
                 document.getElementById('active-exam-circle').classList.remove('hidden');
                 document.getElementById('active-exam-submit-btn').classList.remove('hidden');
-                updateActiveTimerDisplay();
+                window.updateActiveTimerDisplay();
             " class="w-full bg-gradient-to-r from-emerald-400 to-green-500 text-white font-black py-4 rounded-xl shadow-[0_10px_20px_rgba(16,185,129,0.3)] hover:scale-105 active:scale-95 transition-all">
                 START EXAM NOW
             </button>
         `;
     } else {
-        // Standard Scheduled Exam logic OR Already started Anytime Exam
         if(startOverlay) startOverlay.classList.add('hidden');
         qContainer.classList.remove('hidden');
         document.getElementById('active-exam-circle').classList.remove('hidden');
         document.getElementById('active-exam-submit-btn').classList.remove('hidden');
-        
-        // Connect to the timer normally
-        updateActiveTimerDisplay();
+        window.updateActiveTimerDisplay();
     }
-    // --- END ANYTIME EXAM LOGIC ---
-}
-        
+}      
       window.submitFromActiveExam = function() { 
     const exam = window.examsDB.find(e => e.id === window.activeExamId);
     if(exam.isPaused || !exam.globalStartTime) return alert("Cannot submit while exam is paused or waiting.");
@@ -5158,39 +5162,89 @@ window.submitAllPeerAnswers = async function() {
             window.switchForms('log-result'); document.getElementById('modal-overlay').classList.remove('hidden-view'); document.getElementById('action-sheet').classList.remove('hidden-view'); cleanupJitsi();
         }
 
-        function updateActiveTimerDisplay() {
-            if (!window.activeExamId) return; const exam = window.examsDB.find(e => e.id === window.activeExamId);
-            const el = document.getElementById('active-exam-timer'); const circle = document.getElementById('active-exam-circle');
-            const overlay = document.getElementById('active-exam-overlay'); const submitBtn = document.getElementById('active-exam-submit-btn');
-            const badgeRunning = document.getElementById('ae-status-badge'); const badgeWaiting = document.getElementById('ae-waiting-badge');
+     window.updateActiveTimerDisplay = function() {
+    if (!window.activeExamId) return; 
+    const exam = window.examsDB.find(e => e.id === window.activeExamId);
+    const el = document.getElementById('active-exam-timer'); 
+    const circle = document.getElementById('active-exam-circle');
+    const overlay = document.getElementById('active-exam-overlay'); 
+    const submitBtn = document.getElementById('active-exam-submit-btn');
+    const badgeRunning = document.getElementById('ae-status-badge'); 
+    const badgeWaiting = document.getElementById('ae-waiting-badge');
 
-            if (exam) {
-                if (!exam.globalStartTime && !exam.isPaused && !exam.pausedElapsed) {
-                    el.innerText = "00:00"; overlay.classList.remove('hidden'); document.getElementById('overlay-msg-title').innerText = "Waiting Area"; document.getElementById('overlay-msg-sub').innerText = "The exam will begin when the admin starts the timer.";
-                    submitBtn.disabled = true; submitBtn.classList.add('opacity-50', 'cursor-not-allowed'); badgeWaiting.classList.remove('hidden'); badgeRunning.parentElement.classList.add('hidden');
-                } else if (exam.isPaused) {
-                    overlay.classList.remove('hidden'); document.getElementById('overlay-msg-title').innerText = "Exam Paused"; document.getElementById('overlay-msg-sub').innerText = "The administrator has paused the timer.";
-                    submitBtn.disabled = true; submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                    let remainingMs = (exam.duration * 60 * 1000) - (exam.pausedElapsed || 0); if (remainingMs <= 0) remainingMs = 0;
-                    const m = Math.floor(remainingMs / 60000).toString().padStart(2, '0'); const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
-                    el.innerText = `${m}:${s}`; badgeWaiting.classList.add('hidden'); badgeRunning.parentElement.classList.remove('hidden'); badgeRunning.innerText = "PAUSED"; badgeRunning.previousElementSibling.classList.remove('animate-pulse');
-                } else {
-                    overlay.classList.add('hidden'); submitBtn.disabled = false; submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    badgeWaiting.classList.add('hidden'); badgeRunning.parentElement.classList.remove('hidden'); badgeRunning.innerText = "Live Exam Running"; badgeRunning.previousElementSibling.classList.add('animate-pulse');
-                    let elapsed = exam.pausedElapsed || 0; elapsed += Date.now() - exam.globalStartTime; let remainingMs = (exam.duration * 60 * 1000) - elapsed;
-                    
-                    if (remainingMs <= 0) {
-                        el.innerText = "00:00"; el.classList.add('text-red-500'); circle.classList.add('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]', 'sm:shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.remove('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]', 'sm:shadow-[0_0_80px_rgba(79,70,229,0.3)]');
-                        if (!window.autoSubmitTriggered) { window.autoSubmitTriggered = true; alert("Time is up! Opening answer keys for evaluation..."); submitFromActiveExam(); }
-                    } else {
-                        window.autoSubmitTriggered = false; const m = Math.floor(remainingMs / 60000).toString().padStart(2, '0'); const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0'); el.innerText = `${m}:${s}`;
-                        if (remainingMs <= 60000) { el.classList.add('text-red-500'); circle.classList.add('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]', 'sm:shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.remove('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]', 'sm:shadow-[0_0_80px_rgba(79,70,229,0.3)]'); } 
-                        else { el.classList.remove('text-red-500'); circle.classList.remove('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]', 'sm:shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.add('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]', 'sm:shadow-[0_0_80px_rgba(79,70,229,0.3)]'); }
-                    }
+    if (exam) {
+        let isAnytime = exam.scheduleMode === 'anytime';
+        const localStartKey = `anytime_start_${exam.id}_${window.loggedInMobile}`;
+        let localStartTime = localStorage.getItem(localStartKey);
+        let effectiveStartTime = isAnytime ? (localStartTime ? parseInt(localStartTime) : null) : exam.globalStartTime;
+
+        if (isAnytime && !effectiveStartTime) return; // Wait for user to press Start
+
+        if (!effectiveStartTime && !exam.isPaused && !exam.pausedElapsed) {
+            el.innerText = "00:00"; 
+            overlay.classList.remove('hidden'); 
+            document.getElementById('overlay-msg-title').innerText = "Waiting Area"; 
+            document.getElementById('overlay-msg-sub').innerText = "The exam will begin when the admin starts the timer.";
+            submitBtn.disabled = true; 
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed'); 
+            badgeWaiting.classList.remove('hidden'); 
+            badgeRunning.parentElement.classList.add('hidden');
+        } else if (exam.isPaused && !isAnytime) {
+            overlay.classList.remove('hidden'); 
+            document.getElementById('overlay-msg-title').innerText = "Exam Paused"; 
+            document.getElementById('overlay-msg-sub').innerText = "The administrator has paused the timer.";
+            submitBtn.disabled = true; 
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            let remainingMs = (exam.duration * 60 * 1000) - (exam.pausedElapsed || 0); 
+            if (remainingMs <= 0) remainingMs = 0;
+            const m = Math.floor(remainingMs / 60000).toString().padStart(2, '0'); 
+            const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
+            el.innerText = `${m}:${s}`; 
+            badgeWaiting.classList.add('hidden'); 
+            badgeRunning.parentElement.classList.remove('hidden'); 
+            badgeRunning.innerText = "PAUSED"; 
+            badgeRunning.previousElementSibling.classList.remove('animate-pulse');
+        } else {
+            overlay.classList.add('hidden'); 
+            submitBtn.disabled = false; 
+            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            badgeWaiting.classList.add('hidden'); 
+            badgeRunning.parentElement.classList.remove('hidden'); 
+            badgeRunning.innerText = "Live Exam Running"; 
+            badgeRunning.previousElementSibling.classList.add('animate-pulse');
+            
+            let elapsed = exam.pausedElapsed || 0; 
+            elapsed += Date.now() - effectiveStartTime; 
+            let remainingMs = (exam.duration * 60 * 1000) - elapsed;
+            
+            if (remainingMs <= 0) {
+                el.innerText = "00:00"; 
+                el.classList.add('text-red-500'); 
+                circle.classList.add('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]'); 
+                circle.classList.remove('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]');
+                if (!window.autoSubmitTriggered) { 
+                    window.autoSubmitTriggered = true; 
+                    alert("Time is up! Opening answer keys for evaluation..."); 
+                    submitFromActiveExam(); 
+                }
+            } else {
+                window.autoSubmitTriggered = false; 
+                const m = Math.floor(remainingMs / 60000).toString().padStart(2, '0'); 
+                const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0'); 
+                el.innerText = `${m}:${s}`;
+                if (remainingMs <= 60000) { 
+                    el.classList.add('text-red-500'); 
+                    circle.classList.add('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]'); 
+                    circle.classList.remove('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]'); 
+                } else { 
+                    el.classList.remove('text-red-500'); 
+                    circle.classList.remove('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]'); 
+                    circle.classList.add('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]'); 
                 }
             }
         }
-
+    }
+}
         // ==========================================
         // CALL RINGTONE & INCOMING CALL POPUP ENGINE
         // ==========================================
