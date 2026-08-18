@@ -4199,36 +4199,42 @@ window.directSubmitTestbook = function(examId) {
 window.submitFromActiveExam = function() { 
     const exam = window.examsDB.find(e => e.id === window.activeExamId);
     
+    // --- 1. IDENTIFY IF IT IS AN ANYTIME EXAM ---
     let isAnytime = exam.scheduleMode === 'anytime';
     const localStartKey = `anytime_start_${exam.id}_${window.loggedInMobile}`;
     let localStartTime = localStorage.getItem(localStartKey);
     let effectiveStartTime = isAnytime ? parseInt(localStartTime) : exam.globalStartTime;
 
-    if(!isAnytime && (exam.isPaused || !exam.globalStartTime)) return alert("Cannot submit while exam is paused or waiting.");
+    // --- 2. PREVENT SUBMISSION ONLY IF IT'S A SCHEDULED EXAM WAITING/PAUSED ---
+    if(!isAnytime && (exam.isPaused || !exam.globalStartTime)) {
+        return alert("Cannot submit while exam is paused or waiting.");
+    }
     
-    // 1. Freeze Time
+    // --- 3. CALCULATE TIME TAKEN/SAVED CORRECTLY ---
     let elapsed = exam.pausedElapsed || 0; 
     elapsed += Date.now() - effectiveStartTime; 
     let remMs = (exam.duration * 60 * 1000) - elapsed; 
     if (remMs < 0) remMs = 0;
+    
     window.frozenTimeSaved = Math.floor(remMs / 60000); 
     window.frozenTimeTaken = exam.duration - window.frozenTimeSaved;
 
-    // 2. Offline bypasses Answer Keys
+    // --- 4. OFFLINE EXAM BYPASS ---
     if (exam.examType === 'offline') {
         window.proceedToLogMarks();
         return;
     }
 
-    // 3. Hide Exam Screen & Clean Jitsi
+    // --- 5. HIDE EXAM SCREEN & CLEANUP ---
     document.getElementById('active-exam-view').classList.add('hidden-view');
     cleanupJitsi();
 
-    // 4. Setup Answer Upload Modal
+    // --- 6. SETUP ANSWER UPLOAD MODAL ---
     const uploadList = document.getElementById('answer-upload-list');
     uploadList.innerHTML = '';
     
     if (window.currentExamPeers && window.currentExamPeers.length > 0) {
+        // Remove duplicate peers if they uploaded multiple pages
         const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
         
         uniquePeers.forEach(peer => {
@@ -4241,6 +4247,7 @@ window.submitFromActiveExam = function() {
         });
         document.getElementById('answer-upload-modal').classList.remove('hidden-view');
     } else {
+        // Skip straight to evaluation room if no peers uploaded questions
         window.openPeerEvaluationRoom(exam.id);
     }
 }
@@ -5108,46 +5115,7 @@ window.renderActiveExam = function(examId) {
         window.updateActiveTimerDisplay();
     }
 }      
-      window.submitFromActiveExam = function() { 
-    const exam = window.examsDB.find(e => e.id === window.activeExamId);
-    if(exam.isPaused || !exam.globalStartTime) return alert("Cannot submit while exam is paused or waiting.");
-    
-    // 1. Freeze Time
-    let elapsed = exam.pausedElapsed || 0; elapsed += Date.now() - exam.globalStartTime; let remMs = (exam.duration * 60 * 1000) - elapsed; if (remMs < 0) remMs = 0;
-    window.frozenTimeSaved = Math.floor(remMs / 60000); window.frozenTimeTaken = exam.duration - window.frozenTimeSaved;
-
-    // 2. Offline bypasses Answer Keys and goes straight to Log Marks
-    if (exam.examType === 'offline') {
-        window.proceedToLogMarks();
-        return;
-    }
-
-    // 3. Hide Exam Screen & Clean Jitsi
-    document.getElementById('active-exam-view').classList.add('hidden-view');
-    cleanupJitsi();
-
-    // 4. Setup Answer Upload Modal dynamically based on the peers whose questions were shown
-    const uploadList = document.getElementById('answer-upload-list');
-    uploadList.innerHTML = '';
-    
-    if (window.currentExamPeers && window.currentExamPeers.length > 0) {
-        // Remove duplicate peers if they uploaded multiple pages
-        const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
-        
-        uniquePeers.forEach(peer => {
-            uploadList.innerHTML += `
-            <div class="bg-indigo-50/80 p-4 rounded-xl border border-indigo-200 shadow-sm">
-                <label class="block text-[11px] font-black text-indigo-900 uppercase tracking-widest mb-2 break-words">Upload ${peer.name}'s Answer Script</label>
-                <p class="text-[9px] text-gray-500 mb-2 font-bold">Select the photos of your answers to ${peer.name}'s questions.</p>
-                <input type="file" id="ans-file-${peer.mobile}" accept="image/*" multiple class="w-full text-xs font-medium text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-black file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer bg-white rounded-lg shadow-inner">
-            </div>`;
-        });
-        document.getElementById('answer-upload-modal').classList.remove('hidden-view');
-    } else {
-        // If no questions were there to answer, skip straight to evaluation room
-        window.openPeerEvaluationRoom(exam.id);
-    }
-}
+      
 
 window.submitAllPeerAnswers = async function() {
     const examId = window.activeExamId;
