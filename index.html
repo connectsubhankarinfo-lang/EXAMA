@@ -724,6 +724,9 @@
     <i class="fa-brands fa-youtube text-red-400 text-[10px] sm:text-xs"></i>
 </button>
                     </button>
+                    <button onclick="window.openAdminSessionControl()" class="w-8 h-8 sm:w-9 sm:h-9 bg-orange-500/20 hover:bg-orange-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-orange-500/30" title="Student Session Control">
+                        <i class="fa-solid fa-stopwatch text-orange-300 text-[10px] sm:text-xs"></i>
+                    </button>
                     <button onclick="logout()" class="w-8 h-8 sm:w-9 sm:h-9 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center active:scale-90 transition-all" title="Logout">
                         <i class="fa-solid fa-power-off text-gray-400 text-[10px] sm:text-xs"></i>
                     </button>
@@ -3574,13 +3577,13 @@ function getFitnessLeaderboard() {
         function buildP2PHistoryHTML(examId, studentMobile) {
             const scripts = (window.peerAnswerScriptsDB || []).filter(s => s.examId === examId && s.solverMobile === studentMobile);
             if (!scripts.length) return '';
-            let html = `<div class="mt-4 pt-4 border-t border-gray-200"><h5 class="text-[10px] font-black text-indigo-700 uppercase tracking-widest mb-3">P2P Evaluations</h5><div class="space-y-2">`;
+            let html = `<div class="mt-4 pt-4 border-t border-gray-200"><h5 class="text-[10px] font-black text-indigo-700 uppercase tracking-widest mb-3">P2P Evaluations</h5><div class="flex flex-wrap gap-2">`;
             scripts.forEach(script => {
                 const evaluator = (window.studentsDB || []).find(st => st.mobile === script.targetPeerMobile);
-                const dp = evaluator?.dpUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(evaluator?.name || 'Peer')}&background=4f46e5&color=fff&bold=true`;
+                const dp = evaluator?.dpUrl || (window.getStudentAvatar ? window.getStudentAvatar(script.targetPeerMobile, evaluator?.name || 'Peer') : `https://ui-avatars.com/api/?name=Peer&background=4f46e5&color=fff&bold=true`);
                 const max = Number(script.questionSetMaxMarks || 0);
                 const marks = script.isGraded ? Number(script.awardedMarks || 0) : null;
-                html += `<div class="bg-white/70 rounded-xl border border-gray-200 p-3"><div class="flex items-center gap-3"><img src="${dp}" class="w-9 h-9 rounded-full object-cover border border-gray-200"><div class="flex-1 min-w-0"><p class="font-black text-gray-900 text-xs">${evaluator?.name || 'Peer'}</p><p class="text-[9px] text-gray-500 font-bold">Question Set: ${script.questionSetId || 'Peer Set'}</p></div><div class="text-right"><p class="font-black text-indigo-700 text-sm">${marks === null ? '-' : marks}/${max}</p><p class="text-[8px] font-black uppercase ${script.isGraded ? 'text-emerald-600' : 'text-amber-600'}">${script.isGraded ? 'Evaluated' : 'Pending'}</p></div></div></div>`;
+                html += `<div class="bg-white/80 rounded-xl border border-gray-200 px-2.5 py-2 flex items-center gap-2 shadow-sm" title="${marks === null ? 'Pending evaluation' : 'Evaluated'}"><img src="${dp}" class="w-8 h-8 rounded-full object-cover border border-gray-200"><span class="font-black text-indigo-700 text-sm">${marks === null ? '—' : marks}/${max}</span></div>`;
             });
             html += `</div></div>`;
             return html;
@@ -3710,7 +3713,9 @@ window.examsDB.forEach(exam => {
 
 // --- TIMER STATUS BADGE ---
 let timerStatusHTML = '';
-if (!exam.globalStartTime) { 
+if (exam.examMode === 'anytime') {
+    timerStatusHTML = `<span class="bg-cyan-50 text-cyan-700 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-black uppercase tracking-widest border border-cyan-200 shadow-sm">ANYTIME LIVE BATCH</span>`;
+} else if (!exam.globalStartTime) { 
     timerStatusHTML = `<span class="bg-gray-100 text-gray-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-gray-200 shadow-sm">Awaiting</span>`; 
 } else if (exam.isPaused) { 
     timerStatusHTML = `<span class="bg-amber-50 text-amber-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-amber-200 shadow-sm">Paused</span>`; 
@@ -3909,7 +3914,8 @@ const cardHtml = `
                 const proctorIcon = exam.isProctored ? `<i class="fa-solid fa-video text-purple-500 ml-1.5 sm:ml-2 text-[10px] sm:text-xs shrink-0" title="Video Proctoring"></i>` : '';
                 
                 let statusBadge = `<span class="bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm whitespace-nowrap">Ready</span>`;
-                if(exam.isEnded) statusBadge = `<span class="bg-purple-100 text-purple-600 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm whitespace-nowrap">Ended</span>`;
+                if(exam.examMode === 'anytime') statusBadge = `<span class="bg-cyan-100 text-cyan-700 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm whitespace-nowrap">ANYTIME LIVE BATCH</span>`;
+                else if(exam.isEnded) statusBadge = `<span class="bg-purple-100 text-purple-600 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm whitespace-nowrap">Ended</span>`;
                 else if(exam.globalStartTime && !exam.isPaused) statusBadge = `<span class="bg-green-100 text-green-600 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm pulse-red whitespace-nowrap">Running</span>`;
                 else if(exam.isPaused) statusBadge = `<span class="bg-red-100 text-red-600 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm whitespace-nowrap">Paused</span>`;
 
@@ -6647,6 +6653,984 @@ window.refreshP2PEvaluationState = function() {
 };
 setInterval(window.refreshP2PEvaluationState, 30000);
 
+
+
+// ================================================================
+// EXAMA FINAL P2P + ANYTIME + ADMIN FOCUS CONTROL PATCH
+// ================================================================
+(function(){
+    const EVAL_MS = 6 * 24 * 60 * 60 * 1000;
+
+    function ts(v){
+        if(!v) return 0;
+        if(typeof v.toMillis === 'function') return v.toMillis();
+        if(v.seconds) return Number(v.seconds) * 1000;
+        if(v instanceof Date) return v.getTime();
+        return Number(v) || Date.parse(v) || 0;
+    }
+    function submissionMs(s){ return ts(s?.submittedAt) || Number(s?.submittedAtMs || s?.timestamp || s?.createdAt || 0); }
+    function deadlineMs(s){ return ts(s?.evaluationDeadline) || (submissionMs(s) + EVAL_MS); }
+    function activeEval(s){ return !!submissionMs(s) && Date.now() < deadlineMs(s) && !s.isGraded; }
+
+    window.p2pEvaluationActive = activeEval;
+    window.p2pDeadlineMs = deadlineMs;
+    window.p2pSubmissionMs = submissionMs;
+
+    // ------------------------------------------------------------
+    // QUESTION-SET IDENTITY
+    // Every new upload by a question giver is a new set.
+    // ------------------------------------------------------------
+    function materialKey(m){
+        return String(m?.id || m?.questionSetId || `${m?.mobile || ''}_${ts(m?.timestamp) || m?.createdAt || ''}`);
+    }
+    function scriptKey(s){
+        return String(s?.questionSetId || s?.materialId || `${s?.targetPeerMobile || ''}_${submissionMs(s)}`);
+    }
+    function availableSets(examId){
+        const mats=(window.peerMaterialsDB||[]).filter(m=>m.examId===examId && m.mobile!==window.loggedInMobile);
+        return mats.map(m=>{
+            const student=(window.studentsDB||[]).find(x=>x.mobile===m.mobile);
+            return {
+                materialId: materialKey(m),
+                peerMobile:m.mobile,
+                peerName:student?.name || 'Peer',
+                material:m,
+                questionSetId:`${examId}_${m.mobile}_${materialKey(m)}`
+            };
+        });
+    }
+    function getNewSets(examId, student=window.loggedInMobile){
+        const scripts=(window.peerAnswerScriptsDB||[]).filter(s=>s.examId===examId && s.solverMobile===student);
+        return availableSets(examId).filter(set=>{
+            const exact=scripts.some(s=>String(s.materialId||'')===String(set.materialId) || String(s.questionSetId||'')===String(set.questionSetId));
+            if(exact) return false;
+            // Backward compatibility with old scripts that had no materialId.
+            // A material uploaded after the student's latest submission to that peer is a NEW set.
+            const peerScripts=scripts.filter(s=>s.targetPeerMobile===set.peerMobile);
+            if(!peerScripts.length) return true;
+            const latestSubmission=Math.max(...peerScripts.map(submissionMs));
+            const materialTime=ts(set.material?.timestamp)||ts(set.material?.createdAt)||0;
+            if(materialTime && latestSubmission) return materialTime>latestSubmission;
+            // If the old material has no timestamp, do not force a duplicate submission.
+            return false;
+        });
+    }
+    window.getNewP2PQuestionSets = getNewSets;
+
+    // ------------------------------------------------------------
+    // FINAL P2P SCORE: sum independent question-set marks.
+    // ------------------------------------------------------------
+    window.p2pRecalculateResult = async function(examId, studentMobile){
+        const exam=(window.examsDB||[]).find(e=>e.id===examId); if(!exam) return;
+        const scripts=(window.peerAnswerScriptsDB||[]).filter(s=>s.examId===examId && s.solverMobile===studentMobile);
+        const evaluated=scripts.filter(s=>s.isGraded);
+        const obtained=evaluated.reduce((a,s)=>a+Number(s.awardedMarks||0),0);
+        const total=Number(exam.totalMarks||0);
+        const pct=total>0 ? Number((obtained/total*100).toFixed(2)) : 0;
+        const status=pct >= Number(exam.passPercentage||40) ? 'PASS' : 'FAIL';
+        const existing=(window.resultsDB||[]).find(r=>r.examId===examId && r.mobile===studentMobile && !r.isVirtual);
+        const payload={
+            examId,mobile:studentMobile,obtained:Number(obtained.toFixed(2)),total,percentage:pct,status,
+            p2pCompleted:evaluated.length,
+            p2pTotal:scripts.reduce((a,s)=>a+Number(s.questionSetMaxMarks||0),0),
+            p2pEvaluations:evaluated.map(s=>({scriptId:s.id,evaluatorMobile:s.targetPeerMobile,marks:Number(s.awardedMarks||0),maximum:Number(s.questionSetMaxMarks||0),status:'Evaluated'})),
+            timeTaken:existing?.timeTaken||0,timeSaved:existing?.timeSaved||0,updatedAt:Date.now()
+        };
+        if(existing){
+            if(isFirebaseConfigured) await updateDoc(doc(db,'results',existing.id),payload); else Object.assign(existing,payload);
+        }else if(window.dbSubmitResult){ await window.dbSubmitResult(payload); }
+    };
+
+    // ------------------------------------------------------------
+    // UPLOAD MODAL: ONLY NEW / UNSUBMITTED SETS.
+    // ------------------------------------------------------------
+    window.openNewP2PAnswerSubmission = function(examId){
+        const exam=(window.examsDB||[]).find(e=>e.id===examId); if(!exam) return;
+        window.activeExamId=examId;
+        const sets=getNewSets(examId);
+        const box=document.getElementById('answer-upload-list');
+        if(!box) return;
+        box.innerHTML='';
+        if(!sets.length){ alert('There are no new question sets to submit.'); return; }
+        sets.forEach(set=>{
+            const maxMarks=Number(set.material?.maxMarks || 0);
+            box.insertAdjacentHTML('beforeend',`
+                <div class="bg-indigo-50/80 p-4 rounded-xl border border-indigo-200 shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <img src="${window.getStudentAvatar ? window.getStudentAvatar(set.peerMobile,set.peerName) : `https://ui-avatars.com/api/?name=Peer&background=4f46e5&color=fff`}" class="w-10 h-10 rounded-full object-cover border border-indigo-200">
+                        <div class="flex-1"><p class="text-xs font-black text-indigo-900">NEW QUESTION SET</p><p class="text-[9px] text-gray-500 font-bold">Upload your answer for this new set only.</p></div>
+                    </div>
+                    <input type="file" id="ans-file-${set.materialId}" accept="image/*" multiple class="mt-3 w-full text-xs font-medium text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-black file:bg-indigo-600 file:text-white bg-white rounded-lg shadow-inner">
+                    <input type="hidden" id="ans-meta-${set.materialId}" value="${encodeURIComponent(JSON.stringify({materialId:set.materialId,peerMobile:set.peerMobile,questionSetId:set.questionSetId,maxMarks}))}">
+                </div>`);
+        });
+        const btn=document.querySelector('#answer-upload-modal button[onclick="submitAllPeerAnswers()"]');
+        if(btn) btn.innerText='SUBMIT NEW SET';
+        document.getElementById('answer-upload-modal').classList.remove('hidden-view');
+    };
+
+    // Replace submit handler: old submissions are never requested again.
+    window.submitAllPeerAnswers = async function(){
+        const examId=window.activeExamId; const exam=(window.examsDB||[]).find(e=>e.id===examId); if(!exam) return;
+        const sets=getNewSets(examId);
+        if(!sets.length){ alert('No new question set is waiting.'); return; }
+        const key='0bb18568779ce0a49ee8947c55e4fcf9';
+        let any=false; sets.forEach(s=>{ if(document.getElementById(`ans-file-${s.materialId}`)?.files?.length) any=true; });
+        if(!any){ alert('Select the answer images for the new question set.'); return; }
+        showLoader('Sending New Answer Script...');
+        try{
+            for(const set of sets){
+                const input=document.getElementById(`ans-file-${set.materialId}`); if(!input?.files?.length) continue;
+                const urls=[];
+                for(const file of Array.from(input.files)){
+                    const fd=new FormData(); fd.append('image',file);
+                    const res=await fetch(`https://api.imgbb.com/1/upload?expiration=172800&key=${key}`,{method:'POST',body:fd});
+                    const data=await res.json(); if(!data.success) throw new Error('Image upload failed.'); urls.push(data.data.url);
+                }
+                const now=Date.now();
+                const payload={
+                    examId,studentId:window.loggedInMobile,solverMobile:window.loggedInMobile,
+                    targetPeerMobile:set.peerMobile,materialId:set.materialId,questionSetId:set.questionSetId,
+                    questionSetMaxMarks:Number(set.maxMarks||exam.totalMarks/Math.max(1,availableSets(examId).length)),
+                    imgUrls:urls,submittedAt:isFirebaseConfigured?serverTimestamp():now,submittedAtMs:now,
+                    evaluationDeadline:new Date(now+EVAL_MS),evaluationStatus:'active',isGraded:false,awardedMarks:null,createdAt:now
+                };
+                if(isFirebaseConfigured) await addDoc(collection(db,'peer_answer_scripts'),payload);
+                else window.peerAnswerScriptsDB.push({id:`script_${now}_${Math.random().toString(36).slice(2)}`,...payload});
+            }
+            hideLoader(); document.getElementById('answer-upload-modal').classList.add('hidden-view');
+            alert('New answer script submitted. Previous submissions were left unchanged.');
+            if(window.refreshP2PEvaluationState) window.refreshP2PEvaluationState();
+        }catch(e){ console.error(e); hideLoader(); alert(e.message||'Failed to upload answer script.'); }
+    };
+
+    // ------------------------------------------------------------
+    // EVALUATION ROOM: DP + MARKS ONLY. NO NAME / SET ID.
+    // ------------------------------------------------------------
+    window.openPeerEvaluationRoom = function(examId){
+        const modal=document.getElementById('peer-eval-room-modal'), list=document.getElementById('peer-eval-list');
+        if(!modal||!list) return;
+        modal.classList.remove('hidden-view');
+        const render=()=>{
+            const scripts=(window.peerAnswerScriptsDB||[]).filter(s=>s.examId===examId && s.targetPeerMobile===window.loggedInMobile && activeEval(s));
+            if(!scripts.length){
+                list.innerHTML=`<div class="glass-card p-6 text-center rounded-2xl border-dashed border-2 border-indigo-200 mt-10"><i class="fa-solid fa-lock text-indigo-300 text-4xl mb-4"></i><h4 class="text-indigo-900 font-black text-lg mb-2">Evaluation Locked</h4><p class="text-xs text-gray-500 font-medium px-4">No active evaluation is assigned to you.</p></div>`; return;
+            }
+            list.innerHTML=scripts.map(script=>{
+                const student=(window.studentsDB||[]).find(s=>s.mobile===script.solverMobile);
+                const dp=student?.dpUrl || (window.getStudentAvatar ? window.getStudentAvatar(script.solverMobile,student?.name||'Peer') : `https://ui-avatars.com/api/?name=Peer&background=4f46e5&color=fff`);
+                const max=Number(script.questionSetMaxMarks||0), dl=deadlineMs(script);
+                const imgs=(script.imgUrls||[]).map((url,i)=>`<div class="relative"><img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-auto max-h-96 object-contain rounded-xl border border-gray-300 shadow-sm"><span class="absolute top-2 right-2 bg-black/80 text-white text-[9px] font-black px-2 py-1 rounded">${i+1}</span></div>`).join('');
+                return `<div id="script-card-${script.id}" class="bg-white p-4 sm:p-5 rounded-2xl shadow-lg border border-indigo-100 mb-5 relative overflow-hidden"><div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div><div class="ml-2 mb-4 flex items-center justify-between gap-3"><img src="${dp}" class="w-12 h-12 rounded-2xl object-cover border border-indigo-100"><div class="text-right"><div class="text-lg font-black text-indigo-700">${max}</div><div class="text-[9px] font-black text-gray-400 uppercase">Maximum</div><div class="text-[9px] text-red-500 font-bold mt-1">${p2pFormatRemaining(dl)}</div></div></div><div class="grid grid-cols-2 gap-3 max-h-72 overflow-y-auto p-3 bg-gray-50 rounded-xl border border-gray-200 ml-2">${imgs}</div><div class="flex gap-2 items-center ml-2 mt-4"><input type="number" id="marks-${script.id}" min="0" max="${max}" step="0.01" placeholder="0 - ${max}" class="flex-1 px-4 py-3 bg-indigo-50/50 rounded-xl border border-indigo-200 font-black text-indigo-900 outline-none"><button onclick="submitPeerMarks('${script.id}','${script.solverMobile}','${examId}',this)" class="bg-gradient-to-r from-emerald-500 to-green-600 text-white font-black px-5 py-3 rounded-xl shadow-md text-sm">Submit ${max}</button></div></div>`;
+            }).join('');
+        };
+        render(); if(window.p2pEvaluationPoll) clearInterval(window.p2pEvaluationPoll); window.p2pEvaluationPoll=setInterval(render,3000);
+    };
+
+    window.submitPeerMarks = async function(scriptId,solverMobile,examId,btn){
+        const script=(window.peerAnswerScriptsDB||[]).find(s=>s.id===scriptId), exam=(window.examsDB||[]).find(e=>e.id===examId); if(!script||!exam) return alert('Evaluation data not found.');
+        if(script.targetPeerMobile!==window.loggedInMobile) return alert('Not authorized.');
+        if(!activeEval(script)) return alert('This evaluation window has expired.');
+        const max=Number(script.questionSetMaxMarks||0), val=Number(document.getElementById(`marks-${scriptId}`)?.value);
+        if(!Number.isFinite(val)||val<0||val>max) return alert(`Marks must be between 0 and ${max}.`);
+        if(btn){btn.disabled=true;btn.innerHTML='<i class="fa-solid fa-spinner fa-spin"></i> Saving';}
+        try{
+            const evaluation={examId,scriptId,solverMobile,evaluatorMobile:window.loggedInMobile,maximumMarks:max,obtainedMarks:val,evaluatedAt:isFirebaseConfigured?serverTimestamp():Date.now(),status:'evaluated'};
+            if(isFirebaseConfigured){
+                await addDoc(collection(db,'peer_evaluations'),evaluation);
+                await updateDoc(doc(db,'peer_answer_scripts',scriptId),{isGraded:true,evaluationStatus:'completed',awardedMarks:val,evaluatedAt:serverTimestamp()});
+            }
+            script.isGraded=true; script.evaluationStatus='completed'; script.awardedMarks=val;
+            await window.p2pRecalculateResult(examId,solverMobile);
+            window.openPeerEvaluationRoom(examId);
+        }catch(e){console.error(e);if(btn){btn.disabled=false;btn.innerText=`Submit ${max}`;}alert('Failed to save evaluation.');}
+    };
+
+    // ------------------------------------------------------------
+    // DASHBOARD: new incoming set => ENTER ROOM / SUBMIT NEW SET.
+    // ------------------------------------------------------------
+    window.p2pPatchStudentDashboard = function(){
+        if(window.currentRole!=='student') return;
+        document.querySelectorAll('button[onclick*="handleStartExam"]').forEach(btn=>{
+            const m=btn.getAttribute('onclick')?.match(/handleStartExam\('([^']+)'\)/); if(!m) return;
+            const id=m[1], exam=(window.examsDB||[]).find(e=>e.id===id); if(!exam||exam.examType==='testbook'||exam.examType==='offline') return;
+            const fresh=getNewSets(id);
+            if(fresh.length){
+                btn.setAttribute('onclick',`window.openNewP2PAnswerSubmission('${id}')`);
+                btn.innerHTML='<i class="fa-solid fa-door-open"></i> Enter Room';
+                btn.className=btn.className.replace(/from-indigo-600 to-cyan-600/g,'from-emerald-500 to-teal-600');
+            }
+        });
+        // A new question set takes priority: open only the NEW answer submission.
+        document.querySelectorAll('button[onclick*="openPeerEvaluationRoom"]').forEach(btn=>{
+            const m=btn.getAttribute('onclick')?.match(/openPeerEvaluationRoom\('([^']+)'\)/); if(!m) return;
+            const id=m[1], fresh=getNewSets(id);
+            if(fresh.length){
+                btn.setAttribute('onclick',`window.openNewP2PAnswerSubmission('${id}')`);
+                btn.innerHTML='<i class="fa-solid fa-door-open"></i> Enter Room';
+                btn.className=btn.className.replace(/from-purple-500 to-indigo-600/g,'from-emerald-500 to-teal-600');
+            }else if(window.hasActiveEvaluationForMe?.(id)){
+                btn.innerHTML='<i class="fa-solid fa-door-open"></i> Enter Room';
+            }
+        });
+    };
+    setInterval(window.p2pPatchStudentDashboard,1500);
+
+    // ------------------------------------------------------------
+    // ANYTIME: never show Waiting. Use ANYTIME LIVE BATCH.
+    // ------------------------------------------------------------
+    const oldAnytimeRunning=window.p2pRenderAnytimeRunning;
+    window.p2pRenderAnytimeRunning=function(exam,examId,attempt){
+        if(typeof oldAnytimeRunning==='function') oldAnytimeRunning(exam,examId,attempt);
+        const badge=document.getElementById('ae-waiting-badge'); if(badge){ badge.innerText='ANYTIME LIVE BATCH'; badge.className='bg-cyan-500/20 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-cyan-400/30 font-bold tracking-[0.15em] sm:tracking-[0.2em] text-[8px] sm:text-[10px] uppercase text-cyan-300'; badge.classList.remove('hidden'); }
+        const title=document.getElementById('overlay-msg-title'); if(title && exam.examMode==='anytime' && !attempt) title.innerText='ANYTIME LIVE BATCH';
+    };
+
+    // Keep the active-exam badge consistent for Anytime Exam on both admin/student UI.
+    function normalizeAnytimeBadge(){
+        const exam=(window.examsDB||[]).find(e=>e.id===window.activeExamId);
+        if(!exam || exam.examMode!=='anytime') return;
+        const badge=document.getElementById('ae-waiting-badge');
+        if(badge){
+            badge.innerText='ANYTIME LIVE BATCH';
+            badge.className='bg-cyan-500/20 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-cyan-400/30 font-bold tracking-[0.15em] sm:tracking-[0.2em] text-[8px] sm:text-[10px] uppercase text-cyan-300';
+            badge.classList.remove('hidden');
+        }
+        const title=document.getElementById('overlay-msg-title');
+        if(title && !window.currentAnytimeAttempt) title.innerText='ANYTIME LIVE BATCH';
+    }
+    setInterval(normalizeAnytimeBadge,500);
+
+    // Prevent a student from bypassing an admin pause through the normal session button.
+    const __oldToggleSessionState=window.toggleSessionState;
+    window.toggleSessionState=async function(action){
+        if(window.currentRole==='student' && action!=='STOP'){
+            const paused=(window.sessionsDB||[]).find(s=>s.mobile===window.loggedInMobile && s.dateStr===window.formatDateDDMMYYYY() && s.adminPaused);
+            if(paused) return alert('Your focus session is currently paused by the admin.');
+        }
+        if(typeof __oldToggleSessionState==='function') return __oldToggleSessionState(action);
+    };
+
+    // ------------------------------------------------------------
+    // ADMIN FOCUS SESSION CONTROL
+    // ------------------------------------------------------------
+    function today(){ return window.formatDateDDMMYYYY(); }
+    function sessionFor(mobile){ return (window.sessionsDB||[]).find(s=>s.mobile===mobile && s.dateStr===today() && s.status!=='ABSENT' && s.status!=='COMPLETED'); }
+    async function saveSession(session){
+        if(isFirebaseConfigured) await setDoc(doc(db,'sessions',session.id),session); else { const i=(window.sessionsDB||[]).findIndex(s=>s.id===session.id); if(i>=0) window.sessionsDB[i]=session; else window.sessionsDB.push(session); }
+    }
+    window.adminStartFocusSession=async function(mobile){
+        if(window.currentRole!=='admin') return alert('Admin permission required.');
+        const student=(window.studentsDB||[]).find(s=>s.mobile===mobile); if(!student) return;
+        const now=Date.now(), dateStr=today(); let s=sessionFor(mobile);
+        if(!s){
+            const type=`Admin Focus Session`;
+            s={id:`${mobile}_${dateStr.replace(/\//g,'-')}_ADMIN`,mobile,dateStr,sessionType:type,name:student.name,status:'STUDYING',lastToggleTime:now,totalStudyMs:0,totalBreakMs:0,timestamp:now,logs:[{action:'ADMIN_START',time:now}],overtimePrompted:false,adminControlled:true,adminPaused:false};
+        }else{
+            if(s.status==='STUDYING') return alert('This student is already focusing.');
+            s.status='STUDYING'; s.lastToggleTime=now; s.adminPaused=false; s.logs=[...(s.logs||[]),{action:'ADMIN_START',time:now}];
+        }
+        await saveSession(s); if(window.renderSessionTimer && window.currentRole==='admin') window.renderSessionTimer();
+    };
+    window.adminPauseFocusSession=async function(mobile){
+        if(window.currentRole!=='admin') return alert('Admin permission required.');
+        const s=sessionFor(mobile); if(!s||s.status!=='STUDYING') return alert('This student is not currently focusing.');
+        const now=Date.now(); s.totalStudyMs=(s.totalStudyMs||0)+(now-(s.lastToggleTime||now)); s.status='OVERTIME_PAUSE'; s.adminPaused=true; s.lastToggleTime=now; s.logs=[...(s.logs||[]),{action:'ADMIN_PAUSE',time:now}];
+        await saveSession(s); if(window.renderSessionTimer && window.currentRole==='admin') window.renderSessionTimer();
+    };
+    window.adminResumeFocusSession=async function(mobile){
+        if(window.currentRole!=='admin') return alert('Admin permission required.');
+        const s=sessionFor(mobile); if(!s||!s.adminPaused) return alert('This session is not admin-paused.');
+        const now=Date.now(); s.status='STUDYING'; s.adminPaused=false; s.lastToggleTime=now; s.logs=[...(s.logs||[]),{action:'ADMIN_RESUME',time:now}];
+        await saveSession(s); if(window.renderSessionTimer && window.currentRole==='admin') window.renderSessionTimer();
+    };
+    window.renderAdminFocusControls=function(){
+        const box=document.getElementById('admin-focus-controls'); if(!box) return;
+        if(window.currentRole!=='admin'){box.classList.add('hidden');return;}
+        box.classList.remove('hidden');
+        const students=(window.studentsDB||[]).filter(s=>s.mobile);
+        box.innerHTML=`<div class="bg-white/90 border border-orange-200 rounded-2xl p-3 sm:p-4 text-left"><div class="flex items-center justify-between mb-3"><h4 class="font-black text-orange-700 text-xs sm:text-sm uppercase tracking-widest"><i class="fa-solid fa-user-clock mr-1"></i> Admin Focus Control</h4><span class="text-[8px] font-black text-gray-400 uppercase">Start / Pause / Resume</span></div><div class="space-y-2 max-h-72 overflow-y-auto">${students.map(st=>{const s=sessionFor(st.mobile);const status=s?.status||'NOT STARTED';const dp=st.dpUrl|| (window.getStudentAvatar?window.getStudentAvatar(st.mobile,st.name):`https://ui-avatars.com/api/?name=Student&background=4f46e5&color=fff`);let buttons='';if(!s)buttons=`<button onclick="adminStartFocusSession('${st.mobile}')" class="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 font-black text-[9px]">Start</button>`;else if(s.adminPaused)buttons=`<button onclick="adminResumeFocusSession('${st.mobile}')" class="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 font-black text-[9px]">Resume</button>`;else if(s.status==='STUDYING')buttons=`<button onclick="adminPauseFocusSession('${st.mobile}')" class="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 font-black text-[9px]">Pause</button>`;else buttons=`<button onclick="adminStartFocusSession('${st.mobile}')" class="px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 font-black text-[9px]">Start</button>`;return `<div class="flex items-center gap-2 p-2 rounded-xl bg-gray-50 border border-gray-100"><img src="${dp}" class="w-8 h-8 rounded-lg object-cover"><div class="flex-1 min-w-0"><p class="text-[10px] font-black text-gray-800 truncate">${st.name||'Student'}</p><p class="text-[8px] font-bold ${s?.adminPaused?'text-red-500':s?.status==='STUDYING'?'text-emerald-600':'text-gray-400'} uppercase">${s?.adminPaused?'Paused by Admin':status}</p></div>${buttons}</div>`;}).join('')}</div></div>`;
+    };
+
+    // Extend existing timer rendering with admin controls and admin-paused state.
+    const originalRenderSessionTimer=window.renderSessionTimer;
+    window.renderSessionTimer=function(){
+        if(typeof originalRenderSessionTimer==='function') originalRenderSessionTimer();
+        window.renderAdminFocusControls();
+        if(window.currentRole==='student'){
+            const s=(window.sessionsDB||[]).find(x=>x.mobile===window.loggedInMobile && x.dateStr===today() && x.adminPaused);
+            const c=document.getElementById('session-controls');
+            if(s&&c){ c.innerHTML=`<div class="w-full text-center p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 font-black text-xs"><i class="fa-solid fa-pause mr-1"></i> SESSION PAUSED BY ADMIN</div>`; }
+        }
+    };
+
+    // Anytime badge for any visible admin/student exam cards.
+    const oldRefreshUI=window.refreshUI;
+    if(typeof oldRefreshUI==='function'){
+        window.refreshUI=function(){ oldRefreshUI(); setTimeout(window.p2pPatchStudentDashboard,50); setTimeout(window.renderAdminFocusControls,50); };
+    }
+})();
+
     </script>
+
+<style id="exama-admin-weekly-v2">
+/* EXAMA Admin Command Center + Weekly Report */
+#admin-view .exama-admin-shell{
+  background:
+    radial-gradient(circle at 10% 0%, rgba(99,102,241,.18), transparent 32%),
+    radial-gradient(circle at 100% 15%, rgba(14,165,233,.16), transparent 30%),
+    linear-gradient(180deg,#f8fbff 0%,#eef2ff 100%);
+}
+.exama-admin-hero{
+  position:relative; overflow:hidden; border-radius:28px; padding:20px;
+  background:linear-gradient(135deg,#111827 0%,#312e81 52%,#0f766e 100%);
+  color:#fff; box-shadow:0 20px 55px rgba(30,41,59,.22);
+}
+.exama-admin-hero:after{
+  content:""; position:absolute; width:190px;height:190px;right:-60px;top:-70px;
+  border-radius:50%; background:rgba(255,255,255,.10); filter:blur(2px);
+}
+.exama-admin-kpi{
+  background:rgba(255,255,255,.78); backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,.95); border-radius:22px; padding:14px;
+  box-shadow:0 12px 30px rgba(51,65,85,.08);
+}
+.exama-admin-section{
+  background:rgba(255,255,255,.68); backdrop-filter:blur(18px);
+  border:1px solid rgba(255,255,255,.9); border-radius:26px; padding:16px;
+  box-shadow:0 15px 40px rgba(51,65,85,.07);
+}
+.exama-admin-student-card{
+  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;
+}
+.exama-admin-student-card:hover{
+  transform:translateY(-3px); box-shadow:0 16px 35px rgba(79,70,229,.12);
+  border-color:rgba(99,102,241,.35)!important;
+}
+.exama-mini-btn{
+  border-radius:12px; padding:7px 9px; font-size:9px; font-weight:900;
+  letter-spacing:.03em; transition:.18s ease; border:1px solid rgba(148,163,184,.2);
+}
+.exama-mini-btn:active{transform:scale(.94)}
+#exama-weekly-report-modal{z-index:9998}
+#exama-weekly-report-modal .exama-report-choice{
+  background:rgba(255,255,255,.84); border:1px solid #e2e8f0; border-radius:22px;
+  padding:16px; transition:.2s ease; cursor:pointer;
+}
+#exama-weekly-report-modal .exama-report-choice:hover{
+  transform:translateY(-2px); border-color:#818cf8; box-shadow:0 15px 35px rgba(79,70,229,.12);
+}
+#exama-past-week-panel{display:none}
+#exama-past-week-panel.open{display:block}
+.exama-report-week-chip{
+  display:inline-flex; align-items:center; gap:6px; padding:7px 10px; border-radius:999px;
+  background:#eef2ff; color:#4338ca; font-size:9px; font-weight:900; text-transform:uppercase;
+  letter-spacing:.08em;
+}
+</style>
+
+<!-- Weekly report selector -->
+<div id="exama-weekly-report-modal" class="hidden-view absolute inset-0 bg-slate-950/75 backdrop-blur-xl flex items-center justify-center p-4">
+  <div class="w-full max-w-md bg-white rounded-[30px] shadow-2xl overflow-hidden border border-white/70">
+    <div class="bg-gradient-to-r from-indigo-700 via-violet-700 to-cyan-600 text-white p-5 relative overflow-hidden">
+      <div class="absolute -right-10 -top-10 w-36 h-36 rounded-full bg-white/10"></div>
+      <div class="relative flex items-center justify-between">
+        <div>
+          <p class="text-[9px] font-black uppercase tracking-[.22em] text-indigo-200">EXAMA Analytics</p>
+          <h3 class="text-xl font-black mt-1">Download Weekly Report</h3>
+          <p id="exama-report-student-label" class="text-[10px] font-bold text-white/75 mt-1">Student report</p>
+        </div>
+        <button onclick="window.closeWeeklyReportModal()" class="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center active:scale-90"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+    <div class="p-4 sm:p-5 space-y-3">
+      <div class="exama-report-choice" onclick="window.downloadWeeklyReport('current')">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center"><i class="fa-solid fa-calendar-week"></i></div>
+          <div class="min-w-0">
+            <h4 class="font-black text-slate-900 text-sm">Current Week</h4>
+            <p id="exama-current-week-label" class="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-1">Monday – Sunday</p>
+          </div>
+          <i class="fa-solid fa-chevron-right text-slate-300 ml-auto"></i>
+        </div>
+      </div>
+
+      <div class="exama-report-choice" onclick="window.togglePastWeekPicker()">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center"><i class="fa-solid fa-clock-rotate-left"></i></div>
+          <div class="min-w-0">
+            <h4 class="font-black text-slate-900 text-sm">Past Week</h4>
+            <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-1">Choose a previous week</p>
+          </div>
+          <i class="fa-solid fa-chevron-right text-slate-300 ml-auto"></i>
+        </div>
+      </div>
+
+      <div id="exama-past-week-panel" class="bg-slate-50 rounded-2xl border border-slate-200 p-3">
+        <label class="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Select Week</label>
+        <select id="exama-past-week-select" class="w-full px-3 py-3 rounded-xl bg-white border border-slate-200 outline-none font-bold text-sm text-slate-800"></select>
+        <button onclick="window.downloadSelectedPastWeeklyReport()" class="w-full mt-2.5 py-3 rounded-xl bg-slate-900 text-white font-black text-xs active:scale-95">
+          <i class="fa-solid fa-file-pdf mr-2"></i>Generate Past Week PDF
+        </button>
+      </div>
+
+      <button onclick="window.closeWeeklyReportModal()" class="w-full py-3 rounded-xl bg-slate-100 text-slate-600 font-black text-xs active:scale-95">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="exama-admin-session-modal" class="hidden-view fixed inset-0 bg-slate-950/75 backdrop-blur-xl items-center justify-center p-3 sm:p-5" style="z-index:10050">
+  <div class="w-full max-w-2xl bg-white rounded-[30px] shadow-2xl border border-white/60 overflow-hidden max-h-[90vh] overflow-y-auto">
+    <div class="bg-gradient-to-r from-orange-600 via-rose-600 to-indigo-700 text-white p-4 sm:p-5">
+      <div class="flex items-center justify-between gap-3"><div><p class="text-[8px] font-black uppercase tracking-[.22em] text-white/65">EXAMA ADMIN</p><h3 class="text-lg sm:text-xl font-black mt-1">Student Session Control</h3><p class="text-[9px] text-white/70 font-bold mt-1">Start, pause, resume sessions or add verified study time.</p></div><button onclick="window.closeAdminSessionControl()" class="w-9 h-9 rounded-full bg-white/15 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button></div>
+    </div>
+    <div class="p-3 sm:p-5 space-y-4">
+      <div id="admin-focus-controls"></div>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+        <div class="flex items-center justify-between mb-3"><div><h4 class="font-black text-slate-900 text-sm">Manual Study Entry</h4><p class="text-[8px] text-slate-500 font-black uppercase tracking-widest mt-1">Add verified study / break time</p></div><i class="fa-solid fa-clock-rotate-left text-orange-500"></i></div>
+        <div class="grid grid-cols-2 gap-2">
+          <select id="exama-manual-student" class="col-span-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-xs outline-none"></select>
+          <input id="exama-manual-study" type="number" min="0" step="1" placeholder="Study minutes" class="px-3 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-xs outline-none">
+          <input id="exama-manual-break" type="number" min="0" step="1" placeholder="Break minutes" class="px-3 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-xs outline-none">
+          <input id="exama-manual-date" type="date" class="col-span-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-xs outline-none">
+          <input id="exama-manual-note" type="text" placeholder="Note (optional)" class="col-span-2 px-3 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-xs outline-none">
+        </div>
+        <button onclick="window.adminAddManualStudyTime()" class="w-full mt-2.5 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 text-white font-black text-xs active:scale-95"><i class="fa-solid fa-plus mr-2"></i>Add Verified Study Time</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script id="exama-admin-weekly-v2-js">
+(function(){
+  'use strict';
+
+  const EXAMA_LOGO = "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg";
+
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const moneyless = v => Number.isFinite(Number(v)) ? Number(v) : 0;
+
+  function dateOnly(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+  function mondayOf(d){
+    const x=dateOnly(d), day=x.getDay();
+    x.setDate(x.getDate() - (day===0 ? 6 : day-1));
+    return x;
+  }
+  function sundayOf(d){ const x=mondayOf(d); x.setDate(x.getDate()+6); x.setHours(23,59,59,999); return x; }
+  function fmtDate(d){
+    return new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  }
+  function weekLabel(start){
+    const s=mondayOf(start), e=sundayOf(s);
+    return `${fmtDate(s)} – ${fmtDate(e)}`;
+  }
+  function ddmmyyyyToDate(str){
+    if(!str || !String(str).includes('/')) return null;
+    const [d,m,y]=String(str).split('/');
+    return new Date(Number(y),Number(m)-1,Number(d));
+  }
+  function sessionStudyMs(s, now=Date.now()){
+    let ms=moneyless(s.totalStudyMs);
+    if(s.status==='STUDYING' && s.lastToggleTime) ms += Math.max(0,now-s.lastToggleTime);
+    return ms;
+  }
+  function sessionBreakMs(s, now=Date.now()){
+    let ms=moneyless(s.totalBreakMs);
+    if(s.status==='BREAK' && s.lastToggleTime) ms += Math.max(0,now-s.lastToggleTime);
+    return ms;
+  }
+  function getStudent(mobile){ return (window.studentsDB||[]).find(s=>String(s.mobile)===String(mobile)); }
+  function getAvatar(stu){
+    if(!stu) return '';
+    return stu.dpUrl || (typeof window.getStudentAvatar==='function'
+      ? window.getStudentAvatar(stu.mobile,stu.name)
+      : `https://ui-avatars.com/api/?name=${encodeURIComponent(stu.name||'Student')}&background=4f46e5&color=fff&bold=true`);
+  }
+
+  function weekStats(mobile, startDate){
+    const start=mondayOf(startDate), end=sundayOf(startDate), now=Date.now();
+    const records=(typeof getComputedResults==='function' ? getComputedResults() : (window.resultsDB||[]))
+      .filter(r=>String(r.mobile)===String(mobile))
+      .filter(r=>{
+        const ex=(window.examsDB||[]).find(e=>e.id===r.examId);
+        const dt=ex ? ddmmyyyyToDate(ex.date) : null;
+        return dt && dt>=start && dt<=end;
+      })
+      .sort((a,b)=>{
+        const ea=(window.examsDB||[]).find(e=>e.id===a.examId);
+        const eb=(window.examsDB||[]).find(e=>e.id===b.examId);
+        return (ddmmyyyyToDate(eb?.date)||0)-(ddmmyyyyToDate(ea?.date)||0);
+      });
+
+    const sessions=(window.sessionsDB||[]).filter(s=>{
+      if(String(s.mobile)!==String(mobile)) return false;
+      const dt=ddmmyyyyToDate(s.dateStr);
+      return dt && dt>=start && dt<=end;
+    });
+    const fitness=(window.fitnessDB||[]).filter(l=>{
+      if(String(l.mobile)!==String(mobile) || l.isAbsent) return false;
+      const dt=l.timestamp ? new Date(l.timestamp) : ddmmyyyyToDate(l.date);
+      return dt && dt>=start && dt<=end;
+    });
+
+    let study=0, breaks=0;
+    sessions.forEach(s=>{study+=sessionStudyMs(s,now); breaks+=sessionBreakMs(s,now);});
+    const distance=fitness.reduce((a,l)=>a+moneyless(l.distance),0);
+    const cals=fitness.reduce((a,l)=>a+moneyless(l.cals),0);
+    const runTime=fitness.reduce((a,l)=>a+moneyless(l.time),0);
+    const avgPace=distance>0 ? runTime/distance : 0;
+
+    const valid=records.filter(r=>r.status!=='ABSENT');
+    const avg=records.length ? records.reduce((a,r)=>a+moneyless(r.percentage),0)/records.length : 0;
+    const pass=records.length ? records.filter(r=>r.status==='PASS').length/records.length*100 : 0;
+
+    // Weekly task completion for the selected week.
+    let taskList=[];
+    if(typeof window.getTargetWeekInfo==='function'){
+      const offset=Math.round((start-mondayOf(new Date()))/(7*86400000));
+      const info=window.getTargetWeekInfo(offset);
+      taskList=(window.weeklyTasksDB||[]).filter(t=>{
+        if(t.weekKey!==info.weekKey) return false;
+        return !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile);
+      });
+    } else {
+      taskList=(window.weeklyTasksDB||[]).filter(t=>t.assignedTo?.includes(mobile)||t.assignedTo?.includes('All'));
+    }
+    const completedIds=new Set((window.studentTasksDB||[]).filter(x=>String(x.mobile)===String(mobile)&&x.completed).map(x=>x.taskId));
+    const completed=taskList.filter(t=>completedIds.has(t.id)).length;
+
+    // Weekly score rank: compare students using only this week's exams.
+    const weeklyAverages=(window.studentsDB||[]).map(st=>{
+      const rs=(typeof getComputedResults==='function'?getComputedResults():(window.resultsDB||[])).filter(r=>String(r.mobile)===String(st.mobile)).filter(r=>{
+        const ex=(window.examsDB||[]).find(e=>e.id===r.examId), dt=ex?ddmmyyyyToDate(ex.date):null;
+        return dt&&dt>=start&&dt<=end;
+      });
+      return {mobile:st.mobile,avg:rs.length?rs.reduce((a,r)=>a+moneyless(r.percentage),0)/rs.length:0};
+    }).filter(x=>x.avg>0).sort((a,b)=>b.avg-a.avg);
+    const weeklyRank=weeklyAverages.findIndex(x=>String(x.mobile)===String(mobile))+1;
+
+    // Life rank mirrors the existing score leaderboard.
+    let lifeRank='-';
+    if(typeof getOverallLeaderboard==='function'){
+      const lb=getOverallLeaderboard();
+      const idx=lb.findIndex(x=>String(x.mobile)===String(mobile));
+      if(idx>=0) lifeRank=idx+1;
+    }
+
+    // Weekly study rank.
+    const studyByStudent=(window.studentsDB||[]).map(st=>{
+      const ss=(window.sessionsDB||[]).filter(s=>{
+        if(String(s.mobile)!==String(st.mobile)) return false;
+        const dt=ddmmyyyyToDate(s.dateStr);
+        return dt&&dt>=start&&dt<=end&&s.status!=='ABSENT';
+      });
+      return {mobile:st.mobile,ms:ss.reduce((a,s)=>a+sessionStudyMs(s,now),0)};
+    }).filter(x=>x.ms>0).sort((a,b)=>b.ms-a.ms);
+    const studyRank=studyByStudent.findIndex(x=>String(x.mobile)===String(mobile))+1;
+
+    // Weekly fitness rank.
+    const fitByStudent=(window.studentsDB||[]).map(st=>{
+      const fs=(window.fitnessDB||[]).filter(l=>{
+        if(String(l.mobile)!==String(st.mobile)||l.isAbsent) return false;
+        const dt=l.timestamp?new Date(l.timestamp):ddmmyyyyToDate(l.date);
+        return dt&&dt>=start&&dt<=end;
+      });
+      return {mobile:st.mobile,dist:fs.reduce((a,l)=>a+moneyless(l.distance),0)};
+    }).filter(x=>x.dist>0).sort((a,b)=>b.dist-a.dist);
+    const fitnessRank=fitByStudent.findIndex(x=>String(x.mobile)===String(mobile))+1;
+
+    return {
+      start,end,records,sessions,fitness,study,breaks,distance,cals,runTime,avgPace,
+      avg,pass,taskList,completed,weeklyRank:weeklyRank||'-',lifeRank,studyRank:studyRank||'-',
+      fitnessRank:fitnessRank||'-',valid
+    };
+  }
+
+  function ratioText(study, breaks){
+    const total=study+breaks;
+    if(!total) return '0% study / 0% break';
+    return `${Math.round(study/total*100)}% study / ${Math.round(breaks/total*100)}% break`;
+  }
+  function hours(ms){ return (moneyless(ms)/3600000).toFixed(2); }
+  function paceText(minPerKm){
+    if(!minPerKm) return '—';
+    const m=Math.floor(minPerKm), s=Math.round((minPerKm-m)*60);
+    return `${m}:${String(s).padStart(2,'0')} /km`;
+  }
+
+  // ---------- Weekly report modal ----------
+  let reportMobile=null;
+  window.openWeeklyReportModal=function(mobile){
+    reportMobile=mobile || window.loggedInMobile;
+    const stu=getStudent(reportMobile);
+    if(!stu) return alert('Student profile data not found.');
+    const modal=document.getElementById('exama-weekly-report-modal');
+    const label=document.getElementById('exama-report-student-label');
+    const cur=document.getElementById('exama-current-week-label');
+    if(label) label.textContent=`${stu.name} • ${stu.mobile}`;
+    if(cur) cur.textContent=weekLabel(new Date());
+    const select=document.getElementById('exama-past-week-select');
+    if(select){
+      select.innerHTML='';
+      for(let i=1;i<=16;i++){
+        const monday=mondayOf(new Date()); monday.setDate(monday.getDate()-7*i);
+        const opt=document.createElement('option');
+        opt.value=monday.toISOString();
+        opt.textContent=weekLabel(monday);
+        select.appendChild(opt);
+      }
+    }
+    document.getElementById('exama-past-week-panel')?.classList.remove('open');
+    modal.classList.remove('hidden-view');
+  };
+  window.closeWeeklyReportModal=function(){ document.getElementById('exama-weekly-report-modal')?.classList.add('hidden-view'); };
+  window.togglePastWeekPicker=function(){ document.getElementById('exama-past-week-panel')?.classList.toggle('open'); };
+  window.downloadSelectedPastWeeklyReport=function(){
+    const value=document.getElementById('exama-past-week-select')?.value;
+    if(value) window.generateExamaWeeklyPDF(reportMobile,new Date(value));
+  };
+  window.downloadWeeklyReport=function(which){
+    if(which==='current') window.generateExamaWeeklyPDF(reportMobile,new Date());
+  };
+
+  // ---------- Full weekly PDF ----------
+  window.generateExamaWeeklyPDF=async function(mobile,startDate){
+    const stu=getStudent(mobile);
+    if(!stu) return alert('Student profile data not found.');
+    const stats=weekStats(mobile,startDate);
+    window.closeWeeklyReportModal();
+
+    if(typeof window.showLoader==='function') window.showLoader('Building Weekly Report...');
+
+    const examRows=stats.records.map(r=>{
+      const ex=(window.examsDB||[]).find(e=>e.id===r.examId);
+      if(!ex) return '';
+      const status=r.status==='ABSENT'?'ABSENT':r.status;
+      const statusColor=status==='PASS'?'#059669':'#dc2626';
+      const rank=typeof calculateClassRank==='function'?calculateClassRank(ex.id,mobile):'-';
+      return `<tr>
+        <td>${esc(ex.name)}</td><td>${esc(ex.date)}</td><td>${moneyless(r.obtained)}/${moneyless(r.total)}</td>
+        <td><b>${moneyless(r.percentage).toFixed(1)}%</b></td><td>#${esc(rank)}</td>
+        <td style="color:${statusColor};font-weight:800">${esc(status)}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="6" class="empty">No exam record in this week.</td></tr>`;
+
+    const sessionRows=stats.sessions.slice().sort((a,b)=>(b.timestamp||0)-(a.timestamp||0)).map(s=>`
+      <tr>
+        <td>${esc(s.dateStr||'—')}</td><td>${esc(s.sessionType||'Study Session')}</td>
+        <td>${hours(sessionStudyMs(s))}h</td><td>${Math.round(sessionBreakMs(s)/60000)}m</td>
+        <td>${esc(s.status||'—')}</td>
+      </tr>`).join('') || `<tr><td colspan="5" class="empty">No study sessions logged this week.</td></tr>`;
+
+    const fitnessRows=stats.fitness.slice().sort((a,b)=>(b.timestamp||0)-(a.timestamp||0)).map(l=>`
+      <tr><td>${esc(l.date||fmtDate(l.timestamp||Date.now()))}</td><td>${moneyless(l.distance).toFixed(2)} km</td>
+      <td>${moneyless(l.time)} min</td><td>${paceText(moneyless(l.distance)?moneyless(l.time)/moneyless(l.distance):0)}</td>
+      <td>${Math.round(moneyless(l.cals))} kcal</td></tr>`).join('') || `<tr><td colspan="5" class="empty">No fitness activity logged this week.</td></tr>`;
+
+    const target=stu.targetPercentage ? `${esc(stu.targetPercentage)}%` : 'Not set';
+    const taskPct=stats.taskList.length?Math.round(stats.completed/stats.taskList.length*100):0;
+    const dp=getAvatar(stu);
+
+    const html=`<div id="exama-weekly-pdf" style="width:794px;background:#f6f8fc;color:#172033;font-family:Inter,Arial,sans-serif;padding:34px;box-sizing:border-box">
+      <style>
+        #exama-weekly-pdf *{box-sizing:border-box}
+        .hero{background:linear-gradient(135deg,#111827,#3730a3 58%,#0f766e);color:#fff;border-radius:28px;padding:26px;position:relative;overflow:hidden}
+        .hero .orb{position:absolute;width:180px;height:180px;border-radius:50%;right:-55px;top:-75px;background:rgba(255,255,255,.12)}
+        .brand{display:flex;align-items:center;gap:14px}.brand img{width:58px;height:58px;border-radius:17px;object-fit:cover;border:2px solid rgba(255,255,255,.35)}
+        .brand h1{font-size:28px;margin:0;font-weight:900;letter-spacing:.08em}.brand p{font-size:9px;margin:4px 0 0;color:#c7d2fe;font-weight:800;letter-spacing:.2em;text-transform:uppercase}
+        .profile{display:flex;align-items:center;justify-content:space-between;margin-top:26px}.profile img{width:76px;height:76px;border-radius:24px;object-fit:cover;border:4px solid rgba(255,255,255,.25)}
+        .profile h2{font-size:24px;margin:0 0 4px;font-weight:900}.profile p{font-size:10px;margin:0;color:#dbeafe;font-weight:700}
+        .week{display:inline-block;margin-top:10px;padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.13);font-size:9px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}
+        .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}.metric{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;text-align:center}.metric small{display:block;font-size:8px;color:#64748b;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.metric strong{display:block;font-size:22px;margin-top:5px;color:#111827}
+        .section{background:#fff;border:1px solid #e5e7eb;border-radius:22px;padding:18px;margin-top:16px}.section h3{margin:0 0 12px;font-size:14px;font-weight:900;color:#111827}.section h3 span{color:#6366f1}
+        .stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.statbox{background:#f8fafc;border-radius:15px;padding:12px}.statbox small{font-size:8px;color:#64748b;font-weight:900;text-transform:uppercase}.statbox b{display:block;font-size:16px;margin-top:4px}
+        .bar{height:9px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;background:linear-gradient(90deg,#4f46e5,#06b6d4);border-radius:999px}
+        table{width:100%;border-collapse:collapse;font-size:8.5px}th{background:#eef2ff;color:#3730a3;text-align:left;padding:9px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}td{padding:9px;border-bottom:1px solid #eef2f7;color:#334155}tr:last-child td{border-bottom:0}.empty{text-align:center;color:#94a3b8;padding:18px}
+        .footer{text-align:center;margin-top:22px;padding-top:15px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:8px;font-weight:800;letter-spacing:.15em;text-transform:uppercase}
+        .note{font-size:9px;color:#64748b;line-height:1.5;margin-top:7px}
+      </style>
+      <div class="hero">
+        <div class="orb"></div>
+        <div class="brand"><img src="${EXAMA_LOGO}" crossorigin="anonymous"><div><h1>EXAMA</h1><p>Weekly Student Performance Report</p></div></div>
+        <div class="profile">
+          <div><h2>${esc(stu.name)}</h2><p>Student ID / Mobile: ${esc(stu.mobile)}</p><span class="week">${weekLabel(stats.start)}</span></div>
+          <img src="${dp}" crossorigin="anonymous">
+        </div>
+      </div>
+
+      <div class="grid4">
+        <div class="metric"><small>Weekly Score</small><strong>${stats.avg.toFixed(1)}%</strong></div>
+        <div class="metric"><small>Weekly Rank</small><strong>${stats.weeklyRank==='-'?'—':'#'+stats.weeklyRank}</strong></div>
+        <div class="metric"><small>Life Rank</small><strong>${stats.lifeRank==='-'?'—':'#'+stats.lifeRank}</strong></div>
+        <div class="metric"><small>Study Rank</small><strong>${stats.studyRank==='-'?'—':'#'+stats.studyRank}</strong></div>
+      </div>
+
+      <div class="section">
+        <h3>Weekly Overview <span>• Study + Break + Fitness</span></h3>
+        <div class="stats3">
+          <div class="statbox"><small>Study Time</small><b>${hours(stats.study)} h</b></div>
+          <div class="statbox"><small>Break Time</small><b>${Math.round(stats.breaks/60000)} min</b></div>
+          <div class="statbox"><small>Study / Break Ratio</small><b>${ratioText(stats.study,stats.breaks).replace(' / ',' /<br>')}</b></div>
+        </div>
+        <div class="stats3" style="margin-top:10px">
+          <div class="statbox"><small>Fitness Distance</small><b>${stats.distance.toFixed(2)} km</b></div>
+          <div class="statbox"><small>Calories</small><b>${Math.round(stats.cals)} kcal</b></div>
+          <div class="statbox"><small>Fitness Rank</small><b>${stats.fitnessRank==='-'?'—':'#'+stats.fitnessRank}</b></div>
+        </div>
+        <p class="note">Focus efficiency: ${stats.study+stats.breaks ? Math.round(stats.study/(stats.study+stats.breaks)*100) : 0}% of tracked focus-session time was active study.</p>
+      </div>
+
+      <div class="section">
+        <h3>Weekly Target <span>• Goal & completion</span></h3>
+        <div class="stats3">
+          <div class="statbox"><small>Exam Target</small><b>${target}</b></div>
+          <div class="statbox"><small>Tasks Completed</small><b>${stats.completed} / ${stats.taskList.length}</b></div>
+          <div class="statbox"><small>Target Progress</small><b>${taskPct}%</b></div>
+        </div>
+        <div class="bar"><i style="width:${Math.min(100,taskPct)}%"></i></div>
+      </div>
+
+      <div class="section">
+        <h3>Exam History <span>• This selected week</span></h3>
+        <table><thead><tr><th>Exam</th><th>Date</th><th>Score</th><th>Percent</th><th>Rank</th><th>Status</th></tr></thead><tbody>${examRows}</tbody></table>
+      </div>
+
+      <div class="section">
+        <h3>Focus Sessions <span>• Study & break timeline</span></h3>
+        <table><thead><tr><th>Date</th><th>Session</th><th>Study</th><th>Break</th><th>Status</th></tr></thead><tbody>${sessionRows}</tbody></table>
+      </div>
+
+      <div class="section">
+        <h3>Fitness Activity <span>• Running / activity log</span></h3>
+        <table><thead><tr><th>Date</th><th>Distance</th><th>Time</th><th>Pace</th><th>Calories</th></tr></thead><tbody>${fitnessRows}</tbody></table>
+      </div>
+
+      <div class="section">
+        <h3>Performance Snapshot <span>• Weekly interpretation</span></h3>
+        <div class="stats3">
+          <div class="statbox"><small>Exams</small><b>${stats.records.length}</b></div>
+          <div class="statbox"><small>Pass Rate</small><b>${stats.pass.toFixed(0)}%</b></div>
+          <div class="statbox"><small>Fitness Avg Pace</small><b>${paceText(stats.avgPace)}</b></div>
+        </div>
+        <p class="note">This report combines the student's exam results, focus sessions, breaks, fitness logs, weekly targets, and ranking data available in EXAMA for the selected week.</p>
+      </div>
+
+      <div class="footer">EXAMA • Official Student Analytics • Generated ${fmtDate(new Date())}</div>
+    </div>`;
+
+    const holder=document.createElement('div');
+    holder.style.position='fixed'; holder.style.left='-100000px'; holder.style.top='0'; holder.style.zIndex='-1';
+    holder.innerHTML=html; document.body.appendChild(holder);
+
+    try{
+      if(typeof html2pdf!=='function') throw new Error('html2pdf library is unavailable');
+      await new Promise(r=>setTimeout(r,250));
+      const safeName=(stu.name||'Student').replace(/[^a-z0-9]+/gi,'_').replace(/^_|_$/g,'');
+      const weekKey=stats.start.toISOString().slice(0,10);
+      const opt={
+        margin:[0.25,0.25,0.25,0.25],
+        filename:`${safeName}_EXAMA_Weekly_Report_${weekKey}.pdf`,
+        image:{type:'jpeg',quality:.97},
+        html2canvas:{scale:2,useCORS:true,allowTaint:false,backgroundColor:'#f6f8fc',logging:false},
+        jsPDF:{unit:'in',format:'a4',orientation:'portrait'}
+      };
+      await html2pdf().set(opt).from(holder.firstElementChild).save();
+    }catch(err){
+      console.error('EXAMA weekly PDF error:',err);
+      alert('Weekly PDF could not be generated. Please try again.');
+    }finally{
+      holder.remove();
+      if(typeof window.hideLoader==='function') window.hideLoader();
+    }
+  };
+
+  // ---------- Admin Command Center ----------
+  function ensureAdminCommandCenter(){
+    const admin=document.getElementById('admin-view');
+    if(!admin) return;
+    const scroll=admin.querySelector('.flex-1.overflow-y-auto');
+    if(!scroll) return;
+    if(document.getElementById('exama-admin-command-center')) return;
+
+    const shell=document.createElement('div');
+    shell.id='exama-admin-command-center';
+    shell.className='exama-admin-shell space-y-4 sm:space-y-5 mb-5 p-1';
+    shell.innerHTML=`
+      <div class="exama-admin-hero">
+        <div class="relative z-10">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-[9px] font-black tracking-[.25em] uppercase text-indigo-200">EXAMA Control Center</p>
+              <h1 class="text-2xl sm:text-3xl font-black tracking-tight mt-1">Admin Command Center</h1>
+              <p class="text-[10px] sm:text-xs text-white/65 font-bold mt-2">Monitor performance, control focus sessions and build weekly student reports.</p>
+            </div>
+            <div class="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 p-1 shrink-0">
+              <img src="${EXAMA_LOGO}" class="w-full h-full rounded-xl object-cover">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5" id="exama-admin-kpis"></div>
+        </div>
+      </div>
+    `;
+    scroll.prepend(shell);
+  }
+
+  function renderAdminKpis(){
+    const box=document.getElementById('exama-admin-kpis');
+    if(!box) return;
+    const students=(window.studentsDB||[]).length;
+    const exams=(window.examsDB||[]).length;
+    const active=(window.sessionsDB||[]).filter(s=>['STUDYING','BREAK','OVERTIME_PAUSE'].includes(s.status)).length;
+    const today=window.formatDateDDMMYYYY?window.formatDateDDMMYYYY():new Date().toLocaleDateString('en-GB');
+    const todayStudy=(window.sessionsDB||[]).filter(s=>s.dateStr===today).reduce((a,s)=>a+sessionStudyMs(s),0);
+    box.innerHTML=[
+      ['Students',students,'fa-users','text-cyan-200'],
+      ['Exams',exams,'fa-graduation-cap','text-amber-200'],
+      ['Live Sessions',active,'fa-bolt','text-emerald-200'],
+      ['Study Today',hours(todayStudy)+'h','fa-stopwatch','text-orange-200']
+    ].map(([label,val,icon,cl])=>`<div class="rounded-2xl bg-white/10 border border-white/15 p-3 backdrop-blur-md"><i class="fa-solid ${icon} ${cl} text-xs"></i><div class="text-xl font-black mt-1">${esc(val)}</div><div class="text-[8px] uppercase tracking-widest text-white/55 font-black">${label}</div></div>`).join('');
+  }
+
+  window.adminAddManualStudyTime=async function(){
+    if(window.currentRole!=='admin') return alert('Admin permission required.');
+    const mobile=document.getElementById('exama-manual-student')?.value;
+    const studyMin=parseFloat(document.getElementById('exama-manual-study')?.value||0);
+    const breakMin=parseFloat(document.getElementById('exama-manual-break')?.value||0);
+    const dateValue=document.getElementById('exama-manual-date')?.value;
+    const note=document.getElementById('exama-manual-note')?.value?.trim()||'Admin verified entry';
+    const stu=getStudent(mobile);
+    if(!stu) return alert('Select a student.');
+    if(studyMin<=0 && breakMin<=0) return alert('Enter study or break minutes.');
+    const dt=dateValue?new Date(dateValue+'T12:00:00'):new Date();
+    const dateStr=window.formatDateDDMMYYYY?window.formatDateDDMMYYYY(dt):dt.toLocaleDateString('en-GB');
+    const id=`admin_manual_${mobile}_${dateStr.replace(/\//g,'-')}_${Date.now()}`;
+    const obj={
+      id,mobile,dateStr,sessionType:'Admin Manual Entry',name:stu.name,status:'COMPLETED',
+      lastToggleTime:Date.now(),totalStudyMs:Math.round(studyMin*60000),
+      totalBreakMs:Math.round(breakMin*60000),timestamp:dt.getTime(),
+      logs:[{action:'ADMIN_MANUAL',time:Date.now(),note}],
+      adminControlled:true,manualEntry:true,note
+    };
+    if(typeof window.showLoader==='function') window.showLoader('Saving verified study time...');
+    try{
+      if(typeof isFirebaseConfigured!=='undefined' && isFirebaseConfigured){
+        await setDoc(doc(db,'sessions',id),obj);
+      }else{
+        window.sessionsDB=window.sessionsDB||[]; window.sessionsDB.push(obj);
+      }
+      document.getElementById('exama-manual-study').value='';
+      document.getElementById('exama-manual-break').value='';
+      document.getElementById('exama-manual-note').value='';
+      if(typeof window.refreshUI==='function') window.refreshUI();
+      alert(`Added ${studyMin} min study and ${breakMin} min break for ${stu.name}.`);
+    }catch(e){
+      console.error(e); alert('Could not save the manual entry.');
+    }finally{
+      if(typeof window.hideLoader==='function') window.hideLoader();
+    }
+  };
+
+  function refreshManualStudentList(){
+    const sel=document.getElementById('exama-manual-student');
+    if(!sel) return;
+    const old=sel.value;
+    sel.innerHTML='<option value="">Select student</option>';
+    (window.studentsDB||[]).forEach(s=>{
+      const o=document.createElement('option'); o.value=s.mobile; o.textContent=`${s.name} (${s.mobile})`; sel.appendChild(o);
+    });
+    if(old) sel.value=old;
+    const date=document.getElementById('exama-manual-date');
+    if(date && !date.value) date.value=new Date().toISOString().slice(0,10);
+  }
+
+  function enhanceStudentCards(){
+    const list=document.getElementById('admin-students-directory');
+    if(!list) return;
+    list.querySelectorAll('.glass-card').forEach(card=>{
+      card.classList.add('exama-admin-student-card');
+    });
+  }
+
+  // Replace the old generic report action in the student feature.
+  function replaceStudentReportButton(){
+    document.querySelectorAll('[onclick="generatePDFReport()"]').forEach(el=>{
+      el.setAttribute('onclick',"window.openWeeklyReportModal(window.loggedInMobile)");
+      const h=el.querySelector('h4'); if(h) h.textContent='Download Weekly Report';
+      
+    });
+  }
+
+  // Make admin profile PDF action open the same week selector.
+  function replaceAdminReportButton(){
+    document.querySelectorAll('[onclick="downloadAdminStudentReport()"]').forEach(el=>{
+      el.setAttribute('onclick',"window.openWeeklyReportModal(window.selectedAdminProfile)");
+      el.title='Download Weekly Student Report';
+    });
+  }
+
+  // Keep the original admin renderer intact, then layer the new command center on top.
+  const originalAdminRender=window.renderAdminDashboard;
+  if(typeof originalAdminRender==='function'){
+    window.renderAdminDashboard=function(){
+      originalAdminRender();
+      ensureAdminCommandCenter();
+      renderAdminKpis();
+      refreshManualStudentList();
+      enhanceStudentCards();
+      replaceStudentReportButton();
+      replaceAdminReportButton();
+      setTimeout(function(){ if(typeof window.renderAdminFocusControls==='function') window.renderAdminFocusControls(); },30);
+    };
+  }
+
+  // Also patch after login/refresh cycles.
+  const originalRefresh=window.refreshUI;
+  if(typeof originalRefresh==='function'){
+    window.refreshUI=function(){
+      originalRefresh();
+      setTimeout(function(){
+        ensureAdminCommandCenter();
+        renderAdminKpis();
+        refreshManualStudentList();
+        enhanceStudentCards();
+        replaceStudentReportButton();
+        replaceAdminReportButton();
+      },80);
+    };
+  }
+
+  // Run once after the document has finished loading.
+  setTimeout(function(){
+    ensureAdminCommandCenter();
+    renderAdminKpis();
+    refreshManualStudentList();
+    replaceStudentReportButton();
+    replaceAdminReportButton();
+  },250);
+
+})();
+</script>
+
+<script id="exama-admin-session-control-v3">
+(function(){
+  window.openAdminSessionControl=function(){
+    if(window.currentRole!=='admin') return alert('Admin permission required.');
+    const m=document.getElementById('exama-admin-session-modal'); if(!m)return;
+    m.classList.remove('hidden-view'); m.classList.add('flex');
+    const d=document.getElementById('exama-manual-date'); if(d&&!d.value)d.value=new Date().toISOString().slice(0,10);
+    if(typeof window.refreshManualStudentList==='function') window.refreshManualStudentList();
+    if(typeof window.renderAdminFocusControls==='function') window.renderAdminFocusControls();
+  };
+  window.closeAdminSessionControl=function(){const m=document.getElementById('exama-admin-session-modal');if(m){m.classList.add('hidden-view');m.classList.remove('flex')}};
+  // Override the legacy renderer so it targets only the new top-button window.
+  window.renderAdminFocusControls=function(){
+    const box=document.getElementById('admin-focus-controls'); if(!box)return;
+    if(window.currentRole!=='admin'){box.innerHTML='';return;}
+    const today=window.formatDateDDMMYYYY();
+    const students=(window.studentsDB||[]).filter(s=>s.mobile);
+    box.innerHTML=`<div class="rounded-2xl border border-orange-200 bg-white p-3 sm:p-4"><div class="flex items-center justify-between mb-3"><div><h4 class="font-black text-orange-700 text-xs sm:text-sm uppercase tracking-widest"><i class="fa-solid fa-user-clock mr-1"></i>Live Focus Sessions</h4><span class="text-[8px] font-black text-gray-400 uppercase">Start / Pause / Resume</span></div></div><div class="space-y-2 max-h-72 overflow-y-auto">${students.map(st=>{const s=(window.sessionsDB||[]).find(x=>x.mobile===st.mobile&&x.dateStr===today&&x.status!=='ABSENT'&&x.status!=='COMPLETED');const status=s?.status||'NOT STARTED';const dp=st.dpUrl||(window.getStudentAvatar?window.getStudentAvatar(st.mobile,st.name):`https://ui-avatars.com/api/?name=${encodeURIComponent(st.name||'Student')}&background=4f46e5&color=fff`);let b='';if(!s)b=`<button onclick="adminStartFocusSession('${st.mobile}');setTimeout(window.renderAdminFocusControls,150)" class="exama-mini-btn bg-emerald-50 text-emerald-700">Start</button>`;else if(s.adminPaused)b=`<button onclick="adminResumeFocusSession('${st.mobile}');setTimeout(window.renderAdminFocusControls,150)" class="exama-mini-btn bg-blue-50 text-blue-700">Resume</button>`;else if(s.status==='STUDYING')b=`<button onclick="adminPauseFocusSession('${st.mobile}');setTimeout(window.renderAdminFocusControls,150)" class="exama-mini-btn bg-amber-50 text-amber-700">Pause</button>`;else b=`<button onclick="adminStartFocusSession('${st.mobile}');setTimeout(window.renderAdminFocusControls,150)" class="exama-mini-btn bg-emerald-50 text-emerald-700">Start</button>`;return `<div class="flex items-center gap-2 p-2 rounded-xl bg-gray-50 border border-gray-100"><img src="${dp}" class="w-9 h-9 rounded-xl object-cover"><div class="flex-1 min-w-0"><p class="text-[10px] font-black text-gray-800 truncate">${st.name||'Student'}</p><p class="text-[8px] font-bold ${s?.adminPaused?'text-red-500':s?.status==='STUDYING'?'text-emerald-600':'text-gray-400'} uppercase">${s?.adminPaused?'Paused by Admin':status}</p></div>${b}</div>`}).join('')}</div></div>`;
+  };
+})();
+</script>
 </body>
 </html>
