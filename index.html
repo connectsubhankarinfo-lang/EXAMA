@@ -5088,13 +5088,12 @@ function renderChat() {
     }
 }
 
-// Function to upload the answer scripts and send them to the respective peers
 window.submitAllPeerAnswers = async function() {
     const examId = window.activeExamId;
+    const exam = window.examsDB.find(e => e.id === examId); // Needed to calculate marks
     const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
-    const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; // Your ImgBB Key
+    const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
     
-    // Check if at least one file is selected
     let hasFiles = false;
     for (let peer of uniquePeers) {
         if(document.getElementById(`ans-file-${peer.mobile}`)?.files.length > 0) hasFiles = true;
@@ -5107,6 +5106,11 @@ window.submitAllPeerAnswers = async function() {
     showLoader("Sending Answers to Peers...");
     
     try {
+        // --- CALCULATION VARIABLES (Restored from Step 3) ---
+        const maxMarksPerPeer = uniquePeers.length > 0 ? parseFloat((exam.totalMarks / uniquePeers.length).toFixed(1)) : exam.totalMarks;
+        const submissionTime = Date.now();
+        const sixDaysInMs = 6 * 24 * 60 * 60 * 1000;
+
         for (let peer of uniquePeers) {
             const fileInput = document.getElementById(`ans-file-${peer.mobile}`);
             if(fileInput && fileInput.files.length > 0) {
@@ -5119,17 +5123,15 @@ window.submitAllPeerAnswers = async function() {
                     if(data.success) urls.push(data.data.url);
                 }
                 
-                // Save to database as an answer script targeted AT the specific peer
                 const payload = { 
-    examId: examId, 
-    solverMobile: window.loggedInMobile, 
-    targetPeerMobile: peer.mobile, 
-    imgUrls: urls, 
-    timestamp: submissionTime, 
-    deadline: submissionTime + sixDaysInMs, // 6-Day Independent Deadline
-    maxMarks: maxMarksPerPeer, // Distributed marks
-    isGraded: false 
-
+                    examId: examId, 
+                    solverMobile: window.loggedInMobile, 
+                    targetPeerMobile: peer.mobile, 
+                    imgUrls: urls, 
+                    timestamp: submissionTime, 
+                    deadline: submissionTime + sixDaysInMs, // 6-Day Independent Deadline
+                    maxMarks: maxMarksPerPeer, // Distributed marks
+                    isGraded: false 
                 };
                 
                 if(isFirebaseConfigured) { 
@@ -5142,7 +5144,6 @@ window.submitAllPeerAnswers = async function() {
         }
         hideLoader();
         document.getElementById('answer-upload-modal').classList.add('hidden-view');
-        // Route to Step 5: The Evaluation Room
         window.openPeerEvaluationRoom(examId);
     } catch(e) {
         console.error(e);
@@ -6037,21 +6038,20 @@ window.closePeerEvalRoom = function() {
     safeBack(); // Go back to dashboard
 }
 
-// NEW: Added btnElement parameter
 window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnElement) {
-    // At the top of window.submitPeerMarks, add these validations:
-const script = window.peerAnswerScriptsDB.find(s => s.id === scriptId);
-if(Date.now() > script.deadline) return alert("Evaluation window for this script has expired (6 Days passed).");
+    const script = window.peerAnswerScriptsDB.find(s => s.id === scriptId);
+    if (!script) return alert("Script not found.");
 
-if(obtained > script.maxMarks || obtained < 0) return alert(`Marks must be between 0 and ${script.maxMarks}.`);
     const marksInput = document.getElementById(`marks-${scriptId}`);
     const obtained = parseFloat(marksInput.value);
     const exam = window.examsDB.find(e => e.id === examId);
     
+    // --- VALIDATIONS ---
+    if(Date.now() > script.deadline) return alert("Evaluation window for this script has expired (6 Days passed).");
     if(isNaN(obtained)) return alert("Please enter valid numerical marks.");
-    if(obtained < 0 || obtained > exam.totalMarks) return alert(`Marks must be between 0 and ${exam.totalMarks}`);
+    if(obtained < 0 || obtained > script.maxMarks) return alert(`Marks must be between 0 and ${script.maxMarks}.`);
 
-    // NEW: Lock the button instantly to prevent double clicks
+    // Lock button instantly
     if(btnElement) {
         btnElement.disabled = true;
         btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
@@ -6063,9 +6063,8 @@ if(obtained > script.maxMarks || obtained < 0) return alert(`Marks must be betwe
     try {
         const passLimit = exam.passPercentage || 40;
         
-        // Retrieve the current script to get maxMarks
-        const script = window.peerAnswerScriptsDB.find(s => s.id === scriptId);
-        const currentMaxMarks = script ? script.maxMarks : exam.totalMarks;
+        // RESTORED: Check if a result record already exists
+        const existingResult = window.resultsDB.find(r => r.examId === examId && r.mobile === solverMobile && !r.isVirtual);
 
         // Create the individual evaluation record for History UI
         const evaluator = window.studentsDB.find(s => s.mobile === window.loggedInMobile) || { mobile: 'admin', name: 'Evaluator' };
@@ -6074,7 +6073,7 @@ if(obtained > script.maxMarks || obtained < 0) return alert(`Marks must be betwe
             evaluatorName: evaluator.name,
             evaluatorDp: window.getStudentAvatar(evaluator.mobile, evaluator.name),
             marksGiven: obtained,
-            maxMarks: currentMaxMarks
+            maxMarks: script.maxMarks
         };
 
         if (existingResult) {
@@ -6082,7 +6081,7 @@ if(obtained > script.maxMarks || obtained < 0) return alert(`Marks must be betwe
             let updatedPeerEvaluations = existingResult.evaluations || [];
             updatedPeerEvaluations.push(evaluationRecord);
 
-            // Accumulate total marks (sum instead of average)
+            // Accumulate total marks (sum)
             const totalObtained = updatedPeerEvaluations.reduce((acc, ev) => acc + ev.marksGiven, 0);
             const percentage = parseFloat(((totalObtained / exam.totalMarks) * 100).toFixed(1));
 
@@ -6095,7 +6094,6 @@ if(obtained > script.maxMarks || obtained < 0) return alert(`Marks must be betwe
 
             // Update Database
             if (isFirebaseConfigured) {
-                const { updateDoc, doc } = await import("https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js");
                 await updateDoc(doc(db, "results", existingResult.id), updatedPayload);
             } else {
                 Object.assign(existingResult, updatedPayload);
@@ -6120,17 +6118,16 @@ if(obtained > script.maxMarks || obtained < 0) return alert(`Marks must be betwe
             await window.dbSubmitResult(newResultPayload);
         }
 
-        // 2. Mark this particular answer script as graded
+        // Mark this particular answer script as graded
         if (isFirebaseConfigured) {
             await updateDoc(doc(db, "peer_answer_scripts", scriptId), { isGraded: true });
         } else {
-            const script = window.peerAnswerScriptsDB.find(x => x.id === scriptId);
             if (script) script.isGraded = true;
         }
 
         hideLoader();
 
-        // 3. Display success confirmation on the card
+        // Display success confirmation on the card
         const card = document.getElementById(`script-card-${scriptId}`);
         if (card) {
             card.innerHTML = `
@@ -6138,8 +6135,8 @@ if(obtained > script.maxMarks || obtained < 0) return alert(`Marks must be betwe
                     <div class="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white mx-auto mb-2 shadow-md">
                         <i class="fa-solid fa-check text-lg"></i>
                     </div>
-                    <h4 class="text-green-800 font-black text-sm">Graded (${obtained}/${exam.totalMarks})</h4>
-                    <p class="text-[10px] font-bold text-green-600 mt-0.5 uppercase tracking-wider">Score aggregated into peer's overall average.</p>
+                    <h4 class="text-green-800 font-black text-sm">Graded (${obtained}/${script.maxMarks})</h4>
+                    <p class="text-[10px] font-bold text-green-600 mt-0.5 uppercase tracking-wider">Score added to final total.</p>
                 </div>`;
         }
 
