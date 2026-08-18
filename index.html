@@ -3688,9 +3688,12 @@ window.examsDB.forEach(exam => {
         }
 
 // --- TIMER STATUS BADGE ---
+l// --- TIMER STATUS BADGE ---
 let timerStatusHTML = '';
-if (!exam.globalStartTime) { 
-    timerStatusHTML = `<span class="bg-gray-100 text-gray-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-gray-200 shadow-sm">Awaiting</span>`; 
+if (exam.isAnyTime) {
+    timerStatusHTML = `<span class="bg-orange-50 text-orange-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-orange-200 shadow-sm"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Self Paced</span>`;
+} else if (!exam.globalStartTime) { 
+    timerStatusHTML = `<span class="bg-gray-100 text-gray-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-gray-200 shadow-sm">Awaiting</span>`;
 } else if (exam.isPaused) { 
     timerStatusHTML = `<span class="bg-amber-50 text-amber-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-amber-200 shadow-sm">Paused</span>`; 
 } else { 
@@ -4000,8 +4003,8 @@ const cardHtml = `
     document.getElementById('edit-exam-id').value = ex.id; document.getElementById('edit-exam-name').value = ex.name; document.getElementById('edit-exam-date').value = parseDDMM(ex.date); document.getElementById('edit-exam-total').value = ex.totalMarks; document.getElementById('edit-exam-pass').value = ex.passPercentage || 40; document.getElementById('edit-exam-duration').value = ex.duration; 
     document.getElementById('edit-exam-type').value = ex.examType || 'self'; // NEW
     document.getElementById('edit-exam-proctor').checked = ex.isProctored || false;
-    document.getElementById('sheet-title').innerText = "Edit Exam"; document.getElementById('admin-tabs').classList.add('hidden'); window.switchForms('edit-exam'); document.getElementById('modal-overlay').classList.remove('hidden-view'); document.getElementById('action-sheet').classList.remove('hidden-view');
-
+    document.getElementById('edit-exam-anytime').checked = ex.isAnyTime || false;
+    document.getElementById('sheet-title').innerText = "Edit Exam";
     const assignTypeEl = document.getElementById('edit-exam-assign-type');
     const cbContainer = document.getElementById('edit-exam-student-checkboxes');
 
@@ -4107,8 +4110,19 @@ window.directSubmitTestbook = function(examId) {
 
 window.submitFromActiveExam = function() { 
     const exam = window.examsDB.find(e => e.id === window.activeExamId);
-    if(exam.isPaused || !exam.globalStartTime) return alert("Cannot submit while exam is paused or waiting.");
-    let elapsed = exam.pausedElapsed || 0; elapsed += Date.now() - exam.globalStartTime; let remMs = (exam.duration * 60 * 1000) - elapsed; if (remMs < 0) remMs = 0;
+    
+    let dynamicStartTime = exam.globalStartTime;
+    if (exam.isAnyTime) {
+        const localStart = localStorage.getItem(`exama_local_start_${window.loggedInMobile}_${exam.id}`);
+        if(localStart) dynamicStartTime = parseInt(localStart, 10);
+    }
+
+    if(exam.isPaused || !dynamicStartTime) return alert("Cannot submit while exam is paused or waiting.");
+    
+    let elapsed = exam.pausedElapsed || 0; 
+    elapsed += Date.now() - dynamicStartTime; 
+    let remMs = (exam.duration * 60 * 1000) - elapsed; 
+    if (remMs < 0) remMs = 0;
     window.frozenTimeSaved = Math.floor(remMs / 60000); window.frozenTimeTaken = exam.duration - window.frozenTimeSaved;
 
     // Offline bypasses Answer Keys and goes straight to Log Marks
@@ -4983,7 +4997,11 @@ function updateActiveTimerDisplay() {
     let dynamicStartTime = exam.globalStartTime;
     if (exam.isAnyTime) {
         const localStart = localStorage.getItem(`exama_local_start_${window.loggedInMobile}_${exam.id}`);
-        if(localStart) dynamicStartTime = parseInt(localStart, 10);
+        if (localStart) {
+            dynamicStartTime = parseInt(localStart, 10);
+        } else {
+            return; // STOP! User is on the pre-screen, do not show waiting area!
+        }
     }
 
     const el = document.getElementById('active-exam-timer'); const circle = document.getElementById('active-exam-circle');
