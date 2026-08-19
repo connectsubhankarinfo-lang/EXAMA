@@ -717,7 +717,7 @@
                     </div>
                     <div class="min-w-0">
                         <h2 class="text-lg sm:text-xl font-black leading-tight tracking-tight break-words">Control Center</h2>
-                        <p class="text-[9px] sm:text-[10px] text-gray-400 font-bold tracking-[0.15em] sm:tracking-[0.2em] uppercase mt-0.5 break-words">EXAMA ADMIN</p>
+                        <p class="text-[9px] sm:text-[10px] text-gray-400 font-bold tracking-[0.15em] sm:tracking-[0.2em] uppercase mt-0.5 break-words">Exama</p>
                     </div>
                 </div>
                 <div class="flex gap-1.5 sm:gap-2 shrink-0">
@@ -1726,22 +1726,22 @@
         window.studentsDB = []; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;window.videosDB = []; window.activeVideoCategory = 'All';
         let chartInstance = null; let adminProfileChartInstance = null; let analysisChartInstance = null; let fitnessChartInstance = null; let globalTimerInterval = null; window.replyingTo = null; window.activeSubjectFilter = 'All'; window.jitsiApi = null; window.chatJitsiApi = null;
 // ==========================================
-// PW-STYLE E-LEARNING ENGINE
+// PW-STYLE E-LEARNING NATIVE ENGINE (GRID FOLDERS)
 // ==========================================
-window.vhState = {
-    view: 'subjects', // 'subjects', 'topics', 'lectures'
-    subject: null,
-    topic: null
-};
+window.vhState = { view: 'subjects', subject: null, topic: null };
 window.currentWatchVideoId = null;
-window.examaVjsPlayer = null;
+window.currentVideoSearch = ""; // FIX: Prevents empty folder crash
 
 // 1. SMART URL PARSER
 window.parseVideoLink = function(url) {
-    const ytMatch = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
-    if (ytMatch && ytMatch[2].length === 11) return { type: 'youtube', src: `https://www.youtube.com/watch?v=${ytMatch[2]}`, thumb: `https://img.youtube.com/vi/${ytMatch[2]}/maxresdefault.jpg` };
+    const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+    if (ytMatch && ytMatch[1]) {
+        return { type: 'youtube', src: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&modestbranding=1`, thumb: `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg` };
+    }
     const driveMatch = url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
-    if (driveMatch && driveMatch[1]) return { type: 'html5', src: `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`, thumb: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg' };
+    if (driveMatch && driveMatch[1]) {
+        return { type: 'drive', src: `https://drive.google.com/file/d/${driveMatch[1]}/preview`, thumb: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg' };
+    }
     return null;
 };
 
@@ -1761,17 +1761,26 @@ window.submitVideo = async function() {
     const payload = {
         title: title, subject: subject, topic: topic,
         videoType: parsedData.type, sourceUrl: parsedData.src, thumbnail: parsedData.thumb,
-        uploader: window.currentRole === 'admin' ? 'EXAMA Admin' : 'Instructor',
+        uploader: window.currentRole === 'admin' ? 'EXAMA' : 'Instructor',
         watchedBy: [], timestamp: Date.now()
     };
 
-    if (isFirebaseConfigured) await addDoc(collection(db, "videos"), payload);
-    else { window.videosDB.push({ id: Math.random().toString(), ...payload }); window.renderVideoFeed(); }
-
-    document.getElementById('form-upload-video').reset();
-    document.getElementById('video-upload-modal')?.classList.add('hidden-view');
+    try {
+        if (isFirebaseConfigured) {
+            await addDoc(collection(db, "videos"), payload);
+        } else { 
+            if (!window.videosDB) window.videosDB = [];
+            window.videosDB.push({ id: Math.random().toString(), ...payload }); 
+            window.renderVideoFeed(); 
+        }
+        document.getElementById('form-upload-video').reset();
+        document.getElementById('video-upload-modal')?.classList.add('hidden-view');
+        window.showToast("Success", "Lecture added successfully!", "info");
+    } catch(e) {
+        console.error(e);
+        alert("Error saving video.");
+    }
     hideLoader();
-    window.showToast("Success", "Lecture added successfully!", "info");
 };
 
 // 3. NAVIGATION CONTROLLER
@@ -1783,7 +1792,7 @@ window.vhGoBack = function() {
         window.vhState.view = 'subjects';
         window.vhState.subject = null;
     } else {
-        safeBack(); // Exit Hub
+        safeBack();
         return;
     }
     window.renderVideoFeed();
@@ -1801,9 +1810,8 @@ window.openVHTopic = function(top) {
     window.renderVideoFeed();
 };
 
-// Icon Mapper for Subjects (SAFE VERSION)
 function getSubjectIcon(sub) {
-    if (!sub) return { icon: 'fa-graduation-cap', color: 'text-indigo-500', bg: 'bg-indigo-50' }; // Fallback for undefined
+    if (!sub) return { icon: 'fa-graduation-cap', color: 'text-indigo-500', bg: 'bg-indigo-50' }; 
     const s = String(sub).toLowerCase();
     if(s.includes('math')) return { icon: 'fa-calculator', color: 'text-blue-500', bg: 'bg-blue-50' };
     if(s.includes('physic')) return { icon: 'fa-atom', color: 'text-purple-500', bg: 'bg-purple-50' };
@@ -1811,7 +1819,7 @@ function getSubjectIcon(sub) {
     if(s.includes('english') || s.includes('vocab')) return { icon: 'fa-book-open', color: 'text-rose-500', bg: 'bg-rose-50' };
     if(s.includes('reasoning') || s.includes('logic')) return { icon: 'fa-brain', color: 'text-amber-500', bg: 'bg-amber-50' };
     if(s.includes('gk') || s.includes('knowledge')) return { icon: 'fa-globe', color: 'text-cyan-500', bg: 'bg-cyan-50' };
-    return { icon: 'fa-graduation-cap', color: 'text-indigo-500', bg: 'bg-indigo-50' }; // Default
+    return { icon: 'fa-graduation-cap', color: 'text-indigo-500', bg: 'bg-indigo-50' }; 
 }
 
 // 4. MAIN RENDER ENGINE
@@ -1821,8 +1829,7 @@ window.renderVideoFeed = function() {
     const subEl = document.getElementById('vh-header-subtitle');
     if (!container) return;
 
-    // Ensure Global Old-To-New Sorting & filter out broken videos without titles
-    let vids = (window.videosDB || []).filter(v => v.title); 
+    let vids = (window.videosDB || []).filter(v => v.title && v.subject); 
     vids.sort((a, b) => a.timestamp - b.timestamp);
 
     if (vids.length === 0) {
@@ -1830,12 +1837,12 @@ window.renderVideoFeed = function() {
         return;
     }
 
-    // SAFE SEARCH FILTERING
-    if (window.currentVideoSearch !== "") {
+    if (window.currentVideoSearch) {
         vids = vids.filter(v => {
             const titleStr = v.title ? String(v.title).toLowerCase() : "";
             const topicStr = v.topic ? String(v.topic).toLowerCase() : "";
-            return titleStr.includes(window.currentVideoSearch) || topicStr.includes(window.currentVideoSearch);
+            const searchStr = String(window.currentVideoSearch).toLowerCase();
+            return titleStr.includes(searchStr) || topicStr.includes(searchStr);
         });
     }
 
@@ -1856,11 +1863,10 @@ window.renderVideoFeed = function() {
     }
 };
 
-// 4.1 RENDER: SUBJECTS
+// 4.1 RENDER: SUBJECTS (GRID)
 function renderVHSubjects(vids, container) {
-    // ONLY get subjects that actually exist (filters out undefined)
-    const uniqueSubjects = [...new Set(vids.map(v => v.subject).filter(Boolean))];
-    let html = '';
+    const uniqueSubjects = [...new Set(vids.map(v => v.subject))];
+    let html = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">';
     
     uniqueSubjects.forEach(sub => {
         const subVids = vids.filter(v => v.subject === sub);
@@ -1870,59 +1876,62 @@ function renderVHSubjects(vids, container) {
         const theme = getSubjectIcon(sub);
 
         html += `
-        <div onclick="window.openVHSubject('${String(sub).replace(/'/g, "\\'")}')" class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-gray-200 hover:shadow-md hover:border-indigo-200 transition-all cursor-pointer flex items-center gap-4 group">
-            <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl ${theme.bg} flex justify-center items-center ${theme.color} text-2xl sm:text-3xl shrink-0 group-hover:scale-110 transition-transform">
+        <div onclick="window.openVHSubject('${String(sub).replace(/'/g, "\\'")}')" class="bg-white rounded-[1.5rem] p-4 sm:p-5 shadow-sm border border-gray-200 hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer flex flex-col items-center text-center group">
+            <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl ${theme.bg} flex justify-center items-center ${theme.color} text-2xl sm:text-3xl mb-3 group-hover:scale-110 transition-transform">
                 <i class="fa-solid ${theme.icon}"></i>
             </div>
-            <div class="flex-1 min-w-0">
-                <h3 class="font-black text-gray-900 text-base sm:text-lg truncate leading-tight">${sub}</h3>
-                <p class="text-[10px] sm:text-xs text-gray-500 font-bold mt-0.5 uppercase tracking-widest">${totalCount} Lectures</p>
-                <div class="flex items-center gap-2 mt-2">
-                    <div class="flex-1 bg-gray-100 h-1.5 rounded-full overflow-hidden">
-                        <div class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: ${perc}%"></div>
-                    </div>
-                    <span class="text-[9px] font-black text-indigo-600 shrink-0">${perc}%</span>
+            <h3 class="font-black text-gray-900 text-sm sm:text-base leading-tight w-full truncate px-1">${sub}</h3>
+            <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-1 uppercase tracking-widest">${totalCount} Lectures</p>
+            <div class="w-full mt-3 flex items-center gap-2 px-2">
+                <div class="flex-1 bg-gray-100 h-1.5 rounded-full overflow-hidden">
+                    <div class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: ${perc}%"></div>
                 </div>
             </div>
-            <i class="fa-solid fa-chevron-right text-gray-300 group-hover:text-indigo-500 transition-colors"></i>
         </div>`;
     });
+    html += '</div>';
     container.innerHTML = html;
 }
 
-// 4.2 RENDER: TOPICS (CHAPTERS)
+// 4.2 RENDER: TOPICS (GRID)
 function renderVHTopics(vids, container) {
     const uniqueTopics = [...new Set(vids.map(v => v.topic))];
-    let html = '';
+    let html = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">';
 
     uniqueTopics.forEach((top, idx) => {
         const topVids = vids.filter(v => v.topic === top);
         const watchedCount = topVids.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length;
         const totalCount = topVids.length;
-        const isComplete = watchedCount === totalCount;
-        const perc = Math.round((watchedCount / totalCount) * 100);
+        const isComplete = watchedCount === totalCount && totalCount > 0;
+        const perc = totalCount > 0 ? Math.round((watchedCount / totalCount) * 100) : 0;
+
+        const folderIcon = isComplete ? 'fa-folder-check text-emerald-500' : 'fa-folder text-blue-500';
+        const progressColor = isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-400 to-blue-500';
 
         html += `
-        <div class="bg-white rounded-2xl p-4 shadow-sm border ${isComplete ? 'border-emerald-200 bg-emerald-50/20' : 'border-gray-200'} hover:shadow-md transition-all">
-            <div class="flex justify-between items-start gap-3">
-                <div class="flex-1 min-w-0 cursor-pointer" onclick="window.openVHTopic('${top.replace(/'/g, "\\'")}')">
-                    <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Chapter ${idx + 1}</p>
-                    <h3 class="font-bold text-gray-900 text-sm sm:text-base leading-snug break-words pr-2">${top}</h3>
-                    <div class="flex items-center gap-3 mt-2.5">
-                        <span class="text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-0.5 rounded shadow-inner"><i class="fa-solid fa-video text-indigo-400 mr-1"></i>${watchedCount}/${totalCount}</span>
-                        ${isComplete ? '<span class="text-[9px] font-black text-emerald-600 uppercase tracking-widest"><i class="fa-solid fa-check-double"></i> Done</span>' : ''}
+        <div onclick="window.openVHTopic('${String(top).replace(/'/g, "\\'")}')" class="bg-white p-4 sm:p-5 rounded-[1.5rem] flex flex-col items-center justify-center text-center cursor-pointer hover:-translate-y-1 hover:shadow-xl transition-all duration-300 border border-gray-200/60 shadow-sm group relative overflow-hidden">
+            
+            ${isComplete ? `<button onclick="event.stopPropagation(); window.resetTopicProgress('${window.vhState.subject}', '${String(top).replace(/'/g, "\\'")}')" class="absolute top-2 right-2 w-7 h-7 bg-emerald-50 text-emerald-600 hover:bg-red-50 hover:text-red-600 rounded-full flex items-center justify-center transition-colors shadow-sm" title="Reset Topic Progress"><i class="fa-solid fa-rotate-left text-[10px]"></i></button>` : ''}
+
+            <div class="relative z-10 w-full flex flex-col items-center mt-2">
+                <i class="fa-solid ${folderIcon} text-5xl sm:text-6xl mb-3 drop-shadow-sm group-hover:scale-110 transition-transform duration-300"></i>
+                <h3 class="font-black text-gray-900 text-xs sm:text-sm leading-tight break-words mb-1 line-clamp-2 px-1">${top}</h3>
+                <p class="text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">${totalCount} Lectures</p>
+                
+                <!-- Progress Bar inside Folder -->
+                <div class="w-full mx-auto px-1 mt-auto">
+                    <div class="flex justify-between text-[8px] font-black text-gray-400 mb-1.5 uppercase tracking-widest">
+                        <span>Progress</span>
+                        <span class="${isComplete ? 'text-emerald-500' : 'text-gray-500'}">${perc}%</span>
+                    </div>
+                    <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                        <div class="h-full ${progressColor} rounded-full transition-all duration-500" style="width: ${perc}%"></div>
                     </div>
                 </div>
-                <div class="flex flex-col items-end gap-2 shrink-0">
-                    <button onclick="window.openVHTopic('${top.replace(/'/g, "\\'")}')" class="w-10 h-10 rounded-full ${isComplete ? 'bg-emerald-100 text-emerald-600' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white'} flex items-center justify-center transition-colors shadow-sm">
-                        <i class="fa-solid ${isComplete ? 'fa-check' : 'fa-play ml-0.5'}"></i>
-                    </button>
-                    ${isComplete ? `<button onclick="window.resetTopicProgress('${window.vhState.subject}', '${top}')" class="text-[9px] font-bold text-gray-400 hover:text-red-500 uppercase transition-colors"><i class="fa-solid fa-rotate-left"></i> Reset</button>` : ''}
-                </div>
             </div>
-            ${!isComplete ? `<div class="w-full bg-gray-100 h-1 rounded-full mt-3 overflow-hidden"><div class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: ${perc}%"></div></div>` : ''}
         </div>`;
     });
+    html += '</div>';
     container.innerHTML = html;
 }
 
@@ -1935,7 +1944,6 @@ function renderVHLectures(vids, container) {
 
         html += `
         <div class="flex gap-3 bg-white p-2 sm:p-3 rounded-2xl border ${isWatched ? 'border-emerald-200' : 'border-gray-200'} shadow-sm hover:shadow-md cursor-pointer transition-all group relative" onclick="window.playVideo('${vid.id}')">
-            <!-- Thumbnail -->
             <div class="relative w-32 sm:w-40 aspect-video shrink-0 bg-gray-900 rounded-xl overflow-hidden border border-gray-100">
                 <img src="${vid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity">
                 ${isWatched ? `<div class="absolute inset-0 bg-emerald-900/60 backdrop-blur-[1px] flex items-center justify-center"><i class="fa-solid fa-check text-white text-2xl drop-shadow-md"></i></div>` : ''}
@@ -1943,8 +1951,6 @@ function renderVHLectures(vids, container) {
                 <span class="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">Lec ${idx + 1}</span>
                 ${delBtn}
             </div>
-            
-            <!-- Details -->
             <div class="flex-1 flex flex-col justify-center min-w-0 pr-1 py-1">
                 <h4 class="font-bold text-gray-900 text-xs sm:text-sm leading-snug line-clamp-2 group-hover:text-indigo-700 transition-colors">${vid.title}</h4>
                 <div class="flex items-center gap-2 mt-2">
@@ -1960,7 +1966,6 @@ function renderVHLectures(vids, container) {
 window.resetTopicProgress = async function(subject, topic) {
     if(!confirm(`Reset your progress for "${topic}"?`)) return;
     showLoader("Resetting...");
-    
     const topicVids = window.videosDB.filter(v => v.topic === topic && v.subject === subject);
     for(let vid of topicVids) {
         let watchedList = vid.watchedBy || [];
@@ -1970,7 +1975,6 @@ window.resetTopicProgress = async function(subject, topic) {
             else vid.watchedBy = watchedList;
         }
     }
-    
     hideLoader();
     window.renderVideoFeed();
 };
@@ -1982,15 +1986,13 @@ window.deleteVideo = async function(id) {
 };
 
 // ==========================================
-// VIDEO.JS PLAYER CONTROLLER
+// NATIVE IFRAME PLAYER CONTROLLER
 // ==========================================
 window.playVideo = function(id) {
     const vid = window.videosDB.find(v => v.id === id);
     if(!vid) return;
 
     window.currentWatchVideoId = id;
-    
-    // UI Setup
     const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
     window.updateWatchedButtonUI(isWatched);
     document.getElementById('watch-title').innerText = vid.title;
@@ -1998,80 +2000,68 @@ window.playVideo = function(id) {
     document.getElementById('watch-topic').innerText = vid.topic;
     document.getElementById('watch-uploader').innerText = vid.uploader || 'Faculty';
 
-    // Init Player
-    const container = document.getElementById('vjs-container');
-    if (window.examaVjsPlayer) { window.examaVjsPlayer.dispose(); window.examaVjsPlayer = null; }
-    
-    container.innerHTML = `<video id="exama-player" class="video-js vjs-fluid vjs-default-skin" controls preload="auto" poster="${vid.thumbnail}"></video>`;
-    
-    const techOrder = vid.videoType === 'youtube' ? ['youtube', 'html5'] : ['html5'];
-    const mimeType = vid.videoType === 'youtube' ? 'video/youtube' : 'video/mp4';
-
-    window.examaVjsPlayer = videojs('exama-player', {
-        techOrder: techOrder, autoplay: true,
-        youtube: { ytControls: 0, modestbranding: 1, iv_load_policy: 3, rel: 0 },
-        sources: [{ type: mimeType, src: vid.sourceUrl }]
-    });
+    const iframe = document.getElementById('exama-native-iframe');
+    if (iframe) iframe.src = vid.sourceUrl;
 
     window.renderUpNext(vid);
-
-    // Auto-Mark & Auto-Play Next
-    window.examaVjsPlayer.on('ended', function() {
-        if(!isWatched) window.toggleVideoWatched(); 
-        window.playNextInTopic(vid);
-    });
-
     window.location.hash = 'watch-video';
 };
 
 window.closeWatchView = function() {
-    if (window.examaVjsPlayer) {
-        window.examaVjsPlayer.pause();
-        window.examaVjsPlayer.dispose();
-        window.examaVjsPlayer = null;
-        document.getElementById('vjs-container').innerHTML = '';
-    }
+    const iframe = document.getElementById('exama-native-iframe');
+    if (iframe) iframe.src = ''; 
     if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
     safeBack(); 
 };
 
-// ==========================================
-// "UP NEXT" & PLAYLIST RENDERER
-// ==========================================
 window.renderUpNext = function(currentVid) {
     const relatedList = document.getElementById('watch-related-list');
     const progressText = document.getElementById('topic-progress-text');
     
     let topicVideos = window.videosDB.filter(v => v.topic === currentVid.topic && v.subject === currentVid.subject);
-    topicVideos.sort((a, b) => a.timestamp - b.timestamp); // Ascending
+    topicVideos.sort((a, b) => a.timestamp - b.timestamp); 
     
+    const unwatched = topicVideos.filter(v => !(v.watchedBy || []).includes(window.loggedInMobile) && v.id !== currentVid.id);
     const watchedCount = topicVideos.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length;
     progressText.innerText = `${watchedCount}/${topicVideos.length} Done`;
 
-    let html = '';
-    topicVideos.forEach((vid, idx) => {
-        const isCurrent = vid.id === currentVid.id;
-        const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
-        
-        let statusIcon = `<div class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-[10px] font-black text-gray-400 shrink-0">${idx + 1}</div>`;
-        if (isCurrent) statusIcon = `<div class="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-[10px] text-indigo-600 shrink-0 animate-pulse"><i class="fa-solid fa-play"></i></div>`;
-        else if (isWatched) statusIcon = `<div class="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[10px] text-emerald-600 shrink-0"><i class="fa-solid fa-check"></i></div>`;
-
-        html += `
-        <div onclick="if(!${isCurrent}) window.playVideo('${vid.id}')" class="flex items-center gap-3 p-2.5 rounded-xl ${isCurrent ? 'bg-indigo-50 border border-indigo-200 shadow-sm' : 'bg-white border border-gray-100 hover:bg-gray-50 cursor-pointer'} transition-colors">
-            ${statusIcon}
-            <div class="flex-1 min-w-0">
-                <h5 class="text-xs font-bold ${isCurrent ? 'text-indigo-900' : (isWatched ? 'text-gray-500' : 'text-gray-800')} truncate">${vid.title}</h5>
+    if (unwatched.length === 0) {
+        relatedList.innerHTML = `
+        <div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6 text-center shadow-inner mt-4">
+            <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-md border border-emerald-100">
+                <i class="fa-solid fa-trophy text-emerald-500 text-3xl"></i>
             </div>
+            <h3 class="text-emerald-800 font-black text-lg mb-1">Topic Completed! 🎉</h3>
+            <p class="text-xs text-emerald-600 font-bold mb-4">You've finished all lectures in "${currentVid.topic}".</p>
+            <button onclick="window.closeWatchView()" class="bg-emerald-600 text-white font-black px-6 py-2.5 rounded-xl active:scale-95 shadow-lg shadow-emerald-500/30 w-full text-sm">Return to Folders</button>
         </div>`;
-    });
-    relatedList.innerHTML = html;
+        return;
+    }
+
+    const upNextVid = unwatched[0];
+    const platformIcon = upNextVid.videoType === 'youtube' ? '<i class="fa-brands fa-youtube text-red-500"></i>' : '<i class="fa-brands fa-google-drive text-blue-500"></i>';
+
+    relatedList.innerHTML = `
+    <div class="flex gap-3 items-start bg-white p-2.5 rounded-xl shadow-sm border border-blue-100 cursor-pointer hover:bg-blue-50 transition-colors group relative overflow-hidden" onclick="window.playVideo('${upNextVid.id}')">
+        <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+        <div class="relative w-32 aspect-video shrink-0 bg-gray-900 rounded-lg overflow-hidden border border-gray-200 ml-1">
+            <img src="${upNextVid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity">
+            <div class="absolute inset-0 flex items-center justify-center">
+                <div class="w-8 h-8 bg-blue-600/90 rounded-full flex items-center justify-center text-white shadow-md">
+                    <i class="fa-solid fa-play ml-0.5 text-xs"></i>
+                </div>
+            </div>
+        </div>
+        <div class="min-w-0 pr-1 py-0.5 flex flex-col justify-center h-full">
+            <span class="text-[8px] font-black uppercase tracking-widest text-blue-500 mb-1">Up Next Automatically</span>
+            <h4 class="font-bold text-gray-900 text-xs leading-snug line-clamp-2 break-words group-hover:text-blue-700">${platformIcon} ${upNextVid.title}</h4>
+        </div>
+    </div>`;
 };
 
 window.playNextInTopic = function(currentVid) {
     let topicVideos = window.videosDB.filter(v => v.topic === currentVid.topic && v.subject === currentVid.subject);
     topicVideos.sort((a, b) => a.timestamp - b.timestamp); 
-    
     const currentIndex = topicVideos.findIndex(v => v.id === currentVid.id);
     if (currentIndex > -1 && currentIndex < topicVideos.length - 1) {
         window.playVideo(topicVideos[currentIndex + 1].id);
@@ -2113,359 +2103,8 @@ window.toggleVideoWatched = async function() {
     else vid.watchedBy = watchedList;
     
     window.renderUpNext(vid); 
+    if (!isWatched) window.playNextInTopic(vid);
 };
-
-// ==========================================
-// VIDEO.JS PLAYER CONTROLLER
-// ==========================================
-window.playVideo = function(id) {
-    const vid = window.videosDB.find(v => v.id === id);
-    if(!vid) return;
-
-    window.currentWatchVideoId = id;
-    
-    // UI Setup
-    const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
-    window.updateWatchedButtonUI(isWatched);
-    document.getElementById('watch-title').innerText = vid.title;
-    document.getElementById('watch-subject').innerText = vid.subject;
-    document.getElementById('watch-topic').innerText = vid.topic;
-
-    // Init Player
-    const container = document.getElementById('vjs-container');
-    if (window.examaVjsPlayer) { window.examaVjsPlayer.dispose(); window.examaVjsPlayer = null; }
-    
-    container.innerHTML = `<video id="exama-player" class="video-js vjs-fluid vjs-default-skin" controls preload="auto" poster="${vid.thumbnail}"></video>`;
-    
-    const techOrder = vid.videoType === 'youtube' ? ['youtube', 'html5'] : ['html5'];
-    const mimeType = vid.videoType === 'youtube' ? 'video/youtube' : 'video/mp4';
-
-    window.examaVjsPlayer = videojs('exama-player', {
-        techOrder: techOrder, autoplay: true,
-        youtube: { ytControls: 0, modestbranding: 1, iv_load_policy: 3, rel: 0 },
-        sources: [{ type: mimeType, src: vid.sourceUrl }]
-    });
-
-    window.renderUpNext(vid);
-
-    // Auto-Mark & Auto-Play Next
-    window.examaVjsPlayer.on('ended', function() {
-        if(!isWatched) window.toggleVideoWatched(); 
-        window.playNextInTopic(vid);
-    });
-
-    window.location.hash = 'watch-video';
-};
-
-window.closeWatchView = function() {
-    if (window.examaVjsPlayer) {
-        window.examaVjsPlayer.pause();
-        window.examaVjsPlayer.dispose();
-        window.examaVjsPlayer = null;
-        document.getElementById('vjs-container').innerHTML = '';
-    }
-    // Re-render feed so the folder shows updated progress
-    if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
-    safeBack(); 
-};
-
-// ==========================================
-// "UP NEXT" & COMPLETION ALGORITHM
-// ==========================================
-window.renderUpNext = function(currentVid) {
-    const relatedList = document.getElementById('watch-related-list');
-    const progressText = document.getElementById('topic-progress-text');
-    
-    let topicVideos = window.videosDB.filter(v => v.topic === currentVid.topic && v.subject === currentVid.subject);
-    topicVideos.sort((a, b) => a.timestamp - b.timestamp); // Sort ascending Old-to-New
-    
-    const unwatched = topicVideos.filter(v => !(v.watchedBy || []).includes(window.loggedInMobile) && v.id !== currentVid.id);
-    const watchedCount = topicVideos.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length;
-    progressText.innerText = `${watchedCount}/${topicVideos.length} Completed`;
-
-    if (unwatched.length === 0) {
-        relatedList.innerHTML = `
-        <div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6 text-center shadow-inner mt-4">
-            <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-md border border-emerald-100">
-                <i class="fa-solid fa-trophy text-emerald-500 text-3xl"></i>
-            </div>
-            <h3 class="text-emerald-800 font-black text-lg mb-1">Topic Completed! 🎉</h3>
-            <p class="text-xs text-emerald-600 font-bold mb-4">You've finished all lectures in "${currentVid.topic}".</p>
-            <button onclick="window.closeWatchView()" class="bg-emerald-600 text-white font-black px-6 py-2.5 rounded-xl active:scale-95 shadow-lg shadow-emerald-500/30 w-full text-sm">Return to Folders</button>
-        </div>`;
-        return;
-    }
-
-    const upNextVid = unwatched[0];
-    const platformIcon = upNextVid.videoType === 'youtube' ? '<i class="fa-brands fa-youtube text-red-500"></i>' : '<i class="fa-brands fa-google-drive text-blue-500"></i>';
-
-    relatedList.innerHTML = `
-    <div class="flex gap-3 items-start bg-white p-2.5 rounded-xl shadow-sm border border-blue-100 cursor-pointer hover:bg-blue-50 transition-colors group relative overflow-hidden" onclick="window.playVideo('${upNextVid.id}')">
-        <div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
-        <div class="relative w-32 aspect-video shrink-0 bg-gray-900 rounded-lg overflow-hidden border border-gray-200 ml-1">
-            <img src="${upNextVid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity">
-            <div class="absolute inset-0 flex items-center justify-center">
-                <div class="w-8 h-8 bg-blue-600/90 rounded-full flex items-center justify-center text-white shadow-md">
-                    <i class="fa-solid fa-play ml-0.5 text-xs"></i>
-                </div>
-            </div>
-        </div>
-        <div class="min-w-0 pr-1 py-0.5 flex flex-col justify-center h-full">
-            <span class="text-[8px] font-black uppercase tracking-widest text-blue-500 mb-1">Up Next Automatically</span>
-            <h4 class="font-bold text-gray-900 text-xs leading-snug line-clamp-2 break-words group-hover:text-blue-700">${platformIcon} ${upNextVid.title}</h4>
-        </div>
-    </div>`;
-};
-
-window.playNextInTopic = function(currentVid) {
-    let topicVideos = window.videosDB.filter(v => v.topic === currentVid.topic && v.subject === currentVid.subject);
-    topicVideos.sort((a, b) => a.timestamp - b.timestamp); 
-    
-    const unwatched = topicVideos.filter(v => !(v.watchedBy || []).includes(window.loggedInMobile) && v.id !== currentVid.id);
-    
-    if (unwatched.length > 0) window.playVideo(unwatched[0].id);
-    else window.renderUpNext(currentVid); 
-};
-
-window.updateWatchedButtonUI = function(isWatched) {
-    const btn = document.getElementById('btn-mark-watched');
-    const icon = document.getElementById('icon-watched');
-    const text = document.getElementById('text-watched');
-
-    if (isWatched) {
-        btn.className = "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-emerald-200";
-        icon.className = "fa-solid fa-circle-check mr-1.5";
-        text.innerText = "Completed";
-    } else {
-        btn.className = "bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-transparent";
-        icon.className = "fa-solid fa-eye mr-1.5";
-        text.innerText = "Mark Watched";
-    }
-};
-
-window.toggleVideoWatched = async function() {
-    if (window.currentRole === 'admin') return alert("Only students can mark videos as watched.");
-    if (!window.currentWatchVideoId) return;
-
-    const vid = window.videosDB.find(v => v.id === window.currentWatchVideoId);
-    if (!vid) return;
-
-    let watchedList = vid.watchedBy || [];
-    const isWatched = watchedList.includes(window.loggedInMobile);
-
-    if (isWatched) watchedList = watchedList.filter(m => m !== window.loggedInMobile);
-    else watchedList.push(window.loggedInMobile);
-
-    window.updateWatchedButtonUI(!isWatched);
-
-    if (isFirebaseConfigured) await updateDoc(doc(db, "videos", vid.id), { watchedBy: watchedList });
-    else vid.watchedBy = watchedList;
-    
-    window.renderUpNext(vid); 
-};
-
-// 4. RESET TOPIC PROGRESS
-window.resetTopicProgress = async function(subject, topic) {
-    if(!confirm(`Reset your progress for all videos in "${topic}"?`)) return;
-    showLoader("Resetting Progress...");
-    
-    // Find all videos in this topic
-    const topicVids = window.videosDB.filter(v => v.topic === topic && v.subject === subject);
-    
-    for(let vid of topicVids) {
-        let watchedList = vid.watchedBy || [];
-        if (watchedList.includes(window.loggedInMobile)) {
-            watchedList = watchedList.filter(m => m !== window.loggedInMobile);
-            
-            if (isFirebaseConfigured) {
-                await updateDoc(doc(db, "videos", vid.id), { watchedBy: watchedList });
-            } else {
-                vid.watchedBy = watchedList;
-            }
-        }
-    }
-    
-    hideLoader();
-    window.renderVideoFeed();
-    window.showToast("Progress Reset", `You can now re-watch ${topic}.`, "info");
-};
-
-window.deleteVideo = async function(id) {
-    if(!confirm("Delete this video permanently?")) return;
-    if(isFirebaseConfigured) await deleteDoc(doc(db, "videos", id));
-    else { window.videosDB = window.videosDB.filter(v => v.id !== id); window.renderVideoFeed(); }
-};
-
-// ==========================================
-// VIDEO.JS PLAYER CONTROLLER
-// ==========================================
-window.playVideo = function(id) {
-    const vid = window.videosDB.find(v => v.id === id);
-    if(!vid) return;
-
-    window.currentWatchVideoId = id;
-    
-    // 1. UI Setup
-    const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
-    window.updateWatchedButtonUI(isWatched);
-    document.getElementById('watch-title').innerText = vid.title;
-    document.getElementById('watch-subject').innerText = vid.subject;
-    document.getElementById('watch-topic').innerText = vid.topic;
-
-    // 2. Initialize Video.js Player
-    const container = document.getElementById('vjs-container');
-    
-    // Destroy previous instance completely to avoid ghost audio / conflicts
-    if (window.examaVjsPlayer) {
-        window.examaVjsPlayer.dispose();
-        window.examaVjsPlayer = null;
-    }
-    
-    // Re-inject raw video tag
-    container.innerHTML = `<video id="exama-player" class="video-js vjs-fluid vjs-default-skin" controls preload="auto" poster="${vid.thumbnail}"></video>`;
-    
-    // Build options based on source
-    const techOrder = vid.videoType === 'youtube' ? ['youtube', 'html5'] : ['html5'];
-    const mimeType = vid.videoType === 'youtube' ? 'video/youtube' : 'video/mp4';
-
-    // Init Video.js
-    window.examaVjsPlayer = videojs('exama-player', {
-        techOrder: techOrder,
-        autoplay: true,
-        youtube: {
-            ytControls: 0,
-            modestbranding: 1,
-            iv_load_policy: 3,
-            rel: 0
-        },
-        sources: [{ type: mimeType, src: vid.sourceUrl }]
-    });
-
-    // 3. Render Up Next Logic
-    window.renderUpNext(vid);
-
-    // 4. Auto-Mark as watched when video ends
-    window.examaVjsPlayer.on('ended', function() {
-        if(!isWatched) window.toggleVideoWatched(); // Automatically mark complete
-        window.playNextInTopic(vid);
-    });
-
-    window.location.hash = 'watch-video';
-};
-
-window.closeWatchView = function() {
-    if (window.examaVjsPlayer) {
-        window.examaVjsPlayer.pause();
-        window.examaVjsPlayer.dispose();
-        window.examaVjsPlayer = null;
-        document.getElementById('vjs-container').innerHTML = '';
-    }
-    safeBack(); 
-};
-
-// ==========================================
-// "UP NEXT" & COMPLETION ALGORITHM
-// ==========================================
-window.renderUpNext = function(currentVid) {
-    const relatedList = document.getElementById('watch-related-list');
-    const progressText = document.getElementById('topic-progress-text');
-    
-    // Find all videos in the EXACT SAME TOPIC
-    const topicVideos = window.videosDB.filter(v => v.topic === currentVid.topic && v.subject === currentVid.subject);
-    
-    // Find unwatched videos in this topic, excluding the current one
-    const unwatched = topicVideos.filter(v => !(v.watchedBy || []).includes(window.loggedInMobile) && v.id !== currentVid.id);
-    
-    // Progress calculation
-    const watchedCount = topicVideos.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length;
-    progressText.innerText = `${watchedCount}/${topicVideos.length} Completed`;
-
-    if (unwatched.length === 0) {
-        // SCENARIO: Topic is Complete!
-        relatedList.innerHTML = `
-        <div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6 text-center shadow-inner mt-4">
-            <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-md border border-emerald-100">
-                <i class="fa-solid fa-trophy text-emerald-500 text-3xl"></i>
-            </div>
-            <h3 class="text-emerald-800 font-black text-lg mb-1">Topic Completed! 🎉</h3>
-            <p class="text-xs text-emerald-600 font-bold mb-4">You've finished all lectures in "${currentVid.topic}".</p>
-            <button onclick="window.closeWatchView()" class="bg-emerald-600 text-white font-black px-6 py-2.5 rounded-xl active:scale-95 shadow-lg shadow-emerald-500/30 w-full text-sm">Return to Course Hub</button>
-        </div>`;
-        return;
-    }
-
-    // SCENARIO: Show the very next unwatched video
-    const upNextVid = unwatched[0];
-    const platformIcon = upNextVid.videoType === 'youtube' ? '<i class="fa-brands fa-youtube text-red-500"></i>' : '<i class="fa-brands fa-google-drive text-blue-500"></i>';
-
-    relatedList.innerHTML = `
-    <div class="flex gap-3 items-start bg-white p-2.5 rounded-xl shadow-sm border border-indigo-100 cursor-pointer hover:bg-indigo-50 transition-colors group relative overflow-hidden" onclick="window.playVideo('${upNextVid.id}')">
-        <div class="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
-        <div class="relative w-32 aspect-video shrink-0 bg-gray-900 rounded-lg overflow-hidden border border-gray-200 ml-1">
-            <img src="${upNextVid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity">
-            <div class="absolute inset-0 flex items-center justify-center">
-                <div class="w-8 h-8 bg-indigo-600/90 rounded-full flex items-center justify-center text-white shadow-md">
-                    <i class="fa-solid fa-play ml-0.5 text-xs"></i>
-                </div>
-            </div>
-        </div>
-        <div class="min-w-0 pr-1 py-0.5 flex flex-col justify-center h-full">
-            <span class="text-[8px] font-black uppercase tracking-widest text-indigo-500 mb-1">Up Next Automatically</span>
-            <h4 class="font-bold text-gray-900 text-xs leading-snug line-clamp-2 break-words group-hover:text-indigo-700">${platformIcon} ${upNextVid.title}</h4>
-        </div>
-    </div>`;
-};
-
-// Triggered when video.js finishes playing
-window.playNextInTopic = function(currentVid) {
-    const topicVideos = window.videosDB.filter(v => v.topic === currentVid.topic && v.subject === currentVid.subject);
-    const unwatched = topicVideos.filter(v => !(v.watchedBy || []).includes(window.loggedInMobile) && v.id !== currentVid.id);
-    
-    if (unwatched.length > 0) {
-        window.playVideo(unwatched[0].id); // Auto-play next!
-    } else {
-        window.renderUpNext(currentVid); // Re-render to show completion state
-    }
-};
-
-window.updateWatchedButtonUI = function(isWatched) {
-    const btn = document.getElementById('btn-mark-watched');
-    const icon = document.getElementById('icon-watched');
-    const text = document.getElementById('text-watched');
-
-    if (isWatched) {
-        btn.className = "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-emerald-200";
-        icon.className = "fa-solid fa-circle-check mr-1.5";
-        text.innerText = "Completed";
-    } else {
-        btn.className = "bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-transparent";
-        icon.className = "fa-solid fa-eye mr-1.5";
-        text.innerText = "Mark Watched";
-    }
-};
-
-window.toggleVideoWatched = async function() {
-    if (window.currentRole === 'admin') return alert("Only students can mark videos as watched.");
-    if (!window.currentWatchVideoId) return;
-
-    const vid = window.videosDB.find(v => v.id === window.currentWatchVideoId);
-    if (!vid) return;
-
-    let watchedList = vid.watchedBy || [];
-    const isWatched = watchedList.includes(window.loggedInMobile);
-
-    if (isWatched) watchedList = watchedList.filter(m => m !== window.loggedInMobile);
-    else watchedList.push(window.loggedInMobile);
-
-    window.updateWatchedButtonUI(!isWatched);
-
-    if (isFirebaseConfigured) await updateDoc(doc(db, "videos", vid.id), { watchedBy: watchedList });
-    else vid.watchedBy = watchedList;
-    
-    window.renderUpNext(vid); // Update UpNext/Completion UI immediately
-    if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
-};
-
 
      
      // --- 2. LEADERBOARD NEW SUB-TAB LOGIC ---
