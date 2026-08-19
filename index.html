@@ -2860,13 +2860,69 @@ onSnapshot(query(collection(db, "videos"), orderBy("timestamp", "asc")), (snapsh
         window.uploadDirectToDrive = function() { if (!window.gdriveAccessToken) { if(!window.tokenClient) return alert("Google API is still loading or Client ID is missing."); window.tokenClient.requestAccessToken({prompt: 'consent'}); } else { document.getElementById('gdrive-file-input').click(); } }
         document.getElementById('gdrive-file-input').addEventListener('change', function(e) { if (this.files.length > 0) { window.executeDriveUpload(); } });
         window.executeDriveUpload = function() {
-            const file = document.getElementById('gdrive-file-input').files[0]; if (!file) return;
-            const statusEl = document.getElementById('gdrive-upload-status'); statusEl.innerText = "Preparing upload..."; statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); statusEl.classList.add('text-blue-600');
-            const metadata = { 'name': file.name, 'mimeType': file.type }; const form = new FormData(); form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' })); form.append('file', file);
-            const xhr = new XMLHttpRequest(); xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink'); xhr.setRequestHeader('Authorization', 'Bearer ' + window.gdriveAccessToken);
-            xhr.upload.onprogress = function(event) { if (event.lengthComputable) { const percentComplete = Math.round((event.loaded / event.total) * 100); statusEl.innerText = `Uploading to Drive... ${percentComplete}%`; } };
+            const file = document.getElementById('gdrive-file-input').files[0]; 
+            if (!file) return;
+
+            const statusEl = document.getElementById('gdrive-upload-status'); 
+            statusEl.innerText = "Preparing upload..."; 
+            statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); 
+            statusEl.classList.add('text-blue-600');
+
+            // ==========================================
+            // PASTE YOUR GOOGLE DRIVE FOLDER ID BELOW
+            // ==========================================
+            const DEFAULT_FOLDER_ID = "Ngxpjs1j7AkbCgDLZ3Ua0C4mkaCGV"; 
+
+            // Add the 'parents' array to push it directly to your specific folder
+            const metadata = { 
+                'name': file.name, 
+                'mimeType': file.type,
+                'parents': [DEFAULT_FOLDER_ID] 
+            }; 
+            
+            const form = new FormData(); 
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' })); 
+            form.append('file', file);
+            
+            const xhr = new XMLHttpRequest(); 
+            xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink'); 
+            xhr.setRequestHeader('Authorization', 'Bearer ' + window.gdriveAccessToken);
+            
+            xhr.upload.onprogress = function(event) { 
+                if (event.lengthComputable) { 
+                    const percentComplete = Math.round((event.loaded / event.total) * 100); 
+                    statusEl.innerText = `Uploading to Drive... ${percentComplete}%`; 
+                } 
+            };
+            
             xhr.onload = async function() {
-                if (xhr.status >= 200 && xhr.status < 300) { try { const data = JSON.parse(xhr.responseText); if (data.id && data.webViewLink) { statusEl.innerText = "Making file public..."; await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + window.gdriveAccessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'reader', type: 'anyone' }) }); document.getElementById('mat-ext-link').value = data.webViewLink; statusEl.innerText = "Uploaded & made Public! Link auto-filled."; statusEl.classList.remove('text-blue-600', 'text-red-600'); statusEl.classList.add('text-green-600'); } else { throw new Error("No link returned."); } } catch (err) { statusEl.innerText = "Upload Error: " + err.message; statusEl.classList.remove('text-blue-600', 'text-green-600'); statusEl.classList.add('text-red-600'); } } else { statusEl.innerText = "Drive Upload Failed. Check permissions."; statusEl.classList.remove('text-blue-600', 'text-green-600'); statusEl.classList.add('text-red-600'); }
+                if (xhr.status >= 200 && xhr.status < 300) { 
+                    try { 
+                        const data = JSON.parse(xhr.responseText); 
+                        if (data.id && data.webViewLink) { 
+                            statusEl.innerText = "Making file public..."; 
+                            await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, { 
+                                method: 'POST', 
+                                headers: { 'Authorization': 'Bearer ' + window.gdriveAccessToken, 'Content-Type': 'application/json' }, 
+                                body: JSON.stringify({ role: 'reader', type: 'anyone' }) 
+                            }); 
+                            document.getElementById('mat-ext-link').value = data.webViewLink; 
+                            statusEl.innerText = "Uploaded & made Public! Link auto-filled."; 
+                            statusEl.classList.remove('text-blue-600', 'text-red-600'); 
+                            statusEl.classList.add('text-green-600'); 
+                        } else { 
+                            throw new Error("No link returned."); 
+                        } 
+                    } catch (err) { 
+                        statusEl.innerText = "Upload Error: " + err.message; 
+                        statusEl.classList.remove('text-blue-600', 'text-green-600'); 
+                        statusEl.classList.add('text-red-600'); 
+                    } 
+                } else { 
+                    statusEl.innerText = "Drive Upload Failed. Check permissions."; 
+                    statusEl.classList.remove('text-blue-600', 'text-green-600'); 
+                    statusEl.classList.add('text-red-600'); 
+                }
                 document.getElementById('gdrive-file-input').value = '';
             };
             xhr.send(form);
