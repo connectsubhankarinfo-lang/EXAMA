@@ -5936,9 +5936,7 @@ window.openPeerEvaluationRoom = function(examId) {
     const evalList = document.getElementById('peer-eval-list');
     const exam = window.examsDB.find(e => e.id === examId);
     
-    // Calculate Distributed Max Marks
-    const totalSetters = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId).map(m => m.mobile))].length;
-    const maxMarksForThisSet = totalSetters > 0 ? (exam.totalMarks / totalSetters).toFixed(1) : exam.totalMarks;
+   
 
     const checkAndRenderScripts = () => {
         const nowTime = Date.now();
@@ -5962,6 +5960,10 @@ window.openPeerEvaluationRoom = function(examId) {
             evalList.innerHTML = '';
             scriptsToGrade.forEach(script => {
                 const solverName = window.studentsDB.find(s=>s.mobile===script.solverMobile)?.name || 'Peer';
+                
+                // NEW MATH: Exclude the solver to find their exact number of opponents
+                const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== script.solverMobile).map(m => m.mobile))].length;
+                const maxMarksForThisSet = totalOpponents > 0 ? parseFloat((exam.totalMarks / totalOpponents).toFixed(1)) : exam.totalMarks;
                 let imgsHtml = '';
                 script.imgUrls.forEach((url, i) => {
                     imgsHtml += `<div class="relative w-full h-40"><img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-full object-cover rounded-lg border border-gray-300 shadow-sm cursor-pointer hover:opacity-90 transition-opacity"><span class="absolute top-2 right-2 bg-black/80 text-white text-[9px] font-black px-2 py-1 rounded shadow-md uppercase">Pg ${i+1}</span></div>`;
@@ -5998,10 +6000,11 @@ window.closePeerEvalRoom = function() {
 window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnElement) {
     const marksInput = document.getElementById(`marks-${scriptId}`);
     const obtained = parseFloat(marksInput.value);
+   const exam = window.examsDB.find(e => e.id === examId);
     
-    const totalSetters = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId).map(m => m.mobile))].length;
-    const maxMarksForThisSet = totalSetters > 0 ? parseFloat((window.examsDB.find(e=>e.id===examId).totalMarks / totalSetters).toFixed(1)) : 100;
-
+    // NEW MATH: Exclude the solver to find their exact number of opponents
+    const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== solverMobile).map(m => m.mobile))].length;
+    const maxMarksForThisSet = totalOpponents > 0 ? parseFloat((exam.totalMarks / totalOpponents).toFixed(1)) : exam.totalMarks;
     if(isNaN(obtained)) return alert("Please enter valid marks.");
     if(obtained < 0 || obtained > maxMarksForThisSet) return alert(`Marks must be between 0 and ${maxMarksForThisSet}`);
 
