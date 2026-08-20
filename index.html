@@ -1805,7 +1805,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion, enableIndexedDbPersistence, limit } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBGmVplT3n_5Jrb4powBC5KAcw9ylJibGo", authDomain: "exama-cfb56.firebaseapp.com",
@@ -1814,10 +1814,39 @@
         };
 
         const isFirebaseConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
-        let db; if (isFirebaseConfigured) { const app = initializeApp(firebaseConfig); db = getFirestore(app); }
+        let db; 
+        if (isFirebaseConfigured) { 
+            const app = initializeApp(firebaseConfig); 
+            db = getFirestore(app); 
+            
+            // 1. ENABLE FIRESTORE OFFLINE CACHE (INSTANT LOAD)
+            enableIndexedDbPersistence(db).catch((err) => {
+                if (err.code == 'failed-precondition') {
+                    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
+                } else if (err.code == 'unimplemented') {
+                    console.warn('The current browser does not support all of the features required to enable persistence');
+                }
+            });
+        }
 
         window.studentsDB = []; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;window.videosDB = []; window.activeVideoCategory = 'All';
         let chartInstance = null; let adminProfileChartInstance = null; let analysisChartInstance = null; let fitnessChartInstance = null; let globalTimerInterval = null; window.replyingTo = null; window.activeSubjectFilter = 'All'; window.jitsiApi = null; window.chatJitsiApi = null;
+
+// NEW: Track how many items to show before clicking "See More"
+window.uiLimits = {
+    exams: 5,
+    fitness: 5,
+    sessions: 5
+};
+
+        // 2. UI DEBOUNCER (Prevents the browser from freezing on load)
+        let refreshTimeout = null;
+        window.debouncedRefreshUI = function() {
+            if (refreshTimeout) clearTimeout(refreshTimeout);
+            refreshTimeout = setTimeout(() => {
+                refreshUI();
+            }, 150); // Waits 150ms for all database calls to finish before rendering the screen once
+        };
 // ==========================================
 // PW-STYLE E-LEARNING NATIVE ENGINE (GRID FOLDERS)
 // ==========================================
@@ -2749,6 +2778,7 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                 ['#06b6d4', '#0e7490']  // Sat: Bright Cyan
             ];
 
+           // 1. MATH LOOP (Extracts chart data only)
             myHistory.forEach((session, idx) => {
                 if(idx < 7 && session.status !== 'ABSENT') { 
                     chartLabels.unshift(session.dateStr.substring(0,5) + ' ' + session.sessionType.substring(0, 3)); 
@@ -2770,14 +2800,28 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                     g.addColorStop(1, c2);
                     chartColors.unshift(g);
                 }
-                
+            });
+
+            // 2. RENDER LOOP (Builds HTML with Limits)
+            let sessionHtml = '';
+            myHistory.slice(0, window.uiLimits.sessions).forEach((session) => {
                 let statusColor = 'text-gray-500 bg-gray-100'; 
                 if(session.status === 'COMPLETED' || session.status === 'STUDYING') statusColor = 'text-green-600 bg-green-100'; 
                 if(session.status === 'ABSENT') statusColor = 'text-red-600 bg-red-100';
                 
-                histDiv.innerHTML += `<div class="glass-card p-2.5 sm:p-3 rounded-xl sm:rounded-2xl flex justify-between items-center shadow-sm"><div class="min-w-0 pr-2"><h4 class="font-bold text-gray-900 text-[11px] sm:text-xs mb-0.5 sm:mb-1 break-words leading-tight">${session.sessionType}</h4><p class="text-[8px] sm:text-[9px] text-gray-400 font-bold uppercase tracking-widest break-words leading-tight">${session.dateStr}</p></div><div class="text-right shrink-0"><p class="text-[8px] sm:text-[10px] font-black ${statusColor} px-1.5 sm:px-2 py-0.5 rounded uppercase inline-block mb-1">${session.status}</p><p class="text-[8px] sm:text-[10px] text-gray-600 font-bold break-words leading-tight">⏱ ${formatTime(session.totalStudyMs)} Studied</p></div></div>`;
+                sessionHtml += `<div class="glass-card p-2.5 sm:p-3 rounded-xl sm:rounded-2xl flex justify-between items-center shadow-sm"><div class="min-w-0 pr-2"><h4 class="font-bold text-gray-900 text-[11px] sm:text-xs mb-0.5 sm:mb-1 break-words leading-tight">${session.sessionType}</h4><p class="text-[8px] sm:text-[9px] text-gray-400 font-bold uppercase tracking-widest break-words leading-tight">${session.dateStr}</p></div><div class="text-right shrink-0"><p class="text-[8px] sm:text-[10px] font-black ${statusColor} px-1.5 sm:px-2 py-0.5 rounded uppercase inline-block mb-1">${session.status}</p><p class="text-[8px] sm:text-[10px] text-gray-600 font-bold break-words leading-tight">⏱ ${formatTime(session.totalStudyMs)} Studied</p></div></div>`;
             });
 
+            if (window.uiLimits.sessions < myHistory.length) {
+                sessionHtml += `
+                <div class="flex justify-center mt-2">
+                    <button onclick="window.uiLimits.sessions += 10; refreshUI();" class="px-6 py-2.5 bg-white border border-orange-200 text-orange-600 rounded-xl font-bold text-xs shadow-sm hover:bg-orange-50 active:scale-95 transition-all">
+                        <i class="fa-solid fa-chevron-down mr-1.5"></i> See Older Sessions
+                    </button>
+                </div>`;
+            }
+
+            histDiv.innerHTML = sessionHtml;
             if(myHistory.length === 0) histDiv.innerHTML = `<p class="text-[10px] sm:text-xs text-gray-500 font-medium text-center break-words px-2">No past sessions found.</p>`;
 
             sessionChartInstance = new Chart(ctx, { 
@@ -2943,22 +2987,39 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
 
         async function fetchInitialData() {
             if (isFirebaseConfigured) {
-                onSnapshot(collection(db, "students"), (snapshot) => { window.studentsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); refreshUI(); });
-                onSnapshot(collection(db, "exams"), (snapshot) => { window.examsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); refreshUI(); });
-                onSnapshot(collection(db, "results"), (snapshot) => { window.resultsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); refreshUI(); });
-                onSnapshot(collection(db, "peer_exams"), (snapshot) => { const allMaterials = snapshot.docs.map(d => ({id: d.id, ...d.data()})); const now = Date.now(); window.peerMaterialsDB = allMaterials.filter(m => m.expiresAt > now); refreshUI(); allMaterials.forEach(async (m) => { if(m.expiresAt <= now) { await deleteDoc(doc(db, "peer_exams", m.id)); } }); });
-             onSnapshot(collection(db, "peer_answer_scripts"), (snapshot) => { window.peerAnswerScriptsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); });
-              onSnapshot(query(collection(db, "materials"), orderBy("timestamp", "desc")), (snapshot) => { window.materialsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('materials-view').classList.contains('hidden-view')) renderStudyMaterials(); });
-                onSnapshot(query(collection(db, "fitness_logs"), orderBy("timestamp", "desc")), (snapshot) => { window.fitnessDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('fitness-view').classList.contains('hidden-view')) renderFitnessMonitor(); });
+                onSnapshot(collection(db, "students"), (snapshot) => { window.studentsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); debouncedRefreshUI(); });
+                onSnapshot(collection(db, "exams"), (snapshot) => { window.examsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); debouncedRefreshUI(); });
+                onSnapshot(collection(db, "results"), (snapshot) => { window.resultsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); debouncedRefreshUI(); });
+                
+                onSnapshot(collection(db, "peer_exams"), (snapshot) => { 
+                    const allMaterials = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
+                    const now = Date.now(); 
+                    window.peerMaterialsDB = allMaterials.filter(m => m.expiresAt > now); 
+                    debouncedRefreshUI(); 
+                    allMaterials.forEach(async (m) => { if(m.expiresAt <= now) { await deleteDoc(doc(db, "peer_exams", m.id)); } }); 
+                });
+                
+                onSnapshot(collection(db, "peer_answer_scripts"), (snapshot) => { window.peerAnswerScriptsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); });
+                
+                // LIMIT MATERIALS TO LATEST 100
+                onSnapshot(query(collection(db, "materials"), orderBy("timestamp", "desc"), limit(100)), (snapshot) => { window.materialsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('materials-view').classList.contains('hidden-view')) renderStudyMaterials(); });
+                
+                // LIMIT FITNESS LOGS TO LATEST 200
+                onSnapshot(query(collection(db, "fitness_logs"), orderBy("timestamp", "desc"), limit(200)), (snapshot) => { window.fitnessDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('fitness-view').classList.contains('hidden-view')) renderFitnessMonitor(); });
+                
                 onSnapshot(collection(db, "weekly_tasks"), (snapshot) => { window.weeklyTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets(); if(!document.getElementById('target-calc-view')?.classList.contains('hidden-view')) window.renderTargetCalc(); });
                 onSnapshot(collection(db, "student_tasks"), (snapshot) => { window.studentTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets(); if(!document.getElementById('admin-profile-view').classList.contains('hidden-view') && window.selectedAdminProfile) { window.renderAdminProfile(window.selectedAdminProfile); } });
                 onSnapshot(collection(db, "sessions"), (snapshot) => { window.sessionsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('session-timer-view')?.classList.contains('hidden-view')) { renderSessionTimer(); } });
                 
-                onSnapshot(query(collection(db, "chat"), orderBy("timestamp", "asc")), (snapshot) => {
-                    const oldLen = window.chatDB.length; window.chatDB = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+                // VERY IMPORTANT: LIMIT CHAT TO LATEST 50 MESSAGES
+                onSnapshot(query(collection(db, "chat"), orderBy("timestamp", "desc"), limit(50)), (snapshot) => {
+                    const oldLen = window.chatDB.length; 
+                    // Reverse it back to ascending order for the UI
+                    window.chatDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})).reverse();
+                    
                     if(window.chatDB.length > oldLen && oldLen > 0) {
                         const latest = window.chatDB[window.chatDB.length - 1];
-                        if(latest.mobile !== window.loggedInMobile) {
+                        if(latest && latest.mobile !== window.loggedInMobile) {
                             playChime(); const msgText = latest.text || (latest.audioUrl ? 'Shared a Voice Message' : 'Shared a Performance Card/Photo');
                             sendPushNotification(`New Message from ${latest.name}`, msgText);
                             if(document.getElementById('community-chat-view').classList.contains('hidden-view')) { showToast(`Message from ${latest.name}`, msgText, 'chat'); }
@@ -2966,15 +3027,16 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                     }
                     if(!document.getElementById('community-chat-view').classList.contains('hidden-view')) { renderChat(); window.markChatAsRead(); } else { updateChatUnreadCount(); }
                 });
-onSnapshot(query(collection(db, "videos"), orderBy("timestamp", "asc")), (snapshot) => { 
-    window.videosDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
-    // Notice the ? right after 'video-hub-view')
-    if(!document.getElementById('video-hub-view')?.classList.contains('hidden-view')) {
-        renderVideoFeed(); 
-    }
-});
 
-                onSnapshot(query(collection(db, "notices"), orderBy("timestamp", "desc")), (snapshot) => {
+                onSnapshot(query(collection(db, "videos"), orderBy("timestamp", "asc")), (snapshot) => { 
+                    window.videosDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
+                    if(!document.getElementById('video-hub-view')?.classList.contains('hidden-view')) {
+                        renderVideoFeed(); 
+                    }
+                });
+
+                // LIMIT NOTICES TO LATEST 20
+                onSnapshot(query(collection(db, "notices"), orderBy("timestamp", "desc"), limit(20)), (snapshot) => {
                     const oldLen = window.noticesDB.length; window.noticesDB = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
                     if(window.noticesDB.length > oldLen && oldLen > 0) { const latest = window.noticesDB[0]; sendPushNotification("New EXAMA Notice", latest.title); showToast("New Notice", latest.title, 'alert'); }
                     if(!document.getElementById('notice-board-view').classList.contains('hidden-view')) renderNotices(); checkUnreadNotices();
@@ -2990,13 +3052,14 @@ onSnapshot(query(collection(db, "videos"), orderBy("timestamp", "asc")), (snapsh
                     }
                 });
 
-                await new Promise(r => setTimeout(r, 1500));
+                await new Promise(r => setTimeout(r, 800)); // Lowered artificial timeout to make app feel faster
             } else {
+                // Dummy Data Fallback...
                 window.studentsDB = [{ mobile: '123', password: '123', name: 'Demo Student' }];
                 window.examsDB = [{ id: 'e1', name: 'Demo Math Exam', date: window.formatDateDDMMYYYY(new Date(Date.now() + 86400000)), totalMarks: 100, duration: 60, passPercentage: 40, examPin: '', globalStartTime: null, isPaused: false, pausedElapsed: 0, isProctored: false }];
                 window.resultsDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];
                 window.chatDB = [{id: '1', mobile: 'admin', name: 'Admin', text: 'Welcome to Exama Community!', timestamp: Date.now()}];
-                await new Promise(r => setTimeout(r, 1000)); refreshUI(); checkUnreadNotices(); updateChatUnreadCount();
+                await new Promise(r => setTimeout(r, 1000)); debouncedRefreshUI(); checkUnreadNotices(); updateChatUnreadCount();
             }
         }
 
@@ -3199,7 +3262,9 @@ onSnapshot(query(collection(db, "videos"), orderBy("timestamp", "asc")), (snapsh
             const { mondayMs, sundayMs } = window.getWeeklyRange();
             let weeklyDist = 0; let weeklyCals = 0; let weeklyTime = 0; let weeklyRunCount = 0;
 
-            if(myLogs.length === 0) { listEl.innerHTML = `<div class="text-center text-gray-500 font-medium py-4 text-xs">No runs logged yet. Put on your shoes and start tracking!</div>`; }
+           if(myLogs.length === 0) { listEl.innerHTML = `<div class="text-center text-gray-500 font-medium py-4 text-xs">No runs logged yet. Put on your shoes and start tracking!</div>`; }
+            
+            // 1. MATH LOOP (Calculates total KM and Calories)
             myLogs.forEach((log, idx) => {
                 totalDist += log.distance; totalCals += log.cals; totalTime += log.time;
                 
@@ -3208,11 +3273,26 @@ onSnapshot(query(collection(db, "videos"), orderBy("timestamp", "asc")), (snapsh
                 }
 
                 if (idx < 7 && !log.isAbsent) { labels.unshift(log.date); data.unshift(log.distance); } else if (idx < 7 && log.isAbsent) { labels.unshift(log.date); data.unshift(0); }
+            });
+
+            // 2. RENDER LOOP (Only draws limited items)
+            let fitnessHtml = '';
+            myLogs.slice(0, window.uiLimits.fitness).forEach((log) => {
                 let runDataHtml = '';
                 if(log.isAbsent || log.pace === 'ABSENT') { runDataHtml = `<div class="text-right shrink-0"><h5 class="font-black text-red-500 text-xs sm:text-sm tracking-widest break-words">ABSENT</h5><p class="text-[8px] sm:text-[10px] text-gray-400 font-bold uppercase tracking-wider break-words">0 mins • 0 kcal</p></div>`; } 
                 else { runDataHtml = `<div class="text-right shrink-0"><h5 class="font-black text-gray-700 text-xs sm:text-sm break-words">${log.pace} /km</h5><p class="text-[8px] sm:text-[10px] text-orange-400 font-bold uppercase tracking-wider break-words">${log.time} mins • ${log.cals} kcal</p></div>`; }
-                listEl.innerHTML += `<div class="glass-card p-3 sm:p-4 rounded-xl sm:rounded-2xl flex justify-between items-center shadow-sm"><div class="flex items-center gap-2 sm:gap-3 min-w-0 pr-2"><div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0 ${log.isAbsent ? 'bg-gray-100 text-gray-400' : 'bg-rose-100 text-rose-500'} flex items-center justify-center"><i class="fa-solid ${log.isAbsent ? 'fa-bed' : 'fa-shoe-prints'} text-sm"></i></div><div class="min-w-0"><h5 class="font-black ${log.isAbsent ? 'text-gray-400' : 'text-gray-900'} text-xs sm:text-sm break-words leading-tight">${log.distance.toFixed(2)} KM</h5><p class="text-[8px] sm:text-[10px] text-gray-400 font-bold uppercase tracking-wider break-words leading-tight mt-0.5">${log.date}</p></div></div>${runDataHtml}</div>`;
+                fitnessHtml += `<div class="glass-card p-3 sm:p-4 rounded-xl sm:rounded-2xl flex justify-between items-center shadow-sm"><div class="flex items-center gap-2 sm:gap-3 min-w-0 pr-2"><div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0 ${log.isAbsent ? 'bg-gray-100 text-gray-400' : 'bg-rose-100 text-rose-500'} flex items-center justify-center"><i class="fa-solid ${log.isAbsent ? 'fa-bed' : 'fa-shoe-prints'} text-sm"></i></div><div class="min-w-0"><h5 class="font-black ${log.isAbsent ? 'text-gray-400' : 'text-gray-900'} text-xs sm:text-sm break-words leading-tight">${log.distance.toFixed(2)} KM</h5><p class="text-[8px] sm:text-[10px] text-gray-400 font-bold uppercase tracking-wider break-words leading-tight mt-0.5">${log.date}</p></div></div>${runDataHtml}</div>`;
             });
+
+            if (window.uiLimits.fitness < myLogs.length) {
+                fitnessHtml += `
+                <div class="flex justify-center mt-2">
+                    <button onclick="window.uiLimits.fitness += 10; refreshUI();" class="px-6 py-2.5 bg-white border border-rose-200 text-rose-600 rounded-xl font-bold text-xs shadow-sm hover:bg-rose-50 active:scale-95 transition-all">
+                        <i class="fa-solid fa-chevron-down mr-1.5"></i> See Older Runs
+                    </button>
+                </div>`;
+            }
+            listEl.innerHTML = fitnessHtml;
 
             // Weekly Pace Logic
             const wkPaceDec = weeklyDist > 0 ? (weeklyTime / weeklyDist) : 0;
@@ -4027,7 +4107,7 @@ function getFitnessLeaderboard() {
             window.location.hash = 'login'; document.getElementById('login-form').reset();
         }
 
-        function refreshUI() {
+      window.refreshUI = function() {
             if(!window.currentRole) return;
             if(window.currentRole === 'student') renderStudentDashboard();
             if(window.currentRole === 'admin') renderAdminDashboard();
@@ -4036,9 +4116,16 @@ function getFitnessLeaderboard() {
             if(!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) renderChat();
             if(!document.getElementById('materials-view')?.classList.contains('hidden-view')) renderStudyMaterials();
             if(!document.getElementById('fitness-view')?.classList.contains('hidden-view')) renderFitnessMonitor();
+            
+            // FIX: Tell the app to redraw the Sessions view when the button is clicked!
+            if(!document.getElementById('session-timer-view')?.classList.contains('hidden-view')) window.renderSessionTimer();
+            
             updateChatUnreadCount();
             if(!document.getElementById('weekly-targets-view')?.classList.contains('hidden-view')) window.renderWeeklyTargets();
-        }
+        };
+        
+        // Also attach it as a standard function so other internal scripts can use it
+        function refreshUI() { window.refreshUI(); }
 
         function calculateClassRank(examId, mobile) {
             const examResults = getComputedResults().filter(r => r.examId === examId);
@@ -4318,8 +4405,9 @@ const cardHtml = `
                 finalPendingHtml = `<div class="col-span-1 md:col-span-2 text-[10px] sm:text-xs text-gray-500 font-medium italic p-6 text-center border border-dashed border-gray-300 rounded-2xl w-full">No active or upcoming exams currently assigned.</div>`;
             }
 
-            pendingList.innerHTML = finalPendingHtml;
+          pendingList.innerHTML = finalPendingHtml;
 
+            // 1. MATH LOOP (Calculates averages instantly without drawing UI)
             myRecords.forEach(r => { 
                 const exam = window.examsDB.find(e => e.id === r.examId); 
                 if(!exam) return; 
@@ -4332,8 +4420,27 @@ const cardHtml = `
                 }
 
                 chartLabels.push(exam.name.substring(0,6) + '...'); chartData.push(r.percentage); chartStatuses.push(r.status); 
-                recordsList.innerHTML += buildRecordHTML(r, exam, calculateClassRank(exam.id, r.mobile)); 
             });
+
+            // 2. RENDER LOOP (Only draws the allowed number of cards)
+            let historyHtml = '';
+            myRecords.slice(0, window.uiLimits.exams).forEach(r => {
+                const exam = window.examsDB.find(e => e.id === r.examId);
+                if(exam) historyHtml += buildRecordHTML(r, exam, calculateClassRank(exam.id, r.mobile));
+            });
+
+            // Add the "See More" Button if there are hidden records
+            if (window.uiLimits.exams < myRecords.length) {
+                historyHtml += `
+                <div class="col-span-1 md:col-span-2 flex justify-center mt-2 pb-4">
+                    <button onclick="window.uiLimits.exams += 10; refreshUI();" class="px-6 py-2.5 bg-white border border-indigo-200 text-indigo-600 rounded-xl font-bold text-xs shadow-sm hover:bg-indigo-50 active:scale-95 transition-all">
+                        <i class="fa-solid fa-chevron-down mr-1.5"></i> See More Exams
+                    </button>
+                </div>`;
+            }
+            recordsList.innerHTML = historyHtml;
+
+            // Weekly and Total Averages Display on Dashboard
 
             // Weekly and Total Averages Display on Dashboard
             const totAvg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : 0;
@@ -5101,8 +5208,70 @@ window.sharePerformance = async function() {
     cancelChatReply();
 }
 
+// --- NEW CHAT PAGINATION ENGINE ---
+window.olderChatDB = [];
+window.chatHasMoreHistory = true;
+window.isLoadingOlderChat = false;
+window.forceFullChatRender = false;
+
+window.loadOlderChatMessages = async function() {
+    if (window.isLoadingOlderChat || !window.chatHasMoreHistory) return;
+    window.isLoadingOlderChat = true;
+    
+    const btn = document.getElementById('btn-load-more-chat');
+    if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Loading...`;
+
+    try {
+        // 1. Find the oldest message timestamp currently loaded
+        let oldestTimestamp = Date.now();
+        const combinedChat = [...window.olderChatDB, ...window.chatDB].sort((a, b) => a.timestamp - b.timestamp);
+        if (combinedChat.length > 0) oldestTimestamp = combinedChat[0].timestamp;
+
+        // 2. Fetch previous 50 messages before that timestamp from Firebase
+        const olderQuery = query(
+            collection(db, "chat"),
+            where("timestamp", "<", oldestTimestamp),
+            orderBy("timestamp", "desc"),
+            limit(50)
+        );
+
+        const snapshot = await getDocs(olderQuery);
+        
+        if (snapshot.empty || snapshot.docs.length < 50) {
+            window.chatHasMoreHistory = false; // We reached the absolute beginning of the chat
+        }
+
+        if (!snapshot.empty) {
+            const newOlderMsgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+            
+            // Prepend the new batch of messages to our memory bank
+            window.olderChatDB = [...newOlderMsgs, ...window.olderChatDB];
+            
+            // Preserve the scroll position so the screen doesn't jump wildly
+            const list = document.getElementById('chat-messages');
+            const prevScrollHeight = list.scrollHeight;
+            
+            // Tell the render engine to clear the HTML and safely rebuild it with the old messages
+            window.forceFullChatRender = true;
+            renderChat();
+            
+            // Restore scroll position back to where the user clicked the button
+            setTimeout(() => {
+                list.scrollTop = list.scrollHeight - prevScrollHeight;
+            }, 10);
+        } else {
+            renderChat();
+        }
+    } catch (err) {
+        console.error("Chat Pagination Error:", err);
+        if (btn) btn.innerHTML = `<i class="fa-solid fa-rotate-right mr-1"></i> Retry`;
+    }
+    window.isLoadingOlderChat = false;
+};
+
 function renderChat() {
     const list = document.getElementById('chat-messages'); 
+    if (!list) return;
     
     const isAdminView = window.currentRole === 'admin'; 
     const now = Date.now(); 
@@ -5111,7 +5280,42 @@ function renderChat() {
 
     let shouldScroll = false;
 
-    window.chatDB.forEach(msg => {
+    // 1. MERGE OLD AND NEW MESSAGES
+    const allMessagesMap = new Map();
+    [...(window.olderChatDB || []), ...window.chatDB].forEach(msg => {
+        allMessagesMap.set(msg.id, msg);
+    });
+    // Sort strictly chronologically
+    const fullChat = Array.from(allMessagesMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+    // 2. PREPARE HTML CONTAINER FOR OLD HISTORY
+    if (window.forceFullChatRender) {
+        list.innerHTML = '';
+        window.forceFullChatRender = false;
+    }
+
+    // 3. RENDER 'LOAD MORE' BUTTON AT THE TOP
+    if (window.chatHasMoreHistory === undefined) window.chatHasMoreHistory = true;
+    
+    if (window.chatHasMoreHistory && fullChat.length >= 50) {
+        if (!document.getElementById('chat-load-more-btn-wrapper')) {
+            const btnWrapper = document.createElement('div');
+            btnWrapper.id = 'chat-load-more-btn-wrapper';
+            btnWrapper.className = "flex justify-center my-3 w-full shrink-0 order-first";
+            btnWrapper.innerHTML = `
+                <button id="btn-load-more-chat" onclick="window.loadOlderChatMessages()" class="bg-white/80 hover:bg-white text-indigo-600 border border-indigo-200 text-[10px] sm:text-xs font-black px-4 py-1.5 rounded-full shadow-sm active:scale-95 transition-all z-10">
+                    <i class="fa-solid fa-clock-rotate-left mr-1"></i> Load Older Messages
+                </button>
+            `;
+            list.prepend(btnWrapper);
+        }
+    } else if (!window.chatHasMoreHistory) {
+        const btnWrapper = document.getElementById('chat-load-more-btn-wrapper');
+        if (btnWrapper) btnWrapper.innerHTML = `<span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider bg-black/5 px-3 py-1 rounded-full">Beginning of conversation</span>`;
+    }
+
+    // 4. RENDER THE ACTUAL MESSAGES
+    fullChat.forEach(msg => {
         const isMe = msg.mobile === window.loggedInMobile; 
         const canDelete = isMe || isAdminView; 
         const msgAdmin = msg.mobile === '9475757821' || msg.name === 'Admin';
@@ -5145,17 +5349,12 @@ function renderChat() {
             
             let textContent = '';
             
-            // ===============================================
-            // UPDATED STEP-BY-STEP EXHAUSTIVE PERFORMANCE CARD 
-            // ===============================================
             if(msg.type === 'performance' && msg.stats) {
                 const statusColor = msg.stats.latestStatus === 'PASS' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-200'; 
                 const scoreColor = msg.stats.latestStatus === 'PASS' ? 'text-emerald-600' : 'text-rose-600';
                 
                 textContent = `
                 <div class="w-[260px] sm:w-[320px] md:w-[360px] rounded-[1.5rem] overflow-hidden my-2 shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-indigo-100/80 relative bg-white/95 backdrop-blur-xl p-3.5 sm:p-4 text-gray-900 max-w-full">
-                    
-                    <!-- Header -->
                     <div class="flex items-center justify-between border-b border-gray-100 pb-2.5 mb-3">
                         <div class="flex items-center gap-2.5 min-w-0 pr-2">
                             <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-black text-sm shadow-md shrink-0"><i class="fa-solid fa-chart-pie"></i></div>
@@ -5169,8 +5368,6 @@ function renderChat() {
                             <div class="text-[7px] sm:text-[8px] text-gray-400 font-bold uppercase tracking-widest mt-1">life Avg</div>
                         </div>
                     </div>
-
-                    <!-- Step 1: Academics -->
                     <div class="mb-3">
                         <div class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-graduation-cap text-indigo-400"></i> Academics</div>
                         <div class="grid grid-cols-2 gap-2">
@@ -5186,8 +5383,6 @@ function renderChat() {
                             </div>
                         </div>
                     </div>
-
-                    <!-- Step 2: Focus Sessions Time -->
                     <div class="mb-3">
                         <div class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-stopwatch text-teal-400"></i> Focus Time</div>
                         <div class="grid grid-cols-3 gap-2">
@@ -5205,8 +5400,6 @@ function renderChat() {
                             </div>
                         </div>
                     </div>
-
-                    <!-- Step 3: Fitness Run Tracker -->
                     <div class="mb-3.5">
                         <div class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-person-running text-rose-400"></i> Fitness Tracker</div>
                         <div class="grid grid-cols-3 gap-2">
@@ -5225,8 +5418,6 @@ function renderChat() {
                             </div>
                         </div>
                     </div>
-
-                    <!-- Step 4: Latest Exam Result Summary -->
                     ${msg.stats.latestName ? `
                     <div class="bg-gray-50/80 rounded-xl p-3 border border-gray-200/80 shadow-sm">
                         <div class="flex justify-between items-center mb-1.5">
@@ -5240,11 +5431,7 @@ function renderChat() {
                                 <span class="text-[7px] sm:text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider border ${statusColor}">${msg.stats.latestStatus}</span>
                             </div>
                         </div>
-                    </div>` : `
-                    <div class="bg-gray-50/80 rounded-xl p-3 border border-gray-200/80 shadow-sm text-center">
-                        <p class="text-[10px] text-gray-500 font-bold italic">No exams taken yet.</p>
-                    </div>
-                    `}
+                    </div>` : `<div class="bg-gray-50/80 rounded-xl p-3 border border-gray-200/80 shadow-sm text-center"><p class="text-[10px] text-gray-500 font-bold italic">No exams taken yet.</p></div>`}
                 </div>`;
             } else if (msg.type === 'call_log') {
                 const isVideo = msg.callType === 'video';
@@ -5254,9 +5441,7 @@ function renderChat() {
                 
                 textContent = `
                 <div onclick="${joinAction}" class="flex items-center gap-3 p-2.5 my-1 rounded-xl bg-black/5 border border-black/5 w-full pr-8 sm:pr-10 min-w-[180px] cursor-pointer hover:bg-black/10 active:scale-[0.98] transition-all">
-                    <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm shrink-0 ${callColor} text-sm">
-                        ${callIcon}
-                    </div>
+                    <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm shrink-0 ${callColor} text-sm">${callIcon}</div>
                     <div class="flex flex-col min-w-0">
                         <span class="font-black text-[12px] sm:text-[13px] text-gray-800 leading-tight">${isVideo ? 'Video Call' : 'Audio Call'}</span>
                         <span class="text-[10px] sm:text-[11px] font-black text-blue-600 mt-0.5 leading-tight truncate"><i class="fa-solid fa-hand-pointer text-[8px] mr-1"></i>Tap to join</span>
@@ -5315,16 +5500,18 @@ function renderChat() {
         }
     });
 
+    // 5. CLEANUP DELETED MESSAGES
     Array.from(list.children).forEach(child => {
         if (child.id && child.id.startsWith('chat-msg-')) {
             const dbId = child.id.replace('chat-msg-', '');
-            if (!window.chatDB.find(m => m.id === dbId)) {
+            if (!allMessagesMap.has(dbId)) {
                 child.remove();
             }
         }
     });
 
-    if (shouldScroll) {
+    // 6. SCROLL TO BOTTOM IF NEW MESSAGE ARRIVED
+    if (shouldScroll && !window.isLoadingOlderChat) {
         setTimeout(() => {
             list.scrollTop = list.scrollHeight;
         }, 50);
