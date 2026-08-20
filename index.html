@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    
+    <!-- SortableJS for Drag and Drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -1861,7 +1864,8 @@ window.renderVideoFeed = function() {
     if (!container) return;
 
     let vids = (window.videosDB || []).filter(v => v.title && v.subject); 
-    vids.sort((a, b) => a.timestamp - b.timestamp);
+    // Sorts by the new custom order first, falling back to time uploaded
+    vids.sort((a, b) => (a.sortIndex ?? a.timestamp) - (b.sortIndex ?? b.timestamp));;
 
     if (vids.length === 0) {
         container.innerHTML = `<div class="text-center py-10"><div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3"><i class="fa-solid fa-box-open text-gray-400 text-2xl"></i></div><p class="text-sm text-gray-500 font-bold">No batches assigned yet.</p></div>`;
@@ -1966,23 +1970,28 @@ function renderVHTopics(vids, container) {
     container.innerHTML = html;
 }
 
-// 4.3 RENDER: LECTURES
+// 4.3 RENDER: LECTURES (WITH DRAG & DROP)
 function renderVHLectures(vids, container) {
     let html = '';
     vids.forEach((vid, idx) => {
         const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
-        const delBtn = window.currentRole === 'admin' ? `<button onclick="event.stopPropagation(); deleteVideo('${vid.id}')" class="absolute top-2 right-2 w-7 h-7 bg-red-600/90 text-white rounded-full flex items-center justify-center hover:scale-110 transition-transform shadow-md z-20"><i class="fa-solid fa-trash text-[10px]"></i></button>` : '';
+        const isAdmin = window.currentRole === 'admin';
+        const delBtn = isAdmin ? `<button onclick="event.stopPropagation(); deleteVideo('${vid.id}')" class="absolute top-2 right-2 w-7 h-7 bg-red-600/90 text-white rounded-full flex items-center justify-center hover:scale-110 transition-transform shadow-md z-20"><i class="fa-solid fa-trash text-[10px]"></i></button>` : '';
+
+        // NEW: The drag grip handle (Only shows for Admin)
+        const dragHandle = isAdmin ? `<div class="drag-handle absolute left-0 top-0 bottom-0 w-8 sm:w-10 bg-gray-50 flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-2xl border-r border-gray-200 z-10 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>` : '';
 
         html += `
-        <div class="flex gap-3 bg-white p-2 sm:p-3 rounded-2xl border ${isWatched ? 'border-emerald-200' : 'border-gray-200'} shadow-sm hover:shadow-md cursor-pointer transition-all group relative" onclick="window.playVideo('${vid.id}')">
-            <div class="relative w-32 sm:w-40 aspect-video shrink-0 bg-gray-900 rounded-xl overflow-hidden border border-gray-100">
+        <div class="video-item flex gap-3 bg-white p-2 sm:p-3 rounded-2xl border ${isWatched ? 'border-emerald-200' : 'border-gray-200'} shadow-sm hover:shadow-md transition-all group relative ${isAdmin ? 'pl-10 sm:pl-12' : 'cursor-pointer'}" ${!isAdmin ? `onclick="window.playVideo('${vid.id}')"` : ''} data-id="${vid.id}">
+            ${dragHandle}
+            <div class="relative w-32 sm:w-40 aspect-video shrink-0 bg-gray-900 rounded-xl overflow-hidden border border-gray-100 cursor-pointer" onclick="window.playVideo('${vid.id}')">
                 <img src="${vid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity">
                 ${isWatched ? `<div class="absolute inset-0 bg-emerald-900/60 backdrop-blur-[1px] flex items-center justify-center"><i class="fa-solid fa-check text-white text-2xl drop-shadow-md"></i></div>` : ''}
                 ${!isWatched ? `<div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><div class="w-10 h-10 rounded-full bg-indigo-600/90 text-white flex items-center justify-center shadow-lg"><i class="fa-solid fa-play ml-1"></i></div></div>` : ''}
                 <span class="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">Lec ${idx + 1}</span>
                 ${delBtn}
             </div>
-            <div class="flex-1 flex flex-col justify-center min-w-0 pr-1 py-1">
+            <div class="flex-1 flex flex-col justify-center min-w-0 pr-1 py-1 cursor-pointer" onclick="window.playVideo('${vid.id}')">
                 <h4 class="font-bold text-gray-900 text-xs sm:text-sm leading-snug line-clamp-2 group-hover:text-indigo-700 transition-colors">${vid.title}</h4>
                 <div class="flex items-center gap-2 mt-2">
                     <span class="text-[9px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex items-center gap-1"><i class="fa-brands ${vid.videoType === 'youtube' ? 'fa-youtube text-red-500' : 'fa-google-drive text-blue-500'}"></i> ${vid.videoType === 'youtube' ? 'YouTube' : 'Drive'}</span>
@@ -1991,7 +2000,50 @@ function renderVHLectures(vids, container) {
         </div>`;
     });
     container.innerHTML = html;
+
+    // NEW: Initialize Sortable JS for Drag & Drop
+    if (window.currentRole === 'admin') {
+        new Sortable(container, {
+            handle: '.drag-handle', // Prevents accidental dragging when clicking video title
+            animation: 250,
+            ghostClass: 'opacity-40', // Makes the dragged item slightly transparent
+            onEnd: function (evt) {
+                window.saveNewVideoOrder();
+            }
+        });
+    }
 }
+
+// 4.4 NEW: SAVE DRAGGED ORDER TO DATABASE
+window.saveNewVideoOrder = async function() {
+    const container = document.getElementById('vh-dynamic-container');
+    const items = container.querySelectorAll('.video-item');
+    
+    showLoader("Saving New Order...");
+    
+    const updates = [];
+    items.forEach((item, index) => {
+        const vidId = item.getAttribute('data-id');
+        const vid = window.videosDB.find(v => v.id === vidId);
+        if (vid && vid.sortIndex !== index) {
+            vid.sortIndex = index; // Update local array immediately
+            updates.push({ id: vidId, sortIndex: index });
+        }
+    });
+
+    if (isFirebaseConfigured && updates.length > 0) {
+        try {
+            // Update all moved videos in Firebase simultaneously
+            const updatePromises = updates.map(u => updateDoc(doc(db, "videos", u.id), { sortIndex: u.sortIndex }));
+            await Promise.all(updatePromises);
+        } catch(e) {
+            console.error("Error saving video order", e);
+        }
+    }
+    
+    hideLoader();
+    window.renderVideoFeed(); // Re-render to fix the "Lec 1", "Lec 2" tags
+};
 
 // 5. RESET TOPIC PROGRESS
 window.resetTopicProgress = async function(subject, topic) {
