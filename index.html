@@ -2348,8 +2348,14 @@ window.closeWatchView = function() {
     
     if (container) {
         container.innerHTML = ''; 
+        // Remove fullscreen classes AND clear rotation styles
+        container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
+        container.style.width = '';
+        container.style.height = '';
+        container.style.transformOrigin = '';
+        container.style.transform = '';
+        
         // Restore perfect 16:9 ratio
-        container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
         container.classList.add('aspect-video', 'relative');
     }
     
@@ -2357,7 +2363,7 @@ window.closeWatchView = function() {
     safeBack(); 
 };
 // ==========================================
-// ADVANCED CSS FULLSCREEN & BACK-BUTTON RESCUE
+// ADVANCED CSS FULLSCREEN, ROTATION & BACK-BUTTON RESCUE
 // ==========================================
 window._enterCSSFullscreen = function() {
     const container = document.getElementById('native-player-container');
@@ -2367,23 +2373,26 @@ window._enterCSSFullscreen = function() {
     if (isIOS && videoApi && videoApi.webkitEnterFullscreen) {
         videoApi.webkitEnterFullscreen(); // Use Apple's native player
     } else {
-        container.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
-        container.classList.remove('aspect-video', 'relative'); // ⬅️ Remove 16:9 lock to fill screen
+        container.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
+        container.classList.remove('aspect-video', 'relative'); // Remove 16:9 lock to fill screen
         
-        // Auto-Rotate to Landscape Mode
-        try {
-            if (screen.orientation && screen.orientation.lock) {
-                screen.orientation.lock('landscape').catch(e => console.warn("Orientation lock requires PWA or native fullscreen", e));
-            } else if (screen.lockOrientation) {
-                screen.lockOrientation('landscape');
-            } else if (screen.mozLockOrientation) {
-                screen.mozLockOrientation('landscape');
-            } else if (screen.msLockOrientation) {
-                screen.msLockOrientation('landscape');
-            }
-        } catch (err) {
-            console.warn("Screen orientation API not supported", err);
+        // 🔄 CSS ROTATION HACK: If phone is in Portrait, physically rotate the video 90 degrees to simulate Landscape!
+        if (window.innerHeight > window.innerWidth) {
+            container.style.width = window.innerHeight + 'px';
+            container.style.height = window.innerWidth + 'px';
+            container.style.transformOrigin = 'top left';
+            container.style.transform = 'translateY(100vh) rotate(-90deg)';
+        } else {
+            // Already in landscape (e.g., Desktop or rotated tablet)
+            container.style.width = '100vw';
+            container.style.height = '100dvh';
+            container.style.transform = 'none';
         }
+        
+        // Attempt Native OS lock as a backup
+        try {
+            if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{});
+        } catch (err) {}
     }
     if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); 
 };
@@ -2396,53 +2405,21 @@ window._exitCSSFullscreen = function() {
     if (isIOS && videoApi && videoApi.webkitExitFullscreen) {
         videoApi.webkitExitFullscreen();
     } else {
-        container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
-        container.classList.add('aspect-video', 'relative'); // ⬅️ Restore 16:9 lock
+        container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
         
-        // Unlock Orientation (Return to normal Portrait mode)
+        // 🔄 Erase rotation math
+        container.style.width = '';
+        container.style.height = '';
+        container.style.transformOrigin = '';
+        container.style.transform = '';
+
+        container.classList.add('aspect-video', 'relative'); // Restore 16:9 lock
+        
         try {
-            if (screen.orientation && screen.orientation.unlock) {
-                screen.orientation.unlock();
-            } else if (screen.unlockOrientation) {
-                screen.unlockOrientation();
-            } else if (screen.mozUnlockOrientation) {
-                screen.mozUnlockOrientation();
-            } else if (screen.msUnlockOrientation) {
-                screen.msUnlockOrientation();
-            }
-        } catch (err) {
-            console.warn("Screen orientation API not supported", err);
-        }
+            if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+        } catch (err) {}
     }
     if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); 
-};
-window._exitCSSFullscreen = function() {
-    const container = document.getElementById('native-player-container');
-    const videoApi = document.querySelector('.video-js video'); 
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-    if (isIOS && videoApi && videoApi.webkitExitFullscreen) {
-        videoApi.webkitExitFullscreen();
-    } else {
-        container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
-        container.classList.add('h-[35vh]', 'sm:h-[45vh]', 'md:h-[55vh]', 'lg:h-[65vh]', 'min-h-[250px]', 'relative');
-        
-        // 🔄 NEW: Unlock Orientation (Return to normal Portrait mode)
-        try {
-            if (screen.orientation && screen.orientation.unlock) {
-                screen.orientation.unlock();
-            } else if (screen.unlockOrientation) {
-                screen.unlockOrientation();
-            } else if (screen.mozUnlockOrientation) {
-                screen.mozUnlockOrientation();
-            } else if (screen.msUnlockOrientation) {
-                screen.msUnlockOrientation();
-            }
-        } catch (err) {
-            console.warn("Screen orientation API not supported", err);
-        }
-    }
-    if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); // Revert Video.js gear icon
 };
 
 window.toggleVideoFullscreen = function() {
@@ -2452,7 +2429,7 @@ window.toggleVideoFullscreen = function() {
     const isCSSFullscreen = container.classList.contains('fixed');
     
     if (!isCSSFullscreen) {
-        // ENTER FULLSCREEN: Add a dummy history state so the Android Back Button works seamlessly!
+        // ENTER FULLSCREEN: Add a dummy history state so the Android Back Button works seamlessly
         history.pushState({ isVideoFullscreen: true }, "");
         window._enterCSSFullscreen();
     } else {
@@ -2469,7 +2446,6 @@ window.addEventListener('popstate', function(event) {
         window._exitCSSFullscreen();
     }
 });
-
 // Listen for device back-button or Escape key to fix the icon automatically
 document.addEventListener('fullscreenchange', updateFullscreenIcon);
 document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
