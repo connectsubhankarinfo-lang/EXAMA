@@ -2307,8 +2307,19 @@ window.playVideo = function(id) {
     }
 
     // Fix Video.js stealing focus on mobile load (prevents screen jumping)
+// 🛡️ Fix Video.js focus jumping AND hijack its native Fullscreen Button
     window.vjsPlayer.ready(function() {
-        this.el().focus = function() {}; // Prevent auto-scrolling to video
+        this.el().focus = function() {}; // Prevent auto-scrolling to video on load
+        
+        // Override the default Video.js Fullscreen button
+        const fsToggle = this.controlBar.fullscreenToggle;
+        if (fsToggle) {
+            fsToggle.off('click'); // Turn off the broken native behavior
+            fsToggle.on('click', function(event) {
+                event.preventDefault();
+                window.toggleVideoFullscreen(); // Route it to our perfect custom function!
+            });
+        }
     });
 
     window.renderUpNext(vid);
@@ -2332,30 +2343,39 @@ window.closeWatchView = function() {
 // NEW: CUSTOM FULLSCREEN VIDEO CONTROLLER
 // ==========================================
 window.toggleVideoFullscreen = function() {
-    // FIX: Target the container, not the iframe directly!
     const playerContainer = document.getElementById('native-player-container');
     const icon = document.getElementById('icon-video-fullscreen');
     
-    if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.mozFullScreenElement && !document.msFullscreenElement) {
-        // Enter Fullscreen
-        if (playerContainer.requestFullscreen) {
-            playerContainer.requestFullscreen();
-        } else if (playerContainer.webkitRequestFullscreen) { /* Safari */
-            playerContainer.webkitRequestFullscreen();
-        } else if (playerContainer.msRequestFullscreen) { /* IE11 */
-            playerContainer.msRequestFullscreen();
+    // 🍎 iOS Safari strict fullscreen bypass
+    const videoApi = document.querySelector('.video-js video'); 
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    const isFS = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+
+    if (!isFS) {
+        // ENTER FULLSCREEN
+        if (isIOS && videoApi && videoApi.webkitEnterFullscreen) {
+            videoApi.webkitEnterFullscreen(); // Opens Apple's native player
+        } else {
+            if (playerContainer.requestFullscreen) playerContainer.requestFullscreen();
+            else if (playerContainer.webkitRequestFullscreen) playerContainer.webkitRequestFullscreen();
+            else if (playerContainer.msRequestFullscreen) playerContainer.msRequestFullscreen();
         }
-        icon.classList.replace('fa-expand', 'fa-compress');
+        
+        if(icon) icon.classList.replace('fa-expand', 'fa-compress');
+        if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); // Updates the gear icon inside Video.js
     } else {
-        // Exit Fullscreen
-        if (document.exitFullscreen) {
-            document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) { /* Safari */
-            document.webkitExitFullscreen();
-        } else if (document.msExitFullscreen) { /* IE11 */
-            document.msExitFullscreen();
+        // EXIT FULLSCREEN
+        if (isIOS && videoApi && videoApi.webkitExitFullscreen) {
+            videoApi.webkitExitFullscreen();
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            else if (document.msExitFullscreen) document.msExitFullscreen();
         }
-        icon.classList.replace('fa-compress', 'fa-expand');
+        
+        if(icon) icon.classList.replace('fa-compress', 'fa-expand');
+        if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); // Reverts the gear icon inside Video.js
     }
 };
 
