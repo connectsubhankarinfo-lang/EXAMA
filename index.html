@@ -2471,23 +2471,28 @@ window.addEventListener('popstate', function(event) {
     }
 });
 
-// 🛡️ KEYBOARD ESCAPE RESCUE (For Desktop users who press ESC to exit app-fullscreen)
-document.addEventListener('fullscreenchange', function() {
+// 🛡️ KEYBOARD ESCAPE RESCUE & APP REFLOW HACK
+document.addEventListener('fullscreenchange', syncNativeFullscreenExit);
+document.addEventListener('webkitfullscreenchange', syncNativeFullscreenExit);
+
+function syncNativeFullscreenExit() {
     const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    
     if (!isNativeFullscreen) {
+        // 1. If video is in CSS fullscreen, shrink it down.
         const container = document.getElementById('native-player-container');
         if (container && container.classList.contains('fixed')) {
             window._exitCSSFullscreen();
         }
-    }
-});
-        
-        // 🔥 THE REFLOW HACK: Clears the tablet status bar glitch!
+
+        // 2. 🔥 THE AGGRESSIVE REFLOW HACK: 
+        // Force a redraw so Android tablets/phones fix any UI glitches!
         setTimeout(() => {
             const appFrame = document.getElementById('app');
             if (appFrame) {
                 appFrame.style.height = '99dvh'; 
                 window.scrollTo(0, 1);
+                
                 setTimeout(() => {
                     appFrame.style.height = '100dvh';
                     window.dispatchEvent(new Event('resize'));
