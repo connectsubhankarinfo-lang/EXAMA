@@ -1295,7 +1295,7 @@
     </div>
 </div>
 
-   <!-- ========================================== -->
+ <!-- ========================================== -->
 <!-- BULK: ADMIN VIDEO UPLOAD MODAL -->
 <!-- ========================================== -->
 <div id="video-upload-modal" class="hidden-view absolute inset-0 z-[95] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/80 fade-in">
@@ -1412,7 +1412,6 @@
         </form>
     </div>
 </div>
-
 <!-- ========================================== -->
 <!-- RESPONSIVE YOUTUBE-STYLE NATIVE VIDEO PLAYER -->
 <!-- ========================================== -->
@@ -1951,77 +1950,6 @@ window.addVideoRow = function() {
     }, 50);
 };
 
-        // ==========================================
-// EDIT LECTURE LOGIC
-// ==========================================
-window.openEditVideo = function(id) {
-    const vid = window.videosDB.find(v => v.id === id);
-    if (!vid) return;
-    
-    document.getElementById('edit-vid-id').value = vid.id;
-    document.getElementById('edit-vid-subject').value = vid.subject || '';
-    document.getElementById('edit-vid-instructor').value = vid.uploader || '';
-    document.getElementById('edit-vid-topic').value = vid.topic || '';
-    document.getElementById('edit-vid-title').value = vid.title || '';
-    
-    // Reverse-engineer the embed link back into a standard editable link
-    let originalUrl = '';
-    if (vid.videoType === 'youtube') {
-        const match = vid.sourceUrl.match(/embed\/([^?]+)/);
-        if (match) originalUrl = `https://youtu.be/${match[1]}`;
-    } else {
-        const match = vid.sourceUrl.match(/\?id=([^&]+)/);
-        if (match) originalUrl = `https://drive.google.com/file/d/${match[1]}/view`;
-    }
-    document.getElementById('edit-vid-url').value = originalUrl;
-    
-    document.getElementById('video-edit-modal').classList.remove('hidden-view');
-};
-
-window.submitEditVideo = async function() {
-    const id = document.getElementById('edit-vid-id').value;
-    const subject = document.getElementById('edit-vid-subject').value.trim();
-    const instructor = document.getElementById('edit-vid-instructor').value.trim(); 
-    const topic = document.getElementById('edit-vid-topic').value.trim();
-    const title = document.getElementById('edit-vid-title').value.trim();
-    const url = document.getElementById('edit-vid-url').value.trim();
-    
-    if (!subject || !instructor || !topic || !title || !url) return alert("Please fill all fields.");
-    
-    const parsedData = window.parseVideoLink(url);
-    if (!parsedData) return alert("Invalid link! Only YouTube and Google Drive links are supported.");
-
-    showLoader("Updating Lecture...");
-
-    const payload = {
-        title: title, 
-        subject: subject, 
-        topic: topic,
-        videoType: parsedData.type, 
-        sourceUrl: parsedData.src, 
-        thumbnail: parsedData.thumb,
-        uploader: instructor
-    };
-
-    try {
-        if (isFirebaseConfigured) {
-            await updateDoc(doc(db, "videos", id), payload);
-        } else {
-            const index = window.videosDB.findIndex(v => v.id === id);
-            if (index > -1) Object.assign(window.videosDB[index], payload);
-            window.renderVideoFeed(); 
-        }
-        
-        document.getElementById('video-edit-modal').classList.add('hidden-view');
-        window.showToast("Success", "Lecture updated successfully!", "info");
-    } catch(e) {
-        console.error(e);
-        alert("Error updating lecture.");
-    }
-    
-    hideLoader();
-};
-
 window.submitVideo = async function() {
     const subject = document.getElementById('vid-subject').value.trim();
     const instructor = document.getElementById('vid-instructor').value.trim(); 
@@ -2253,17 +2181,9 @@ function renderVHLectures(vids, container) {
     let html = '';
     vids.forEach((vid, idx) => {
         const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
-       const isAdmin = window.currentRole === 'admin';
-        
-        // NEW: Adds Edit Pen Icon next to the Trash Can
-        const adminActions = isAdmin ? `
-            <div class="absolute top-2 right-2 flex gap-1.5 z-20">
-                <button onclick="event.stopPropagation(); window.openEditVideo('${vid.id}')" class="w-7 h-7 bg-white/90 text-indigo-600 rounded-full flex items-center justify-center hover:scale-110 hover:bg-indigo-600 hover:text-white transition-all shadow-md"><i class="fa-solid fa-pen text-[10px]"></i></button>
-                <button onclick="event.stopPropagation(); deleteVideo('${vid.id}')" class="w-7 h-7 bg-red-600/90 text-white rounded-full flex items-center justify-center hover:scale-110 transition-transform shadow-md"><i class="fa-solid fa-trash text-[10px]"></i></button>
-            </div>
-        ` : '';
+        const isAdmin = window.currentRole === 'admin';
+        const delBtn = isAdmin ? `<button onclick="event.stopPropagation(); deleteVideo('${vid.id}')" class="absolute top-2 right-2 w-7 h-7 bg-red-600/90 text-white rounded-full flex items-center justify-center hover:scale-110 transition-transform shadow-md z-20"><i class="fa-solid fa-trash text-[10px]"></i></button>` : '';
 
-        // NEW: Advanced Admin Control Bar (Up Arrow, Drag Grip, Down Arrow)
         // NEW: Advanced Admin Control Bar (Up Arrow, Drag Grip, Down Arrow)
         const adminControls = isAdmin ? `
         <div class="absolute left-0 top-0 bottom-0 w-8 sm:w-10 bg-gray-50 flex flex-col items-center justify-between rounded-l-2xl border-r border-gray-200 z-10 text-gray-400 overflow-hidden">
