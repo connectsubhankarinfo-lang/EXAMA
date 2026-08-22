@@ -1380,9 +1380,9 @@
         
         <!-- LEFT/TOP SIDE: Video Player & Details -->
         <div class="w-full md:w-[60%] lg:w-[65%] flex flex-col overflow-y-auto no-scrollbar shrink-0 md:shrink border-r border-gray-200 bg-white pb-6 md:pb-0">
-            <!-- Edge-to-Edge Native Player -->
-<div id="native-player-container" class="w-full h-[35vh] sm:h-[45vh] md:h-[55vh] lg:h-[65vh] min-h-[250px] bg-black relative shrink-0 shadow-sm transition-all duration-300">
-    <iframe id="exama-native-iframe" class="w-full h-full border-0 relative z-10" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+<!-- Edge-to-Edge Native Player -->
+<div id="native-player-container" class="w-full aspect-video bg-black relative shrink-0 shadow-sm transition-all duration-300">
+    <!-- Video.js gets injected here dynamically -->
 </div>
             
             <!-- Video Details Card -->
@@ -2334,7 +2334,7 @@ window.playVideo = function(id) {
 window.closeWatchView = function() {
     const container = document.getElementById('native-player-container');
     
-    // Safety check: If somehow clicked while in CSS fullscreen, just exit fullscreen
+    // Safety check: If clicked while in CSS fullscreen, just exit fullscreen
     if (container && container.classList.contains('fixed')) {
         window.toggleVideoFullscreen();
         return;
@@ -2348,9 +2348,9 @@ window.closeWatchView = function() {
     
     if (container) {
         container.innerHTML = ''; 
-        // Ensure CSS Fullscreen classes are stripped
+        // Restore perfect 16:9 ratio
         container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
-        container.classList.add('h-[35vh]', 'sm:h-[45vh]', 'md:h-[55vh]', 'lg:h-[65vh]', 'min-h-[250px]', 'relative');
+        container.classList.add('aspect-video', 'relative');
     }
     
     if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
@@ -2368,9 +2368,24 @@ window._enterCSSFullscreen = function() {
         videoApi.webkitEnterFullscreen(); // Use Apple's native player
     } else {
         container.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
-        container.classList.remove('h-[35vh]', 'sm:h-[45vh]', 'md:h-[55vh]', 'lg:h-[65vh]', 'min-h-[250px]', 'relative');
+        container.classList.remove('aspect-video', 'relative'); // ⬅️ Remove 16:9 lock to fill screen
+        
+        // Auto-Rotate to Landscape Mode
+        try {
+            if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape').catch(e => console.warn("Orientation lock requires PWA or native fullscreen", e));
+            } else if (screen.lockOrientation) {
+                screen.lockOrientation('landscape');
+            } else if (screen.mozLockOrientation) {
+                screen.mozLockOrientation('landscape');
+            } else if (screen.msLockOrientation) {
+                screen.msLockOrientation('landscape');
+            }
+        } catch (err) {
+            console.warn("Screen orientation API not supported", err);
+        }
     }
-    if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); // Sync Video.js gear icon
+    if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); 
 };
 
 window._exitCSSFullscreen = function() {
@@ -2382,7 +2397,50 @@ window._exitCSSFullscreen = function() {
         videoApi.webkitExitFullscreen();
     } else {
         container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
+        container.classList.add('aspect-video', 'relative'); // ⬅️ Restore 16:9 lock
+        
+        // Unlock Orientation (Return to normal Portrait mode)
+        try {
+            if (screen.orientation && screen.orientation.unlock) {
+                screen.orientation.unlock();
+            } else if (screen.unlockOrientation) {
+                screen.unlockOrientation();
+            } else if (screen.mozUnlockOrientation) {
+                screen.mozUnlockOrientation();
+            } else if (screen.msUnlockOrientation) {
+                screen.msUnlockOrientation();
+            }
+        } catch (err) {
+            console.warn("Screen orientation API not supported", err);
+        }
+    }
+    if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); 
+};
+window._exitCSSFullscreen = function() {
+    const container = document.getElementById('native-player-container');
+    const videoApi = document.querySelector('.video-js video'); 
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    if (isIOS && videoApi && videoApi.webkitExitFullscreen) {
+        videoApi.webkitExitFullscreen();
+    } else {
+        container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
         container.classList.add('h-[35vh]', 'sm:h-[45vh]', 'md:h-[55vh]', 'lg:h-[65vh]', 'min-h-[250px]', 'relative');
+        
+        // 🔄 NEW: Unlock Orientation (Return to normal Portrait mode)
+        try {
+            if (screen.orientation && screen.orientation.unlock) {
+                screen.orientation.unlock();
+            } else if (screen.unlockOrientation) {
+                screen.unlockOrientation();
+            } else if (screen.mozUnlockOrientation) {
+                screen.mozUnlockOrientation();
+            } else if (screen.msUnlockOrientation) {
+                screen.msUnlockOrientation();
+            }
+        } catch (err) {
+            console.warn("Screen orientation API not supported", err);
+        }
     }
     if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); // Revert Video.js gear icon
 };
