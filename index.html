@@ -2368,33 +2368,34 @@ window.closeWatchView = function() {
     safeBack(); 
 };
 // ==========================================
-// ADVANCED FULLSCREEN ENGINE (PURE CSS FOR ALL DEVICES)
+// HYBRID FULLSCREEN ENGINE (NATIVE TABLET + CSS MOBILE)
 // ==========================================
 
-// 🔄 DYNAMIC ROTATION & STRETCH CALCULATOR
 window.updateCSSFullscreenLayout = function() {
     const container = document.getElementById('native-player-container');
     if (!container || !container.classList.contains('fixed')) return;
 
-    const isMobileSize = window.innerWidth < 768 || window.innerHeight < 768;
+    const isMobileSize = window.innerWidth < 768;
     const isPortrait = window.innerHeight > window.innerWidth;
 
-    if (isMobileSize && isPortrait) {
-        // 📱 Phone in PORTRAIT: Force CSS rotation to fake landscape
-        container.style.width = window.innerHeight + 'px';
-        container.style.height = window.innerWidth + 'px';
-        container.style.transformOrigin = 'top left';
-        container.style.transform = 'translateY(100vh) rotate(-90deg)';
-    } else {
-        // 🖥️📱 Tablet, Desktop, or Phone in LANDSCAPE: Just stretch to fill screen!
-        container.style.width = '100vw';
-        container.style.height = '100dvh';
-        container.style.transformOrigin = '';
-        container.style.transform = 'none';
+    if (isMobileSize) {
+        if (isPortrait) {
+            // 📱 Phone in PORTRAIT: Force CSS rotation to fake landscape
+            container.style.width = window.innerHeight + 'px';
+            container.style.height = window.innerWidth + 'px';
+            container.style.transformOrigin = 'top left';
+            container.style.transform = 'translateY(100vh) rotate(-90deg)';
+        } else {
+            // 📱 Phone in LANDSCAPE: Remove CSS rotation and just fill screen
+            container.style.width = '100vw';
+            container.style.height = '100dvh';
+            container.style.transformOrigin = '';
+            container.style.transform = 'none';
+        }
     }
 };
 
-// 👂 Listen for physical screen rotations!
+// 👂 Listen for physical screen rotations
 window.addEventListener('resize', window.updateCSSFullscreenLayout);
 window.addEventListener('orientationchange', function() {
     setTimeout(window.updateCSSFullscreenLayout, 150); 
@@ -2404,20 +2405,27 @@ window._enterCSSFullscreen = function() {
     const container = document.getElementById('native-player-container');
     const videoApi = document.querySelector('.video-js video'); 
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
+    // Check if device is a Tablet/Desktop
+    const isTabletOrDesktop = window.innerWidth >= 768;
 
     if (isIOS && videoApi && videoApi.webkitEnterFullscreen) {
-        videoApi.webkitEnterFullscreen(); // iOS strictly requires native API
+        videoApi.webkitEnterFullscreen(); 
+    } else if (isTabletOrDesktop) {
+        // 🖥️ TABLET/DESKTOP: Use Native API to maximize video over the Status Bar!
+        if (container.requestFullscreen) container.requestFullscreen();
+        else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
+        else if (container.msRequestFullscreen) container.msRequestFullscreen();
+        
+        try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{}); } catch (err) {}
     } else {
-        // 🚀 PURE CSS FULLSCREEN FOR EVERYONE (Never touches the browser's exit API)
+        // 📱 MOBILE: Use pure CSS to avoid conflicting with the App's global Fullscreen
         container.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
         container.classList.remove('aspect-video', 'relative'); 
         
         window.updateCSSFullscreenLayout();
         
-        // Attempt native orientation lock if supported
-        try {
-            if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{});
-        } catch (err) {}
+        try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{}); } catch (err) {}
     }
     
     if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); 
@@ -2427,12 +2435,20 @@ window._exitCSSFullscreen = function() {
     const container = document.getElementById('native-player-container');
     const videoApi = document.querySelector('.video-js video'); 
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isTabletOrDesktop = window.innerWidth >= 768;
+    
+    const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
 
     if (isIOS && videoApi && videoApi.webkitExitFullscreen) {
         videoApi.webkitExitFullscreen();
+    } else if (isTabletOrDesktop && isNativeFullscreen) {
+        // 🖥️ TABLET/DESKTOP: Exit Native Video Fullscreen
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        else if (document.msExitFullscreen) document.msExitFullscreen();
     } 
     
-    // 🧹 ALWAYS RUN CSS CLEANUP
+    // 🧹 ALWAYS RUN CSS CLEANUP (Safe for all devices)
     container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
     container.style.width = '';
     container.style.height = '';
@@ -2440,9 +2456,7 @@ window._exitCSSFullscreen = function() {
     container.style.transform = '';
     container.classList.add('aspect-video', 'relative'); 
     
-    try {
-        if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
-    } catch (err) {}
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (err) {}
     
     if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); 
 };
@@ -2452,18 +2466,23 @@ window.toggleVideoFullscreen = function() {
     if(!container) return;
 
     const isCSSFullscreen = container.classList.contains('fixed');
+    const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
     
-    if (!isCSSFullscreen) {
-        // PUSH dummy history state so Android Back Button shrinks video instead of closing app
-        history.pushState({ isVideoFullscreen: true }, "");
+    if (!isCSSFullscreen && !isNativeFullscreen) {
+        // PUSH dummy history state for Mobile Android Back Button
+        if (window.innerWidth < 768) history.pushState({ isVideoFullscreen: true }, "");
         window._enterCSSFullscreen();
     } else {
-        // TRIGGER Back to safely shrink video
-        history.back(); 
+        // TRIGGER Back to safely shrink video on Mobile, or manually exit on Tablet
+        if (window.innerWidth < 768 && isCSSFullscreen) {
+            history.back(); 
+        } else {
+            window._exitCSSFullscreen();
+        }
     }
 };
 
-// 🛡️ HARDWARE BACK BUTTON RESCUE
+// 🛡️ MOBILE RESCUE: Hardware Back Button
 window.addEventListener('popstate', function(event) {
     const container = document.getElementById('native-player-container');
     if (container && container.classList.contains('fixed')) {
@@ -2471,22 +2490,16 @@ window.addEventListener('popstate', function(event) {
     }
 });
 
-// 🛡️ KEYBOARD ESCAPE RESCUE & APP REFLOW HACK
+// 🛡️ TABLET RESCUE: Listen for Desktop ESC key or Tablet UI exit
 document.addEventListener('fullscreenchange', syncNativeFullscreenExit);
 document.addEventListener('webkitfullscreenchange', syncNativeFullscreenExit);
 
 function syncNativeFullscreenExit() {
     const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-    
     if (!isNativeFullscreen) {
-        // 1. If video is in CSS fullscreen, shrink it down.
-        const container = document.getElementById('native-player-container');
-        if (container && container.classList.contains('fixed')) {
-            window._exitCSSFullscreen();
-        }
-
-        // 2. 🔥 THE AGGRESSIVE REFLOW HACK: 
-        // Force a redraw so Android tablets/phones fix any UI glitches!
+        window._exitCSSFullscreen();
+        
+        // 🔥 THE AGGRESSIVE REFLOW HACK: Forces Android Tablet to restore the Status Bar gap cleanly!
         setTimeout(() => {
             const appFrame = document.getElementById('app');
             if (appFrame) {
@@ -2502,6 +2515,7 @@ function syncNativeFullscreenExit() {
         }, 150);
     }
 }
+
  
 
 window.renderUpNext = function(currentVid) {
@@ -4201,14 +4215,17 @@ function getFitnessLeaderboard() {
             window.currentRole = role; window.loggedInMobile = mob; executeLoginUI(role, mob); hideLoader();
         });
 
-        function executeLoginUI(role, mob) {
-            // 🚀 NEW: Request App-Wide Fullscreen to hide the Tablet Status Bar!
-            try {
-                const doc = document.documentElement;
-                if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
-                else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen().catch(()=>{});
-                else if (doc.msRequestFullscreen) doc.msRequestFullscreen().catch(()=>{});
-            } catch (e) { console.warn("App fullscreen blocked by browser."); }
+ function executeLoginUI(role, mob) {
+            // 📱 MOBILE ONLY: Request App-Wide Fullscreen to hide the Status Bar!
+            // 🖥️ TABLETS: Ignore this so they keep their status bar across the app.
+            if (window.innerWidth < 768) {
+                try {
+                    const doc = document.documentElement;
+                    if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
+                    else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen().catch(()=>{});
+                    else if (doc.msRequestFullscreen) doc.msRequestFullscreen().catch(()=>{});
+                } catch (e) { console.warn("App fullscreen blocked by browser."); }
+            }
 
             window.updatePresence(); requestNotificationPermission(); 
             if(window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { try { if(OneSignal.User){ await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch(e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
@@ -4229,25 +4246,22 @@ function getFitnessLeaderboard() {
                     };
                     const defaultDp = "https://ui-avatars.com/api/?name=" + encodeURIComponent(curStu.name) + "&background=4f46e5&color=fff&bold=true";
                     
-                    // 1. INSTANT LOAD: Grab the last known DP from cache
                     const cachedDpUrl = localStorage.getItem(`exama_dp_${mob}`);
                     if (cachedDpUrl) {
                         dpImg.src = cachedDpUrl;
                     } else {
-                        dpImg.src = defaultDp; // Show initials if completely new device
+                        dpImg.src = defaultDp; 
                     }
 
-                    // 2. BACKGROUND SYNC: Check Firebase for the absolute latest DP
                     const latestFirebaseDp = curStu.dpUrl || defaultDp;
                     
-                    // 3. UPDATE: If Firebase has a newer image, swap it and save to cache
                     if (dpImg.src !== latestFirebaseDp) {
                         dpImg.src = latestFirebaseDp;
                         localStorage.setItem(`exama_dp_${mob}`, latestFirebaseDp);
                     }
                 }
 
-                // --- 365 DAILY MOTIVATIONAL QUOTES LOGIC ---
+                // --- DAILY MOTIVATIONAL QUOTES LOGIC ---
                 const motivationalQuotes = [
                     "The beautiful thing about learning is that no one can take it away from you. – B.B. King",
                     "Education is the most powerful weapon which you can use to change the world. – Nelson Mandela",
@@ -4257,38 +4271,15 @@ function getFitnessLeaderboard() {
                     "Don't let what you cannot do interfere with what you can do. – John Wooden",
                     "Strive for progress, not perfection. – Unknown",
                     "I find that the harder I work, the more luck I seem to have. – Thomas Jefferson",
-                    "You don't have to be great to start, but you have to start to be great. – Zig Ziglar",
-                    "The expert in anything was once a beginner. – Helen Hayes",
-                    "Motivation is what gets you started. Habit is what keeps you going. – Jim Ryun",
-                    "Doubt kills more dreams than failure ever will. – Suzy Kassem",
-                    "Focus on your goal. Don't look in any direction but ahead. – Unknown",
-                    "It always seems impossible until it is done. – Nelson Mandela",
-                    "The future belongs to those who believe in the beauty of their dreams. – Eleanor Roosevelt",
-                    "Believe you can and you're halfway there. – Theodore Roosevelt",
-                    "A person who never made a mistake never tried anything new. – Albert Einstein",
-                    "It’s not about how bad you want it. It’s about how hard you’re willing to work for it. – Unknown",
-                    "Your attitude, not your aptitude, will determine your altitude. – Zig Ziglar",
-                    "If people only knew how hard I’ve worked to gain my mastery, it wouldn’t seem so wonderful at all. – Michelangelo",
-                    "Don’t stop until you’re proud. – Unknown",
-                    "Every morning you have two choices: continue to sleep with your dreams, or wake up and chase them. – Unknown",
-                    "Discipline is choosing between what you want now and what you want most. – Abraham Lincoln",
-                    "Push yourself, because no one else is going to do it for you. – Unknown",
-                    "You cannot change your destination overnight, but you can change your direction overnight. – Jim Rohn",
-                    "Fall seven times, stand up eight. – Japanese Proverb",
-                    "Knowledge is power. Information is liberating. Education is the premise of progress. – Kofi Annan",
-                    "Dreams don't work unless you do. – John C. Maxwell",
-                    "Wake up with determination. Go to bed with satisfaction. – Unknown",
-                    "Do something today that your future self will thank you for. – Sean Patrick Flanery"
+                    "You don't have to be great to start, but you have to start to be great. – Zig Ziglar"
                 ];
                 
-                // Calculates the current day of the year
                 const now = new Date();
                 const start = new Date(now.getFullYear(), 0, 0);
                 const diff = now - start;
                 const oneDay = 1000 * 60 * 60 * 24;
                 const dayOfYear = Math.floor(diff / oneDay);
                 
-                // Automatically selects a new quote every day
                 const todaysQuote = motivationalQuotes[dayOfYear % motivationalQuotes.length];
                 const quoteEl = document.getElementById('daily-quote-text');
                 if(quoteEl) quoteEl.innerText = todaysQuote;
