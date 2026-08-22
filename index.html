@@ -5749,10 +5749,10 @@ window.startAnytimeAttempt = function() {
 // Function to upload the answer scripts and send them to the respective peers
 window.submitAllPeerAnswers = async function() {
     const examId = window.activeExamId;
+    const exam = window.examsDB.find(e => e.id === examId);
     const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
-    const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; // Your ImgBB Key
+    const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
     
-    // Check if at least one file is selected
     let hasFiles = false;
     for (let peer of uniquePeers) {
         if(document.getElementById(`ans-file-${peer.mobile}`)?.files.length > 0) hasFiles = true;
@@ -5761,6 +5761,10 @@ window.submitAllPeerAnswers = async function() {
     if(!hasFiles && uniquePeers.length > 0) {
         if(!confirm("You haven't attached any answer scripts. Submit anyway with 0 marks?")) return;
     }
+
+    // PERMANENT PORTION CALCULATION: Locks in the max marks for this specific script forever!
+    const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId).map(m => m.mobile))].length || 1;
+    const assignedMaxMarks = parseFloat((exam.totalMarks / totalOpponents).toFixed(1));
 
     showLoader("Sending Answers to Peers...");
     
@@ -5777,16 +5781,16 @@ window.submitAllPeerAnswers = async function() {
                     if(data.success) urls.push(data.data.url);
                 }
                 
-                // Save to database as an answer script targeted AT the specific peer
                 const payload = { 
-    examId: examId, 
-    solverMobile: window.loggedInMobile, 
-    targetPeerMobile: peer.mobile, 
-    imgUrls: urls, 
-    timestamp: Date.now(),
-    attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
-    isGraded: false 
-};
+                    examId: examId, 
+                    solverMobile: window.loggedInMobile, 
+                    targetPeerMobile: peer.mobile, 
+                    imgUrls: urls, 
+                    timestamp: Date.now(),
+                    attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
+                    isGraded: false,
+                    assignedMaxMarks: assignedMaxMarks // Fix applied here!
+                };
                 
                 if(isFirebaseConfigured) { 
                     await addDoc(collection(db, "peer_answer_scripts"), payload); 
@@ -5798,12 +5802,9 @@ window.submitAllPeerAnswers = async function() {
         }
         hideLoader();
         document.getElementById('answer-upload-modal').classList.add('hidden-view');
-        // Route to Step 5: The Evaluation Room
         window.openPeerEvaluationRoom(examId);
     } catch(e) {
-        console.error(e);
-        hideLoader();
-        alert("Error sending answers. Check your connection.");
+        console.error(e); hideLoader(); alert("Error sending answers. Check your connection.");
     }
 }
         window.proceedToLogMarks = function() {
