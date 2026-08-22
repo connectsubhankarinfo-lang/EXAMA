@@ -1714,14 +1714,18 @@
                     <h4 class="font-black text-indigo-800 text-xs sm:text-sm mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-plus-circle shrink-0"></i> Add Syllabus Topic</h4>
                     <form onsubmit="event.preventDefault(); submitSyllabusTopic();" class="space-y-2 sm:space-y-3">
                         <div class="grid grid-cols-2 gap-2 sm:gap-3">
-                            <select id="syl-subject" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-bold text-indigo-900 text-[10px] sm:text-xs border border-indigo-100 shadow-sm cursor-pointer appearance-none break-words">
-                                <option value="" disabled selected>Select Subject...</option>
-                                <option value="English">English</option>
-                                <option value="Mathematics">Mathematics</option>
-                                <option value="Reasoning">Reasoning</option>
-                                <option value="General Knowledge">General Knowledge</option>
-                                <option value="Vocabulary">Vocabulary</option>
-                            </select>
+                           <select id="syl-subject" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-bold text-indigo-900 text-[10px] sm:text-xs border border-indigo-100 shadow-sm cursor-pointer appearance-none break-words">
+    <option value="" disabled selected>Select Subject...</option>
+    <option value="Calculation">Calculation</option>
+    <option value="Vocabulary">Vocabulary</option>
+    <option value="English">English</option>
+    <option value="Mathematics">Mathematics</option>
+    <option value="Stenography">Stenography</option>
+    <option value="General Knowledge">General Knowledge</option>
+    <option value="Reasoning">Reasoning</option>
+    <option value="Major">Major</option>
+                               <option value="Minor">Minor</option>
+</select>
                             <input type="text" id="syl-topic" required placeholder="Topic Name (e.g., Noun)" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-bold text-gray-900 text-[10px] sm:text-xs border border-indigo-100 shadow-sm break-words">
                         </div>
                         <div class="bg-white p-1.5 sm:p-2 rounded-lg sm:rounded-xl border border-indigo-100 shadow-sm">
@@ -1746,9 +1750,10 @@
                         <div id="syl-overall-bar" class="bg-gradient-to-r from-blue-500 to-indigo-600 h-2.5 rounded-full transition-all duration-700" style="width: 0%"></div>
                     </div>
                 </div>
-
-                <!-- Dynamic Syllabus List -->
-                <div id="syl-topics-list" class="space-y-4"></div>
+<!-- Subject Tabs Container -->
+<div class="flex gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-2 pt-1 mt-4" id="syl-subject-tabs-container"></div>
+<!-- Dynamic Syllabus List -->
+<div id="syl-topics-list" class="space-y-4 mt-2"></div>
             </div>
         </div>
 
@@ -1987,8 +1992,15 @@
         }
 
         window.studentsDB = []; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;window.videosDB = []; window.activeVideoCategory = 'All';
-        let chartInstance = null; let adminProfileChartInstance = null; let analysisChartInstance = null; let fitnessChartInstance = null; let globalTimerInterval = null; window.replyingTo = null; window.activeSubjectFilter = 'All'; window.jitsiApi = null; window.chatJitsiApi = null;
+     let chartInstance = null; let adminProfileChartInstance = null; let analysisChartInstance = null; let fitnessChartInstance = null; let globalTimerInterval = null; window.replyingTo = null; window.activeSubjectFilter = 'All'; window.jitsiApi = null; window.chatJitsiApi = null;
 
+// --- NEW SYLLABUS TABS VARIABLES ---
+window.activeSyllabusSubjectFilter = 'All';
+window.filterSyllabusBySubject = function(sub) { 
+    window.activeSyllabusSubjectFilter = sub; 
+    window.renderSyllabusTracker(); 
+};
+// -----------------------------------
 // NEW: Track how many items to show before clicking "See More"
 window.uiLimits = {
     exams: 5,
@@ -2127,39 +2139,71 @@ window.updateSyllabusProgress = async function(topicId, field, change) {
 
 window.renderSyllabusTracker = function() {
     const listContainer = document.getElementById('syl-topics-list'); 
+    const tabsContainer = document.getElementById('syl-subject-tabs-container');
+    if(!listContainer) return;
+    
     listContainer.innerHTML = '';
     
-    const myTopics = window.syllabusTopicsDB.filter(t => { 
+    let myTopics = window.syllabusTopicsDB.filter(t => { 
         if (window.currentRole === 'admin') return true; 
         if (!t.assignedTo || t.assignedTo.includes('All')) return true; 
         return t.assignedTo.includes(window.loggedInMobile); 
     });
 
-    if (myTopics.length === 0) { 
-        document.getElementById('syl-overall-progress').innerText = "0%"; 
-        document.getElementById('syl-overall-bar').style.width = "0%"; 
-        listContainer.innerHTML = `<div class="text-center text-gray-500 font-medium py-8 text-xs sm:text-sm bg-white rounded-[1rem] shadow-sm border border-gray-100 px-4">No syllabus topics assigned yet.</div>`; 
-        return; 
-    }
+    // --- REQUIREMENT 1: OLD TO NEW (Ascending order by timestamp) ---
+    myTopics.sort((a, b) => a.timestamp - b.timestamp);
 
-    const grouped = {}; 
+    // --- OVERALL PROGRESS TRACKING (Calculate for all subjects regardless of active tab) ---
     let totalClasses = 0; 
     let completedClasses = 0;
     
     myTopics.forEach(topic => {
         totalClasses++;
-        const prog = window.studentSyllabusProgressDB.find(p => p.topicId === topic.id && p.mobile === window.loggedInMobile) || { classDone: false, practiceCount: 0, revisionCount: 0 };
+        const prog = window.studentSyllabusProgressDB.find(p => p.topicId === topic.id && p.mobile === window.loggedInMobile) || { classDone: false };
         if (prog.classDone) completedClasses++;
-        
-        if (!grouped[topic.subject]) grouped[topic.subject] = [];
-        grouped[topic.subject].push({ ...topic, progress: prog });
     });
 
     const progPerc = totalClasses > 0 ? Math.round((completedClasses / totalClasses) * 100) : 0;
     document.getElementById('syl-overall-progress').innerText = `${progPerc}%`; 
     document.getElementById('syl-overall-bar').style.width = `${progPerc}%`;
 
+    // Empty state safeguard
+    if (myTopics.length === 0) { 
+        if(tabsContainer) tabsContainer.innerHTML = '';
+        listContainer.innerHTML = `<div class="text-center text-gray-500 font-medium py-8 text-xs sm:text-sm bg-white rounded-[1rem] shadow-sm border border-gray-100 px-4">No syllabus topics assigned yet.</div>`; 
+        return; 
+    }
+
+    // --- REQUIREMENT 2: TABS LOGIC ---
+    if(tabsContainer) {
+        const uniqueSubjects = [...new Set(myTopics.map(t => t.subject))];
+        let tabsHtml = `<button onclick="window.filterSyllabusBySubject('All')" class="px-3 sm:px-4 py-1.5 sm:py-2 ${window.activeSyllabusSubjectFilter === 'All' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-indigo-50 border border-gray-200'} font-black text-[10px] sm:text-xs rounded-full shrink-0 transition-colors break-words">All Subjects</button>`;
+        
+        uniqueSubjects.forEach(sub => { 
+            const isActive = window.activeSyllabusSubjectFilter === sub; 
+            tabsHtml += `<button onclick="window.filterSyllabusBySubject('${sub.replace(/'/g, "\\'")}')" class="px-3 sm:px-4 py-1.5 sm:py-2 ${isActive ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-indigo-50 border border-gray-200'} font-black text-[10px] sm:text-xs rounded-full shrink-0 transition-colors break-words">${sub}</button>`; 
+        });
+        tabsContainer.innerHTML = tabsHtml;
+    }
+
+    // --- FILTER DISPLAYED LIST BY SELECTED TAB ---
+    if(window.activeSyllabusSubjectFilter !== 'All') {
+        myTopics = myTopics.filter(t => t.subject === window.activeSyllabusSubjectFilter);
+    }
+
+    if (myTopics.length === 0) {
+        listContainer.innerHTML = `<div class="text-center text-gray-500 font-medium py-8 text-xs sm:text-sm bg-white rounded-[1rem] shadow-sm border border-gray-100 px-4">No topics found for this subject.</div>`;
+        return;
+    }
+
+    const grouped = {}; 
     const isAdmin = window.currentRole === 'admin';
+    
+    myTopics.forEach(topic => {
+        const prog = window.studentSyllabusProgressDB.find(p => p.topicId === topic.id && p.mobile === window.loggedInMobile) || { classDone: false, practiceCount: 0, revisionCount: 0 };
+        if (!grouped[topic.subject]) grouped[topic.subject] = [];
+        grouped[topic.subject].push({ ...topic, progress: prog });
+    });
 
     Object.keys(grouped).sort().forEach(subject => {
         let subjectHtml = `<div class="mb-5"><h4 class="font-black text-gray-900 text-base sm:text-lg border-b-2 border-indigo-500 pb-1 mb-3 flex items-center gap-2"><i class="fa-solid fa-graduation-cap text-indigo-600 text-sm"></i> ${subject}</h4><div class="space-y-3">`;
@@ -2169,7 +2213,6 @@ window.renderSyllabusTracker = function() {
             const classIcon = t.progress.classDone ? 'fa-circle-check' : 'fa-circle';
             const delBtn = isAdmin ? `<button onclick="deleteSyllabusTopic('${t.id}')" class="text-red-400 hover:text-red-600 w-6 h-6 rounded flex items-center justify-center shrink-0"><i class="fa-solid fa-trash text-xs"></i></button>` : '';
 
-            // Admin badge to see who it's assigned to
             let assignBadge = '';
             if (isAdmin && t.assignedTo && !t.assignedTo.includes('All')) {
                 const names = t.assignedTo.map(mob => { const s = window.studentsDB.find(stu => stu.mobile === mob); return s ? s.name : mob; });
@@ -2187,12 +2230,10 @@ window.renderSyllabusTracker = function() {
                 </div>
                 
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
-                    <!-- Class Done Toggle -->
                     <button onclick="updateSyllabusProgress('${t.id}', 'classDone', null)" class="w-full py-2 rounded-xl flex items-center justify-center gap-1.5 text-xs font-black transition-all active:scale-95 ${classBtnStyle} ${isAdmin ? 'pointer-events-none opacity-50' : ''}">
                         <i class="fa-solid ${classIcon}"></i> ${t.progress.classDone ? 'Class Done' : 'Mark Class Done'}
                     </button>
                     
-                    <!-- Practice Counter -->
                     <div class="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-2 py-1.5">
                         <span class="text-[10px] font-bold text-blue-800 uppercase tracking-widest ml-1"><i class="fa-solid fa-dumbbell mr-1"></i> Practice</span>
                         <div class="flex items-center gap-2 bg-white rounded-lg p-0.5 shadow-sm border border-blue-200 ${isAdmin ? 'pointer-events-none opacity-50' : ''}">
@@ -2202,7 +2243,6 @@ window.renderSyllabusTracker = function() {
                         </div>
                     </div>
                     
-                    <!-- Revision Counter -->
                     <div class="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl px-2 py-1.5">
                         <span class="text-[10px] font-bold text-emerald-800 uppercase tracking-widest ml-1"><i class="fa-solid fa-rotate mr-1"></i> Revision</span>
                         <div class="flex items-center gap-2 bg-white rounded-lg p-0.5 shadow-sm border border-emerald-200 ${isAdmin ? 'pointer-events-none opacity-50' : ''}">
