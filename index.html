@@ -2223,23 +2223,108 @@ window.playVideo = function(id) {
     const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
     window.updateWatchedButtonUI(isWatched);
     
-    // Set Header & Details
     document.getElementById('watch-header-title').innerText = vid.topic || "Now Playing";
     document.getElementById('watch-title').innerText = vid.title;
     document.getElementById('watch-subject').innerText = vid.subject;
     document.getElementById('watch-topic').innerText = vid.topic;
     document.getElementById('watch-uploader').innerText = vid.uploader || 'Faculty';
 
-    const iframe = document.getElementById('exama-native-iframe');
-    if (iframe) iframe.src = vid.sourceUrl;
+    const container = document.getElementById('native-player-container');
+    
+    // Safely destroy previous player to free memory
+    if (window.vjsPlayer) {
+        window.vjsPlayer.dispose();
+        window.vjsPlayer = null;
+    }
+
+    // Inject fresh Video.js tag
+    container.innerHTML = `<video id="exama-video-js" class="video-js vjs-default-skin w-full h-full absolute inset-0" controls preload="auto" playsinline></video>`;
+
+    // 🔥 THE ULTIMATE VIDEO.JS FEATURE CONFIGURATION
+    const vjsOptions = {
+        autoplay: true,
+        fluid: false,
+        responsive: true, // Auto-adjusts UI for mobile/desktop
+        playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], // Speed control
+        userActions: {
+            hotkeys: true // Enables YouTube-style keyboard shortcuts
+        },
+        controlBar: {
+            playToggle: true,
+            volumePanel: { inline: false }, // Pops volume up vertically instead of taking horizontal space
+            currentTimeDisplay: true,       // Shows 01:23
+            timeDivider: true,              // Shows /
+            durationDisplay: true,          // Shows 10:00
+            progressControl: true,          // Seek bar
+            liveDisplay: true,
+            remainingTimeDisplay: false,    // Turned off to keep it clean (currentTime/duration is better)
+            customControlSpacer: true,
+            playbackRateMenuButton: true,
+            chaptersButton: true,
+            pictureInPictureToggle: true,   // 📺 Enables floating mini-player (PiP)
+            fullscreenToggle: true
+        }
+    };
+
+    if (vid.videoType === 'youtube') {
+        // Initialize YouTube
+        window.vjsPlayer = videojs('exama-video-js', {
+            ...vjsOptions,
+            techOrder: ["youtube"],
+            sources: [{ type: "video/youtube", src: vid.sourceUrl }]
+        });
+    } else {
+        // Extract Google Drive ID safely
+        let dId = "";
+        const match = vid.sourceUrl.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+        if (match) dId = match[1];
+
+        // Ensure this is your actual worker URL!
+        const proxyUrl = `https://exama-video-proxy.connect-subhankar-info.workers.dev/?id=${dId}&ext=.mp4`;
+
+        // Initialize Google Drive MP4
+        window.vjsPlayer = videojs('exama-video-js', {
+            ...vjsOptions,
+            sources: [{ type: "video/mp4", src: proxyUrl }]
+        });
+
+        // 🛡️ SMART FALLBACK SYSTEM
+        window.vjsPlayer.on('error', function() {
+            console.warn("Video.js Stream Failed! Auto-switching to Native Google Drive iframe...");
+            
+            if (window.vjsPlayer) {
+                window.vjsPlayer.dispose();
+                window.vjsPlayer = null;
+            }
+            
+            const fallbackContainer = document.getElementById('native-player-container');
+            if(fallbackContainer) {
+                fallbackContainer.innerHTML = `
+                <iframe src="https://drive.google.com/file/d/${dId}/preview" class="w-full h-full border-0 relative z-10" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+                `;
+            }
+        });
+    }
+
+    // Fix Video.js stealing focus on mobile load (prevents screen jumping)
+    window.vjsPlayer.ready(function() {
+        this.el().focus = function() {}; // Prevent auto-scrolling to video
+    });
 
     window.renderUpNext(vid);
     window.location.hash = 'watch-video';
 };
-
 window.closeWatchView = function() {
-    const iframe = document.getElementById('exama-native-iframe');
-    if (iframe) iframe.src = ''; 
+    // Safely destroy Video.js player to kill audio & clear cache
+    if (window.vjsPlayer) {
+        window.vjsPlayer.dispose();
+        window.vjsPlayer = null;
+    }
+    
+    // Clear container
+    const container = document.getElementById('native-player-container');
+    if (container) container.innerHTML = ''; 
+    
     if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
     safeBack(); 
 };
@@ -2895,8 +2980,7 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
         case 'active-exam': if(window.activeExamId) { renderActiveExam(window.activeExamId); document.getElementById('active-exam-view')?.classList.remove('hidden-view'); } else { safeBack(); } break;
         case 'nova-chat': document.getElementById('nova-chat-view')?.classList.remove('hidden-view'); break;
         
-        // 2. NEW ROUTE: Opens the Video Feed
-        case 'video-hub':
+ case 'video-hub':
             document.getElementById('video-hub-view')?.classList.remove('hidden-view');
             if (window.currentRole === 'admin') {
                 document.getElementById('btn-upload-video')?.classList.remove('hidden');
@@ -2904,9 +2988,13 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                 document.getElementById('btn-upload-video')?.classList.add('hidden');
             }
             
-            // 3. GHOST AUDIO FIX: Stop video if user navigates back to the hub
-            const iframe = document.getElementById('native-yt-iframe');
-            if (iframe) iframe.src = '';
+            // 3. GHOST AUDIO FIX FOR VIDEO.JS
+            if (window.vjsPlayer) {
+                window.vjsPlayer.dispose();
+                window.vjsPlayer = null;
+            }
+            const natContainer = document.getElementById('native-player-container');
+            if(natContainer) natContainer.innerHTML = '';
             
             if (typeof window.renderVideoFeed === 'function') {
                 window.renderVideoFeed();
