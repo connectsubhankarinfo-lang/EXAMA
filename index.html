@@ -4689,22 +4689,21 @@ window.submitEditExam = async function() {
     refreshUI(); // Force the UI to update immediately
 }
 
-      window.endExam = async function(id) {
-    if(!confirm("Are you sure? This will END the exam permanently, auto-grade pending evaluations to full marks, and mark lazy evaluators/non-submitters as ABSENT.")) return;
+     window.endExam = async function(id) {
+    if(!confirm("Are you sure? This will END the exam permanently, auto-grade pending evaluations to their PORTION marks, and mark lazy evaluators/non-submitters as ABSENT.")) return;
     showLoader("Ending Exam...");
     const exam = window.examsDB.find(e => e.id === id);
 
-    // 1. Process pending P2P scripts (Give full marks to victim & Identify lazy evaluators)
     const pendingScripts = window.peerAnswerScriptsDB.filter(s => s.examId === id && !s.isGraded);
     const lazyEvaluators = new Set();
     const scriptPromises = [];
 
     pendingScripts.forEach(script => {
-        lazyEvaluators.add(script.targetPeerMobile); // Identify the person who failed to grade
+        lazyEvaluators.add(script.targetPeerMobile); 
 
-        // Calculate full marks for this specific set
-        const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === id && m.mobile !== script.solverMobile).map(m => m.mobile))].length;
-        const maxMarksForThisSet = totalOpponents > 0 ? parseFloat((exam.totalMarks / totalOpponents).toFixed(1)) : exam.totalMarks;
+        // Uses permanent portion marks. The victim ONLY gets the portion max, not 100.
+        const fallbackOpponents = [...new Set(window.peerAnswerScriptsDB.filter(s => s.examId === id).map(s => s.targetPeerMobile))].length || 1;
+        const maxMarksForThisSet = script.assignedMaxMarks || parseFloat((exam.totalMarks / fallbackOpponents).toFixed(1));
 
         const payload = { isGraded: true, marksAwarded: maxMarksForThisSet, maxMarks: maxMarksForThisSet, evaluatorTime: Date.now() };
 
@@ -4716,10 +4715,8 @@ window.submitEditExam = async function() {
     });
     await Promise.all(scriptPromises);
 
-    // 2. End Exam
     await window.dbUpdateExam(id, { isEnded: true, globalStartTime: null, isPaused: false });
 
-    // 3. Mark students as ABSENT
     const absentPromises = [];
     window.studentsDB.forEach(stu => {
         const isAssigned = !exam.assignedTo || exam.assignedTo.includes('All') || exam.assignedTo.includes(stu.mobile);
@@ -4729,9 +4726,6 @@ window.submitEditExam = async function() {
         const hasScripts = window.peerAnswerScriptsDB.some(s => s.examId === id && s.solverMobile === stu.mobile);
         const isLazyEvaluator = lazyEvaluators.has(stu.mobile);
 
-        // They are absent if:
-        // - They didn't submit any scripts (and don't have a manual result)
-        // - OR They are a lazy evaluator who failed to grade others
         if ((!hasScripts && !hasResult) || isLazyEvaluator) {
             if (!hasResult || isLazyEvaluator) {
                 absentPromises.push(window.dbSubmitResult({ examId: id, mobile: stu.mobile, obtained: 0, total: exam.totalMarks, percentage: 0, status: 'ABSENT', timeTaken: 0, timeSaved: 0 }));
@@ -4740,11 +4734,10 @@ window.submitEditExam = async function() {
     });
     await Promise.all(absentPromises);
 
-    await window.dbSendNotice({ title: `🏁 Exam Ended: ${exam.name}`, text: `The exam "${exam.name}" has officially ended. Pending evaluations were auto-graded full marks, and lazy evaluators/absentees were marked ABSENT.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
+    await window.dbSendNotice({ title: `🏁 Exam Ended: ${exam.name}`, text: `The exam "${exam.name}" has officially ended. Pending evaluations were auto-graded to their max portion marks, and lazy evaluators/absentees were marked ABSENT.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
     hideLoader();
-    alert("Exam ended. Pending scripts graded full marks. Absentees & lazy evaluators marked absent.");
+    alert("Exam ended. Pending scripts given their portion marks. Absentees & lazy evaluators marked absent.");
 }
-
         window.deleteExam = async function(id) { if(!confirm("Delete this exam completely? This action cannot be undone.")) return; showLoader("Deleting Exam..."); await window.dbDeleteExam(id); hideLoader(); }
         window.startGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); showLoader("Starting Exam for All..."); await window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 }); hideLoader(); if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`); }
         window.pauseGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); if(!ex) return; showLoader("Pausing Exam..."); const additionalElapsed = Date.now() - ex.globalStartTime; await window.dbUpdateExam(id, { isPaused: true, pausedElapsed: (ex.pausedElapsed || 0) + additionalElapsed }); hideLoader(); }
