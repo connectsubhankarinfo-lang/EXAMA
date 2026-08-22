@@ -2326,15 +2326,20 @@ window.playVideo = function(id) {
     window.location.hash = 'watch-video';
 };
 window.closeWatchView = function() {
-    // Safely destroy Video.js player to kill audio & clear cache
+    // Destroy Video.js to stop audio & clear memory
     if (window.vjsPlayer) {
         window.vjsPlayer.dispose();
         window.vjsPlayer = null;
     }
     
-    // Clear container
     const container = document.getElementById('native-player-container');
-    if (container) container.innerHTML = ''; 
+    if (container) {
+        container.innerHTML = ''; 
+        
+        // 🛡️ Ensure CSS Fullscreen classes are stripped if they exit via the back button
+        container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
+        container.classList.add('h-[35vh]', 'sm:h-[45vh]', 'md:h-[55vh]', 'lg:h-[65vh]', 'min-h-[250px]', 'relative');
+    }
     
     if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
     safeBack(); 
@@ -2344,38 +2349,35 @@ window.closeWatchView = function() {
 // ==========================================
 window.toggleVideoFullscreen = function() {
     const playerContainer = document.getElementById('native-player-container');
-    const icon = document.getElementById('icon-video-fullscreen');
     
-    // 🍎 iOS Safari strict fullscreen bypass
+    // 🍎 iOS Safari strict fullscreen bypass (iPhones require native fullscreen)
     const videoApi = document.querySelector('.video-js video'); 
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    const isFS = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+    // Check if we have applied our custom CSS fullscreen
+    const isCSSFullscreen = playerContainer.classList.contains('fixed');
 
-    if (!isFS) {
-        // ENTER FULLSCREEN
+    if (!isCSSFullscreen && !document.fullscreenElement) {
+        // ➡️ ENTER FULLSCREEN
         if (isIOS && videoApi && videoApi.webkitEnterFullscreen) {
             videoApi.webkitEnterFullscreen(); // Opens Apple's native player
         } else {
-            if (playerContainer.requestFullscreen) playerContainer.requestFullscreen();
-            else if (playerContainer.webkitRequestFullscreen) playerContainer.webkitRequestFullscreen();
-            else if (playerContainer.msRequestFullscreen) playerContainer.msRequestFullscreen();
+            // 🛡️ THE FIX: Use CSS to stretch the video instead of the HTML5 API.
+            // This prevents the Android OS from waking up the Status Bar!
+            playerContainer.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
+            playerContainer.classList.remove('h-[35vh]', 'sm:h-[45vh]', 'md:h-[55vh]', 'lg:h-[65vh]', 'min-h-[250px]', 'relative');
         }
-        
-        if(icon) icon.classList.replace('fa-expand', 'fa-compress');
-        if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); // Updates the gear icon inside Video.js
+        if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); // Sync Video.js gear icon
     } else {
-        // EXIT FULLSCREEN
+        // ⬅️ EXIT FULLSCREEN
         if (isIOS && videoApi && videoApi.webkitExitFullscreen) {
             videoApi.webkitExitFullscreen();
         } else {
-            if (document.exitFullscreen) document.exitFullscreen();
-            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-            else if (document.msExitFullscreen) document.msExitFullscreen();
+            // Remove CSS Fullscreen classes
+            playerContainer.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'w-screen', 'h-[100dvh]', 'bg-black');
+            playerContainer.classList.add('h-[35vh]', 'sm:h-[45vh]', 'md:h-[55vh]', 'lg:h-[65vh]', 'min-h-[250px]', 'relative');
         }
-        
-        if(icon) icon.classList.replace('fa-compress', 'fa-expand');
-        if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); // Reverts the gear icon inside Video.js
+        if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); // Revert Video.js gear icon
     }
 };
 
