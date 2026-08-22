@@ -2371,8 +2371,10 @@ window.updateCSSFullscreenLayout = function() {
     const container = document.getElementById('native-player-container');
     if (!container || !container.classList.contains('fixed')) return;
 
-    if (window.innerWidth < 768) {
-        if (window.innerHeight > window.innerWidth) {
+    // Check if device is functioning in a mobile-width layout
+    if (window.innerWidth < 768 || window.innerHeight < 768) {
+        const isPortrait = window.innerHeight > window.innerWidth;
+        if (isPortrait) {
             // Phone is physically in PORTRAIT: Force CSS rotation to fake landscape
             container.style.width = window.innerHeight + 'px';
             container.style.height = window.innerWidth + 'px';
@@ -2390,19 +2392,23 @@ window.updateCSSFullscreenLayout = function() {
 
 // 👂 Listen for physical phone rotations!
 window.addEventListener('resize', window.updateCSSFullscreenLayout);
+// Add orientationchange with a tiny delay because Android doesn't update width instantly
+window.addEventListener('orientationchange', function() {
+    setTimeout(window.updateCSSFullscreenLayout, 150); 
+});
 
 window._enterCSSFullscreen = function() {
     const container = document.getElementById('native-player-container');
     const videoApi = document.querySelector('.video-js video'); 
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     
-    // 🖥️ Check if the user is on a Tablet or Desktop
-    const isTabletOrDesktop = window.innerWidth >= 768; 
+    // 🖥️ Identify Tablets and Desktops
+    const isTabletOrDesktop = window.innerWidth >= 768 && window.innerHeight >= 768 || (window.innerWidth >= 1024); 
 
     if (isIOS && videoApi && videoApi.webkitEnterFullscreen) {
         videoApi.webkitEnterFullscreen(); // Apple's native player
     } else if (isTabletOrDesktop) {
-        // 🖥️ NATIVE FULLSCREEN: Completely hides browser UI & app borders
+        // 🖥️ NATIVE FULLSCREEN (Tablet/Desktop)
         if (container.requestFullscreen) {
             container.requestFullscreen();
         } else if (container.webkitRequestFullscreen) {
@@ -2410,18 +2416,18 @@ window._enterCSSFullscreen = function() {
         } else if (container.msRequestFullscreen) {
             container.msRequestFullscreen();
         }
+        
+        // Lock tablet orientation if permitted
+        try {
+            if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{});
+        } catch (err) {}
+        
     } else {
         // 📱 CSS ROTATION HACK FOR MOBILE PHONES
         container.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
         container.classList.remove('aspect-video', 'relative'); 
         
-        // Calculate correct layout instantly
         window.updateCSSFullscreenLayout();
-        
-        // Optionally lock orientation if supported
-        try {
-            if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{});
-        } catch (err) {}
     }
     
     if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); 
@@ -2432,7 +2438,6 @@ window._exitCSSFullscreen = function() {
     const videoApi = document.querySelector('.video-js video'); 
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     
-    // Check if we are currently in Native HTML5 Fullscreen
     const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
 
     if (isIOS && videoApi && videoApi.webkitExitFullscreen) {
@@ -2467,17 +2472,16 @@ window.toggleVideoFullscreen = function() {
     const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
     
     if (!isCSSFullscreen && !isNativeFullscreen) {
-        // 📱 MOBILE ONLY: Push history state to intercept the Android Back button
+        // MOBILE: Push history state to intercept the Android Back button
         if (window.innerWidth < 768) {
             history.pushState({ isVideoFullscreen: true }, "");
         }
         window._enterCSSFullscreen();
     } else {
-        // 📱 MOBILE ONLY: Trigger Back to pop the history state cleanly
+        // MOBILE: Trigger Back to pop the history state cleanly
         if (window.innerWidth < 768 && isCSSFullscreen) {
-            history.back();
+            history.back(); 
         } else {
-            // 🖥️ TABLET/DESKTOP: Exit normally
             window._exitCSSFullscreen();
         }
     }
@@ -2491,7 +2495,7 @@ window.addEventListener('popstate', function(event) {
     }
 });
 
-// 🛡️ DESKTOP/TAB RESCUE: Listen for the Keyboard Escape (ESC) Key
+// 🛡️ TABLET RESCUE: Listen for Desktop ESC key or Tablet exit
 document.addEventListener('fullscreenchange', syncNativeFullscreenExit);
 document.addEventListener('webkitfullscreenchange', syncNativeFullscreenExit);
 
@@ -2499,44 +2503,24 @@ function syncNativeFullscreenExit() {
     const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
     if (!isNativeFullscreen) {
         window._exitCSSFullscreen();
-    }
-}
-
-// Listen for device back-button or Escape key to fix the icon automatically
-document.addEventListener('fullscreenchange', updateFullscreenIcon);
-document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
-
-function updateFullscreenIcon() {
-    const icon = document.getElementById('icon-video-fullscreen');
-    if(!icon) return;
-    
-    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-        icon.classList.replace('fa-compress', 'fa-expand'); // Back to normal
         
-        // ==========================================
-        // THE AGGRESSIVE REFLOW HACK
-        // Forces mobile browsers to recalculate the notification bar
-        // ==========================================
+        // 🔥 THE AGGRESSIVE REFLOW HACK: Forces Android Tablet to fix the broken Status Bar gap!
         setTimeout(() => {
             const appFrame = document.getElementById('app');
             if (appFrame) {
-                // Shrink the app temporarily to force a layout break
                 appFrame.style.height = '99dvh'; 
                 window.scrollTo(0, 1);
                 
                 setTimeout(() => {
-                    // Snap it back to exactly fit under the notification bar
                     appFrame.style.height = '100dvh';
                     window.dispatchEvent(new Event('resize'));
                     window.scrollTo(0, 0);
                 }, 50);
             }
         }, 150);
-        
-    } else {
-        icon.classList.replace('fa-expand', 'fa-compress'); // In fullscreen
     }
 }
+ 
 
 window.renderUpNext = function(currentVid) {
     const relatedList = document.getElementById('watch-related-list');
