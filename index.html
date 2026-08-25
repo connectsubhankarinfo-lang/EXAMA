@@ -3527,6 +3527,70 @@ window.submitVideo = async function() {
             payloads.forEach(p => window.videosDB.push({ id: Math.random().toString(), ...p })); 
             window.renderVideoFeed(); 
         }
+
+       // 1. INITIALIZE PDF.JS WORKER (Fixes the infinite loading hang)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+        // 2. CORE PDF RENDERING ENGINE
+        window.pdfPageRendering = false;
+        window.pdfPageNumPending = null;
+
+        window.renderPdfPage = async function(num) {
+            window.pdfPageRendering = true;
+            try {
+                const page = await window.pdfDoc.getPage(num);
+                const canvas = document.getElementById('native-pdf-canvas');
+                const ctx = canvas.getContext('2d');
+                
+                const viewport = page.getViewport({ scale: window.currentPdfScale });
+                
+                // High DPI screen support for crisp text
+                const outputScale = window.devicePixelRatio || 1;
+                canvas.width = Math.floor(viewport.width * outputScale);
+                canvas.height = Math.floor(viewport.height * outputScale);
+                canvas.style.width = Math.floor(viewport.width) + "px";
+                canvas.style.height = Math.floor(viewport.height) + "px";
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
+                    viewport: viewport
+                };
+
+                await page.render(renderContext).promise;
+                
+                window.pdfPageRendering = false;
+                if (window.pdfPageNumPending !== null) {
+                    window.renderPdfPage(window.pdfPageNumPending);
+                    window.pdfPageNumPending = null;
+                }
+                
+                document.getElementById('pdf-page-num').textContent = num;
+            } catch (e) {
+                console.error("Error rendering page", e);
+                window.pdfPageRendering = false;
+            }
+        };
+
+        window.queueRenderPage = function(num) {
+            if (window.pdfPageRendering) {
+                window.pdfPageNumPending = num;
+            } else {
+                window.renderPdfPage(num);
+            }
+        };
+
+        window.onPdfPrevPage = function() {
+            if (!window.pdfDoc || window.pdfPageNum <= 1) return;
+            window.pdfPageNum--;
+            window.queueRenderPage(window.pdfPageNum);
+        };
+
+        window.onPdfNextPage = function() {
+            if (!window.pdfDoc || window.pdfPageNum >= window.pdfDoc.numPages) return;
+            window.pdfPageNum++;
+            window.queueRenderPage(window.pdfPageNum);
+        };
         
         // Reset the form
         document.getElementById('form-upload-video').reset();
@@ -7402,10 +7466,12 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
         // ==========================================
         // CUSTOM MATERIAL READER ENGINE
         // ==========================================
-        window.openCustomPDFViewer = async function(url, title = 'Material Reader') {
+       window.openCustomPDFViewer = async function(url, title = 'Material Reader') {
             document.getElementById('pdf-viewer-title').innerText = title;
             const loader = document.getElementById('pdf-loader');
             const loaderText = loader.querySelector('p');
+            const pdfCanvas = document.getElementById('native-pdf-canvas'); // FIXED
+            
             loader.classList.remove('hidden');
             document.getElementById('custom-pdf-viewer-modal').classList.remove('hidden-view');
             document.getElementById('pdf-pagination-controls').classList.add('hidden');
@@ -7450,7 +7516,6 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
                         }
                     }
 
-                    console.log("Fetching PDF from:", fetchUrl);
                     const response = await fetch(fetchUrl);
                     
                     if(!response.ok) {
@@ -7511,6 +7576,7 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
             }
 
             document.getElementById('custom-pdf-viewer-modal').classList.add('hidden-view');
+            const pdfCanvas = document.getElementById('native-pdf-canvas'); // FIXED
             if(pdfCanvas) pdfCanvas.classList.add('hidden');
             window.pdfDoc = null;
         };
