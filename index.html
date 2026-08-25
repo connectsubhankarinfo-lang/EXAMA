@@ -7799,53 +7799,166 @@ window.clearNovaChat = function() {
 };
 
 window.buildNovaSystemContext = function() {
-    const student = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
+    const mobile = window.loggedInMobile;
+    const student = (window.studentsDB || []).find(s => s.mobile === mobile);
     if (!student) return "You are an AI assistant.";
 
+    const now = Date.now();
+    const todayStr = window.formatDateDDMMYYYY();
+    const parseDDMM = (dStr) => { 
+        if(!dStr || !dStr.includes('/')) return new Date(0);
+        const [d, m, y] = dStr.split('/'); 
+        return new Date(`${y}-${m}-${d}T00:00:00`); 
+    };
+    const todayDate = new Date(); todayDate.setHours(0,0,0,0);
+
+    // --- 1. OVERALL STATS & RANKS ---
     const resultsArray = typeof getComputedResults === 'function' ? getComputedResults() : [];
-    const records = resultsArray.filter(r => r.mobile === window.loggedInMobile && !r.isVirtual);
+    const records = resultsArray.filter(r => r.mobile === mobile && !r.isVirtual);
     const avg = records.length > 0 ? (records.reduce((a, b) => a + b.percentage, 0) / records.length).toFixed(1) : 0;
     
+    const acadLb = typeof getOverallLeaderboard === 'function' ? getOverallLeaderboard() : [];
+    const myAcadRank = acadLb.findIndex(s => s.mobile === mobile) + 1 || '-';
+    
+    const studyLb = typeof getStudyLeaderboard === 'function' ? getStudyLeaderboard() : [];
+    const myStudyRank = studyLb.findIndex(s => s.mobile === mobile) + 1 || '-';
+    const myStudyData = studyLb.find(s => s.mobile === mobile) || { totalHours: 0 };
+    
+    const fitLb = typeof getFitnessLeaderboard === 'function' ? getFitnessLeaderboard() : [];
+    const myFitRank = fitLb.findIndex(s => s.mobile === mobile) + 1 || '-';
+    const myFitData = fitLb.find(s => s.mobile === mobile) || { totalDist: 0 };
+
+    let targetText = student.targetPercentage ? `Target Goal: ${student.targetPercentage}%` : `No target goal set.`;
+
+    // --- 2. EXAM SCHEDULE (TODAY & UPCOMING) ---
+    let todayExams = [];
+    let upcomingExams = [];
+    (window.examsDB || []).forEach(ex => {
+        const isAssigned = !ex.assignedTo || ex.assignedTo.includes('All') || ex.assignedTo.includes(mobile);
+        if (!isAssigned) return;
+        
+        const eDate = parseDDMM(ex.date);
+        if (ex.date === todayStr && !ex.isEnded) {
+            todayExams.push(`- ${ex.name} (${ex.duration}m, ${ex.totalMarks} Marks, Type: ${ex.examType})`);
+        } else if (eDate > todayDate && !ex.isEnded) {
+            upcomingExams.push(`- ${ex.name} on ${ex.date} (${ex.duration}m, ${ex.totalMarks} Marks)`);
+        }
+    });
+    const todayExamsText = todayExams.length > 0 ? todayExams.join('\n') : "No exams scheduled for today.";
+    const upcomingExamsText = upcomingExams.length > 0 ? upcomingExams.join('\n') : "No upcoming exams scheduled.";
+
+    // --- 3. EXAM HISTORY & FEEDBACK ---
     let examHistory = records.map(r => {
         const ex = (window.examsDB || []).find(e => e.id === r.examId);
         return `- ${ex ? ex.name : 'Exam'}: ${r.obtained}/${r.total} marks (${r.percentage.toFixed(0)}%). Status: ${r.status}`;
     }).join('\n');
-    if(!examHistory) examHistory = "No exams taken yet.";
+    if(!examHistory) examHistory = "No past exams taken.";
 
-    const sessions = (window.sessionsDB || []).filter(s => s.mobile === window.loggedInMobile);
-    const totalStudyMs = sessions.reduce((a, b) => a + (b.totalStudyMs || 0), 0);
-    const totalStudyHrs = (totalStudyMs / 3600000).toFixed(1);
+    let detailedFeedbackText = "";
+    const myScripts = (window.peerAnswerScriptsDB || []).filter(s => s.solverMobile === mobile && s.isGraded);
+    if (myScripts.length > 0) {
+        myScripts.forEach(script => {
+            const ex = (window.examsDB || []).find(e => e.id === script.examId);
+            const examTitle = ex ? ex.name : "Exam";
+            const fb = script.aiFeedback || (window.scriptFeedbacks && window.scriptFeedbacks[script.id]);
 
-    const fitLogs = (window.fitnessDB || []).filter(l => l.mobile === window.loggedInMobile && !l.isAbsent);
-    const totalKm = fitLogs.reduce((a, b) => a + (b.distance || 0), 0).toFixed(1);
-    const totalCals = fitLogs.reduce((a, b) => a + (b.cals || 0), 0);
+            if (fb) {
+                detailedFeedbackText += `\n### Exam: ${examTitle} (Scored: ${script.marksAwarded}/${script.maxMarks})\n`;
+                if (fb.overallAnalysis) detailedFeedbackText += `- Overall Feedback: ${fb.overallAnalysis}\n`;
+                if (fb.questions && fb.questions.length > 0) {
+                    detailedFeedbackText += `- Question Breakdown & Errors:\n`;
+                    fb.questions.forEach(q => {
+                        detailedFeedbackText += `  * ${q.questionNumber || 'Question'} [${q.status || 'Graded'} - Marks: ${q.marksGiven || 0}/${q.maxMarks || 0}]:\n`;
+                        if (q.studentWrote) detailedFeedbackText += `    - Student's Answer: "${q.studentWrote}"\n`;
+                        if (q.whyItIsWrong) detailedFeedbackText += `    - Mistake Analysis: ${q.whyItIsWrong}\n`;
+                        if (q.correctSolution) detailedFeedbackText += `    - Correct Solution: ${q.correctSolution}\n`;
+                    });
+                }
+            }
+        });
+    }
+    if (!detailedFeedbackText) detailedFeedbackText = "No detailed question-level feedback recorded yet.";
 
-    let targetText = student.targetPercentage ? `They have set a target goal of ${student.targetPercentage}%.` : `They have not set a target goal yet.`;
+    // --- 4. SYLLABUS PROGRESS ---
+    const mySyllabusTopics = (window.syllabusTopicsDB || []).filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile));
+    let completedClasses = 0;
+    let totalClasses = mySyllabusTopics.length;
+    mySyllabusTopics.forEach(topic => {
+        const prog = (window.studentSyllabusProgressDB || []).find(p => p.topicId === topic.id && p.mobile === mobile) || { classDone: false };
+        if (prog.classDone) completedClasses++;
+    });
+    const sylPerc = totalClasses > 0 ? Math.round((completedClasses / totalClasses) * 100) : 0;
+    let syllabusText = `Syllabus Completion: ${sylPerc}% (${completedClasses} out of ${totalClasses} Topics Completed).`;
 
-    const myTasks = (window.weeklyTasksDB || []).filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(window.loggedInMobile));
-    const completedTasks = (window.studentTasksDB || []).filter(st => st.mobile === window.loggedInMobile && st.completed).length;
+    // --- 5. WEEKLY TARGETS (CURRENT WEEK) ---
+    let currentTasksText = "";
+    if (typeof window.getTargetWeekInfo === 'function') {
+        const { weekKey } = window.getTargetWeekInfo(0);
+        const weeksTasks = (window.weeklyTasksDB || []).filter(t => t.weekKey === weekKey && (!t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile)));
+        let completedTasks = 0;
+        if (weeksTasks.length > 0) {
+            currentTasksText = weeksTasks.map(task => {
+                const isCompleted = (window.studentTasksDB || []).some(st => st.taskId === task.id && st.mobile === mobile && st.completed);
+                if (isCompleted) completedTasks++;
+                return `  - [${isCompleted ? 'Done' : 'Pending'}] ${task.subject}: ${task.taskDesc}`;
+            }).join('\n');
+            currentTasksText = `Weekly Targets (${completedTasks}/${weeksTasks.length} completed):\n${currentTasksText}`;
+        } else {
+            currentTasksText = "No weekly targets assigned for this week.";
+        }
+    }
 
+    // --- 6. UNREAD NOTICES ---
+    let unreadNoticesText = "";
+    const visibleNotices = (window.noticesDB || []).filter(n => !n.assignedTo || n.assignedTo.includes('All') || n.assignedTo.includes(mobile));
+    const unread = visibleNotices.filter(n => !(n.readBy && n.readBy.includes(mobile)));
+    if (unread.length > 0) {
+        unreadNoticesText = unread.map(n => `- ${n.title}: ${n.text.substring(0, 100)}...`).join('\n');
+    } else {
+        unreadNoticesText = "No unread notices.";
+    }
+
+    // ==========================================
+    // THE ULTIMATE MASTER PROMPT
+    // ==========================================
     return `
 You are NOVA, the highly intelligent, motivating, and analytical AI mentor inside the EXAMA application.
-You are currently talking directly to the student named: ${student.name}.
+You are talking directly to the student named: ${student.name}.
 
-Here is ${student.name}'s live real-time academic and fitness data:
-- Current Overall Academic Average: ${avg}%
+=== 📊 REAL-TIME PROFILE & RANKINGS ===
+- Overall Academic Average: ${avg}% (Global Rank: #${myAcadRank} of ${acadLb.length} students)
 - ${targetText}
-- Total Deep Focus Study Time Logged: ${totalStudyHrs} hours
-- Fitness Monitor: ${totalKm} KM run, ${totalCals} Calories burned
-- Syllabus Progress: Completed ${completedTasks} out of ${myTasks.length} assigned tasks.
+- Total Deep Focus Study Time: ${myStudyData.totalHours} hours (Global Rank: #${myStudyRank})
+- Fitness Monitor: ${myFitData.totalDist} KM run (Global Rank: #${myFitRank})
 
-Detailed Exam History:
+=== 📅 EXAM SCHEDULE ===
+[TODAY'S EXAMS]:
+${todayExamsText}
+
+[UPCOMING EXAMS]:
+${upcomingExamsText}
+
+=== 📈 SYLLABUS & WEEKLY TARGETS ===
+- ${syllabusText}
+${currentTasksText}
+
+=== 🔔 UNREAD NOTICES (FROM ADMIN) ===
+${unreadNoticesText}
+
+=== 📚 PAST EXAM HISTORY ===
 ${examHistory}
 
+=== 🧠 DETAILED EXAM FEEDBACK & MISTAKES (AI EVALUATIONS) ===
+${detailedFeedbackText}
+
 YOUR DIRECTIVES:
-1. Act as an encouraging, expert mentor. 
-2. Keep your answers concise, structured, and easy to read. 
-3. If they ask about their performance, analyze the data provided above and point out trends.
-4. If they ask for study schedules, factor in their focus time and suggest balancing it with their running/fitness.
-5. Use markdown for bolding important concepts and bullet points. Do NOT use overly long paragraphs.
-6. Acknowledge them by their name occasionally to make it personal.
+1. Act as an encouraging, expert mentor with absolute awareness of the student's entire schedule and progress.
+2. If they ask "What do I have today?", "Any exams?", or "What's my schedule?", refer to the [TODAY'S EXAMS] and [UPCOMING EXAMS] sections.
+3. If they ask about notices, targets, or syllabus progress, check the relevant sections and inform them.
+4. When the student asks about their exams, mistakes, or how to improve, refer to the DETAILED EXAM FEEDBACK (mention the exact question numbers, formulas they missed, or errors they made).
+5. Teach them the correct concept or solution for their past mistakes when asked.
+6. Keep answers clean, structured, and easy to read using bolding and bullet points.
+7. Address the student by their name (${student.name}) naturally.
 `;
 };
 
