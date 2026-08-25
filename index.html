@@ -2102,30 +2102,56 @@ window.evaluateScriptWithAI = async function(scriptId, examId, solverMobile) {
 };
 
 window.openNovaFeedbackModal = function(scriptId) {
-    const feedback = window.scriptFeedbacks[scriptId];
-    if (!feedback) return;
+    const feedback = window.scriptFeedbacks[scriptId] || window.tempAiFeedback[scriptId];
+    if (!feedback) {
+        alert("No detailed analysis available for this script.");
+        return;
+    }
 
-    document.getElementById('nova-fb-overall').innerText = feedback.overall_feedback || "No general feedback provided.";
+    document.getElementById('nova-fb-overall').innerText = feedback.overallAnalysis || "Evaluation complete.";
     
     const mistakesContainer = document.getElementById('nova-fb-mistakes');
     mistakesContainer.innerHTML = '';
     
-    if (feedback.mistakes && feedback.mistakes.length > 0) {
-        feedback.mistakes.forEach(m => {
+    const questions = feedback.questions || [];
+    if (questions.length > 0) {
+        questions.forEach(q => {
+            const isCorrect = q.status === "Correct";
+            const isPartial = q.status === "Partially Correct";
+            
+            const badgeBg = isCorrect ? "bg-emerald-100 text-emerald-800 border-emerald-200" : (isPartial ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-rose-100 text-rose-800 border-rose-200");
+            const icon = isCorrect ? "fa-circle-check text-emerald-500" : (isPartial ? "fa-triangle-exclamation text-amber-500" : "fa-circle-xmark text-rose-500");
+
             mistakesContainer.innerHTML += `
-            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3 shadow-sm">
-                <h5 class="font-black text-gray-900 text-sm mb-1">${m.question}</h5>
-                <p class="text-[11px] sm:text-xs text-red-600 font-medium mb-1.5"><strong class="font-black">Error:</strong> ${m.why_it_is_wrong}</p>
-                <p class="text-[11px] sm:text-xs text-emerald-600 font-medium"><strong class="font-black">Correction:</strong> ${m.how_to_fix}</p>
+            <div class="bg-gray-50/90 border border-gray-200 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-2">
+                <div class="flex items-center justify-between border-b border-gray-200/60 pb-2">
+                    <span class="font-black text-xs sm:text-sm text-gray-900 flex items-center gap-1.5"><i class="fa-solid ${icon}"></i> ${q.questionNumber || "Question"}</span>
+                    <span class="text-[9px] sm:text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${badgeBg}">${q.marksGiven || 0} / ${q.maxMarks || 0} Marks (${q.status})</span>
+                </div>
+
+                ${q.studentWrote ? `
+                <div class="bg-white p-2.5 rounded-xl border border-gray-200 text-xs">
+                    <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-0.5"><i class="fa-solid fa-pen-nib mr-1"></i> Student's Detected Answer</span>
+                    <p class="font-mono text-gray-800 leading-relaxed">${q.studentWrote}</p>
+                </div>` : ''}
+
+                <div class="bg-rose-50/70 p-2.5 rounded-xl border border-rose-100 text-xs">
+                    <span class="text-[9px] font-black text-rose-500 uppercase tracking-widest block mb-0.5"><i class="fa-solid fa-bug mr-1"></i> Why It's Wrong / Mistake Analysis</span>
+                    <p class="font-medium text-rose-900 leading-relaxed">${q.whyItIsWrong || "No conceptual errors found."}</p>
+                </div>
+
+                <div class="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-100 text-xs">
+                    <span class="text-[9px] font-black text-emerald-600 uppercase tracking-widest block mb-0.5"><i class="fa-solid fa-check-double mr-1"></i> Step-by-Step Correct Solution</span>
+                    <p class="font-medium text-emerald-900 leading-relaxed">${q.correctSolution || "Solution followed correct procedure."}</p>
+                </div>
             </div>`;
         });
     } else {
-        mistakesContainer.innerHTML = `<p class="text-xs text-gray-500 italic p-3 text-center border border-dashed rounded-xl">No specific mistakes flagged. Great job!</p>`;
+        mistakesContainer.innerHTML = `<p class="text-xs text-gray-500 italic p-4 text-center border border-dashed rounded-xl">No question-level breakdown returned.</p>`;
     }
 
     document.getElementById('nova-feedback-modal').classList.remove('hidden-view');
 };
-
 // ==========================================
         // DISCUS CHAT & AUDIO RECORDING ENGINE
         // ==========================================
@@ -3735,24 +3761,35 @@ window.playVideo = function(id) {
         });
     }
 
-   // 🛡️ HIJACK NATIVE VIDEO.JS FULLSCREEN ENGINE
+// 🛡️ HIJACK NATIVE VIDEO.JS FULLSCREEN ENGINE TO PREVENT APP CRASHES
     window.vjsPlayer.ready(function() {
         this.el().focus = function() {}; // Prevent auto-scroll on load
         
         const player = this;
-        // Intercept all fullscreen requests (Button clicks, double-taps, keyboard shortcuts)
-        player.requestFullscreen = function() {
-            if (!document.getElementById('native-player-container').classList.contains('fixed')) {
-                window.toggleVideoFullscreen();
-            }
-        };
         
-        // Intercept all exit fullscreen requests
-        player.exitFullscreen = function() {
-            if (document.getElementById('native-player-container').classList.contains('fixed')) {
+        // Completely detach Video.js's native fullscreen behavior
+        const fsToggle = player.controlBar.getChild('fullscreenToggle');
+        if (fsToggle) {
+            // Remove standard video.js click behaviors
+            fsToggle.off('click');
+            fsToggle.off('tap');
+            
+            // Force it to use our custom CSS/Hybrid Fullscreen ONLY
+            const customFsHandler = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
                 window.toggleVideoFullscreen();
-            }
-        };
+            };
+            fsToggle.on('click', customFsHandler);
+            fsToggle.on('tap', customFsHandler);
+        }
+        
+        // Catch double clicks on the video area to toggle custom fullscreen
+        player.tech_.off('dblclick');
+        player.on('dblclick', function(e) {
+            e.preventDefault();
+            window.toggleVideoFullscreen();
+        });
     });
 
  
@@ -3890,16 +3927,25 @@ window.toggleVideoFullscreen = function() {
     if(!container) return;
 
     const isCSSFullscreen = container.classList.contains('fixed');
+    const isTabletOrDesktop = window.innerWidth >= 768;
     const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
     
-    if (!isCSSFullscreen && !isNativeFullscreen) {
+    // Determine if the video is currently maximized based on device type
+    let isCurrentlyMaximized = false;
+    if (isTabletOrDesktop) {
+        isCurrentlyMaximized = isNativeFullscreen;
+    } else {
+        isCurrentlyMaximized = isCSSFullscreen;
+    }
+    
+    if (!isCurrentlyMaximized) {
         // PUSH dummy history state for Mobile Android Back Button
-        if (window.innerWidth < 768) history.pushState({ isVideoFullscreen: true }, "");
+        if (!isTabletOrDesktop) history.pushState({ isVideoFullscreen: true }, "");
         window._enterCSSFullscreen();
     } else {
         // TRIGGER Back to safely shrink video on Mobile, or manually exit on Tablet
-        if (window.innerWidth < 768 && isCSSFullscreen) {
-            history.back(); 
+        if (!isTabletOrDesktop && isCSSFullscreen) {
+            history.back(); // This safely calls _exitCSSFullscreen via the popstate listener
         } else {
             window._exitCSSFullscreen();
         }
@@ -5807,16 +5853,7 @@ function getFitnessLeaderboard() {
         });
 
  function executeLoginUI(role, mob) {
-            // 📱 MOBILE ONLY: Request App-Wide Fullscreen to hide the Status Bar!
-            // 🖥️ TABLETS: Ignore this so they keep their status bar across the app.
-            if (window.innerWidth < 768) {
-                try {
-                    const doc = document.documentElement;
-                    if (doc.requestFullscreen) doc.requestFullscreen().catch(()=>{});
-                    else if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen().catch(()=>{});
-                    else if (doc.msRequestFullscreen) doc.msRequestFullscreen().catch(()=>{});
-                } catch (e) { console.warn("App fullscreen blocked by browser."); }
-            }
+            
 
             window.updatePresence(); requestNotificationPermission(); 
             if(window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { try { if(OneSignal.User){ await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch(e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
@@ -7707,65 +7744,157 @@ window.closePeerEvalRoom = function() {
     safeBack(); 
 };
 
-window.autoGradeScript = function(scriptId, btnElement) {
+// ==========================================
+// REAL NOVA MULTIMODAL AUTO-GRADING ENGINE
+// ==========================================
+window.autoGradeScript = async function(scriptId, btnElement) {
     const originalHtml = btnElement.innerHTML;
-    
     const marksInput = document.getElementById(`marks-${scriptId}`);
-    const feedbackBox = document.getElementById(`feedback-box-${scriptId}`);
-    const feedbackInput = document.getElementById(`feedback-input-${scriptId}`);
-    
     if (!marksInput) return;
 
-    // Extract Max Marks from the placeholder
+    const script = window.peerAnswerScriptsDB.find(s => s.id === scriptId);
+    if (!script || !script.imgUrls || script.imgUrls.length === 0) {
+        alert("No handwritten script images found to evaluate.");
+        return;
+    }
+
+    const exam = window.examsDB.find(e => e.id === script.examId);
+    const questions = window.peerMaterialsDB.find(m => m.examId === script.examId && m.mobile !== script.solverMobile);
+    
     const placeholderText = marksInput.getAttribute('placeholder') || "";
     const maxMarksMatch = placeholderText.match(/(\d+(\.\d+)?)/);
-    const maxMarks = maxMarksMatch ? parseFloat(maxMarksMatch[1]) : 100;
+    const maxMarks = maxMarksMatch ? parseFloat(maxMarksMatch[1]) : (exam ? exam.totalMarks : 100);
 
-    // Show scanning animation
-    btnElement.innerHTML = `<i class="fa-solid fa-expand fa-fade text-lg"></i>`;
+    // 1. Loading UI
+    btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> Analyzing...`;
     btnElement.disabled = true;
+    btnElement.classList.add('opacity-70', 'cursor-not-allowed');
 
-    // Simulate AI Vision Processing
-    setTimeout(() => {
-        btnElement.innerHTML = originalHtml;
-        btnElement.disabled = false;
-        
-        // Calculate a smart score
-        const randomPercentage = (Math.floor(Math.random() * 24) + 75) / 100; 
-        const aiScore = Math.round(maxMarks * randomPercentage);
+    try {
+        // Helper to convert Image URL to Base64
+        const urlToBase64 = async (url) => {
+            const res = await fetch(url);
+            const blob = await res.blob();
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                reader.readAsDataURL(blob);
+            });
+        };
 
-        // Fill Score
-        marksInput.value = aiScore;
-        marksInput.classList.remove('bg-indigo-50/50', 'border-indigo-200', 'text-indigo-900');
-        marksInput.classList.add('bg-green-50', 'border-green-400', 'text-green-800', 'shadow-[0_0_15px_rgba(74,222,128,0.4)]');
-        
-        // Generate and Fill Feedback
-        if(feedbackBox && feedbackInput) {
-            feedbackBox.classList.remove('hidden');
-            const feedbackOptions = [
-                "Excellent presentation and clear steps. Very minor formatting issues.",
-                "Good understanding of the core concept. Keep up the good work!",
-                "Accurate answers, but ensure handwriting is slightly more legible next time.",
-                "Great job! The final derivations were perfectly accurate."
-            ];
-            feedbackInput.value = "🤖 NOVA AI Feedback: " + feedbackOptions[Math.floor(Math.random() * feedbackOptions.length)];
-            feedbackInput.classList.add('border-green-300', 'bg-green-50/50', 'text-green-900');
+        showLoader("NOVA is reading handwriting & analyzing steps...");
+
+        // 2. Convert Questions & Scripts to Base64 Parts
+        const parts = [];
+
+        // Prompt
+        parts.push({
+            text: `Please evaluate this handwritten test paper. Total Max Marks for this submission: ${maxMarks}.
+Examine each question, assess the student's solution, deduct marks where steps or logic are flawed, and provide detailed analytical corrections.
+
+Respond strictly in JSON using this format:
+{
+  "marksAwarded": number,
+  "maxMarks": ${maxMarks},
+  "overallAnalysis": "2-3 sentences summarizing performance, conceptual clarity, and handwriting legibility.",
+  "questions": [
+    {
+      "questionNumber": "Question 1",
+      "status": "Correct" | "Partially Correct" | "Incorrect",
+      "marksGiven": number,
+      "maxMarks": number,
+      "studentWrote": "Exact transcription of what the student wrote or attempted",
+      "whyItIsWrong": "Detailed analysis of why the answer is incorrect, where the formula or logic broke down, or what error was made",
+      "correctSolution": "Complete step-by-step correct solution or correction"
+    }
+  ]
+}`
+        });
+
+        // Attach Question Images
+        if (questions && questions.qUrls) {
+            for (let qUrl of questions.qUrls) {
+                const b64 = await urlToBase64(qUrl);
+                parts.push({ inlineData: { data: b64, mimeType: "image/jpeg" } });
+            }
         }
-        
-        window.showToast("NOVA Graded", `Score: ${aiScore}/${maxMarks} applied. Feedback generated.`, "info");
-    }, 2000);
+
+        // Attach Student's Handwritten Script Images
+        for (let sUrl of script.imgUrls) {
+            const b64 = await urlToBase64(sUrl);
+            parts.push({ inlineData: { data: b64, mimeType: "image/jpeg" } });
+        }
+
+        // 3. Send payload to Worker
+        const response = await fetch(window.WORKER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                action: "grade_paper",
+                maxMarks: maxMarks,
+                contents: [{ role: "user", parts: parts }]
+            })
+        });
+
+        const data = await response.json();
+        hideLoader();
+
+        if (data.error) throw new Error(data.error.message || "Failed AI Evaluation");
+
+        // Parse AI JSON response
+        const rawAiText = data.candidates[0].content.parts[0].text;
+        const analysisResult = JSON.parse(rawAiText);
+
+        // 4. Fill in the Real Calculated Marks
+        const finalScore = Math.min(maxMarks, Math.max(0, analysisResult.marksAwarded || 0));
+        marksInput.value = finalScore;
+        marksInput.classList.remove('bg-indigo-50/50', 'border-indigo-200', 'text-indigo-900');
+        marksInput.classList.add('bg-emerald-50', 'border-emerald-400', 'text-emerald-800', 'shadow-[0_0_15px_rgba(16,185,129,0.3)]');
+
+        // 5. Store the Deep Analysis Object
+        window.tempAiFeedback[scriptId] = analysisResult;
+        window.scriptFeedbacks[scriptId] = analysisResult;
+
+        // 6. Show "View Full Analysis" button on the card
+        const feedbackBox = document.getElementById(`feedback-box-${scriptId}`);
+        if (feedbackBox) {
+            feedbackBox.classList.remove('hidden');
+            feedbackBox.innerHTML = `
+                <div class="bg-indigo-50/80 p-3 rounded-xl border border-indigo-200 flex items-center justify-between gap-2 shadow-sm">
+                    <div class="min-w-0">
+                        <span class="text-[9px] font-black text-indigo-800 uppercase tracking-widest block"><i class="fa-solid fa-microchip mr-1"></i> Analysis Ready</span>
+                        <p class="text-[11px] text-gray-600 truncate font-medium">${analysisResult.overallAnalysis || "Detailed error breakdown ready."}</p>
+                    </div>
+                    <button type="button" onclick="window.openNovaFeedbackModal('${scriptId}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black shrink-0 active:scale-95 transition-all shadow-sm">
+                        View Analysis
+                    </button>
+                </div>
+            `;
+        }
+
+        btnElement.innerHTML = `<i class="fa-solid fa-check"></i> Scored: ${finalScore}`;
+        btnElement.classList.replace('from-blue-500', 'from-emerald-500');
+        btnElement.classList.replace('to-indigo-600', 'to-emerald-600');
+
+        window.showToast("Analysis Complete", `NOVA graded the paper: ${finalScore} / ${maxMarks}. Click 'View Analysis' to see mistakes.`, "info");
+
+    } catch (err) {
+        console.error("Auto-Grade Error:", err);
+        hideLoader();
+        btnElement.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Manual`;
+        btnElement.classList.replace('from-blue-500', 'from-rose-500');
+        btnElement.classList.replace('to-indigo-600', 'to-rose-600');
+        window.showToast("Handwriting Alert", "Handwriting unclear or server timed out. Please grade manually.", "alert");
+    } finally {
+        btnElement.disabled = false;
+        btnElement.classList.remove('opacity-70', 'cursor-not-allowed');
+    }
 };
 window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnElement) {
     const marksInput = document.getElementById(`marks-${scriptId}`);
-    const feedbackInput = document.getElementById(`feedback-input-${scriptId}`); // Grab feedback
-    
     const obtained = parseFloat(marksInput.value);
     
-    // Check if feedback exists, otherwise leave empty
-    const feedbackText = feedbackInput && !feedbackInput.parentElement.classList.contains('hidden') ? feedbackInput.value.trim() : "";
-
     const exam = window.examsDB.find(e => e.id === examId);
-    
     const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== solverMobile).map(m => m.mobile))].length;
     const maxMarksForThisSet = totalOpponents > 0 ? parseFloat((exam.totalMarks / totalOpponents).toFixed(1)) : exam.totalMarks;
     
@@ -7776,16 +7905,18 @@ window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnEleme
         btnElement.disabled = true;
         btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
     }
-    showLoader("Saving...");
+    showLoader("Saving Evaluation...");
 
     try {
-        // 🚀 NEW: Add Feedback to the database payload
+        // Grab the deep analysis object if generated
+        const aiAnalysisData = window.tempAiFeedback[scriptId] || null;
+
         const payload = { 
             isGraded: true, 
             marksAwarded: obtained, 
             maxMarks: maxMarksForThisSet, 
             evaluatorTime: Date.now(),
-            feedback: feedbackText
+            aiFeedback: aiAnalysisData // Saved permanently
         };
 
         if (isFirebaseConfigured) {
@@ -7795,16 +7926,18 @@ window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnEleme
             if (script) Object.assign(script, payload);
         }
         
-        // Update the card visually to show success AND the feedback
         document.getElementById(`script-card-${scriptId}`).innerHTML = `
-            <div class="p-5 text-center bg-green-50 rounded-xl border border-green-200">
-                <h4 class="text-green-800 font-black mb-1">Graded (${obtained}/${maxMarksForThisSet})</h4>
-                ${feedbackText ? `<p class="text-[10px] sm:text-xs text-green-700 italic px-2">"${feedbackText}"</p>` : ''}
+            <div class="p-5 text-center bg-emerald-50 rounded-2xl border border-emerald-200">
+                <div class="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg"><i class="fa-solid fa-check"></i></div>
+                <h4 class="text-emerald-900 font-black text-sm">Graded (${obtained} / ${maxMarksForThisSet})</h4>
+                <p class="text-[10px] text-emerald-700 font-bold mt-1">Evaluation & deep mistake analysis saved.</p>
             </div>`;
             
         hideLoader();
     } catch(err) {
-        console.error(err); hideLoader(); alert("Failed to submit peer marks.");
+        console.error(err); 
+        hideLoader(); 
+        alert("Failed to submit marks.");
     }
 };
    
