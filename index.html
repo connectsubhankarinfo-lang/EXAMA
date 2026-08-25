@@ -141,7 +141,7 @@
                 <h3 class="text-xl sm:text-2xl font-black text-gray-900 mb-2 break-words">4 Hours Completed!</h3>
                 <p class="text-xs sm:text-sm text-gray-600 mb-6 sm:mb-8 font-medium leading-relaxed break-words">Amazing focus! Your timer is paused. Do you want to end your session here or continue studying for extra time?</p>
                 <div class="flex gap-2 sm:gap-3">
-                    <button onclick="handleOvertimeChoice('STOP')" class="flex-1 bg-red-100 text-red-600 text-sm font-bold py-3 sm:py-4 rounded-2xl active:scale-95 transition-all">End Session</button>
+                    <button onclick="handleOvertimeChoice('STOP_AT_LIMIT')" class="flex-1 bg-red-100 text-red-600 text-sm font-bold py-3 sm:py-4 rounded-2xl active:scale-95 transition-all">End Session</button>
                     <button onclick="handleOvertimeChoice('CONTINUE')" class="flex-[2] bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold py-3 sm:py-4 rounded-2xl active:scale-95 transition-all shadow-xl shadow-indigo-500/30">Continue Extra</button>
                 </div>
             </div>
@@ -4358,13 +4358,13 @@ window.switchLbSubTab = function(tab) {
             return `${h}:${m}:${s}`;
         }
 
-        window.toggleSessionState = async function(action) {
+       window.toggleSessionState = async function(action) {
             const mobile = window.loggedInMobile; const dateStr = window.formatDateDDMMYYYY(); let sessionType = '';
             if(action === 'START' || action === 'ABSENT') {
                 const selectEl = document.getElementById('session-type-select'); if(!selectEl || !selectEl.value) return alert("Please select a session first!");
                 sessionType = selectEl.value;
             } else {
-                const active = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK' || s.status === 'OVERTIME_PAUSE'));
+                const active = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK'));
                 if(active) sessionType = active.sessionType; else return;
             }
 
@@ -4372,25 +4372,27 @@ window.switchLbSubTab = function(tab) {
             let existing = window.sessionsDB.find(s => s.id === id); const now = Date.now();
             
             if (action === 'START' && existing && existing.status === 'COMPLETED') { existing.totalStudyMs = 0; existing.totalBreakMs = 0; existing.status = 'STUDYING'; existing.lastToggleTime = now; existing.overtimePrompted = false; }
+            
             if (!existing) {
                 existing = { id, mobile, dateStr, sessionType, name: window.studentsDB.find(s => s.mobile === mobile).name, status: action === 'START' ? 'STUDYING' : 'ABSENT', lastToggleTime: now, totalStudyMs: 0, totalBreakMs: 0, timestamp: now, logs: [{ action: action, time: now }], overtimePrompted: false };
             } else {
                 const elapsed = now - existing.lastToggleTime;
-               if (existing.status === 'STUDYING') {
-    existing.totalStudyMs += elapsed;
-    
-    // NEW: Lock the timer exactly at 4 hours (14,400,000 ms) when the modal pops up
-    if (action === 'OVERTIME_PAUSE') {
-        existing.totalStudyMs = 14400000;
-    }
-}
-if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
+                
+                if (existing.status === 'STUDYING') {
+                    existing.totalStudyMs += elapsed;
+                    
+                    // NEW: Lock the timer exactly at 4 hours if they clicked End from the Overtime Modal
+                    if (action === 'STOP_AT_LIMIT') {
+                        existing.totalStudyMs = 14400000;
+                    }
+                }
+                
+                if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                 
                 if (action === 'START' || action === 'RESUME') existing.status = 'STUDYING'; 
                 if (action === 'BREAK') existing.status = 'BREAK'; 
-                if (action === 'STOP') existing.status = 'COMPLETED'; 
+                if (action === 'STOP' || action === 'STOP_AT_LIMIT') existing.status = 'COMPLETED'; 
                 if (action === 'ABSENT') existing.status = 'ABSENT';
-                if (action === 'OVERTIME_PAUSE') existing.status = 'OVERTIME_PAUSE';
                 
                 existing.lastToggleTime = now; if (!existing.logs) existing.logs = []; existing.logs.push({ action: action, time: now });
             }
@@ -4401,8 +4403,7 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
             if (action === 'START') sendOneSignalPush("Focus Session Started 🚀", `${existing.name} started their ${sessionShortName} at ${timeString}.`);
             else if (action === 'BREAK') sendOneSignalPush("Session Pause ☕", `${existing.name} took a break at ${timeString}.`);
             else if (action === 'RESUME') sendOneSignalPush("Session Resumed ⚡", `${existing.name} resumed studying at ${timeString}.`);
-            else if (action === 'STOP') sendOneSignalPush("Session Ended 🏁", `${existing.name} ended their ${sessionShortName} at ${timeString}.`);
-            else if (action === 'OVERTIME_PAUSE') sendOneSignalPush("Goal Reached 🎯", `${existing.name} hit 4 hours of focus!`);
+            else if (action === 'STOP' || action === 'STOP_AT_LIMIT') sendOneSignalPush("Session Ended 🏁", `${existing.name} ended their ${sessionShortName} at ${timeString}.`);
             
             hideLoader(); renderSessionTimer();
         };
@@ -4438,21 +4439,18 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                 toggleSessionState('STOP');
             }
         };
-
-       window.handleOvertimeChoice = function(choice) {
+window.handleOvertimeChoice = function(choice) {
     // Hide the popup modal
     document.getElementById('session-overtime-modal').classList.add('hidden-view');
     
-    if (choice === 'STOP') {
-        // Ends the session and saves progress
-        toggleSessionState('STOP');
+    if (choice === 'STOP_AT_LIMIT') {
+        // Ends the session and strictly caps progress at exactly 4 hours
+        toggleSessionState('STOP_AT_LIMIT');
     } else if (choice === 'CONTINUE') {
-        // Resumes the session to count upwards (+00:00:01...)
-        toggleSessionState('RESUME');
+        // Do nothing to the clock! It never paused, so we just let it keep running.
     }
 };
-
-        function updateLiveTimers(mySession) {
+       function updateLiveTimers(mySession) {
             const now = Date.now(); const todayStr = window.formatDateDDMMYYYY();
             
             if (mySession) {
@@ -4462,33 +4460,29 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                 
                 let isOvertime = studyMs >= TOTAL_SESSION_MS;
                 
-                // Pause and Trigger Modal exactly when they hit 4 Hours!
+                // Trigger Modal exactly when they hit 4 Hours, BUT DO NOT PAUSE THE CLOCK
                 if (isOvertime && !mySession.overtimePrompted && mySession.status === 'STUDYING') {
                     mySession.overtimePrompted = true;
                     if(isFirebaseConfigured) updateDoc(doc(db, "sessions", mySession.id), { overtimePrompted: true });
                     
-                    toggleSessionState('OVERTIME_PAUSE');
+                    // The clock stays in 'STUDYING' state and keeps ticking up behind the modal
                     document.getElementById('session-overtime-modal').classList.remove('hidden-view');
                     playChime();
-                    return; 
                 }
 
                 let displayStr = "00:00:00";
                 let studyTimeEl = document.getElementById('st-study-time');
 
                 if (isOvertime) {
-    let extraMs = studyMs - TOTAL_SESSION_MS;
-    
-    // NEW: Safety guard to prevent negative zero rendering
-    if (extraMs < 0) extraMs = 0; 
-    
-    displayStr = "+" + formatTime(extraMs);
-    studyTimeEl.className = "text-4xl sm:text-5xl md:text-6xl font-mono font-black tracking-tighter text-emerald-500 drop-shadow-sm leading-none py-1 break-words";
-} else {
-    let remainingStudyMs = TOTAL_SESSION_MS - studyMs;
-    displayStr = formatTime(remainingStudyMs);
-    studyTimeEl.className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words";
-}
+                    let extraMs = studyMs - TOTAL_SESSION_MS;
+                    if (extraMs < 0) extraMs = 0; 
+                    displayStr = "+" + formatTime(extraMs);
+                    studyTimeEl.className = "text-4xl sm:text-5xl md:text-6xl font-mono font-black tracking-tighter text-emerald-500 drop-shadow-sm leading-none py-1 break-words";
+                } else {
+                    let remainingStudyMs = TOTAL_SESSION_MS - studyMs;
+                    displayStr = formatTime(remainingStudyMs);
+                    studyTimeEl.className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words";
+                }
                 studyTimeEl.innerText = displayStr;
                 document.getElementById('st-break-time').innerText = formatTime(breakMs); 
             }
@@ -4506,7 +4500,7 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
             const totalBreakTodayEl = document.getElementById('st-total-break-today'); if(totalBreakTodayEl) totalBreakTodayEl.innerText = formatTime(totalBreakTodayMs);
 
             const peersDiv = document.getElementById('live-peers-list');
-            const activePeers = window.sessionsDB.filter(s => s.dateStr === todayStr && (s.status === 'STUDYING' || s.status === 'BREAK' || s.status === 'OVERTIME_PAUSE') && s.mobile !== window.loggedInMobile);
+            const activePeers = window.sessionsDB.filter(s => s.dateStr === todayStr && (s.status === 'STUDYING' || s.status === 'BREAK') && s.mobile !== window.loggedInMobile);
 
             if (peersDiv) {
                 if (activePeers.length === 0) { 
@@ -4536,11 +4530,10 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                             avatarGrad = 'from-amber-100 to-orange-100'; avatarText = 'text-orange-700'; avatarBorder = 'border-orange-200';
                             dotColor = 'bg-amber-500'; dotPing = '';
                             badgeBg = 'bg-amber-50'; badgeText = 'text-amber-700'; badgeBorder = 'border-amber-200';
-                            statusIcon = peer.status === 'OVERTIME_PAUSE' ? 'fa-medal text-indigo-500' : 'fa-mug-hot text-amber-600'; 
-                            statusText = peer.status === 'OVERTIME_PAUSE' ? 'Goal Met' : 'On Break';
+                            statusIcon = 'fa-mug-hot text-amber-600'; 
+                            statusText = 'On Break';
                         }
 
-                        // NEW: Fetch the actual Profile Picture
                         const peerDp = window.getStudentAvatar(peer.mobile, peer.name);
 
                         peersHtml += `
@@ -4583,8 +4576,7 @@ if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
                         let icon = 'fa-play'; let color = 'text-green-500'; let bg = 'bg-green-100'; let text = 'Started Session';
                         if(log.action === 'BREAK') { icon = 'fa-mug-hot'; color = 'text-amber-500'; bg = 'bg-amber-100'; text = 'Took a Break'; }
                         if(log.action === 'RESUME') { icon = 'fa-play'; color = 'text-green-500'; bg = 'bg-green-100'; text = 'Resumed Studying'; }
-                        if(log.action === 'STOP') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Ended Session'; }
-                        if(log.action === 'OVERTIME_PAUSE') { icon = 'fa-medal'; color = 'text-indigo-500'; bg = 'bg-indigo-100'; text = 'Hit 4 Hours Goal'; }
+                        if(log.action === 'STOP' || log.action === 'STOP_AT_LIMIT') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Ended Session'; }
                         const shortName = log.sessionName.split(' ')[0];
                         logHtml += `<div class="flex items-center gap-2 sm:gap-3 bg-gray-50 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-gray-100 shadow-sm"><div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0"><i class="fa-solid ${icon} text-[9px] sm:text-[10px]"></i></div><div class="flex-1 min-w-0 pr-1"><p class="text-[10px] sm:text-xs font-bold text-gray-800 break-words leading-tight">${text}</p><p class="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">${shortName} Session</p></div><div class="text-[8px] sm:text-[10px] font-black text-gray-400 shrink-0">${t}</div></div>`;
                     });
