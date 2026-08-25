@@ -1,82 +1,8196 @@
-const CACHE_NAME = 'exama-offline-cache-v1';
-
-// Files to cache immediately when the app installs
-const INITIAL_CACHE = [
-    '/',
-    '/index.html'
-];
-
-// 1. INSTALL EVENT
-self.addEventListener('install', (event) => {
-    console.log('[Service Worker] Installed');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   
+    <!-- SortableJS for Drag and Drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     
-    event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            console.log('[Service Worker] Caching App Shell');
-            return cache.addAll(INITIAL_CACHE);
-        })
-    );
-    // Force the waiting service worker to become the active service worker.
-    self.skipWaiting();
-});
-
-// 2. ACTIVATE EVENT
-self.addEventListener('activate', (event) => {
-    console.log('[Service Worker] Activated');
+    <!-- Force App Fullscreen (Hides Status Bar when added to Home Screen) -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
-    // Clean up old caches if the CACHE_NAME changes
-    event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames.map((cacheName) => {
-                    if (cacheName !== CACHE_NAME) {
-                        console.log('[Service Worker] Removing old cache:', cacheName);
-                        return caches.delete(cacheName);
-                    }
-                })
-            );
-        })
-    );
-    self.clients.claim();
-});
+    <!-- PDF.js Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- LocalForage for Offline Storage -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+   
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- HTML2PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Google Drive API / OAuth2 SDK -->
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
 
-// 3. FETCH EVENT (The Mixed Logic)
-self.addEventListener('fetch', (event) => {
-    // We only want to cache GET requests (Ignore Firebase POST/PUT saves)
-    if (event.request.method !== 'GET') return;
+    <!-- Video.js Core -->
+    <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet" />
+    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <!-- Video.js YouTube Plugin -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-youtube/3.0.1/Youtube.min.js"></script>
 
-    event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            // A. If the file is already in the cache, serve it instantly
-            if (cachedResponse) {
-                return cachedResponse;
-            }
+    <style>
+        /* Custom Video.js Exama Theme Override */
+        .video-js .vjs-control-bar { background-color: rgba(15, 23, 42, 0.9) !important; backdrop-filter: blur(10px); }
+        .video-js .vjs-play-progress { background-color: #ef4444 !important; }
+        .video-js .vjs-big-play-button { background-color: rgba(239, 68, 68, 0.9) !important; border-radius: 50% !important; border: none !important; width: 60px !important; height: 60px !important; line-height: 60px !important; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; }
+    </style>
+    
+    <!-- OneSignal Push Notifications SDK -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function(OneSignal) {
+        try {
+            await OneSignal.init({ appId: "2c76bdaa-7269-4596-8151-603bff040106" });
+        } catch(e) {
+            console.warn("OneSignal skipped: Not on production domain.");
+        }
+      });
+    </script>
 
-            // B. If not in cache, fetch it from the network normally
-            return fetch(event.request).then((networkResponse) => {
-                // Ensure the response is valid before caching
-                if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && networkResponse.type !== 'cors') {
-                    return networkResponse;
-                }
+    <!-- 8x8 Jitsi API Integration -->
+    <script src="https://8x8.vc/vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/external_api.js"></script>
 
-                // Clone the response because streams can only be read once
-                const responseToCache = networkResponse.clone();
+    <meta name="theme-color" content="#4f46e5">
+    <link rel="apple-touch-icon" href="icon-192.png">
 
-                // Save this new file (like Tailwind or a new image) to the cache
-                caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, responseToCache);
-                });
+    <style>
+    /* --- QUOTE CARD SHIMMER --- */
+    @keyframes shimmer {
+        0% { transform: translateX(-150%) skewX(-15deg); }
+        100% { transform: translateX(150%) skewX(-15deg); }
+    }
+    .animate-shimmer {
+        animation: shimmer 2s infinite;
+    }
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; }
+        .hidden-view { display: none !important; }
+        
+        .app-frame { background: linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 50%, #ede9fe 100%); background-size: 200% 200%; animation: gradientMove 15s ease infinite; }
+        .glass-card { background: rgba(255, 255, 255, 0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.8); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
+        .glass-nav { background: rgba(79, 70, 229, 0.9); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        .classroom-header { background-color: #1a73e8; background-image: url('https://www.gstatic.com/classroom/themes/img_read.jpg'); background-size: cover; background-position: center; }
+        
+        @keyframes gradientMove { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        .fade-in { animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .slide-left { animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideLeft { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
+        .pulse-red { animation: pulseRed 2s infinite; }
+        @keyframes pulseRed { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        
+        .logo-spinner { border: 4px solid rgba(79, 70, 229, 0.1); border-top: 4px solid #4f46e5; border-right: 4px solid #4f46e5; border-radius: 50%; animation: spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .segment-active { background-color: #fff; color: #4f46e5; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .segment-inactive { color: #6b7280; }
 
-                return networkResponse;
-            }).catch(() => {
-                // C. THIS HAPPENS WHEN OFFLINE (Your original catch logic)
-                console.log("[Service Worker] Network error. Serving offline fallback.");
+        .chat-bg { background-color: #f0f2f5; background-image: radial-gradient(circle at 100% 150%, #f0f2f5 24%, #ffffff 24%, #ffffff 28%, #f0f2f5 28%, #f0f2f5 36%, #ffffff 36%, #ffffff 40%, transparent 40%, transparent), radial-gradient(circle at 0 150%, #f0f2f5 24%, #ffffff 24%, #ffffff 28%, #f0f2f5 28%, #f0f2f5 36%, #ffffff 36%, #ffffff 40%, transparent 40%, transparent); background-size: 50px 50px; }
+        .chat-bubble-mine { background: #e0e7ff; color: #111b21; border-radius: 8px 0 8px 8px; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+        .chat-bubble-mine::after { content: ''; position: absolute; right: -8px; top: 0; border-bottom: 10px solid transparent; border-left: 10px solid #e0e7ff; }
+        .chat-bubble-other { background: #ffffff; color: #111b21; border-radius: 0 8px 8px 8px; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+        .chat-bubble-other::before { content: ''; position: absolute; left: -8px; top: 0; border-bottom: 10px solid transparent; border-right: 10px solid #ffffff; }
+
+        audio::-webkit-media-controls-enclosure { border-radius: 8px; background-color: transparent; }
+    </style>
+</head>
+<body class="bg-gray-900 flex justify-center md:items-center min-h-[100dvh] relative">
+
+    <div class="app-frame w-full h-[100dvh] md:pt-8 lg:pt-10 relative overflow-hidden flex flex-col" id="app">
+        <!-- PULL TO REFRESH INDICATOR -->
+        <div id="ptr-indicator" class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[150%] z-[300] bg-white text-indigo-600 shadow-xl border border-indigo-100 rounded-full px-4 py-2 flex items-center justify-center gap-2 pointer-events-none will-change-transform">
+            <i id="ptr-icon" class="fa-solid fa-rotate-right text-base"></i>
+            <span class="text-[10px] font-black tracking-widest uppercase">Refresh</span>
+        </div>
+        
+        <!-- TOAST CONTAINER -->
+        <div id="toast-container" class="absolute top-4 right-4 z-[200] flex flex-col gap-3 pointer-events-none w-[90%] max-w-sm md:w-[350px]"></div>
+
+        <!-- GLOBAL LOADER -->
+        <div id="global-loader" class="absolute inset-0 bg-white/90 backdrop-blur-xl z-[9999] flex flex-col justify-center items-center fade-in">
+            <div class="relative w-24 h-24 sm:w-28 sm:h-28 mb-8 flex items-center justify-center">
+                <div class="absolute inset-0 logo-spinner shadow-[0_0_40px_rgba(79,70,229,0.3)]"></div>
+                <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-[75%] h-[75%] object-cover rounded-full shadow-lg border-2 border-white animate-pulse">
+            </div>
+            <h3 class="text-indigo-600 font-black text-2xl sm:text-3xl tracking-tight mb-2 animate-pulse break-words text-center px-4">Let's Crack It!</h3>
+            <p class="text-[10px] sm:text-xs text-gray-500 font-bold uppercase tracking-[0.2em] break-words text-center px-2" id="loader-text">Loading Exama...</p>
+        </div>
+
+        <!-- OVERTIME PROMPT MODAL -->
+        <div id="session-overtime-modal" class="hidden-view absolute inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/80 fade-in">
+            <div class="glass-card p-5 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-sm text-center border-white/50 border relative">
+                <div class="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-indigo-400 to-purple-600 text-white rounded-full flex items-center justify-center text-3xl sm:text-4xl mx-auto mb-4 sm:mb-5 shadow-lg shadow-indigo-500/40 animate-bounce">
+                    <i class="fa-solid fa-medal"></i>
+                </div>
+                <h3 class="text-xl sm:text-2xl font-black text-gray-900 mb-2 break-words">4 Hours Completed!</h3>
+                <p class="text-xs sm:text-sm text-gray-600 mb-6 sm:mb-8 font-medium leading-relaxed break-words">Amazing focus! Your timer is paused. Do you want to end your session here or continue studying for extra time?</p>
+                <div class="flex gap-2 sm:gap-3">
+                    <button onclick="handleOvertimeChoice('STOP')" class="flex-1 bg-red-100 text-red-600 text-sm font-bold py-3 sm:py-4 rounded-2xl active:scale-95 transition-all">End Session</button>
+                    <button onclick="handleOvertimeChoice('CONTINUE')" class="flex-[2] bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold py-3 sm:py-4 rounded-2xl active:scale-95 transition-all shadow-xl shadow-indigo-500/30">Continue Extra</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ANSWER SCRIPT UPLOAD MODAL -->
+        <div id="answer-upload-modal" class="hidden-view absolute inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 backdrop-blur-xl bg-gray-900/95 fade-in">
+            <div class="glass-card p-5 sm:p-6 rounded-[2rem] shadow-2xl w-full max-w-md border-white/50 border relative max-h-[90vh] overflow-y-auto no-scrollbar">
+                <!-- IMPORTANT: Removed close button to prevent timer bypass -->
+                <h3 class="text-xl sm:text-2xl font-black text-indigo-600 mb-1 break-words">Exam Finished!</h3>
+                <p class="text-xs text-gray-500 mb-5 font-bold leading-tight break-words">Submit your answer scripts below. They will be sent directly to the student who created the questions.</p>
+                <div id="answer-upload-list" class="space-y-4"></div>
+                <button onclick="submitAllPeerAnswers()" class="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm sm:text-base font-black tracking-wide py-3 sm:py-4 rounded-2xl shadow-xl shadow-green-500/30 mt-4 active:scale-95 transition-all">
+                    SUBMIT
+                </button>
+            </div>
+        </div>
+
+        <!-- PEER EVALUATION ROOM MODAL -->
+        <div id="peer-eval-room-modal" class="hidden-view absolute inset-0 z-[105] flex flex-col bg-gray-100 slide-left ">
+            <div class="bg-indigo-600 text-white px-4 py-4 flex items-center justify-between shadow-md relative z-10 shrink-0">
+                <div>
+                    <h2 class="text-lg font-black tracking-tight leading-tight">Evaluation Room</h2>
+                    <p class="text-[10px] text-indigo-200 font-bold uppercase tracking-widest mt-0.5">Grade your peers</p>
+                </div>
+                <button onclick="closePeerEvalRoom()" class="w-8 h-8 shrink-0 bg-white/20 hover:bg-white/40 text-white rounded-full flex items-center justify-center transition-all active:scale-90"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar" id="peer-eval-list">
+                <!-- Scripts to grade will generate here -->
+            </div>
+        </div>
+
+        <!-- INCOMING CALL POPUP MODAL -->
+        <div id="incoming-call-modal" class="hidden-view absolute inset-0 z-[150] flex flex-col items-center justify-between p-6 sm:p-8 bg-gray-900/95 backdrop-blur-xl text-white fade-in ">
+            <div class="text-center mt-10">
+                <span id="call-type-badge" class="bg-green-500/20 text-green-400 border border-green-500/30 text-[10px] sm:text-xs font-black px-3 sm:px-4 py-1.5 rounded-full uppercase tracking-widest inline-flex items-center gap-2">
+                    <i class="fa-solid fa-phone-volume animate-pulse" id="incoming-call-icon"></i> 
+                    <span id="incoming-call-type-text">Incoming Audio Call</span>
+                </span>
+                <h3 class="text-2xl sm:text-3xl font-black mt-4 sm:mt-6 tracking-tight break-words px-4" id="incoming-caller-name">Caller Name</h3>
+                <p class="text-[10px] sm:text-xs text-gray-400 font-bold uppercase tracking-widest mt-2 break-words px-2">Discus Community Call</p>
+            </div>
+
+            <div class="relative my-auto flex items-center justify-center">
+                <div class="absolute w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-green-500/20 animate-ping"></div>
+                <div class="absolute w-28 h-28 sm:w-36 sm:h-36 rounded-full bg-green-500/30 animate-pulse"></div>
+                <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-4 border-green-500 shadow-[0_0_50px_rgba(34,197,94,0.5)] relative z-10">
+                    <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-full h-full object-cover">
+                </div>
+            </div>
+
+            <div class="flex items-center justify-around w-full max-w-xs mb-8 sm:mb-10">
+                <button onclick="window.declineIncomingCall()" class="flex flex-col items-center gap-2 group">
+                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-600 text-white flex items-center justify-center text-xl sm:text-2xl shadow-lg shadow-red-600/50 group-active:scale-90 transition-all">
+                        <i class="fa-solid fa-phone-slash"></i>
+                    </div>
+                    <span class="text-[10px] sm:text-xs font-bold text-gray-400">Decline</span>
+                </button>
+                <button onclick="window.acceptIncomingCall()" class="flex flex-col items-center gap-2 group">
+                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-green-400 text-white flex items-center justify-center text-xl sm:text-2xl shadow-lg shadow-green-500/50 group-active:scale-90 transition-all animate-bounce">
+                        <i class="fa-solid fa-phone"></i>
+                    </div>
+                    <span class="text-[10px] sm:text-xs font-bold text-green-400">Accept</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- FULL SCREEN IMAGE MODAL -->
+        <div id="fullscreen-image-modal" class="hidden-view absolute inset-0 z-[110] bg-black/95 flex flex-col items-center justify-center transition-opacity fade-in">
+            <button onclick="closeFullScreenImage()" class="absolute top-4 right-4 sm:top-6 sm:right-6 w-10 h-10 bg-white/20 hover:bg-white/40 rounded-full flex items-center justify-center text-white active:scale-90 transition-all z-20 shadow-lg">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <div class="w-full h-full overflow-auto flex items-center justify-center p-2 sm:p-4" id="img-zoom-container">
+                <img id="fullscreen-img-src" src="" class="max-w-full max-h-full object-contain transition-transform duration-300 transform origin-center">
+                <iframe id="fullscreen-pdf-src" src="" class="w-full h-full rounded-2xl hidden border-0 bg-white"></iframe>
+            </div>
+            <div class="absolute bottom-6 sm:bottom-10 flex gap-4 sm:gap-6 z-20" id="img-zoom-controls">
+                <button onclick="window.zoomImg(-1)" class="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 backdrop-blur rounded-full text-white font-black text-xl sm:text-2xl active:scale-90 shadow-lg">-</button>
+                <button onclick="window.zoomImg(1)" class="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 backdrop-blur rounded-full text-white font-black text-xl sm:text-2xl active:scale-90 shadow-lg">+</button>
+            </div>
+        </div>
+
+      <!-- CUSTOM PDF / MATERIAL READER MODAL -->
+        <div id="custom-pdf-viewer-modal" class="hidden-view absolute inset-0 z-[130] bg-gray-100 flex flex-col slide-left  overflow-hidden">
+            
+            <!-- HEADER -->
+            <div id="pdf-modal-header" class="bg-white px-3 sm:px-4 py-2 sm:py-3 flex justify-between items-center border-b border-gray-200 shadow-sm shrink-0 relative z-20 transition-all duration-300">
+                <div class="flex items-center gap-2 sm:gap-3 text-indigo-700 min-w-0 pr-2">
+                    <div class="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full bg-indigo-50 flex items-center justify-center shadow-inner border border-indigo-100">
+                        <i class="fa-solid fa-book-open text-xs sm:text-sm"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="font-black text-[13px] sm:text-[15px] text-gray-900 leading-tight break-words" id="pdf-viewer-title">Material Reader</h3>
+                        <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-widest break-words">Exama Reader</p>
+                    </div>
+                </div>
                 
-                // If the user is trying to navigate to a page while offline, force load the cached index.html
-                if (event.request.mode === 'navigate') {
-                    return caches.match('/index.html');
+                <!-- Action Buttons -->
+                <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    <button onclick="window.downloadCustomPdf()" class="w-7 h-7 sm:w-8 sm:h-8 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-emerald-200" title="Download Document">
+                        <i class="fa-solid fa-download text-xs sm:text-sm"></i>
+                    </button>
+                    <button onclick="window.closeCustomPDFViewer()" class="w-7 h-7 sm:w-8 sm:h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-gray-200" title="Close Reader">
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- PDF Container (Scrollable Area) -->
+            <div class="flex-1 w-full bg-[#f1f5f9] relative overflow-auto no-scrollbar" id="pdf-scroll-wrapper">
+                <div id="pdf-loader" class="absolute inset-0 flex flex-col items-center justify-center bg-[#f1f5f9] z-0">
+                    <i class="fa-solid fa-circle-notch fa-spin text-2xl sm:text-3xl text-indigo-500 mb-2 sm:mb-3 drop-shadow-md"></i>
+                    <p class="text-[9px] sm:text-[10px] font-black text-gray-500 tracking-widest uppercase break-words text-center px-4">Loading Document...</p>
+                </div>
+                
+                <div id="pdf-iframe-wrapper" class="w-full flex flex-col items-center justify-start min-h-full pb-28 pt-4 transition-transform duration-300 origin-top">
+                    <canvas id="native-pdf-canvas" class="shadow-2xl relative z-10 transition-all duration-300 mx-auto"></canvas>
+                </div>
+            </div>
+
+            <!-- COMBINED FLOATING TOOLBAR -->
+            <div id="pdf-pagination-controls" class="hidden absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 sm:gap-3 z-[100] bg-gray-900/90 backdrop-blur-md px-4 sm:px-6 py-2 sm:py-2.5 rounded-full shadow-[0_10px_25px_rgba(0,0,0,0.4)] border border-white/20 w-max">
+                <button onclick="window.onPdfPrevPage()" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 active:scale-90 transition-all text-sm"><i class="fa-solid fa-chevron-left"></i></button>
+                <span class="text-[10px] sm:text-xs font-bold font-mono tracking-widest text-white mx-1"><span id="pdf-page-num">1</span> / <span id="pdf-page-count">?</span></span>
+                <button onclick="window.onPdfNextPage()" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 active:scale-90 transition-all text-sm"><i class="fa-solid fa-chevron-right"></i></button>
+                
+                <div class="w-px h-5 sm:h-6 bg-white/30 mx-1"></div>
+                
+                <button onclick="window.zoomCustomPdf(-1)" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 text-sm sm:text-base active:scale-90 transition-all"><i class="fa-solid fa-minus"></i></button>
+                <button onclick="window.zoomCustomPdf(1)" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 text-sm sm:text-base active:scale-90 transition-all"><i class="fa-solid fa-plus"></i></button>
+                
+                <div class="w-px h-5 sm:h-6 bg-white/30 mx-1"></div>
+                
+                <button id="btn-pdf-fullscreen" onclick="window.togglePdfFullscreen()" class="w-8 h-8 flex items-center justify-center text-white hover:text-indigo-300 text-sm sm:text-base active:scale-90 transition-all" title="Toggle Fullscreen">
+                    <i id="icon-pdf-fullscreen" class="fa-solid fa-expand"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- WARNING MODAL -->
+        <div id="warning-modal" class="hidden-view absolute inset-0 z-[90] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/60 fade-in">
+            <div class="glass-card p-5 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-sm text-center border-white/50 border relative">
+                <button onclick="document.getElementById('warning-modal').classList.add('hidden-view')" class="absolute top-4 right-4 sm:top-5 sm:right-5 w-8 h-8 bg-gray-200/50 hover:bg-gray-300 text-gray-600 rounded-full flex items-center justify-center transition-all z-10">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div class="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-red-400 to-red-600 text-white rounded-full flex items-center justify-center text-3xl sm:text-4xl mx-auto mb-4 sm:mb-5 shadow-lg shadow-red-500/40 animate-bounce">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <h3 class="text-xl sm:text-2xl font-black text-gray-900 mb-2 break-words">Absent Warning!</h3>
+                <p class="text-xs sm:text-sm text-gray-600 mb-6 sm:mb-8 font-medium leading-relaxed break-words px-2" id="warning-text">You have been marked ABSENT for past exams.</p>
+                <button id="btn-acknowledge-absent" onclick="acknowledgeAbsentWarning()" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white font-bold py-3 sm:py-4 rounded-2xl active:scale-95 transition-all shadow-xl shadow-red-500/30 text-sm sm:text-base">I Understand</button>
+            </div>
+        </div>
+
+       <!-- NOTICE POPUP MODAL -->
+        <div id="notice-popup-modal" class="hidden-view absolute inset-0 z-[90] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/60 fade-in">
+            <div class="glass-card p-5 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-sm border-white/50 border text-left relative max-h-[90vh] overflow-y-auto no-scrollbar">
+                <button onclick="document.getElementById('notice-popup-modal').classList.add('hidden-view')" class="absolute top-4 right-4 sm:top-5 sm:right-5 w-8 h-8 bg-gray-200/50 hover:bg-gray-300 text-gray-600 rounded-full flex items-center justify-center transition-all z-10">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div class="flex items-center gap-3 sm:gap-4 mb-4 border-b border-gray-200/50 pb-4">
+                    <div class="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-amber-400 to-orange-500 text-white rounded-full flex items-center justify-center text-xl sm:text-2xl shadow-lg shadow-amber-500/30 shrink-0">
+                        <i class="fa-solid fa-bell animate-bounce"></i>
+                    </div>
+                    <div class="min-w-0 pr-6">
+                        <h3 class="text-base sm:text-lg font-black text-gray-900 leading-tight break-words">New Notice</h3>
+                        <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest break-words">Please read carefully</p>
+                    </div>
+                </div>
+                <h4 id="notice-popup-title" class="font-black text-gray-900 mb-2 text-base sm:text-lg break-words leading-tight">Notice Title</h4>
+                
+                <img id="notice-popup-img" class="hidden w-full h-auto rounded-xl mb-4 object-cover border border-gray-200 shadow-sm" src="">
+                
+                <p id="notice-popup-text" class="text-xs sm:text-sm text-gray-700 mb-6 sm:mb-8 font-medium leading-relaxed bg-white/60 p-3 sm:p-4 rounded-xl border border-white/60 shadow-sm whitespace-pre-wrap break-words">Notice text goes here...</p>
+                <button id="notice-popup-btn" class="w-full bg-gradient-to-r from-indigo-600 to-cyan-600 text-white text-sm sm:text-base font-black tracking-wide py-3 sm:py-4 rounded-2xl active:scale-95 transition-all shadow-xl shadow-indigo-500/30"><i class="fa-solid fa-check-double mr-2"></i>I Read It</button>
+            </div>
+        </div>
+
+      <!-- PEER QUESTION UPLOAD MODAL -->
+        <div id="peer-upload-modal" class="hidden-view absolute inset-0 z-[90] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/80 fade-in">
+            <div class="glass-card p-5 sm:p-6 rounded-[2rem] shadow-2xl w-full max-w-sm border-white/50 border relative max-h-[90vh] overflow-y-auto">
+                <button onclick="document.getElementById('peer-upload-modal').classList.add('hidden-view')" class="absolute top-4 right-4 w-8 h-8 bg-gray-200/50 hover:bg-gray-300 text-gray-600 rounded-full flex items-center justify-center transition-all z-10"><i class="fa-solid fa-xmark"></i></button>
+                <h3 class="text-lg sm:text-xl font-black text-gray-900 mb-1 break-words">Attach Your Questions</h3>
+                <p class="text-[10px] sm:text-xs text-gray-500 mb-5 font-medium leading-tight break-words">Upload your question paper and the answer key so peers can grade it properly.</p>
+                <input type="hidden" id="peer-upload-exam-id">
+                <div class="space-y-3 sm:space-y-4">
+                    <div class="bg-white/60 p-2.5 sm:p-3 rounded-2xl border border-white/50">
+                        <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 break-words">Question Pages (Multiple)</label>
+                        <input type="file" id="peer-q-file" accept="image/*" multiple class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1.5 sm:file:py-2 file:px-3 sm:file:px-4 file:rounded-xl file:border-0 file:text-[10px] sm:file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+                    </div>
+                    <div class="bg-white/60 p-2.5 sm:p-3 rounded-2xl border border-white/50">
+                        <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 break-words">Answer Key (Optional)</label>
+                        <input type="file" id="peer-a-file" accept="image/*" multiple class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1.5 sm:file:py-2 file:px-3 sm:file:px-4 file:rounded-xl file:border-0 file:text-[10px] sm:file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer">
+                    </div>
+                    <button onclick="submitPeerImages()" class="w-full bg-indigo-600 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-2xl active:scale-95 transition-all shadow-lg mt-2">Publish Questions</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- EVALUATION MODAL -->
+        <div id="evaluation-modal" class="hidden-view absolute inset-0 z-[95] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/90 fade-in">
+            <div class="bg-[#f8fafc] p-5 sm:p-6 rounded-[2rem] shadow-2xl w-full max-w-sm flex flex-col max-h-[90vh]">
+                <div class="flex justify-center mb-2">
+                    <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-10 h-10 rounded-full border border-gray-200 object-cover shadow-sm">
+                </div>
+                <h3 class="text-lg sm:text-xl font-black text-gray-900 mb-1 text-center break-words">Online Evaluation</h3>
+                <p class="text-[10px] sm:text-xs text-gray-500 mb-4 font-medium leading-tight text-center break-words px-2">Review the uploaded answer keys before entering your marks.</p>
+                <div id="evaluation-images-container" class="flex-1 overflow-y-auto space-y-3 sm:space-y-4 no-scrollbar border border-gray-200 rounded-2xl bg-gray-100 p-2"></div>
+                <button onclick="proceedToLogMarks()" class="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm sm:text-base font-black py-3 sm:py-4 rounded-2xl active:scale-95 transition-all shadow-xl shadow-green-500/30 mt-4">
+                    I Have Checked -> Enter Marks
+                </button>
+            </div>
+        </div>
+
+        <!-- NOVA AI FEEDBACK MODAL -->
+        <div id="nova-feedback-modal" class="hidden-view absolute inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 backdrop-blur-xl bg-gray-900/95 fade-in">
+            <div class="glass-card p-5 sm:p-6 rounded-[2rem] shadow-2xl w-full max-w-lg border-indigo-500/50 border relative max-h-[90vh] flex flex-col bg-white">
+                <!-- Header -->
+                <div class="flex justify-between items-start mb-4 pb-3 border-b border-gray-100 shrink-0">
+                    <div>
+                        <h3 class="text-lg sm:text-xl font-black text-gray-900 flex items-center gap-2"><i class="fa-solid fa-sparkles text-indigo-500"></i> NOVA Evaluation</h3>
+                        <p class="text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-widest mt-1">Detailed Analysis</p>
+                    </div>
+                    <button onclick="document.getElementById('nova-feedback-modal').classList.add('hidden-view')" class="w-8 h-8 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full flex items-center justify-center transition-all">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                
+                <!-- Scrollable Content -->
+                <div class="flex-1 overflow-y-auto no-scrollbar space-y-4 pr-1">
+                    <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                        <h4 class="text-xs font-black text-indigo-800 uppercase tracking-widest mb-1">Overall Feedback</h4>
+                        <p id="nova-fb-overall" class="text-sm font-medium text-indigo-900 leading-relaxed"></p>
+                    </div>
+                    
+                    <div>
+                        <h4 class="text-xs font-black text-gray-800 uppercase tracking-widest mb-2 px-1">Mistakes & Corrections</h4>
+                        <div id="nova-fb-mistakes" class="space-y-3">
+                            <!-- Mistakes injected here via JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 1. LOGIN SCREEN -->
+        <div id="login-view" class="hidden-view h-full flex flex-col justify-center px-4 sm:px-6 fade-in z-10 relative">
+            <div class="absolute top-10 left-10 w-24 h-24 sm:w-32 sm:h-32 bg-purple-300 rounded-full mix-blend-multiply filter blur-2xl opacity-50 animate-float" style="animation-delay: 0s;"></div>
+            <div class="absolute bottom-40 right-10 w-28 h-28 sm:w-40 sm:h-40 bg-indigo-300 rounded-full mix-blend-multiply filter blur-2xl opacity-50 animate-float" style="animation-delay: 2s;"></div>
+
+            <div class="text-center mb-8 sm:mb-10 relative z-10 flex flex-col items-center">
+                <div class="w-20 h-20 sm:w-28 sm:h-28 rounded-[20px] sm:rounded-[28px] mx-auto flex items-center justify-center mb-4 sm:mb-6 shadow-2xl shadow-indigo-500/40 animate-float overflow-hidden border-[3px] sm:border-[4px] border-white/40">
+                    <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-full h-full object-cover" alt="Exama App Logo">
+                </div>
+                <h1 class="text-5xl sm:text-6xl font-black text-gray-900 tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-indigo-700 to-cyan-600 drop-shadow-sm break-words px-2">EXAMA</h1>
+                <p class="text-indigo-900/60 mt-2 sm:mt-3 font-extrabold tracking-[0.2em] sm:tracking-[0.3em] text-[8px] sm:text-[10px] uppercase break-words px-2">An App By SUBHANKAR SARKAR</p>
+            </div>
+            
+            <form id="login-form" class="space-y-3 sm:space-y-4 relative z-10 glass-card p-4 sm:p-6 md:p-8 rounded-[2rem] w-full max-w-sm sm:max-w-md mx-auto">
+                <div class="relative group">
+                    <i class="fa-solid fa-mobile-screen absolute left-4 sm:left-5 top-1/2 transform -translate-y-1/2 text-indigo-400 transition-colors group-focus-within:text-indigo-600"></i>
+                    <input type="tel" id="mobile" required placeholder="Mobile Number" class="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 text-sm sm:text-base bg-white/70 border border-white/50 rounded-2xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-semibold text-gray-900 transition-all shadow-sm">
+                </div>
+                <div class="relative group">
+                    <i class="fa-solid fa-lock absolute left-4 sm:left-5 top-1/2 transform -translate-y-1/2 text-indigo-400 transition-colors group-focus-within:text-indigo-600"></i>
+                    <input type="password" id="password" required placeholder="Password" class="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 text-sm sm:text-base bg-white/70 border border-white/50 rounded-2xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-semibold transition-all shadow-sm">
+                </div>
+                <div class="relative group">
+                    <i class="fa-solid fa-user-shield absolute left-4 sm:left-5 top-1/2 transform -translate-y-1/2 text-indigo-400 transition-colors group-focus-within:text-indigo-600"></i>
+                    <select id="role" class="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 text-sm sm:text-base bg-white/70 border border-white/50 rounded-2xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none font-semibold text-gray-700 transition-all shadow-sm cursor-pointer">
+                        <option value="student">Login as Student</option>
+                        <option value="admin">Login as Super Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="w-full bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-bold py-3 sm:py-4 rounded-2xl transition-all duration-300 active:scale-95 shadow-xl shadow-indigo-600/30 mt-4 sm:mt-6 text-base sm:text-lg tracking-wide">
+                    Secure Login
+                </button>
+            </form>
+        </div>
+
+        <!-- 2. STUDENT DASHBOARD -->
+        <div id="student-view" class="hidden-view h-full flex flex-col fade-in relative z-0">
+            <!-- COMPACT FLOATING HEADER WITH FIXED TOP CORNER BRANDING -->
+            <div class="glass-nav text-white p-5 sm:px-6 md:p-5 md:px-6 md:mx-5 md:mt-5 rounded-b-[2rem] md:rounded-[1.5rem] shadow-xl shadow-indigo-900/10 relative z-20 shrink-0 transition-all">
+                <!-- Main Flex Row -->
+                <div class="flex flex-col md:flex-row justify-between w-full gap-4 md:gap-6 relative z-10">
+                    <!-- LEFT SIDE: Corner Branding + DP + Name -->
+                    <div class="flex flex-col gap-4 md:gap-5 w-full md:w-auto md:flex-1">
+                        <!-- Top Corner Branding & Mobile Buttons -->
+                        <div class="flex justify-between items-start w-full">
+                           <div class="flex flex-col items-start justify-center">
+                                <span class="text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-200 to-white animate-pulse text-2xl md:text-25px font-black tracking-[0.2em] leading-none drop-shadow-md">EXAMA</span>
+                                <span class="text-indigo-300 text-[5.5px] md:text-[5.5px] font-black tracking-[0.15em] uppercase mt-0.5 leading-none">An app by Subhankar Sarkar</span>
+                            </div>
+                            
+                            <!-- Mobile Buttons (Hidden on Tablet) -->
+                            <div class="flex gap-2 shrink-0 md:hidden">
+                                <button onclick="window.location.hash='leaderboard'" class="w-9 h-9 bg-amber-500/20 text-amber-300 rounded-full flex items-center justify-center backdrop-blur-md active:scale-90 border border-amber-400/20 shadow-md"><i class="fa-solid fa-trophy text-[11px]"></i></button>
+                                <button onclick="logout()" class="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-md active:scale-90 shadow-md"><i class="fa-solid fa-power-off text-white text-[10px]"></i></button>
+                            </div>
+                        </div>
+
+                        <!-- DP and Student Info -->
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="relative group cursor-pointer shrink-0" onclick="document.getElementById('dp-upload-input').click()" title="Change Profile Picture">
+                                <img id="student-nav-dp" src="https://ui-avatars.com/api/?name=Exama&background=4f46e5&color=fff&bold=true" class="w-12 h-12 md:w-12 md:h-12 rounded-full shadow-md border-2 border-white/30 object-cover bg-indigo-100" onerror="this.onerror=null; this.src='https://lh3.googleusercontent.com/a/default-user=s120-c';">
+                                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><i class="fa-solid fa-camera text-white text-[10px]"></i></div>
+                            </div>
+                            <input type="file" id="dp-upload-input" accept="image/*" class="hidden" onchange="uploadStudentDP(this)">
+                            
+                            <div class="flex flex-col justify-center min-w-0">
+                                <p id="student-greeting" class="text-indigo-200 text-[10px] md:text-[11px] font-bold leading-tight break-words"></p>
+                                <h2 class="text-1.5xl sm:text-1xl font-black tracking-tight leading-tight break-words truncate" id="student-name-display">Student</h2>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MIDDLE: Daily Quote -->
+                    <div class="w-full md:w-auto md:flex-[1.5] flex justify-center items-end pb-1 md:pb-0 relative z-10">
+                        <style>.font-quote { font-family: 'Playfair Display', serif; }</style>
+                        <div class="relative inline-flex flex-col items-center justify-center bg-white/[0.03] backdrop-blur-2xl px-5 py-3.5 md:px-6 md:py-3.5 rounded-[1.25rem] md:rounded-[1.5rem] border border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.15)] group hover:bg-white/[0.06] transition-all duration-500 overflow-hidden w-full md:max-w-md">
+                            <div class="absolute inset-0 w-[200%] bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full opacity-0 group-hover:opacity-100 group-hover:animate-shimmer pointer-events-none"></div>
+                            
+                            <div class="flex items-center gap-1.5 mb-1.5 md:mb-2">
+                                <i class="fa-solid fa-sparkles text-amber-300 text-[8px] animate-pulse drop-shadow-[0_0_5px_rgba(252,211,77,0.8)]"></i>
+                                <span class="text-[7px] md:text-[8px] font-black text-blue-200 uppercase tracking-[0.25em] opacity-90 drop-shadow-sm">Daily Inspiration</span>
+                                <i class="fa-solid fa-sparkles text-amber-300 text-[8px] animate-pulse drop-shadow-[0_0_5px_rgba(252,211,77,0.8)]"></i>
+                            </div>
+                            
+                            <i class="fa-solid fa-quote-left absolute -top-1 left-2 text-[25px] text-blue-200/5 -z-10 transform -rotate-12 group-hover:-rotate-6 transition-transform duration-500"></i>
+                            <i class="fa-solid fa-quote-right absolute -bottom-2 right-2 text-[25px] text-purple-200/5 -z-10 transform rotate-12 group-hover:rotate-6 transition-transform duration-500"></i>
+                            
+                            <p id="daily-quote-text" class="font-quote text-[12px] md:text-[13px] font-medium text-white leading-relaxed text-center drop-shadow-md break-words tracking-wide italic z-10 m-0">
+                                "The beautiful thing about learning is that no one can take it away from you."
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: Tablet Buttons (Hidden on Mobile) -->
+                    <div class="hidden md:flex flex-col justify-between items-end shrink-0 md:flex-1 relative z-10">
+                        <div class="flex gap-2.5 shrink-0 pt-1">
+                            <button onclick="window.location.hash='leaderboard'" class="w-10 h-10 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 rounded-full flex items-center justify-center backdrop-blur-md active:scale-90 transition-all shadow-lg border border-amber-400/20">
+                                <i class="fa-solid fa-trophy text-sm"></i>
+                            </button>
+                            <button onclick="logout()" class="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-md active:scale-90 transition-all shadow-lg">
+                                <i class="fa-solid fa-power-off text-white text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="absolute -bottom-10 -right-10 w-32 h-32 md:w-40 md:h-40 bg-white opacity-5 rounded-full blur-2xl pointer-events-none"></div>
+            </div>
+
+            <!-- SCROLLABLE CONTENT (Begins exactly below the fixed header) -->
+            <div class="flex-1 overflow-y-auto no-scrollbar px-3 sm:px-5 mt-1 md:mt-2 pb-10 relative z-10 space-y-2 sm:space-y-3">
+         <!-- Premium Animated Rectangular Glass Card -->
+               <div class="glass-card relative overflow-hidden rounded-[1.5rem] sm:rounded-[2rem] hover:-translate-y-2 hover:shadow-[0_20px_40px_-10px_rgba(99,102,241,0.2)] transition-all duration-500 w-full group p-1 border border-white/60 hover:border-indigo-200/80">
+                   
+                   <!-- Animated Background Glows -->
+                   <div class="absolute -top-10 -left-10 w-32 h-32 sm:w-40 sm:h-40 bg-gradient-to-br from-indigo-400/40 to-purple-500/30 rounded-full blur-2xl sm:blur-3xl group-hover:scale-150 group-hover:bg-indigo-500/40 transition-all duration-700 pointer-events-none animate-pulse"></div>
+                   <div class="absolute -bottom-10 -right-10 w-32 h-32 sm:w-40 sm:h-40 bg-gradient-to-tl from-teal-400/40 to-emerald-500/30 rounded-full blur-2xl sm:blur-3xl group-hover:scale-150 group-hover:bg-teal-500/40 transition-all duration-700 pointer-events-none animate-pulse" style="animation-delay: 1s;"></div>
+                   <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-shimmer pointer-events-none z-0"></div>
+                   
+                   <!-- Inner Frosted Container -->
+                   <div class="bg-gradient-to-br from-white/50 to-white/30 backdrop-blur-xl rounded-[1.25rem] sm:rounded-[1.75rem] p-3 sm:p-4 md:p-6 border border-white/60 relative z-10 shadow-inner">
+                       
+                       <!-- Header -->
+                       <div class="flex items-center justify-between mb-4 sm:mb-5 px-1 sm:px-2">
+                           <h3 class="font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-900 to-gray-600 tracking-tight flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base drop-shadow-sm">
+                               <div class="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.8)]"></div>
+                               Performance Overview
+                           </h3>
+                       </div>
+
+                       <!-- 3-Column Grid -->
+                       <div class="grid grid-cols-3 gap-1 sm:gap-2 md:gap-4 divide-x divide-gray-300/30">
+                           
+                           <!-- 1. Score Column -->
+                           <div class="flex flex-col items-center justify-center relative group/stat px-1 sm:px-2 md:px-3 hover:bg-white/40 rounded-2xl py-2 transition-all duration-300 cursor-default">
+                               <div class="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 border border-indigo-200/50 flex items-center justify-center mb-2 sm:mb-2.5 shadow-[0_0_15px_rgba(99,102,241,0.2)] group-hover/stat:shadow-[0_0_25px_rgba(99,102,241,0.5)] transition-all duration-300 group-hover/stat:-translate-y-1.5 group-hover/stat:rotate-[10deg]">
+                                   <i class="fa-solid fa-chart-pie text-indigo-600 text-sm sm:text-base md:text-lg transition-transform duration-300 group-hover/stat:scale-110"></i>
+                               </div>
+                               <span class="text-[8px] sm:text-[9px] md:text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-0.5 sm:mb-1 text-center break-words leading-tight">Score</span>
+                               <div class="text-lg sm:text-2xl md:text-3xl font-black text-indigo-700 flex items-baseline justify-center w-full break-words leading-tight drop-shadow-md transition-transform duration-300 group-hover/stat:scale-110" id="student-weekly-avg">
+                                   0<span class="text-xs sm:text-sm text-indigo-400 font-bold ml-0.5">%</span>
+                               </div>
+                               <div id="student-total-avg" class="text-[7px] sm:text-[9px] md:text-[10px] font-bold text-indigo-600 mt-1.5 sm:mt-2 bg-indigo-50/80 px-1.5 sm:px-2 py-1 rounded-md sm:rounded-lg border border-indigo-100/60 w-full text-center break-words leading-tight shadow-sm group-hover/stat:bg-indigo-100 transition-colors">Life: 0%</div>
+                           </div>
+
+                           <!-- 2. Exam Rank Column -->
+                           <div class="flex flex-col items-center justify-center relative group/stat px-1 sm:px-2 md:px-3 hover:bg-white/40 rounded-2xl py-2 transition-all duration-300 cursor-default">
+                               <div class="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-xl sm:rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 border border-amber-200/50 flex items-center justify-center mb-2 sm:mb-2.5 shadow-[0_0_15px_rgba(245,158,11,0.2)] group-hover/stat:shadow-[0_0_25px_rgba(245,158,11,0.5)] transition-all duration-300 group-hover/stat:-translate-y-1.5 group-hover/stat:scale-110">
+                                   <i class="fa-solid fa-graduation-cap text-amber-600 text-sm sm:text-base md:text-lg transition-transform duration-300 group-hover/stat:-translate-y-0.5"></i>
+                               </div>
+                               <span class="text-[8px] sm:text-[9px] md:text-[10px] font-black text-amber-400 uppercase tracking-widest mb-0.5 sm:mb-1 text-center break-words leading-tight">Exam Rank</span>
+                               <div class="text-lg sm:text-2xl md:text-3xl font-black text-amber-600 flex items-baseline justify-center w-full break-words leading-tight drop-shadow-md transition-transform duration-300 group-hover/stat:scale-110" id="student-weekly-exam-rank">
+                                   #-
+                               </div>
+                               <div id="student-total-exam-rank" class="text-[7px] sm:text-[9px] md:text-[10px] font-bold text-amber-700 mt-1.5 sm:mt-2 bg-amber-50/80 px-1.5 sm:px-2 py-1 rounded-md sm:rounded-lg border border-amber-100/60 w-full text-center break-words leading-tight shadow-sm group-hover/stat:bg-amber-100 transition-colors">Life: #-</div>
+                           </div>
+
+                           <!-- 3. Study Rank Column -->
+                           <div class="flex flex-col items-center justify-center relative group/stat px-1 sm:px-2 md:px-3 hover:bg-white/40 rounded-2xl py-2 transition-all duration-300 cursor-default">
+                               <div class="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-xl sm:rounded-2xl bg-gradient-to-br from-teal-100 to-emerald-100 border border-teal-200/50 flex items-center justify-center mb-2 sm:mb-2.5 shadow-[0_0_15px_rgba(20,184,166,0.2)] group-hover/stat:shadow-[0_0_25px_rgba(20,184,166,0.5)] transition-all duration-300 group-hover/stat:-translate-y-1.5 group-hover/stat:rotate-[-10deg]">
+                                   <i class="fa-solid fa-stopwatch text-teal-600 text-sm sm:text-base md:text-lg transition-transform duration-300 group-hover/stat:scale-110"></i>
+                               </div>
+                               <span class="text-[8px] sm:text-[9px] md:text-[10px] font-black text-teal-400 uppercase tracking-widest mb-0.5 sm:mb-1 text-center break-words leading-tight">Study Rank</span>
+                               <div class="text-lg sm:text-2xl md:text-3xl font-black text-teal-600 flex items-baseline justify-center w-full break-words leading-tight drop-shadow-md transition-transform duration-300 group-hover/stat:scale-110" id="student-weekly-study-rank">
+                                   #-
+                               </div>
+                               <div id="student-total-study-rank" class="text-[7px] sm:text-[9px] md:text-[10px] font-bold text-teal-700 mt-1.5 sm:mt-2 bg-teal-50/80 px-1.5 sm:px-2 py-1 rounded-md sm:rounded-lg border border-teal-100/60 w-full text-center break-words leading-tight shadow-sm group-hover/stat:bg-teal-100 transition-colors">Life: #-</div>
+                           </div>
+
+                       </div>
+                   </div>
+               </div>
+                <!-- BETA FEATURES GRID -->
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 px-1 sm:px-2 flex items-center gap-2 tracking-tight text-sm sm:text-base">
+                        <i class="fa-solid fa-flask text-purple-500"></i> Exam Suite
+                    </h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+                        
+                        <div onclick="window.location.hash='chat'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-purple-200/50 hover:bg-purple-50/50">
+                            <div class="relative w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-400 to-indigo-500 text-white flex items-center justify-center shadow-md">
+                                <i class="fa-solid fa-comments text-sm sm:text-base"></i>
+                                <span class="chat-unread-badge hidden absolute -top-1 -right-1 bg-red-500 text-white text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-sm border border-white">0</span>
+                            </div>
+                            <div class="min-w-0 pr-1">
+                                <h4 class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight break-words">Discus</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Community</p>
+                            </div>
+                        </div>
+                        <div onclick="window.location.hash='exam-analysis'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-blue-200/50 hover:bg-blue-50/50">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-400 to-indigo-500 text-white flex items-center justify-center shadow-md"><i class="fa-solid fa-robot text-sm sm:text-base"></i></div>
+                            <div class="min-w-0 pr-1">
+                                <h4 class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight break-words">NOVA</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">AI Insights</p>
+                            </div>
+                        </div>
+
+                        <div onclick="window.location.hash='materials'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-emerald-200/50 hover:bg-emerald-50/50">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white flex items-center justify-center shadow-md"><i class="fa-solid fa-folder-open text-sm sm:text-base"></i></div>
+                            <div class="min-w-0 pr-1">
+                                <h4 class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight break-words">Material Hub</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Material</p>
+                            </div>
+                        </div>
+                        <div onclick="window.location.hash='video-hub'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-red-200/50 hover:bg-red-50/50">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center shadow-md"><i class="fa-brands fa-youtube text-sm sm:text-base"></i></div>
+                            <div class="min-w-0 pr-1">
+                                <h4 class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight break-words">Lecture Hub</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Lectures</p>
+                            </div>
+                        </div>
+                        
+                        <div onclick="window.location.hash='fitness'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-rose-200/50 hover:bg-rose-50/50">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-rose-400 to-red-600 text-white flex items-center justify-center shadow-md"><i class="fa-solid fa-person-running text-sm sm:text-base"></i></div>
+                            <div class="min-w-0 pr-1">
+                                <h4 class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight break-words">Run Monitor</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Fitness Track</p>
+                            </div>
+                        </div>
+
+                        <div onclick="window.location.hash='notices'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-amber-200/50 hover:bg-amber-50/50 relative">
+                            <span id="dash-notice-badge" class="hidden absolute top-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-red-500 rounded-full animate-ping"></span>
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow-md"><i class="fa-solid fa-bullhorn text-sm sm:text-base"></i></div>
+                            <div class="min-w-0 pr-1">
+                                <h4 class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight break-words">Notice Board</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Alerts</p>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- LIVE SESSIONS BUTTON -->
+                    <div class="grid grid-cols-1 mt-2 sm:mt-3">
+                        <div onclick="window.location.hash='session-timer'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-orange-200/50 hover:bg-orange-50/50">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-orange-400 to-red-500 text-white flex items-center justify-center shadow-md">
+                                <i class="fa-solid fa-stopwatch text-sm sm:text-lg"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h4 class="text-xs sm:text-sm font-black text-gray-900 leading-tight break-words">Focus Sessions</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Track live study & break hours</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+
+                    <!-- WEEKLY TARGETS BUTTON -->
+                    <div class="grid grid-cols-1 mt-2 sm:mt-3">
+                        <div onclick="window.location.hash='weekly-targets'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-teal-200/50 hover:bg-teal-50/50">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 text-white flex items-center justify-center shadow-md">
+                                <i class="fa-solid fa-list-check text-sm sm:text-lg"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h4 class="text-xs sm:text-sm font-black text-gray-900 leading-tight break-words">Weekly Targets</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Track your Targets progress</p>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- WEEKLY TARGETS BUTTON -->
+                    <div class="grid grid-cols-1 mt-2 sm:mt-3">
+                       <div onclick="window.location.hash='syllabus'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-teal-200/50 hover:bg-teal-50/50">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-400 to-indigo-600 text-white flex items-center justify-center shadow-md">
+                                <i class="fa-solid fa-book-bookmark text-sm sm:text-lg"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h4 class="text-xs sm:text-sm font-black text-gray-900 leading-tight break-words">Syllabus Tracker</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Track your syllabus progress</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    
+                    <!-- SET TARGET PLANNER BUTTON -->
+                    <div class="grid grid-cols-1 mt-2 sm:mt-3">
+                        <div onclick="window.location.hash='target-calc'" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-cyan-200/50 hover:bg-cyan-50/50">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-500 text-white flex items-center justify-center shadow-md">
+                                <i class="fa-solid fa-bullseye text-sm sm:text-lg"></i>
+                            </div>
+                            <div class="min-w-0 text-left w-auto">
+                                <h4 class="text-xs sm:text-sm font-black text-gray-900 leading-tight break-words">Target Planner</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Forecast & Track Your Progress</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- PRINT PDF BUTTON -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 mt-2 sm:mt-3">
+                        <div onclick="generatePDFReport()" class="glass-card p-2 sm:p-3.5 rounded-[1.25rem] sm:rounded-[1.5rem] flex items-center justify-center gap-2 sm:gap-3 cursor-pointer active:scale-95 transition-all shadow-sm border-emerald-200/50 hover:bg-emerald-50/50 md:col-span-2">
+                            <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-400 to-green-600 text-white flex items-center justify-center shadow-md">
+                                <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-5 h-5 sm:w-6 sm:h-6 rounded-full object-cover">
+                            </div>
+                            <div class="min-w-0">
+                                <h4 class="text-xs sm:text-sm font-black text-gray-900 leading-tight break-words">Download Report PDF</h4>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mt-0.5 break-words leading-tight">Print Your Official Info & Stats</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live / Pending Exams -->
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 px-1 sm:px-2 flex items-center gap-2 tracking-tight mt-2 text-sm sm:text-base">
+                        <i class="fa-solid fa-clock text-indigo-500 animate-pulse"></i> Active & Pending
+                    </h3>
+                    <div id="student-pending-exams" class="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3"></div>
+                </div>
+
+                <!-- Histogram -->
+                <div class="glass-card p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] hover:-translate-y-1 transition-all duration-300">
+                    <div class="flex justify-between items-center mb-3 sm:mb-5"><h3 class="font-bold text-gray-900 tracking-tight text-sm sm:text-base break-words">Performance Curve</h3></div>
+                    <div class="h-32 sm:h-40 w-full relative"><canvas id="studentChart"></canvas></div>
+                </div>
+
+                <!-- Dynamic Records -->
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 px-1 sm:px-2 tracking-tight text-sm sm:text-base">Exam History</h3>
+                    <div id="student-records-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. ADMIN DASHBOARD -->
+        <div id="admin-view" class="hidden-view h-full flex flex-col fade-in relative z-0">
+            <div class="bg-gray-900/95 backdrop-blur-xl text-white pt-8 sm:pt-10 md:-mt-8 lg:-mt-10 md:pt-[4.5rem] lg:pt-[5rem] pb-4 sm:pb-5 px-4 sm:px-6 flex justify-between items-center shadow-2xl shadow-gray-900/20 relative z-10 border-b border-gray-800 rounded-b-2xl sm:rounded-b-3xl">
+                <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
+                    <div class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-gray-800 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-black/30 overflow-hidden border border-gray-700">
+                        <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-full h-full object-cover">
+                    </div>
+                    <div class="min-w-0">
+                        <h2 class="text-[0px] sm:text-xl font-black leading-tight tracking-tight break-words">Control Center</h2>
+                        <p class="text-[0px] sm:text-[10px] text-gray-400 font-bold tracking-[0.15em] sm:tracking-[0.2em] uppercase mt-0.5 break-words">Exama</p>
+                    </div>
+                </div>
+                <div class="flex gap-1.5 sm:gap-2 shrink-0">
+                    <button onclick="window.location.hash='materials'" class="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-500/20 hover:bg-emerald-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-emerald-500/30" title="Material Hub">
+                        <i class="fa-solid fa-folder-open text-emerald-400 text-[10px] sm:text-xs"></i>
+                    </button>
+                    <button onclick="window.location.hash='weekly-targets'" class="w-8 h-8 sm:w-9 sm:h-9 bg-teal-500/20 hover:bg-teal-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-teal-500/30" title="Weekly Targets">
+                        <i class="fa-solid fa-list-check text-teal-400 text-[10px] sm:text-xs"></i>
+                        <button onclick="window.location.hash='syllabus'" class="w-8 h-8 sm:w-9 sm:h-9 bg-blue-500/20 hover:bg-blue-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-blue-500/30" title="Syllabus Tracker">
+                        <i class="fa-solid fa-book-bookmark text-blue-400 text-[10px] sm:text-xs"></i>
+                    </button>
+                    </button>
+                    <button onclick="window.location.hash='notices'" class="w-8 h-8 sm:w-9 sm:h-9 bg-amber-500/20 hover:bg-amber-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-amber-500/30" title="Manage Notices">
+                        <i class="fa-solid fa-bullhorn text-amber-400 text-[10px] sm:text-xs"></i>
+                    </button>
+                    <button onclick="window.location.hash='chat'" class="relative w-8 h-8 sm:w-9 sm:h-9 bg-purple-500/20 hover:bg-purple-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-purple-500/30" title="Discus">
+                        <i class="fa-solid fa-comments text-purple-400 text-[10px] sm:text-xs"></i>
+                        <span class="chat-unread-badge hidden absolute -top-1 -right-1 bg-red-500 text-white text-[7px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full border border-gray-900">0</span>
+                    <button onclick="window.location.hash='video-hub'" class="w-8 h-8 sm:w-9 sm:h-9 bg-red-500/20 hover:bg-red-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-red-500/30" title="Video Hub">
+    <i class="fa-brands fa-youtube text-red-400 text-[10px] sm:text-xs"></i>
+</button>
+                    </button>
+                    <button onclick="logout()" class="w-8 h-8 sm:w-9 sm:h-9 bg-gray-800 hover:bg-gray-700 rounded-full flex items-center justify-center active:scale-90 transition-all" title="Logout">
+                        <i class="fa-solid fa-power-off text-gray-400 text-[10px] sm:text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 pb-24 sm:pb-28 space-y-6 sm:space-y-8">
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-3 sm:mb-4 px-1 sm:px-2 tracking-tight text-base sm:text-lg break-words">Exam Management</h3>
+                    <div id="admin-exams-list" class="space-y-4 sm:space-y-6"></div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-end mb-3 sm:mb-4 px-1 sm:px-2">
+                        <h3 class="font-bold text-gray-900 tracking-tight text-base sm:text-lg break-words">Student Directory</h3>
+                    </div>
+                    <div id="admin-students-directory" class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4"></div>
+                </div>
+            </div>
+
+            <button onclick="openBottomSheet()" class="absolute bottom-6 right-4 sm:bottom-8 sm:right-6 w-14 h-14 sm:w-16 sm:h-16 bg-gray-900 text-white rounded-full shadow-[0_10px_25px_rgba(0,0,0,0.4)] border border-gray-700 flex items-center justify-center text-xl sm:text-2xl hover:scale-105 active:scale-90 transition-all z-20">
+                <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-5 h-5 sm:w-6 sm:h-6 rounded-full object-cover mr-1 absolute opacity-40 blur-[1px]">
+                <i class="fa-solid fa-plus relative z-10"></i>
+            </button>
+        </div>
+
+        <!-- 4. ADMIN PROFILE VIEW -->
+        <div id="admin-profile-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[90] flex flex-col slide-left ">
+            <div class="bg-gray-900/95 backdrop-blur-xl text-white pt-10 sm:pt-12 pb-5 sm:pb-6 px-4 sm:px-5 flex items-center justify-between shadow-xl border-b border-gray-800 rounded-b-2xl sm:rounded-b-3xl relative z-10">
+                <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
+                    <button onclick="safeBack()" class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full active:scale-90 transition-all border border-gray-700">
+                        <i class="fa-solid fa-arrow-left text-base sm:text-lg"></i>
+                    </button>
+                    <div class="min-w-0">
+                        <h2 id="ap-name" class="text-xl sm:text-2xl font-black tracking-tight drop-shadow-md break-words leading-tight">Student Name</h2>
+                        <p id="ap-mobile" class="text-[9px] sm:text-[11px] text-indigo-400 font-bold tracking-widest mt-0.5 uppercase break-words leading-tight">Mobile</p>
+                    </div>
+                </div>
+                <button onclick="downloadAdminStudentReport()" class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-full flex items-center justify-center active:scale-90 transition-all border border-emerald-500/30 shadow-lg" title="Download Student Report">
+                    <i class="fa-solid fa-file-pdf text-lg sm:text-xl"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 pb-24 sm:pb-28 space-y-4 sm:space-y-6 relative">
+                <div class="grid grid-cols-2 gap-3 sm:gap-4 relative z-10 md:w-3/4 md:mx-auto"> 
+                    <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] col-span-2 border border-teal-100 shadow-sm">
+                        <div class="text-gray-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mb-1 flex justify-between break-words gap-2">
+                            <span>Target Progress</span>
+                            <span class="text-teal-600 text-right" id="ap-task-count">0 / 0 Tasks</span>
+                        </div>
+                        <div class="flex items-end justify-between mt-1">
+                            <div class="text-3xl sm:text-4xl font-black text-teal-600 drop-shadow-sm break-words" id="ap-task-perc">0%</div>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 sm:h-2.5 mt-2 sm:mt-3 overflow-hidden shadow-inner">
+                            <div id="ap-task-bar" class="bg-gradient-to-r from-teal-400 to-emerald-500 h-2 sm:h-2.5 rounded-full transition-all duration-700" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-card p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] text-center flex flex-col justify-center shadow-sm"> 
+                        <div class="text-gray-400 text-[8px] sm:text-[9px] font-bold uppercase tracking-widest mb-1 break-words">Avg Score</div>
+                        <div class="text-xl sm:text-2xl font-black text-gray-900 flex items-baseline justify-center gap-1 break-words" id="ap-avg">0<span class="text-xs sm:text-sm text-gray-400">%</span></div>
+                    </div>
+                    <div class="glass-card p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] text-center flex flex-col justify-center shadow-sm">
+                        <div class="text-gray-400 text-[8px] sm:text-[9px] font-bold uppercase tracking-widest mb-1 break-words">Global Rank</div>
+                        <div class="text-xl sm:text-2xl font-black text-indigo-600 break-words" id="ap-rank">#-</div>
+                    </div>
+                    <div class="glass-card p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] text-center flex flex-col justify-center shadow-sm border border-green-100">
+                        <div class="text-gray-400 text-[8px] sm:text-[9px] font-bold uppercase tracking-widest mb-1 break-words">Pass Rate</div>
+                        <div class="text-xl sm:text-2xl font-black text-green-600 break-words" id="ap-pass-rate">0%</div>
+                    </div>
+                    <div class="glass-card p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] text-center flex flex-col justify-center shadow-sm border border-cyan-100">
+                        <div class="text-gray-400 text-[8px] sm:text-[9px] font-bold uppercase tracking-widest mb-1 break-words">Set Target</div>
+                        <div class="text-xl sm:text-2xl font-black text-cyan-600 break-words" id="ap-target">N/A</div>
+                    </div>
+
+                    <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-rose-100 col-span-2 shadow-sm bg-gradient-to-br from-white to-rose-50/30">
+                        <div class="flex items-center gap-2 mb-3 sm:mb-4 border-b border-rose-100 pb-2">
+                            <div class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center"><i class="fa-solid fa-person-running text-xs sm:text-sm"></i></div>
+                            <h4 class="font-black text-xs sm:text-sm text-gray-900 break-words">Fitness Monitor</h4>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 sm:gap-3">
+                            <div class="bg-white rounded-lg sm:rounded-xl p-2 sm:p-2.5 text-center shadow-sm border border-rose-50">
+                                <div class="text-[7px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">Total KM</div>
+                                <div class="text-base sm:text-lg font-black text-rose-600 mt-0.5 break-words" id="ap-fit-dist">0.0</div>
+                            </div>
+                            <div class="bg-white rounded-lg sm:rounded-xl p-2 sm:p-2.5 text-center shadow-sm border border-rose-50">
+                                <div class="text-[7px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">Avg Pace</div>
+                                <div class="text-base sm:text-lg font-black text-rose-600 mt-0.5 break-words" id="ap-fit-pace">0:00</div>
+                            </div>
+                            <div class="bg-white rounded-lg sm:rounded-xl p-2 sm:p-2.5 text-center shadow-sm border border-rose-50">
+                                <div class="text-[7px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">Calories</div>
+                                <div class="text-base sm:text-lg font-black text-orange-500 mt-0.5 break-words" id="ap-fit-cals">0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-orange-100 shadow-sm bg-gradient-to-br from-white to-orange-50/30 mb-4 sm:mb-6 relative z-10 md:w-3/4 md:mx-auto">
+                    <div class="flex items-center gap-2 mb-3 sm:mb-4 border-b border-orange-100 pb-2">
+                        <div class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full bg-orange-100 text-orange-500 flex items-center justify-center"><i class="fa-solid fa-stopwatch text-xs sm:text-sm"></i></div>
+                        <h4 class="font-black text-xs sm:text-sm text-gray-900 break-words">Focus Sessions</h4>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 sm:gap-3 mb-3 sm:mb-4">
+                        <div class="bg-white rounded-lg sm:rounded-xl p-2 sm:p-2.5 text-center shadow-sm border border-orange-50">
+                            <div class="text-[7px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">Today</div>
+                            <div class="text-base sm:text-lg font-black text-orange-500 mt-0.5 break-words" id="ap-session-today">0.0h</div>
+                        </div>
+                        <div class="bg-white rounded-lg sm:rounded-xl p-2 sm:p-2.5 text-center shadow-sm border border-orange-50">
+                            <div class="text-[7px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">Past 7 Days</div>
+                            <div class="text-base sm:text-lg font-black text-orange-600 mt-0.5 break-words" id="ap-session-week">0.0h</div>
+                        </div>
+                        <div class="bg-white rounded-lg sm:rounded-xl p-2 sm:p-2.5 text-center shadow-sm border border-orange-50">
+                            <div class="text-[7px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">All Time</div>
+                            <div class="text-base sm:text-lg font-black text-red-600 mt-0.5 break-words" id="ap-session-total">0.0h</div>
+                        </div>
+                    </div>
+                    <div id="ap-session-history" class="space-y-2 max-h-40 overflow-y-auto pr-1 no-scrollbar"></div>
+                </div>
+                <!-- COURSE SYLLABUS TRACKER FOR ADMIN -->
+                <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border border-blue-100 shadow-sm bg-gradient-to-br from-white to-blue-50/30 mb-4 sm:mb-6 relative z-10 md:w-3/4 md:mx-auto">
+                    <div class="flex items-center gap-2 mb-3 sm:mb-4 border-b border-blue-100 pb-2">
+                        <div class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center"><i class="fa-solid fa-book-bookmark text-xs sm:text-sm"></i></div>
+                        <h4 class="font-black text-xs sm:text-sm text-gray-900 break-words">Course Syllabus Tracker</h4>
+                    </div>
+                    <div class="flex justify-between items-end mb-1">
+                        <span class="text-[9px] sm:text-[11px] font-black text-blue-600 uppercase tracking-widest break-words leading-tight">Total Covered</span>
+                        <span class="text-lg sm:text-xl font-black text-gray-900 break-words leading-tight" id="ap-syl-perc">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-100 rounded-full h-2 sm:h-2.5 overflow-hidden shadow-inner mb-4">
+                        <div id="ap-syl-bar" class="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 sm:h-2.5 rounded-full transition-all duration-700" style="width: 0%"></div>
+                    </div>
+                    
+                    <h5 class="text-[10px] font-black text-gray-800 uppercase tracking-widest mb-2 px-1">Subject Breakdown</h5>
+                    <div id="ap-syl-breakdown" class="space-y-3 max-h-60 overflow-y-auto pr-1 no-scrollbar">
+                        <!-- Subjects and topics injected here -->
+                    </div>
+                </div>
+
+                <div class="glass-card p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] relative z-10 md:w-3/4 md:mx-auto shadow-sm border border-gray-200/50">
+                    <div class="flex justify-between items-center mb-3 sm:mb-5"><h3 class="font-bold text-gray-900 tracking-tight text-sm sm:text-base break-words">Performance Curve</h3></div>
+                    <div class="h-32 sm:h-40 w-full relative"><canvas id="adminProfileChart"></canvas></div>
+                </div>
+
+                <div class="relative z-10 md:w-3/4 md:mx-auto mt-2">
+                    <h3 class="font-bold text-gray-900 mb-3 sm:mb-4 px-1 sm:px-2 tracking-tight text-sm sm:text-base break-words">Complete Exam Log</h3>
+                    <div id="ap-records-list" class="grid grid-cols-1 gap-3 sm:gap-4"></div>
+                </div>
+            </div>
+        </div>
+
+       <!-- 5. GLOBAL LEADERBOARD VIEW -->
+        <div id="leaderboard-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+            <div class="bg-gray-900/95 backdrop-blur-xl text-white pt-10 sm:pt-12 pb-5 sm:pb-6 px-4 sm:px-5 flex items-center justify-between shadow-xl border-b border-gray-800 rounded-b-2xl sm:rounded-b-3xl relative z-10">
+                <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
+                    <button onclick="safeBack()" class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center bg-gray-800 rounded-full active:scale-90 transition-all">
+                        <i class="fa-solid fa-arrow-left text-base sm:text-lg"></i>
+                    </button>
+                    <div class="min-w-0">
+                        <h2 class="text-xl sm:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 break-words leading-tight">Leaderboard</h2>
+                        <p class="text-[10px] sm:text-xs text-gray-400 font-bold tracking-widest mt-0.5 sm:mt-1 uppercase break-words leading-tight">Performance Rankings</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Switcher for Leaderboard -->
+            <div class="px-4 sm:px-5 pt-4 sm:pt-5 pb-2 relative z-10 bg-[#f8fafc] shrink-0">
+                <!-- MAIN TABS -->
+                <div class="flex bg-gray-200/50 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border border-gray-200 mb-2 sm:mb-3 overflow-x-auto no-scrollbar">
+                    <button onclick="switchLbMainTab('score')" id="lb-main-score" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-active transition-all whitespace-nowrap px-2"><i class="fa-solid fa-graduation-cap mr-1"></i> Score</button>
+                    <button onclick="switchLbMainTab('study')" id="lb-main-study" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-inactive transition-all whitespace-nowrap px-2"><i class="fa-solid fa-stopwatch mr-1"></i> Focus</button>
+                    <button onclick="switchLbMainTab('target')" id="lb-main-target" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-inactive transition-all whitespace-nowrap px-2"><i class="fa-solid fa-list-check mr-1"></i> Targets</button>
+                    <button onclick="switchLbMainTab('fitness')" id="lb-main-fitness" class="flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-inactive transition-all whitespace-nowrap px-2"><i class="fa-solid fa-person-running mr-1"></i> Fitness</button>
+                </div>
+                <!-- SUB TABS -->
+                <div class="flex bg-white p-1 rounded-lg sm:rounded-xl border border-gray-200 shadow-sm w-max mx-auto">
+                    <button onclick="switchLbSubTab('weekly')" id="lb-sub-weekly" class="px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-md sm:rounded-lg bg-indigo-50 text-indigo-600 transition-all shadow-sm border border-indigo-100">Weekly</button>
+                    <button onclick="switchLbSubTab('total')" id="lb-sub-total" class="px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest rounded-md sm:rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent">Life Average</button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 pb-24 sm:pb-28 space-y-3 sm:space-y-4 relative">
+                <div class="absolute top-10 left-10 w-32 h-32 sm:w-48 sm:h-48 bg-amber-100 rounded-full mix-blend-multiply filter blur-2xl sm:blur-3xl opacity-50 z-0 pointer-events-none"></div>
+                <div id="leaderboard-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 relative z-10"></div>
+            </div>
+        </div>
+
+        <!-- 6. NOVA EXAM ANALYSIS VIEW -->
+        <div id="exam-analysis-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+            <div class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+                <button onclick="safeBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+                    <i class="fa-solid fa-arrow-left text-sm sm:text-lg"></i>
+                </button>
+                <div class="flex items-center gap-2 sm:gap-3 min-w-0 pr-2">
+                    <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full object-cover border border-white/40 shadow-sm">
+                    <div class="min-w-0">
+                        <h2 class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight">NOVA AI Analysis</h2>
+                        <p class="text-[9px] sm:text-[10px] text-blue-100 font-bold tracking-widest uppercase break-words leading-tight mt-0.5">Intelligent Insights</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-3 sm:space-y-4 relative md:w-3/4 md:mx-auto">
+                <div class="glass-card p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-blue-200 shadow-md bg-white">
+                    <h3 class="font-black text-gray-900 mb-3 sm:mb-4 text-base sm:text-lg break-words">Performance Overview</h3>
+                    <div class="space-y-3 sm:space-y-4" id="analysis-content"></div>
+                    <div class="mt-4 sm:mt-5 pt-4 sm:pt-5 border-t border-gray-100">
+                        <h4 class="text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 sm:mb-3 break-words">Score Progression</h4>
+                        <div class="h-28 sm:h-32 w-full relative"><canvas id="aiAnalysisChart"></canvas></div>
+                   <!-- NEW: Ask NOVA Chat Entry Button -->
+<div class="glass-card p-4 sm:p-5 rounded-[1.25rem] sm:rounded-[1.5rem] border-blue-200 bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg mb-4 sm:mb-5 text-center cursor-pointer active:scale-95 transition-all" onclick="window.openNovaChat()">
+    <div class="w-12 h-12 mx-auto bg-white/20 rounded-full flex items-center justify-center border border-white/40 shadow-sm mb-2 relative">
+        <i class="fa-solid fa-robot text-xl animate-pulse"></i>
+        <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-indigo-600 animate-ping"></div>
+        <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-indigo-600"></div>
+    </div>
+    <h4 class="font-black text-sm sm:text-base tracking-wide flex justify-center items-center gap-1.5"><i class="fa-solid fa-sparkles text-amber-300"></i> Ask NOVA AI Chat</h4>
+    <p class="text-[9px] sm:text-[10px] font-bold text-blue-100 mt-1.5 opacity-95 leading-tight px-2">Your Personal AI Mentor. Ask for study plans, performance breakdowns, and fitness tips!</p>
+</div>
+                    
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div class="glass-card p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] border-green-200 bg-green-50/30 text-center shadow-sm flex flex-col justify-center">
+                        <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 sm:mb-1 break-words leading-tight">Strongest</p>
+                        <h4 class="font-black text-green-600 text-xs sm:text-sm leading-tight break-words" id="analysis-best">--</h4>
+                    </div>
+                    <div class="glass-card p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] border-red-200 bg-red-50/30 text-center shadow-sm flex flex-col justify-center">
+                        <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 sm:mb-1 break-words leading-tight">Needs Work</p>
+                        <h4 class="font-black text-red-600 text-xs sm:text-sm leading-tight break-words" id="analysis-worst">--</h4>
+                    </div>
+                </div>
+                <div class="glass-card p-4 sm:p-5 rounded-[1.25rem] sm:rounded-[1.5rem] border-purple-200 bg-purple-50/40 shadow-sm mb-4 sm:mb-6">
+                    <h4 class="font-black text-purple-800 text-xs sm:text-sm mb-2 sm:mb-3 break-words">NOVA Deep Metrics</h4>
+                    <div class="space-y-2 sm:space-y-3" id="analysis-deep-metrics"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. FITNESS / RUNNING MONITOR VIEW -->
+        <div id="fitness-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+            <div class="bg-gradient-to-r from-rose-500 to-red-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+                <button onclick="safeBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+                    <i class="fa-solid fa-arrow-left text-sm sm:text-lg"></i>
+                </button>
+                <div class="flex items-center gap-2 sm:gap-3 min-w-0 pr-2">
+                    <div class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full border border-white/40 shadow-sm flex items-center justify-center bg-white/10"><i class="fa-solid fa-person-running text-xs sm:text-sm"></i></div>
+                    <div class="min-w-0">
+                        <h2 class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight">Fitness Monitor</h2>
+                        <p class="text-[9px] sm:text-[10px] text-rose-100 font-bold tracking-widest uppercase break-words leading-tight mt-0.5">Physical Activity Tracker</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-4 sm:space-y-6 relative md:w-3/4 md:mx-auto">
+                <!-- Weekly Overview Banner Added -->
+                <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-rose-200 shadow-md bg-gradient-to-br from-white to-rose-50/40">
+                    <div class="flex flex-wrap gap-2 items-center justify-between border-b border-rose-100 pb-2 mb-3">
+                        <h3 class="font-black text-gray-900 text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-calendar-week text-rose-500"></i> Weekly Overview (Mon-Sun)</h3>
+                        <span class="text-[8px] sm:text-[9px] font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full uppercase shrink-0" id="fit-weekly-runs-count">0 Runs</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 sm:gap-3">
+                        <div class="bg-white border border-rose-100 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-sm text-center">
+                            <p class="text-[7px] sm:text-[8px] text-gray-400 font-bold uppercase tracking-wider mb-0.5 break-words leading-tight">Wk Distance</p>
+                            <h4 class="font-black text-rose-600 text-sm sm:text-base leading-tight break-words" id="fit-weekly-dist">0.0 KM</h4>
+                        </div>
+                        <div class="bg-white border border-rose-100 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-sm text-center">
+                            <p class="text-[7px] sm:text-[8px] text-gray-400 font-bold uppercase tracking-wider mb-0.5 break-words leading-tight">Wk Avg Pace</p>
+                            <h4 class="font-black text-rose-600 text-sm sm:text-base leading-tight break-words" id="fit-weekly-pace">0:00</h4>
+                        </div>
+                        <div class="bg-white border border-rose-100 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 shadow-sm text-center">
+                            <p class="text-[7px] sm:text-[8px] text-gray-400 font-bold uppercase tracking-wider mb-0.5 break-words leading-tight">Wk Calories</p>
+                            <h4 class="font-black text-orange-500 text-sm sm:text-base leading-tight break-words" id="fit-weekly-cals">0 kcal</h4>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 sm:gap-3">
+                    <div class="bg-white border border-rose-100 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm text-center">
+                        <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-0.5 sm:mb-1 break-words leading-tight">Total (KM)</p>
+                        <h4 class="font-black text-rose-600 text-base sm:text-lg leading-tight break-words" id="fit-total-dist">0.0</h4>
+                    </div>
+                    <div class="bg-white border border-rose-100 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm text-center">
+                        <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-0.5 sm:mb-1 break-words leading-tight">Avg Pace</p>
+                        <h4 class="font-black text-rose-600 text-base sm:text-lg leading-tight break-words" id="fit-avg-pace">0:00</h4>
+                    </div>
+                    <div class="bg-white border border-rose-100 rounded-xl sm:rounded-2xl p-2 sm:p-3 shadow-sm text-center">
+                        <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-0.5 sm:mb-1 break-words leading-tight">Cals Burned</p>
+                        <h4 class="font-black text-orange-500 text-base sm:text-lg leading-tight break-words" id="fit-total-cal">0</h4>
+                    </div>
+                </div>
+
+                <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-rose-200 shadow-md bg-white/80">
+                    <h3 class="font-black text-gray-900 mb-2 sm:mb-3 text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-plus-circle text-rose-500"></i> Log Today's Run</h3>
+                    <form onsubmit="event.preventDefault(); submitFitnessLog();" class="space-y-2 sm:space-y-3">
+                        <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                            <div>
+                                <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 mb-1 break-words leading-tight">Distance (KM)</label>
+                                <input type="number" step="0.01" id="fit-dist" required placeholder="e.g. 5.2" class="w-full px-2 sm:px-3 py-2 sm:py-2.5 bg-white border border-rose-100 outline-none font-bold text-gray-900 rounded-xl shadow-sm text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 mb-1 break-words leading-tight">Time (Mins)</label>
+                                <input type="number" id="fit-time" required placeholder="e.g. 30" class="w-full px-2 sm:px-3 py-2 sm:py-2.5 bg-white border border-rose-100 outline-none font-bold text-gray-900 rounded-xl shadow-sm text-sm">
+                            </div>
+                        </div>
+                        <div class="flex gap-2 mt-2 sm:mt-0"><button type="submit" class="flex-[2] bg-gradient-to-r from-rose-500 to-red-600 text-white text-xs sm:text-sm font-bold py-2.5 sm:py-3.5 rounded-xl active:scale-95 transition-all shadow-md">Add Log</button><button type="button" onclick="submitFitnessAbsent()" class="flex-[1] bg-rose-50 text-rose-600 text-xs sm:text-sm font-bold py-2.5 sm:py-3.5 rounded-xl active:scale-95 transition-all shadow-sm border border-rose-200">Absent</button> </div>
+                    </form>
+                </div>
+
+                <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-rose-100 shadow-sm bg-white">
+                    <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 text-xs sm:text-sm break-words">Distance Tracker (Last 7 Runs)</h3>
+                    <div class="h-28 sm:h-32 w-full relative"><canvas id="fitnessChart"></canvas></div>
+                </div>
+
+                <div>
+                    <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 px-1 sm:px-2 text-xs sm:text-sm tracking-tight break-words">Recent Logs</h3>
+                    <div id="fitness-log-list" class="space-y-2 sm:space-y-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 8. DISCUS CHAT VIEW -->
+        <div id="community-chat-view" class="hidden-view absolute inset-0 bg-[#e5ddd5] z-[80] flex flex-col slide-left ">
+            <div class="bg-[#128C7E] text-white pt-8 sm:pt-10 pb-2 sm:pb-3 px-3 sm:px-4 flex items-center gap-2 sm:gap-3 shadow-md relative z-10 shrink-0">
+                <button onclick="safeBack()" class="w-8 h-8 shrink-0 flex items-center justify-center rounded-full active:bg-white/20 transition-all">
+                    <i class="fa-solid fa-arrow-left text-base sm:text-lg"></i>
+                </button>
+                <div class="w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full overflow-hidden border border-white/40">
+                    <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-full h-full object-cover">
+                </div>
+                <div class="flex-1 cursor-pointer min-w-0 pr-1">
+                    <h2 class="text-[14px] sm:text-[16px] font-bold leading-tight flex items-center gap-1 break-words"><span class="break-words min-w-0">Discus Community</span> <i class="fa-solid fa-circle-check text-blue-200 text-[10px] sm:text-xs shrink-0"></i></h2>
+                    <p id="chat-online-count" class="text-[9px] sm:text-[11px] text-[#baf1e9] font-medium flex items-center gap-1 break-words"></p>
+                </div>
+                <div class="flex items-center gap-1 sm:gap-2 shrink-0">
+                    <button onclick="startDiscusAudioCall()" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white active:bg-white/20 transition-all" title="Audio Call">
+                        <i class="fa-solid fa-phone text-sm sm:text-base"></i>
+                    </button>
+                    <button onclick="startDiscusVideoCall()" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white active:bg-white/20 transition-all" title="Video Call">
+                        <i class="fa-solid fa-video text-sm sm:text-base"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="chat-messages" class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-4 chat-bg flex flex-col pb-4"></div>
+            
+            <div class="w-full bg-[#f0f2f5] p-2 flex flex-col shrink-0 relative md:rounded-b-[2.5rem]">
+          
+            
+               <!-- MENTIONS DROPDOWN -->
+                <div id="mention-dropdown" class="hidden absolute bottom-full left-2 mb-2 w-48 sm:w-64 bg-white/95 backdrop-blur-xl border border-gray-200 rounded-xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] max-h-40 overflow-y-auto flex-col z-50 divide-y divide-gray-100"></div>
+                
+                <div id="chat-audio-preview" class="hidden mx-1 sm:mx-2 mb-2 p-2 bg-white border border-gray-200 rounded-lg flex items-center justify-between shadow-sm">
+                    <audio id="audio-playback" controls class="h-8 max-w-[150px] sm:max-w-[200px] outline-none"></audio>
+                    <div class="flex gap-1.5 sm:gap-2">
+                        <button onclick="cancelAudioRecord()" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200"><i class="fa-solid fa-trash text-[10px] sm:text-xs"></i></button>
+                        <button onclick="sendAudioMessage()" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#128C7E] text-white flex items-center justify-center hover:bg-[#075E54]"><i class="fa-solid fa-paper-plane text-[10px] sm:text-xs"></i></button>
+                    </div>
+                </div>
+
+                <div id="chat-reply-banner" class="hidden mx-1 sm:mx-2 mb-2 p-2 bg-[#d9fdd3]/50 border-l-4 border-[#128C7E] rounded-lg flex justify-between items-start text-xs shadow-sm">
+                    <div class="min-w-0 break-words text-gray-700 flex-1">
+                        <div class="font-bold text-[#128C7E] mb-0.5 break-words" id="reply-name"></div>
+                        <div id="reply-text" class="text-gray-500 line-clamp-1 break-words"></div>
+                    </div>
+                    <button onclick="cancelChatReply()" class="p-1 text-gray-400 hover:text-gray-700 ml-2 shrink-0"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                
+                <form onsubmit="event.preventDefault(); sendChatMessage();" class="flex gap-1.5 sm:gap-2 items-end">
+                    <div class="flex-1 bg-white rounded-[20px] sm:rounded-[24px] flex items-center px-1.5 sm:px-2 py-1 shadow-sm overflow-hidden">
+                        <label class="text-gray-400 hover:text-[#128C7E] cursor-pointer p-1.5 sm:p-2 transition-colors shrink-0" title="Share Photos">
+                            <i class="fa-solid fa-paperclip text-lg sm:text-xl"></i>
+                            <input type="file" accept="image/*" multiple class="hidden" onchange="uploadChatImages(event)">
+                        </label>
+                        <button type="button" id="chat-share-btn" onclick="sharePerformance()" class="text-gray-400 hover:text-[#128C7E] p-1.5 sm:p-2 transition-colors shrink-0" title="Share Stats">
+                            <i class="fa-solid fa-trophy text-base sm:text-lg"></i>
+                        </button>
+                        <textarea id="chat-input" placeholder="Type a message..." rows="1" class="flex-1 bg-transparent px-1.5 sm:px-2 py-1.5 sm:py-2 outline-none font-medium text-gray-900 resize-none max-h-20 sm:max-h-24 min-h-[36px] sm:min-h-[40px] text-[13px] sm:text-[15px]"></textarea>
+                    </div>
+                    <button type="button" id="mic-btn" onclick="toggleAudioRecord()" class="w-9 h-9 sm:w-11 sm:h-11 bg-[#128C7E] text-white rounded-full flex items-center justify-center hover:bg-[#075E54] active:scale-95 transition-all shadow-sm shrink-0 mb-0.5">
+                        <i class="fa-solid fa-microphone text-[13px] sm:text-[15px]"></i>
+                    </button>
+                    <button type="submit" id="send-text-btn" class="hidden w-9 h-9 sm:w-11 sm:h-11 bg-[#128C7E] text-white rounded-full flex items-center justify-center hover:bg-[#075E54] active:scale-95 transition-all shadow-sm shrink-0 mb-0.5">
+                        <i class="fa-solid fa-paper-plane text-[13px] sm:text-[15px] ml-[-1px] sm:ml-[-2px]"></i>
+                    </button>
+                </form>
+            </div>
+            
+            <div id="discus-video-modal" class="hidden-view absolute inset-0 z-[100] bg-black/95 flex flex-col slide-left ">
+                <div class="bg-gray-900 px-3 sm:px-4 py-2 sm:py-3 flex justify-between items-center border-b border-gray-800 shrink-0">
+                    <div class="flex items-center gap-2 text-white min-w-0 pr-2">
+                        <i class="fa-solid fa-phone-volume text-green-400 animate-pulse shrink-0" id="call-icon-indicator"></i>
+                        <span class="font-bold text-xs sm:text-sm break-words leading-tight" id="call-title-indicator">Discus Live Call</span>
+                    </div>
+                    <button onclick="closeDiscusVideoCall()" class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 bg-white/20 hover:bg-white/40 text-white rounded-full flex items-center justify-center transition-all active:scale-90">
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+                <div id="discus-jitsi-container" class="flex-1 w-full bg-black relative"></div>
+            </div>
+        </div>
+
+        <!-- 9. NOTICE BOARD VIEW -->
+        <div id="notice-board-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+            <div class="bg-gradient-to-r from-amber-500 to-orange-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center justify-between shadow-lg relative z-10">
+                <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
+                    <button onclick="safeBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+                        <i class="fa-solid fa-arrow-left text-sm sm:text-lg"></i>
+                    </button>
+                    <div class="min-w-0">
+                        <h2 class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight">Notice Board</h2>
+                        <p class="text-[9px] sm:text-[10px] text-amber-100 font-bold tracking-widest uppercase break-words mt-0.5 leading-tight">Let's Crack !t</p>
+                    </div>
+                </div>
+                <button id="add-notice-btn" onclick="toggleNoticeForm()" class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-white/20 rounded-full flex items-center justify-center active:scale-90 transition-all border border-white/30 shadow-sm">
+                    <i class="fa-solid fa-plus text-sm sm:text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-3 sm:space-y-4 relative md:w-3/4 md:mx-auto">
+                <div id="admin-notice-form" class="hidden glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-amber-300 space-y-2 sm:space-y-3 mb-3 sm:mb-4 shadow-md relative z-10">
+                    <h4 class="font-black text-gray-900 text-xs sm:text-sm break-words">Post New Notice</h4>
+                    <input type="text" id="notice-title" placeholder="Notice Title..." class="w-full px-3 py-2 sm:px-4 sm:py-3 bg-white rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm outline-none border border-gray-200">
+                    
+                    <div class="bg-white/80 p-1.5 sm:p-2 rounded-lg sm:rounded-xl border border-gray-200">
+                        <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 ml-1 break-words"><i class="fa-regular fa-image text-amber-500 mr-1"></i> Attach Image (Optional)</label>
+                        <input type="file" id="notice-image" accept="image/*" class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1 sm:file:py-1.5 file:px-2 sm:file:px-3 file:rounded-md sm:file:rounded-lg file:border-0 file:text-[9px] sm:file:text-[10px] file:font-bold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100 cursor-pointer">
+                    </div>
+
+                    <textarea id="notice-body" placeholder="Write notice message..." class="w-full px-3 py-2 sm:px-4 sm:py-3 bg-white rounded-lg sm:rounded-xl font-medium text-[11px] sm:text-xs outline-none border border-gray-200 h-16 sm:h-20"></textarea>
+                    <button onclick="submitNotice()" class="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm sm:text-base font-black py-2.5 sm:py-3 rounded-lg sm:rounded-xl shadow-md active:scale-95 transition-all mt-1">Post Notice</button>
+                </div>
+                <div id="notice-list" class="space-y-3 sm:space-y-4 relative z-10"></div>
+            </div>
+        </div>
+
+        <!-- 10. TARGET CALCULATOR -->
+        <div id="target-calc-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+            <div class="bg-gradient-to-r from-cyan-500 to-blue-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+                <button onclick="safeBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+                    <i class="fa-solid fa-arrow-left text-sm sm:text-lg"></i>
+                </button>
+                <div class="flex items-center gap-2 sm:gap-3 min-w-0 pr-2">
+                    <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full border border-white/40 shadow-sm object-cover">
+                    <div class="min-w-0">
+                        <h2 class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight">Set Target</h2>
+                        <p class="text-[9px] sm:text-[10px] text-cyan-100 font-bold tracking-widest uppercase break-words leading-tight mt-0.5">Goal Planner</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-6 space-y-4 sm:space-y-6 relative md:w-3/4 md:mx-auto">
+                <div class="glass-card p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-cyan-200 space-y-3 sm:space-y-4 shadow-md bg-white relative z-10">
+                    <h4 class="font-black text-gray-900 text-xs sm:text-sm break-words">Set Your Target Average</h4>
+                    <p class="text-[10px] sm:text-xs text-gray-500 font-medium leading-relaxed break-words">Enter desired overall percentage to see what you need to score in upcoming syllabus exams.</p>
+                    <div class="flex items-center gap-2 sm:gap-3">
+                        <input type="number" id="target-percentage-input" placeholder="85" class="flex-1 px-3 py-2 sm:px-4 sm:py-3 bg-gray-50 rounded-lg sm:rounded-xl font-black text-xl sm:text-2xl outline-none border border-cyan-200 text-center text-cyan-800">
+                        <span class="font-black text-xl sm:text-2xl text-cyan-700">%</span>
+                    </div>
+                    <button onclick="calculateTargetRequired()" class="w-full bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-black py-3 sm:py-4 rounded-lg sm:rounded-xl shadow-lg shadow-cyan-200/50 active:scale-95 transition-all text-base sm:text-lg mt-2 sm:mt-0">Set Target & Forecast</button>
+                </div>
+                
+                <div id="target-result-card" class="hidden glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] space-y-3 sm:space-y-4 border-indigo-200 bg-white relative z-10 shadow-md">
+                    <div class="text-center pb-3 sm:pb-4 border-b border-gray-100">
+                        <p class="text-[9px] sm:text-[10px] font-bold text-gray-400 uppercase tracking-widest break-words px-2 leading-tight">Required Average For Scheduled Exams</p>
+                        <div id="target-needed-score" class="text-3xl sm:text-4xl font-black text-indigo-600 mt-1 break-words">0%</div>
+                        <p id="target-advice" class="text-[10px] sm:text-xs text-gray-600 font-medium pt-1 sm:pt-2 break-words px-2 leading-tight">Achievable with consistent preparation!</p>
+                    </div>
+                    <div id="target-imaginary-card" class="hidden mt-2 bg-red-50 border border-red-200 p-3 sm:p-4 rounded-lg sm:rounded-xl text-left"></div>
+                    <div id="target-future-breakdown">
+                        <h5 class="text-[11px] sm:text-xs font-black text-gray-900 mb-2 sm:mb-3 flex items-center break-words"><i class="fa-solid fa-list-check text-indigo-500 mr-1.5 sm:mr-2"></i> Scheduled Subject Breakdown</h5>
+                        <p class="text-[9px] sm:text-[10px] text-gray-500 font-medium mb-2 sm:mb-3 leading-tight break-words">Minimum exact marks you need to secure in your next scheduled exams:</p>
+                        <div id="target-scenarios-grid" class="space-y-1.5 sm:space-y-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 11. MATERIAL HUB VIEW -->
+        <div id="materials-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+            <div class="classroom-header text-white pt-10 sm:pt-12 pb-4 sm:pb-6 px-4 sm:px-6 flex items-center justify-between shadow-lg relative z-10 border-b border-gray-300">
+                <div class="absolute inset-0 bg-blue-900/40 mix-blend-multiply"></div>
+                <div class="flex items-center gap-3 sm:gap-4 relative z-10 min-w-0 pr-2">
+                    <button onclick="safeBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 backdrop-blur-md rounded-full active:scale-90 transition-all border border-white/30 hover:bg-white/30">
+                        <i class="fa-solid fa-arrow-left text-sm sm:text-lg"></i>
+                    </button>
+                    <div class="min-w-0">
+                        <h2 class="text-xl sm:text-2xl font-black tracking-tight drop-shadow-md break-words leading-tight">Material Hub</h2>
+                        <p class="text-[9px] sm:text-[11px] text-blue-100 font-bold tracking-widest uppercase drop-shadow-md mt-0.5 break-words leading-tight">Let's Crack It!</p>
+                    </div>
+                </div>
+                <button id="btn-upload-material" onclick="openMaterialUploadModal()" class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center active:scale-90 transition-all border border-white/30 shadow-sm hover:bg-white/30 relative z-10" title="Upload Material">
+                    <i class="fa-solid fa-cloud-arrow-up text-sm sm:text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-4 sm:space-y-6 relative md:w-3/4 md:mx-auto">
+                <div class="flex gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-2 pt-1" id="subject-tabs-container"></div>
+                <div id="materials-directory-list" class="space-y-4 sm:space-y-6"></div>
+            </div>
+        </div>
+
+        <!-- UPLOAD STUDY MATERIAL MODAL -->
+        <div id="material-upload-modal" class="hidden-view absolute inset-0 z-[95] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/80 fade-in">
+            <div class="glass-card p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl w-full max-w-md border-white/50 border relative max-h-[90vh] overflow-y-auto no-scrollbar">
+                <button onclick="document.getElementById('material-upload-modal').classList.add('hidden-view')" class="absolute top-3 right-3 sm:top-4 sm:right-4 w-8 h-8 bg-gray-200/50 hover:bg-gray-300 text-gray-600 rounded-full flex items-center justify-center transition-all z-10">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <h3 class="text-lg sm:text-xl font-black text-gray-900 mb-1 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-folder-plus text-blue-600"></i> Add Material</h3>
+                <p class="text-[10px] sm:text-xs text-gray-500 mb-4 sm:mb-5 font-medium leading-tight break-words">Upload PDF/Images or provide a Google Drive / Classroom link.</p>
+                <form id="form-upload-material" onsubmit="event.preventDefault(); submitStudyMaterial();" class="space-y-3 sm:space-y-4">
+                    <div class="glass-card p-2 rounded-xl sm:rounded-2xl">
+                        <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Subject Folder</label>
+                        <input type="text" id="mat-subject" list="subject-list" required placeholder="e.g. English, History..." class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm">
+                        <datalist id="subject-list"><option value="English"><option value="Reasoning"><option value="Mathematics"><option value="Shorthadn"><option value="Philosophy"><option value="Academic"><option value="Documentry"><option value="Informative"><option value="General"></datalist>
+                    </div>
+                    <div class="glass-card p-2 rounded-xl sm:rounded-2xl">
+                        <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Topic / Sub-Menu Name</label>
+                        <input type="text" id="mat-topic" required placeholder="e.g. Newton's Laws of Motion" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm">
+                    </div>
+                    <div class="glass-card p-2 rounded-xl sm:rounded-2xl">
+                        <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Material Title</label>
+                        <input type="text" id="mat-title" required placeholder="e.g. Class Notes & Practice Set" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm">
+                    </div>
+                    <div class="glass-card p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border-blue-200 bg-blue-50/50">
+                        <label class="block text-[9px] sm:text-[10px] font-black text-blue-500 uppercase tracking-widest ml-1 mb-1.5 sm:mb-2 break-words leading-tight"><i class="fa-solid fa-link mr-1"></i>Drive / Classroom Link (Opt)</label>
+                        <div class="flex flex-col gap-1.5 sm:gap-2">
+                            <input type="url" id="mat-ext-link" placeholder="https://drive.google.com/..." class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-semibold text-gray-900 text-[10px] sm:text-xs shadow-sm border border-blue-100">
+                            <div class="flex flex-wrap items-center gap-1 sm:gap-2">
+                                <span class="text-[9px] sm:text-[10px] text-gray-400 font-bold uppercase mx-1 sm:mx-2 shrink-0">OR</span>
+                                <button type="button" onclick="uploadDirectToDrive()" class="flex-1 min-w-[140px] bg-white border border-gray-300 text-gray-700 font-bold py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl hover:bg-gray-50 flex items-center justify-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] shadow-sm transition">
+                                    <i class="fa-brands fa-google-drive text-blue-500 text-sm sm:text-lg"></i> Direct Drive Upload
+                                </button>
+                                <input type="file" id="gdrive-file-input" class="hidden">
+                            </div>
+                            <p id="gdrive-upload-status" class="text-[9px] sm:text-[10px] text-green-600 font-bold mt-1 ml-1 hidden break-words"></p>
+                        </div>
+                    </div>
+                    <div class="bg-white/60 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-white/50">
+                        <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 sm:mb-2 break-words leading-tight">Upload Files (Select multiple)</label>
+                        <input type="file" id="mat-files" accept="image/*,application/pdf" multiple class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1.5 sm:file:py-2 file:px-3 sm:file:px-4 file:rounded-lg sm:file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                    </div>
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-xl sm:rounded-2xl active:scale-95 transition-all shadow-lg mt-1 sm:mt-2">Publish Material</button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- ========================================== -->
+<!-- PREMIUM PW-STYLE CLASSROOM HUB -->
+<!-- ========================================== -->
+<div id="video-hub-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+    <!-- Clean Classroom Header -->
+    <div class="bg-white text-gray-900 pt-10 sm:pt-12 pb-3 px-4 sm:px-5 flex items-center justify-between shadow-sm border-b border-gray-200 relative z-10 shrink-0">
+        <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
+            <button onclick="vhGoBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full active:scale-90 transition-all text-gray-700">
+                <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
+            </button>
+            <div class="min-w-0">
+                <h2 id="vh-header-title" class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight text-indigo-950">My Batches</h2>
+                <p id="vh-header-subtitle" class="text-[9px] sm:text-[10px] text-gray-500 font-bold tracking-widest uppercase break-words leading-tight mt-0.5">Select a Subject</p>
+            </div>
+        </div>
+        <button id="btn-upload-video" onclick="document.getElementById('video-upload-modal')?.classList.remove('hidden-view')" class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-full flex items-center justify-center active:scale-90 transition-all border border-indigo-200 shadow-sm" title="Post New Video">
+            <i class="fa-solid fa-plus text-sm sm:text-lg"></i>
+        </button>
+    </div>
+    
+    <!-- Dynamic State Container -->
+    <div class="flex-1 overflow-y-auto no-scrollbar relative md:w-3/4 md:mx-auto flex flex-col bg-gray-50/30">
+        <div id="vh-dynamic-container" class="p-3 sm:p-5 pb-24 space-y-4">
+            <!-- Subjects, Topics, or Lectures will render here -->
+        </div>
+    </div>
+</div>
+
+ <!-- ========================================== -->
+<!-- BULK: ADMIN VIDEO UPLOAD MODAL -->
+<!-- ========================================== -->
+<div id="video-upload-modal" class="hidden-view absolute inset-0 z-[95] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/80 fade-in">
+    <div class="glass-card p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl w-full max-w-md border-white/50 border relative max-h-[90vh] overflow-y-auto no-scrollbar flex flex-col">
+        <button onclick="document.getElementById('video-upload-modal')?.classList.add('hidden-view')" class="absolute top-3 right-3 sm:top-4 sm:right-4 w-8 h-8 bg-gray-200/50 hover:bg-gray-300 text-gray-600 rounded-full flex items-center justify-center transition-all z-20">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+        
+        <div class="shrink-0 mb-4 border-b border-gray-200/50 pb-3">
+            <h3 class="text-lg sm:text-xl font-black text-gray-900 mb-1 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-cloud-arrow-up text-red-600"></i> Bulk Upload Lectures</h3>
+            <p class="text-[10px] sm:text-xs text-gray-500 font-medium leading-tight break-words">Select the category once, then add multiple video links below!</p>
+        </div>
+        
+        <form id="form-upload-video" onsubmit="event.preventDefault(); submitVideo();" class="flex-1 overflow-y-auto no-scrollbar pb-2">
+            
+            <div class="space-y-3 sm:space-y-4 mb-4">
+                <div class="bg-white/60 p-2 rounded-xl sm:rounded-2xl border border-white/80 shadow-sm">
+                    <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Subject</label>
+                    <select id="vid-subject" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm border-0 cursor-pointer">
+                        <option value="" disabled selected>Select Subject...</option>
+                        <option value="English">English</option>
+                        <option value="General Knowledge">General Knowledge</option>
+                        <option value="Reasoning">Reasoning</option>
+                        <option value="Mathematics">Mathematics</option>
+                        <option value="Stenography">Stenography</option>
+                        <option value="Informative">Informative</option>
+                        <option value="Geopolitics">Geopolitics</option>
+                        <option value="Philosophy">Philosophy</option>
+                         <option value="Academic">Academic</option>
+                    </select>
+                </div>
+
+                <div class="bg-white/60 p-2 rounded-xl sm:rounded-2xl border border-white/80 shadow-sm">
+                    <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Instructor</label>
+                    <select id="vid-instructor" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm border-0 cursor-pointer">
+                        <option value="" disabled selected>Select Instructor...</option>
+                        <option value="Aditya Ranjan">Aditya Ranjan</option>
+                        <option value="Neetu Singh">Neetu Singh</option>
+                        <option value="Piyush Sir">Piyush Sir</option>
+                        <option value="Parmar SSC">Parmar SSC</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+
+                <div class="bg-white/60 p-2 rounded-xl sm:rounded-2xl border border-white/80 shadow-sm">
+                    <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Topic / Chapter</label>
+                    <input type="text" id="vid-topic" required placeholder="e.g. Number Systems" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm border-0">
+                </div>
+            </div>
+
+            <h4 class="text-[10px] sm:text-xs font-black text-gray-800 uppercase tracking-widest mb-2 px-1">Video Links</h4>
+            
+            <div id="bulk-video-container" class="space-y-3 p-2 bg-gray-50/50 rounded-2xl border border-gray-200/50 shadow-inner mb-3">
+                <div class="video-input-row bg-white p-3 rounded-xl border border-red-100 shadow-sm relative group">
+                    <input type="text" required placeholder="Lecture Title (e.g. Part 1)" class="vid-title-input w-full px-3 py-2 bg-gray-50 rounded-lg outline-none font-bold text-gray-900 text-xs border border-gray-200 mb-2 shadow-sm focus:border-red-300">
+                    <input type="url" required placeholder="YouTube or Drive Link" class="vid-url-input w-full px-3 py-2 bg-gray-50 rounded-lg outline-none font-bold text-red-600 text-xs border border-gray-200 shadow-sm focus:border-red-300">
+                </div>
+            </div>
+            
+            <!-- NEW: ADD ROW BUTTON MOVED TO BOTTOM -->
+            <button type="button" onclick="addVideoRow()" class="w-full bg-indigo-50/80 text-indigo-600 hover:bg-indigo-100 px-3 py-3 rounded-xl text-[11px] sm:text-xs font-black tracking-widest shadow-sm transition-colors active:scale-95 mb-4 border-2 border-indigo-200/60 border-dashed flex items-center justify-center gap-2"><i class="fa-solid fa-plus"></i> Add Another Row</button>
+            
+            <button type="submit" class="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white text-sm sm:text-base font-black py-3 sm:py-4 rounded-xl sm:rounded-2xl active:scale-95 transition-all shadow-lg shrink-0 sticky bottom-0">Publish All Videos</button>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- SINGLE: ADMIN EDIT VIDEO MODAL -->
+<!-- ========================================== -->
+<div id="video-edit-modal" class="hidden-view absolute inset-0 z-[95] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/80 fade-in">
+    <div class="glass-card p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] shadow-2xl w-full max-w-md border-white/50 border relative max-h-[90vh] overflow-y-auto no-scrollbar flex flex-col">
+        <button onclick="document.getElementById('video-edit-modal')?.classList.add('hidden-view')" class="absolute top-3 right-3 sm:top-4 sm:right-4 w-8 h-8 bg-gray-200/50 hover:bg-gray-300 text-gray-600 rounded-full flex items-center justify-center transition-all z-20">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+        
+        <div class="shrink-0 mb-4 border-b border-gray-200/50 pb-3">
+            <h3 class="text-lg sm:text-xl font-black text-gray-900 mb-1 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-pen text-indigo-600"></i> Edit Lecture</h3>
+            <p class="text-[10px] sm:text-xs text-gray-500 font-medium leading-tight break-words">Update the details or change the link for this lecture.</p>
+        </div>
+        
+        <form id="form-edit-video" onsubmit="event.preventDefault(); submitEditVideo();" class="flex-1 space-y-3 sm:space-y-4 pb-2">
+            <input type="hidden" id="edit-vid-id">
+            
+            <div class="bg-white/60 p-2 rounded-xl sm:rounded-2xl border border-white/80 shadow-sm">
+                <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1">Subject</label>
+                <select id="edit-vid-subject" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm border-0">
+                    <option value="English">English</option><option value="General Knowledge">General Knowledge</option><option value="Reasoning">Reasoning</option><option value="Mathematics">Mathematics</option><option value="Stenography">Stenography</option><option value="Informative">Informative</option><option value="Geopolitics">Geopolitics</option><option value="Academic">Academic</option><option value="Philosophy">Philosophy</option>
+                </select>
+            </div>
+
+            <div class="bg-white/60 p-2 rounded-xl sm:rounded-2xl border border-white/80 shadow-sm">
+                <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1">Instructor</label>
+                <select id="edit-vid-instructor" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm border-0">
+                    <option value="Aditya Ranjan">Aditya Ranjan</option><option value="Neetu Singh">Neetu Singh</option><option value="Piyush Sir">Piyush Sir</option><option value="Parmar SSC">Parmar SSC</option><option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div class="bg-white/60 p-2 rounded-xl sm:rounded-2xl border border-white/80 shadow-sm">
+                <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1">Topic / Chapter</label>
+                <input type="text" id="edit-vid-topic" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm border-0">
+            </div>
+
+            <div class="bg-white/60 p-2 rounded-xl sm:rounded-2xl border border-white/80 shadow-sm">
+                <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1">Video Title</label>
+                <input type="text" id="edit-vid-title" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm border-0">
+            </div>
+
+            <div class="bg-white/60 p-2 rounded-xl sm:rounded-2xl border border-red-100 shadow-sm">
+                <label class="block text-[9px] sm:text-[10px] font-bold text-red-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1">YouTube OR Drive Link</label>
+                <input type="url" id="edit-vid-url" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg outline-none font-bold text-red-600 text-xs sm:text-sm border border-red-100 shadow-inner">
+            </div>
+            
+            <button type="submit" class="w-full bg-gradient-to-r from-indigo-600 to-cyan-600 text-white text-sm sm:text-base font-black py-3 sm:py-4 rounded-xl sm:rounded-2xl active:scale-95 transition-all shadow-lg mt-2">Save Changes</button>
+        </form>
+    </div>
+</div>
+<!-- ========================================== -->
+<!-- RESPONSIVE YOUTUBE-STYLE NATIVE VIDEO PLAYER -->
+<!-- ========================================== -->
+<div id="video-watch-view" class="hidden-view absolute inset-0 bg-gray-50 z-[90] flex flex-col slide-up  overflow-hidden">
+    
+  <!-- Top Nav Bar (Video Header) -->
+    <div class="w-full bg-gray-900 p-3 sm:p-4 md:pt-10 lg:pt-12 flex items-center justify-between shrink-0 z-30 relative shadow-md">
+        
+        <!-- LEFT CORNER: Back Button -->
+        <button onclick="closeWatchView()" class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-red-600 transition-colors active:scale-90 shadow-sm shrink-0">
+            <i class="fa-solid fa-chevron-down text-sm"></i>
+        </button>
+        
+        <!-- MIDDLE: Now Playing Title -->
+        <h3 class="text-white font-bold text-xs sm:text-sm mx-3 truncate flex-1 text-center" id="watch-header-title">Now Playing</h3>
+        
+        <!-- RIGHT CORNER (OPPOSITE): Full Screen Button -->
+        <button onclick="toggleVideoFullscreen()" class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-indigo-500 transition-colors active:scale-90 shadow-sm shrink-0" title="Full Screen">
+            <i class="fa-solid fa-expand text-sm" id="icon-video-fullscreen"></i>
+        </button>
+        
+    </div>
+
+    <!-- Responsive Split Container -->
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        
+        <!-- LEFT/TOP SIDE: Video Player & Details -->
+        <div class="w-full md:w-[60%] lg:w-[65%] flex flex-col overflow-y-auto no-scrollbar shrink-0 md:shrink border-r border-gray-200 bg-white pb-6 md:pb-0">
+<!-- Edge-to-Edge Native Player -->
+<div id="native-player-container" class="w-full aspect-video bg-black relative shrink-0 shadow-sm transition-all duration-300">
+    <!-- Video.js gets injected here dynamically -->
+</div>
+            
+            <!-- Video Details Card -->
+            <div class="p-4 sm:p-5 lg:p-6 shrink-0">
+                <div class="flex items-center gap-1.5 mb-2">
+                    <span id="watch-subject" class="text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 shadow-sm">Subject</span>
+                    <i class="fa-solid fa-chevron-right text-[8px] text-gray-400"></i>
+                    <span id="watch-topic" class="text-[9px] font-bold text-gray-500 truncate">Topic</span>
+                </div>
+                <h2 id="watch-title" class="font-black text-gray-900 text-lg sm:text-xl md:text-2xl leading-snug mb-4 break-words">Lecture Title</h2>
+                
+                <div class="flex flex-wrap items-center justify-between border-t border-gray-100 pt-4 gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex justify-center items-center font-black text-sm shadow-inner"><i class="fa-solid fa-chalkboard-user"></i></div>
+                        <div class="flex flex-col">
+                            <span class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest">Instructor</span>
+                            <span id="watch-uploader" class="text-sm sm:text-base font-black text-gray-900 leading-tight">EXAMA Faculty</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+    <!-- NEW: DOWNLOAD BUTTON -->
+    <button id="btn-download-video" onclick="toggleVideoDownload()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-xl flex items-center justify-center transition-all active:scale-90 text-xs sm:text-sm font-black border border-indigo-200 shadow-sm shrink-0">
+        <i id="icon-download" class="fa-solid fa-cloud-arrow-down mr-1.5"></i>
+        <span id="text-download">Download</span>
+    </button>
+
+    <!-- EXISTING: MARK COMPLETED BUTTON -->
+    <button id="btn-mark-watched" onclick="toggleVideoWatched()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl flex items-center justify-center transition-all active:scale-90 text-xs sm:text-sm font-black tracking-wide border border-gray-200 shadow-sm shrink-0">
+        <i id="icon-watched" class="fa-solid fa-eye mr-1.5"></i> <span id="text-watched">Mark Completed</span>
+    </button>
+</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT/BOTTOM SIDE: Up Next Playlist -->
+        <div class="w-full md:w-[40%] lg:w-[35%] flex flex-col bg-gray-50 overflow-y-auto no-scrollbar pb-10 md:pb-0 relative z-10">
+            <!-- Sticky Header for Playlist -->
+            <div class="p-3 sm:p-4 sticky top-0 bg-gray-50/95 backdrop-blur-md z-20 border-b border-gray-200 shadow-sm">
+                <div class="flex justify-between items-center px-1">
+                    <h4 class="font-black text-gray-900 text-sm sm:text-base tracking-tight"><i class="fa-solid fa-list-ol text-indigo-500 mr-1.5"></i> Up Next Playlist</h4>
+                    <span id="topic-progress-text" class="text-[9px] sm:text-[10px] font-bold text-gray-600 bg-white px-2 py-1 rounded-md shadow-sm border border-gray-200"></span>
+                </div>
+            </div>
+            
+            <div id="watch-related-list" class="p-3 sm:p-4 space-y-2.5 sm:space-y-3">
+                <!-- Injected by JS -->
+            </div>
+        </div>
+    </div>
+</div>
+    <!-- 12. FULL SCREEN ACTIVE EXAM TIMER & LIVE PROCTORING -->
+<div id="active-exam-view" class="hidden-view absolute top-0 left-0 w-full h-[100dvh] md:h-full z-[100] bg-[#020617] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/40 via-[#020617] to-[#020617] flex flex-col items-center pt-6 sm:pt-8 p-4 sm:p-6 fade-in  overflow-y-auto no-scrollbar relative">
+
+    <!-- PREMIUM LOCK/WAITING OVERLAY -->
+    <div id="active-exam-overlay" class="absolute inset-0 bg-[#020617]/80 backdrop-blur-2xl z-[110] flex flex-col items-center justify-center hidden ">
+        <div class="relative flex items-center justify-center mb-8">
+            <div class="absolute w-24 h-24 bg-red-500/20 rounded-full animate-ping"></div>
+            <div class="absolute w-32 h-32 bg-red-500/10 rounded-full animate-pulse"></div>
+            <div class="w-20 h-20 bg-gray-900 border-2 border-red-500/50 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.4)] relative z-10 transform -rotate-6">
+                <i class="fa-solid fa-lock text-3xl text-red-500 drop-shadow-md"></i>
+            </div>
+        </div>
+        <h2 id="overlay-msg-title" class="text-3xl font-black text-white mb-2 tracking-tight">Waiting Area</h2>
+        <p id="overlay-msg-sub" class="text-sm text-gray-400 font-medium text-center max-w-xs mb-8">The exam will begin when the admin starts the timer.</p>
+        <button onclick="safeBack()" class="group flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 border border-white/10 text-gray-300 text-sm font-bold hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 shadow-lg">
+            <i class="fa-solid fa-arrow-left-long group-hover:-translate-x-1 transition-transform"></i> Exit Room
+        </button>
+    </div>
+
+    <!-- FLOATING GLASS EXAM HEADER -->
+    <div class="sticky top-0 w-full max-w-3xl bg-white/5 backdrop-blur-xl rounded-2xl sm:rounded-[2rem] p-4 sm:p-5 mb-6 sm:mb-8 flex justify-between items-center shrink-0 border border-white/10 shadow-2xl relative z-40">
+        <div class="min-w-0 pr-4">
+            <div class="flex items-center gap-2 mb-1">
+                <span class="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
+                <span class="text-[9px] sm:text-[10px] text-indigo-300 font-black tracking-widest uppercase">Live Assessment</span>
+            </div>
+            <h2 id="active-exam-name" class="text-white font-black text-lg sm:text-xl truncate leading-tight">Exam Name</h2>
+            <div class="flex flex-wrap gap-2 sm:gap-3 text-[9px] sm:text-[10px] text-gray-400 mt-1.5 font-bold tracking-wider uppercase">
+                <span id="ae-total" class="flex items-center gap-1"><i class="fa-solid fa-star text-amber-500"></i> 0 Marks</span>
+                <span class="opacity-50">|</span>
+                <span id="ae-pass" class="flex items-center gap-1"><i class="fa-solid fa-check-double text-green-500"></i> Pass 0%</span>
+                <span class="opacity-50">|</span>
+                <span id="ae-dur" class="flex items-center gap-1"><i class="fa-solid fa-clock text-blue-400"></i> 0 mins</span>
+            </div>
+        </div>
+        <div class="text-right flex flex-col items-end justify-center shrink-0">
+            <span id="ae-waiting-badge" class="bg-gray-800/80 text-gray-400 border border-gray-600 px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest hidden shadow-inner">Waiting</span>
+            <div class="flex items-center gap-2 hidden bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                <span class="w-2 h-2 bg-emerald-500 rounded-full animate-ping shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                <span id="ae-status-badge" class="text-emerald-400 text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Live</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODERN ANYTIME PRE-ROOM -->
+    <div id="anytime-preroom-panel" class="hidden w-full max-w-md bg-white/5 backdrop-blur-xl border border-cyan-500/30 rounded-[2rem] p-8 mb-6 shadow-2xl shrink-0 text-center relative z-10 overflow-hidden group">
+        <div class="absolute inset-0 bg-gradient-to-b from-cyan-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+        <div class="relative w-20 h-20 mx-auto bg-cyan-500/20 text-cyan-400 rounded-2xl flex items-center justify-center text-4xl mb-5 shadow-[0_0_30px_rgba(6,182,212,0.3)] transform group-hover:scale-110 transition-transform duration-500"><i class="fa-solid fa-door-open"></i></div>
+        <h3 class="text-2xl font-black text-white mb-2 tracking-tight">Ready to Start?</h3>
+        <p class="text-xs text-gray-400 mb-8 font-medium leading-relaxed" id="anytime-preroom-text">Peers have uploaded new question sets for you.</p>
+        <button onclick="startAnytimeAttempt()" class="relative w-full overflow-hidden rounded-xl group/btn active:scale-95 transition-all shadow-[0_10px_20px_rgba(6,182,212,0.3)]">
+            <div class="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-600 transition-transform duration-300 group-hover/btn:scale-105"></div>
+            <div class="relative px-6 py-4 text-white font-black tracking-widest text-sm flex items-center justify-center gap-2">
+                START EXAM <i class="fa-solid fa-arrow-right group-hover/btn:translate-x-1 transition-transform"></i>
+            </div>
+        </button>
+    </div>
+
+    <!-- SLEEK LIVE PROCTORING CAMERA -->
+    <div id="live-proctoring-panel" class="hidden w-full max-w-3xl bg-gray-950 border border-indigo-500/30 rounded-[1.5rem] sm:rounded-[2rem] overflow-hidden mb-6 sm:mb-8 shadow-[0_15px_40px_rgba(0,0,0,0.6)] shrink-0 relative z-10">
+        <div class="bg-gray-900/90 px-4 py-3 flex justify-between items-center border-b border-white/5 backdrop-blur-md">
+            <div class="flex items-center gap-2.5">
+                <div class="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
+                <span class="text-[9px] sm:text-[10px] font-black text-gray-300 uppercase tracking-widest break-words">Auto Live Proctoring</span>
+            </div>
+            <div class="flex gap-1.5">
+                <div class="w-2 h-2 rounded-full bg-gray-700"></div>
+                <div class="w-2 h-2 rounded-full bg-gray-700"></div>
+                <div class="w-2 h-2 rounded-full bg-gray-700"></div>
+            </div>
+        </div>
+        <div class="w-full h-48 sm:h-64 md:h-80 bg-black relative" id="proctoring-iframe-container"></div>
+    </div>
+
+    <!-- SCI-FI HUD TIMER CIRCLE -->
+    <div id="active-exam-circle" class="relative flex items-center justify-center shrink-0 w-44 h-44 sm:w-56 sm:h-56 bg-gray-900/40 backdrop-blur-xl rounded-full shadow-[0_0_60px_rgba(79,70,229,0.2)] mb-8 sm:mb-10 border border-white/5 transition-all duration-700 z-10 group">
+        <!-- Rotating dashed ring -->
+        <div class="absolute inset-[-4px] border-[2px] border-indigo-500/50 rounded-full border-dashed animate-[spin_15s_linear_infinite] opacity-70 group-hover:opacity-100 transition-opacity"></div>
+        <!-- Inner glowing ring -->
+        <div class="absolute inset-2 border-[4px] border-indigo-500/20 rounded-full"></div>
+        <div class="absolute inset-2 border-[4px] border-indigo-500 rounded-full border-t-transparent animate-[spin_3s_linear_infinite]"></div>
+        
+        <div class="flex flex-col items-center justify-center relative z-10">
+            <i class="fa-solid fa-hourglass-half text-indigo-400 text-sm mb-1 opacity-80"></i>
+            <div id="active-exam-timer" class="text-4xl sm:text-5xl font-mono font-black text-white tracking-tighter transition-colors duration-500 drop-shadow-[0_2px_10px_rgba(255,255,255,0.3)]">00:00</div>
+            <span class="text-[8px] sm:text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">Time Remaining</span>
+        </div>
+    </div>
+
+    <!-- EXAM QUESTION IMAGES CONTAINER -->
+    <div id="active-exam-q-images" class="w-full flex flex-col gap-4 sm:gap-6 mb-6 sm:mb-8 items-center shrink-0 relative z-10 max-w-2xl px-1"></div>
+    
+    <!-- ANIMATED NEON SUBMIT BUTTON -->
+    <button id="active-exam-submit-btn" onclick="submitFromActiveExam()" class="group relative w-full max-w-[90%] sm:max-w-sm overflow-hidden rounded-[1.5rem] p-[2px] active:scale-95 transition-all shrink-0 mb-8 sm:mb-12 z-20 shadow-[0_10px_40px_rgba(79,70,229,0.3)]">
+        <span class="absolute inset-[-1000%] animate-[spin_3s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#818cf8_0%,#22d3ee_50%,#818cf8_100%)] group-hover:opacity-100 transition-opacity duration-300 opacity-80"></span>
+        <div class="relative flex items-center justify-center gap-2.5 h-full w-full bg-gray-900 px-6 py-4 sm:py-5 rounded-[1.4rem] transition-colors group-hover:bg-gray-900/80 backdrop-blur-xl">
+            
+            <span class="font-black text-white text-base sm:text-lg tracking-widest uppercase">Finish Exam</span>
+        </div>
+    </button>
+</div>
+
+        <!-- 13. WEEKLY TARGETS VIEW -->
+        <div id="weekly-targets-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+            <div class="bg-gradient-to-r from-teal-500 to-emerald-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+                <button onclick="safeBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+                    <i class="fa-solid fa-arrow-left text-sm sm:text-lg"></i>
+                </button>
+                <div class="flex items-center gap-2 sm:gap-3 min-w-0 pr-2">
+                    <div class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full border border-white/40 shadow-sm flex items-center justify-center bg-white/10"><i class="fa-solid fa-list-check text-xs sm:text-sm"></i></div>
+                    <div class="min-w-0">
+                        <h2 class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight">Weekly Targets</h2>
+                        <p class="text-[9px] sm:text-[10px] text-teal-100 font-bold tracking-widest uppercase break-words leading-tight mt-0.5" id="wt-week-label">Current Week</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-4 sm:space-y-6 relative md:w-3/4 md:mx-auto pb-20">
+                <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-teal-200 bg-white shadow-sm flex flex-col gap-3 sm:gap-4">
+                    <div class="flex justify-between items-center">
+                        <button onclick="changeWeekView(-1)" class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center active:scale-90 transition-all"><i class="fa-solid fa-chevron-left text-[10px] sm:text-xs"></i></button>
+                        <div class="text-center relative cursor-pointer group min-w-0 px-2" title="Click to select any week">
+                            <h3 class="font-black text-gray-900 text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-1.5 group-hover:text-teal-600 transition-colors break-words leading-tight" onclick="document.getElementById('week-picker-input').showPicker()">
+                                <span id="wt-display-date">Mon, XX - Sun, XX</span>
+                                <i class="fa-solid fa-calendar-days text-teal-600 text-[10px] sm:text-xs shrink-0"></i>
+                            </h3>
+                            <p class="text-[8px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-0.5 break-words leading-tight" id="wt-week-label-sub">Selected Week</p>
+                            <input type="date" id="week-picker-input" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" onchange="handleWeekPickerSelect(this.value)">
+                        </div>
+                        <button onclick="changeWeekView(1)" class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center active:scale-90 transition-all"><i class="fa-solid fa-chevron-right text-[10px] sm:text-xs"></i></button>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-end mb-1">
+                            <span class="text-[8px] sm:text-[10px] font-bold text-teal-600 uppercase tracking-widest break-words leading-tight pr-2">Completion Progress</span>
+                            <span class="text-base sm:text-lg font-black text-gray-900 break-words leading-tight" id="wt-progress-text">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-2 sm:h-2.5 overflow-hidden">
+                            <div id="wt-progress-bar" class="bg-gradient-to-r from-teal-400 to-emerald-500 h-2 sm:h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="admin-target-form" class="hidden glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-teal-200 bg-teal-50/30 shadow-sm">
+                    <h4 class="font-black text-teal-800 text-xs sm:text-sm mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-plus-circle shrink-0"></i> Add Task for This Week</h4>
+                    <form onsubmit="event.preventDefault(); submitWeeklyTask();" class="space-y-2 sm:space-y-3">
+                        <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                            <select id="wt-subject" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-bold text-teal-900 text-[10px] sm:text-xs border border-teal-100 shadow-sm cursor-pointer appearance-none break-words">
+    <option value="" disabled selected>Select Subject...</option>
+    <option value="Calculation">Calculation</option><option value="Vocabulary">Vocabulary</option><option value="English">English</option><option value="Mathematics">Mathematics</option><option value="Stenography">Stenography</option><option value="General Knowledge">General Knowledge</option><option value="Reasoning">Reasoning</option><option value="Academic">Academic</option>
+</select>
+                           <select id="wt-topic" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-bold text-teal-900 text-[10px] sm:text-xs border border-teal-100 shadow-sm cursor-pointer appearance-none break-words">
+    <option value="" disabled selected>Select Topic...</option>
+    <option value="Major">Major</option><option value="New">New</option><option value="Classes">Classes</option><option value="Revision">Revision</option><option value="Practice">Practice</option><option value="Exam">Exam</option><option value="Minor">Minor</option>
+</select>
+                        </div>
+                        <div class="bg-white p-1.5 sm:p-2 rounded-lg sm:rounded-xl border border-teal-100 shadow-sm">
+                            <div class="flex justify-between items-center mb-1 px-1"><label class="text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest break-words leading-tight">Assign Target To:</label></div>
+                            <select id="wt-assign-type" onchange="toggleStudentSelection()" class="w-full px-2 py-1.5 sm:py-2 bg-gray-50 rounded-md sm:rounded-lg outline-none font-bold text-teal-800 text-[10px] sm:text-xs border border-gray-200 cursor-pointer break-words"><option value="All">All Students (Default)</option><option value="Specific">Select Specific Students...</option></select>
+                            <div id="wt-student-checkboxes" class="hidden mt-1.5 sm:mt-2 max-h-24 sm:max-h-28 overflow-y-auto space-y-1 p-1 border-t border-gray-100 bg-gray-50 rounded-md sm:rounded-lg"></div>
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-2 mt-1">
+                            <input type="text" id="wt-task" required placeholder="Task details (e.g. Solve HC Verma Ch 3)" class="flex-1 px-2 sm:px-3 py-2 bg-white rounded-lg sm:rounded-xl outline-none font-bold text-gray-900 text-[10px] sm:text-xs border border-teal-100 shadow-sm break-words">
+                            <button type="submit" class="bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white px-4 sm:px-5 py-2 rounded-lg sm:rounded-xl font-black text-[10px] sm:text-xs active:scale-95 transition-all shadow-md shrink-0">Add Task</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="wt-tasks-list" class="space-y-3 sm:space-y-4"></div>
+            </div>
+        </div>
+        <!-- 13.5 SYLLABUS TRACKER VIEW -->
+        <div id="syllabus-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+                <button onclick="safeBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all border border-white/20">
+                    <i class="fa-solid fa-arrow-left text-sm sm:text-lg"></i>
+                </button>
+                <div class="flex items-center gap-2 sm:gap-3 min-w-0 pr-2">
+                    <div class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-full border border-white/40 shadow-sm flex items-center justify-center bg-white/10"><i class="fa-solid fa-book-bookmark text-xs sm:text-sm"></i></div>
+                    <div class="min-w-0">
+                        <h2 class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight">Syllabus Tracker</h2>
+                        <p class="text-[9px] sm:text-[10px] text-blue-100 font-bold tracking-widest uppercase break-words leading-tight mt-0.5">Master Your Course</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-4 sm:space-y-6 relative md:w-3/4 md:mx-auto pb-20">
+                
+                <!-- Admin Syllabus Form -->
+                <div id="admin-syllabus-form" class="hidden glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-indigo-200 bg-indigo-50/30 shadow-sm">
+                    <h4 class="font-black text-indigo-800 text-xs sm:text-sm mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-plus-circle shrink-0"></i> Add Syllabus Topic</h4>
+                    <form onsubmit="event.preventDefault(); submitSyllabusTopic();" class="space-y-2 sm:space-y-3">
+                        <div class="grid grid-cols-2 gap-2 sm:gap-3">
+                           <select id="syl-subject" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-bold text-indigo-900 text-[10px] sm:text-xs border border-indigo-100 shadow-sm cursor-pointer appearance-none break-words">
+    <option value="" disabled selected>Select Subject...</option>
+    <option value="Calculation">Calculation</option>
+    <option value="Vocabulary">Vocabulary</option>
+    <option value="English">English</option>
+    <option value="Mathematics">Mathematics</option>
+    <option value="Stenography">Stenography</option>
+    <option value="General Knowledge">General Knowledge</option>
+    <option value="Reasoning">Reasoning</option>
+    <option value="Major">Major</option>
+                               <option value="Minor">Minor</option>
+</select>
+                            <input type="text" id="syl-topic" required placeholder="Topic Name (e.g., Noun)" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-bold text-gray-900 text-[10px] sm:text-xs border border-indigo-100 shadow-sm break-words">
+                        </div>
+                        <div class="bg-white p-1.5 sm:p-2 rounded-lg sm:rounded-xl border border-indigo-100 shadow-sm">
+                            <div class="flex justify-between items-center mb-1 px-1"><label class="text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest break-words leading-tight">Assign Topic To:</label></div>
+                            <select id="syl-assign-type" onchange="toggleSyllabusStudentSelection()" class="w-full px-2 py-1.5 sm:py-2 bg-gray-50 rounded-md sm:rounded-lg outline-none font-bold text-indigo-800 text-[10px] sm:text-xs border border-gray-200 cursor-pointer break-words">
+                                <option value="All">All Students (Default)</option>
+                                <option value="Specific">Select Specific Students...</option>
+                            </select>
+                            <div id="syl-student-checkboxes" class="hidden mt-1.5 sm:mt-2 max-h-24 sm:max-h-28 overflow-y-auto space-y-1 p-1 border-t border-gray-100 bg-gray-50 rounded-md sm:rounded-lg"></div>
+                        </div>
+                        <button type="submit" class="w-full bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white px-4 py-3 rounded-xl font-black text-[11px] sm:text-xs active:scale-95 transition-all shadow-md mt-2">Publish Topic</button>
+                    </form>
+                </div>
+                
+                <!-- Overall Progress Bar -->
+                <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] border-indigo-200 bg-white shadow-sm flex flex-col gap-2">
+                    <div class="flex justify-between items-end mb-1">
+                        <span class="text-[9px] sm:text-[11px] font-black text-indigo-600 uppercase tracking-widest break-words leading-tight">Total Syllabus Covered</span>
+                        <span class="text-base sm:text-lg font-black text-gray-900 break-words leading-tight" id="syl-overall-progress">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden shadow-inner">
+                        <div id="syl-overall-bar" class="bg-gradient-to-r from-blue-500 to-indigo-600 h-2.5 rounded-full transition-all duration-700" style="width: 0%"></div>
+                    </div>
+                </div>
+<!-- Subject Tabs Container -->
+<div class="flex gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-2 pt-1 mt-4" id="syl-subject-tabs-container"></div>
+<!-- Dynamic Syllabus List -->
+<div id="syl-topics-list" class="space-y-4 mt-2"></div>
+            </div>
+        </div>
+
+        <!-- DYNAMIC BOTTOM SHEET -->
+        <div id="modal-overlay" class="hidden-view absolute inset-0 bg-gray-900/60 backdrop-blur-md z-[85] transition-opacity " onclick="closeBottomSheet()"></div>
+        <div id="action-sheet" class="hidden-view absolute bottom-0 left-0 right-0 bg-[#f8fafc] rounded-t-[2rem] sm:rounded-t-[2.5rem] z-[90] slide-up shadow-[0_-10px_50px_rgba(0,0,0,0.2)] flex flex-col border-t border-white/50 md:w-3/4 md:mx-auto md:mb-5 " style="max-height: 90%;">
+            <div class="w-full flex justify-center pt-3 sm:pt-4 pb-2 sm:pb-3 cursor-pointer" onclick="closeBottomSheet()"><div class="w-12 sm:w-16 h-1 sm:h-1.5 bg-gray-300 rounded-full"></div></div>
+            
+            <div class="px-4 sm:px-6 pb-8 sm:pb-10 pt-1 sm:pt-2 overflow-y-auto no-scrollbar">
+                <div id="admin-tabs" class="hidden bg-gray-200/50 p-1 sm:p-1.5 rounded-xl sm:rounded-2xl flex mb-6 sm:mb-8 border border-white">
+                    <button onclick="switchTab('log-result')" id="tab-log" class="flex-1 py-2 sm:py-2.5 text-[9px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-active transition-all break-words">Log Marks</button>
+                    <button onclick="switchTab('create-exam')" id="tab-create-exam" class="flex-1 py-2 sm:py-2.5 text-[9px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-inactive transition-all break-words">New Exam</button>
+                    <button onclick="switchTab('create-student')" id="tab-create-student" class="flex-1 py-2 sm:py-2.5 text-[9px] sm:text-xs font-bold rounded-lg sm:rounded-xl segment-inactive transition-all break-words">New Student</button>
+                </div>
+
+                <div class="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6 min-w-0 pr-2">
+                    <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-7 h-7 sm:w-8 sm:h-8 shrink-0 rounded-lg object-cover shadow-sm">
+                    <h3 id="sheet-title" class="text-xl sm:text-2xl font-black text-gray-900 tracking-tight break-words leading-tight">Action</h3>
+                </div>
+                
+                <form id="form-log-result" class="space-y-4 sm:space-y-5" onsubmit="event.preventDefault(); submitResult(false);">
+                    <div id="field-student-dropdown" class="hidden glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Select Student</label><select id="select-student" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 appearance-none text-xs sm:text-sm break-words"></select></div>
+                    <div id="field-exam-dropdown" class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Select Exam</label><select id="select-exam" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 appearance-none text-xs sm:text-sm break-words"></select></div>
+                    <div class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Marks Obtained</label><input type="number" id="input-obtained" placeholder="e.g. 85" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-black text-gray-900 text-lg sm:text-xl"></div>
+                    <div class="flex gap-2 sm:gap-3 mt-6 sm:mt-8"><button type="submit" class="flex-1 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-xl sm:rounded-2xl active:scale-95 transition-transform shadow-lg shadow-indigo-500/30">Submit Marks</button><button type="button" onclick="submitResult(true)" id="btn-mark-absent" class="bg-red-50 text-red-600 border border-red-200 text-sm sm:text-base font-bold px-4 sm:px-6 rounded-xl sm:rounded-2xl active:scale-95 transition-transform shrink-0">Mark Absent</button></div>
+                </form>
+
+                <form id="form-create-exam" class="hidden space-y-3 sm:space-y-4" onsubmit="event.preventDefault(); submitExam();">
+                    <div class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Exam Name</label><input type="text" id="new-exam-name" required placeholder="e.g. Advanced English" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    <div class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Date</label><input type="date" id="new-exam-date" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    <div class="flex gap-2 sm:gap-4">
+                        <div class="flex-1 glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Total Marks</label><input type="number" id="new-exam-total" required placeholder="100" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                        <div class="flex-1 glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Pass %</label><input type="number" id="new-exam-pass" required placeholder="40" value="40" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-2 sm:gap-4">
+                        <div class="flex-[2] glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Duration (Mins)</label><input type="number" id="new-exam-duration" required placeholder="60" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                       <div class="flex-[3] glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl border-indigo-200 bg-indigo-50/50"><label class="block text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight"><i class="fa-solid fa-list-ul mr-1"></i>Exam Type</label><select id="new-exam-type" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-indigo-900 text-xs sm:text-sm cursor-pointer"><option value="anytime">Online Anytime</option><option value="online">Online scheduled</option><option value="testbook">Testbook</option><option value="offline">Offline</option></select></div>
+                    </div>
+                    
+                    <div class="glass-card p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border-purple-200 bg-purple-50/50 flex items-center justify-between"><label class="text-[9px] sm:text-[10px] font-black text-purple-600 uppercase tracking-widest ml-1 sm:ml-2 cursor-pointer break-words leading-tight" for="new-exam-proctor"><i class="fa-solid fa-video mr-1"></i>Enable 8x8 Video Proctoring</label><input type="checkbox" id="new-exam-proctor" class="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2 cursor-pointer accent-purple-600 shrink-0"></div>
+                    <div class="glass-card p-2 rounded-xl sm:rounded-2xl border-teal-200 bg-teal-50/40">
+                        <div class="flex justify-between items-center mb-1.5 px-1"><label class="text-[9px] sm:text-[10px] font-bold text-teal-800 uppercase tracking-widest break-words leading-tight">Assign Exam To:</label></div>
+                        <select id="new-exam-assign-type" onchange="toggleExamStudentSelection('new')" class="w-full px-2 py-2 bg-white rounded-md sm:rounded-lg outline-none font-bold text-teal-800 text-[10px] sm:text-xs border border-teal-100 shadow-sm cursor-pointer"><option value="All">All Students (Default)</option><option value="Specific">Select Specific Students...</option></select>
+                        <div id="new-exam-student-checkboxes" class="hidden mt-2 max-h-24 sm:max-h-28 overflow-y-auto space-y-1 p-1 border-t border-gray-100 bg-white rounded-md sm:rounded-lg shadow-inner"></div>
+                    </div>
+                    <button type="submit" class="w-full bg-gray-900 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-xl sm:rounded-2xl mt-4 sm:mt-6 active:scale-95 transition-transform shadow-xl shadow-gray-900/30">Create Exam</button>
+                </form>
+
+                <form id="form-edit-exam" class="hidden space-y-3 sm:space-y-4" onsubmit="event.preventDefault(); submitEditExam();">
+                    <input type="hidden" id="edit-exam-id">
+                    <div class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Exam Name</label><input type="text" id="edit-exam-name" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    <div class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Date</label><input type="date" id="edit-exam-date" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    <div class="flex gap-2 sm:gap-4">
+                        <div class="flex-1 glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Total Marks</label><input type="number" id="edit-exam-total" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                        <div class="flex-1 glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Pass %</label><input type="number" id="edit-exam-pass" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-2 sm:gap-4">
+                        <div class="flex-[2] glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Duration (Mins)</label><input type="number" id="edit-exam-duration" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                       <div class="flex-[3] glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl border-indigo-200 bg-indigo-50/50"><label class="block text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight"><i class="fa-solid fa-list-ul mr-1"></i>Exam Type</label><select id="edit-exam-type" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-indigo-900 text-xs sm:text-sm cursor-pointer"><option value="anytime">Online Anytime</option><option value="online">Online scheduled</option><option value="testbook">Testbook</option><option value="offline">Offline</option></select></div>
+                    </div>
+                    <div class="glass-card p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border-purple-200 bg-purple-50/50 flex items-center justify-between"><label class="text-[9px] sm:text-[10px] font-black text-purple-600 uppercase tracking-widest ml-1 sm:ml-2 cursor-pointer break-words leading-tight" for="edit-exam-proctor"><i class="fa-solid fa-video mr-1"></i>Enable 8x8 Video Proctoring</label><input type="checkbox" id="edit-exam-proctor" class="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2 cursor-pointer accent-purple-600 shrink-0"></div>
+                    <div class="glass-card p-2 rounded-xl sm:rounded-2xl border-teal-200 bg-teal-50/40">
+                        <div class="flex justify-between items-center mb-1.5 px-1"><label class="text-[9px] sm:text-[10px] font-bold text-teal-800 uppercase tracking-widest break-words leading-tight">Assign Exam To:</label></div>
+                        <select id="edit-exam-assign-type" onchange="toggleExamStudentSelection('edit')" class="w-full px-2 py-2 bg-white rounded-md sm:rounded-lg outline-none font-bold text-teal-800 text-[10px] sm:text-xs border border-teal-100 shadow-sm cursor-pointer"><option value="All">All Students (Default)</option><option value="Specific">Select Specific Students...</option></select>
+                        <div id="edit-exam-student-checkboxes" class="hidden mt-2 max-h-24 sm:max-h-28 overflow-y-auto space-y-1 p-1 border-t border-gray-100 bg-white rounded-md sm:rounded-lg shadow-inner"></div>
+                    </div>
+                    
+                   <button type="submit" class="w-full bg-indigo-600 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-xl sm:rounded-2xl mt-4 sm:mt-6 active:scale-95 transition-transform shadow-xl shadow-indigo-600/30">Save Changes</button>
+                </form>
+
+                <form id="form-create-student" class="hidden space-y-3 sm:space-y-4" onsubmit="event.preventDefault(); submitStudent();">
+                    <div class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Full Name</label><input type="text" id="new-stu-name" required placeholder="e.g. John Doe" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    <div class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Mobile Number (Login ID)</label><input type="tel" id="new-stu-mobile" required placeholder="e.g. 9876543210" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    <div class="glass-card p-1.5 sm:p-2 rounded-xl sm:rounded-2xl"><label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Login Password</label><input type="text" id="new-stu-password" required placeholder="Assign a secure password" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm"></div>
+                    <button type="submit" class="w-full bg-indigo-600 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-xl sm:rounded-2xl mt-4 sm:mt-6 active:scale-95 transition-transform shadow-xl shadow-indigo-600/30">Create Student</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- SESSION TIMER VIEW -->
+    <div id="session-timer-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
+        <div class="bg-gradient-to-r from-orange-500 to-red-600 text-white pt-10 sm:pt-12 pb-3 sm:pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10 shrink-0">
+            <button onclick="safeBack()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all"><i class="fa-solid fa-arrow-left text-sm sm:text-lg"></i></button>
+            <div class="min-w-0 pr-2">
+                <h2 class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight">Focus Sessions</h2>
+                <p class="text-[9px] sm:text-[10px] text-orange-100 font-bold tracking-widest uppercase break-words leading-tight mt-0.5" id="current-session-name">Determining Session...</p>
+            </div>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-4 sm:space-y-6 relative md:w-3/4 md:mx-auto">
+            
+            <!-- BEAUTIFIED TIMER CARD -->
+            <div class="relative z-10 mt-1 sm:mt-2">
+                <!-- Background Ambient Glow -->
+                <div class="absolute top-10 left-1/2 -translate-x-1/2 w-48 h-48 sm:w-64 sm:h-64 bg-orange-500 rounded-full mix-blend-multiply filter blur-[50px] sm:blur-[70px] opacity-20 pointer-events-none z-0"></div>
+                
+                <div class="glass-card p-4 sm:p-6 md:p-8 rounded-[2rem] sm:rounded-[2.5rem] border border-orange-200/60 shadow-2xl shadow-orange-900/10 bg-gradient-to-b from-white/95 to-orange-50/60 text-center relative overflow-hidden">
+                    
+                    <!-- Decorative Graphic Elements -->
+                    <div class="absolute -top-16 -right-16 sm:-top-20 sm:-right-20 w-32 h-32 sm:w-48 sm:h-48 border-[25px] sm:border-[35px] border-orange-100/40 rounded-full pointer-events-none"></div>
+                    <div class="absolute -bottom-8 -left-8 sm:-bottom-10 sm:-left-10 w-24 h-24 sm:w-32 sm:h-32 bg-gradient-to-tr from-amber-200/30 to-orange-300/30 rounded-full blur-lg sm:blur-xl pointer-events-none"></div>
+                    
+                    <!-- Main Study Focus Timer -->
+                    <div class="flex flex-col items-center justify-center mb-5 sm:mb-6 relative z-10">
+                        <div class="inline-flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-orange-100 to-red-100 text-orange-600 px-3 sm:px-4 py-1 sm:py-1.5 rounded-full text-[9px] sm:text-[10px] font-black tracking-widest uppercase mb-3 sm:mb-4 shadow-sm border border-orange-200/50">
+                            <i class="fa-solid fa-fire animate-pulse text-red-500"></i> Live Focus
+                        </div>
+                        <div id="st-study-time" class="text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words">
+                            00:00:00
+                        </div>
+                    </div>
+
+                    <!-- Break Time Display -->
+                    <div class="flex flex-col items-center justify-center mb-6 sm:mb-8 relative z-10">
+                        <div class="inline-flex items-center gap-1 sm:gap-1.5 bg-white/80 text-amber-600 px-2.5 sm:px-3 py-1 rounded-full text-[8px] sm:text-[9px] font-bold tracking-widest uppercase mb-1.5 sm:mb-2 border border-amber-200/50 shadow-sm backdrop-blur-sm">
+                            <i class="fa-solid fa-mug-hot"></i> Break Time
+                        </div>
+                        <div id="st-break-time" class="text-2xl sm:text-3xl md:text-4xl font-mono font-black text-amber-500/90 tracking-tight leading-none break-words">
+                            00:00:00
+                        </div>
+                    </div>
+                    
+                    <!-- Dynamic Javascript Controls -->
+                    <div id="session-controls" class="flex flex-col md:flex-row gap-2 sm:gap-3 justify-center relative z-10 w-full mb-4 sm:mb-6"></div>
+                    
+                    <!-- Daily Summary Widgets -->
+                    <div class="grid grid-cols-2 gap-2 sm:gap-3 mt-3 sm:mt-4 pt-4 sm:pt-5 border-t border-orange-200/50 relative z-10">
+                        <div class="bg-white/80 backdrop-blur-md rounded-xl sm:rounded-2xl p-2.5 sm:p-3 border border-orange-100 shadow-sm flex flex-col justify-center items-center hover:bg-orange-50/50 transition-colors">
+                            <p class="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 sm:mb-1.5 flex items-center gap-1 break-words leading-tight">
+                                <i class="fa-solid fa-calendar-day text-orange-400"></i> Total Study
+                            </p>
+                            <div id="st-total-today" class="text-lg sm:text-xl md:text-2xl font-black text-gray-800 font-mono tracking-tight break-words">00:00:00</div>
+                        </div>
+                        <div class="bg-white/80 backdrop-blur-md rounded-xl sm:rounded-2xl p-2.5 sm:p-3 border border-amber-100 shadow-sm flex flex-col justify-center items-center hover:bg-amber-50/50 transition-colors">
+                            <p class="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 sm:mb-1.5 flex items-center gap-1 break-words leading-tight">
+                                <i class="fa-solid fa-mug-hot text-amber-500"></i> Total Break
+                            </p>
+                            <div id="st-total-break-today" class="text-lg sm:text-xl md:text-2xl font-black text-amber-600 font-mono tracking-tight break-words">00:00:00</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- END BEAUTIFIED TIMER CARD -->
+
+            <div>
+            <!-- RESTORED: Live Peers, Timeline, and History Charts -->
+            <div class="mb-6 sm:mb-8">
+                <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 px-1 sm:px-2 flex items-center gap-1.5 sm:gap-2 tracking-tight text-xs sm:text-sm break-words">
+                    <i class="fa-solid fa-satellite-dish text-green-500 animate-pulse"></i> Live Peers Now
+                </h3>
+                <div id="live-peers-list" class="space-y-2 sm:space-y-3"></div>
+            </div>
+            
+            <div id="session-timeline-card" class="hidden glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-orange-100 shadow-sm bg-white mb-4 sm:mb-6">
+                <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 break-words">
+                    <i class="fa-solid fa-list-ul text-orange-500"></i> Today's Activity Log
+                </h3>
+                <div id="session-timeline-list" class="space-y-1.5 sm:space-y-2"></div>
+            </div>
+            
+            <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-orange-100 shadow-sm bg-white mb-4 sm:mb-6">
+                <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 text-xs sm:text-sm break-words">This Week's Performance</h3>
+                <div class="h-28 sm:h-32 w-full relative"><canvas id="sessionChart"></canvas></div>
+            </div>
+            
+            <div>
+                <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 px-1 sm:px-2 text-xs sm:text-sm tracking-tight break-words">Past Sessions</h3>
+                <div id="session-history-list" class="space-y-2 sm:space-y-3"></div>
+            </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 14. NOVA AI CHAT VIEW -->
+<div id="nova-chat-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[85] flex flex-col slide-left ">
+    <div class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white pt-10 sm:pt-12 pb-3 sm:pb-4 px-3 sm:px-4 flex items-center gap-2 sm:gap-3 shadow-md relative z-10 shrink-0">
+        <button onclick="safeBack()" class="w-8 h-8 shrink-0 flex items-center justify-center rounded-full active:bg-white/20 transition-all border border-white/20 shadow-sm">
+            <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
+        </button>
+        <div class="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center border border-white/40 shadow-sm shrink-0">
+            <i class="fa-solid fa-robot text-sm"></i>
+        </div>
+        <div class="flex-1 min-w-0 pr-1">
+            <h2 class="text-[14px] sm:text-[16px] font-black leading-tight break-words">NOVA Mentor</h2>
+            <p class="text-[9px] sm:text-[10px] text-blue-200 font-bold uppercase tracking-widest mt-0.5 leading-tight flex items-center gap-1"><span class="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_5px_rgba(74,222,128,0.8)]"></span> Powered by Gemini</p>
+        </div>
+        <button onclick="clearNovaChat()" class="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-all border border-white/20 shadow-sm" title="Clear Chat History">
+            <i class="fa-solid fa-broom text-xs"></i>
+        </button>
+    </div>
+    
+    <div id="nova-chat-messages" class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-4 bg-gradient-to-b from-blue-50/50 to-[#f8fafc] flex flex-col pb-4 gap-3 sm:gap-4 relative">
+        <!-- AI Welcome Message -->
+        <div class="flex justify-start relative z-10 w-full">
+            <div class="bg-white rounded-[1.25rem] rounded-tl-sm p-3.5 shadow-sm border border-indigo-100/60 max-w-[90%] text-[11px] sm:text-[13px] text-gray-800 font-medium whitespace-pre-wrap leading-relaxed"><span class="font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 block mb-1 uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-1"><i class="fa-solid fa-robot"></i> NOVA SYSTEM</span>Hello! I'm NOVA, your intelligent AI mentor. I've automatically analyzed your Exama profile, including your exam history, fitness runs, and focus sessions. How can I guide you today?</div>
+        </div>
+    </div>
+    
+    <div class="w-full bg-white p-2 flex flex-col shrink-0 border-t border-indigo-100 shadow-[0_-5px_15px_rgba(79,70,229,0.05)] md:rounded-b-[2.5rem]">
+        <form onsubmit="event.preventDefault(); sendNovaMessage();" class="flex gap-1.5 sm:gap-2 items-end">
+            <div class="flex-1 bg-gray-50 rounded-[20px] sm:rounded-[24px] flex items-center px-3 py-1 shadow-inner border border-gray-200 focus-within:border-indigo-300 focus-within:bg-white transition-all overflow-hidden">
+                <textarea id="nova-chat-input" placeholder="Ask about your performance, get a study routine..." rows="1" class="flex-1 bg-transparent py-2 sm:py-2.5 outline-none font-semibold text-gray-900 resize-none max-h-24 min-h-[40px] text-[12px] sm:text-[14px] no-scrollbar"></textarea>
+            </div>
+            <button type="submit" id="nova-send-btn" class="w-10 h-10 sm:w-11 sm:h-11 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full flex items-center justify-center active:scale-95 transition-all shadow-[0_5px_15px_rgba(79,70,229,0.4)] shrink-0 mb-0.5 relative group">
+                <i class="fa-solid fa-paper-plane text-[13px] sm:text-[15px] -ml-[2px] group-active:translate-x-1 group-active:-translate-y-1 transition-transform"></i>
+            </button>
+        </form>
+    </div>
+</div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion, enableIndexedDbPersistence, limit } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBGmVplT3n_5Jrb4powBC5KAcw9ylJibGo", authDomain: "exama-cfb56.firebaseapp.com",
+            projectId: "exama-cfb56", messagingSenderId: "670163422803",
+            appId: "1:670163422803:web:20fb4d598783dbd215c0a6", measurementId: "G-GZ2L1G71QX"
+        };
+
+        const isFirebaseConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY";
+        let db; 
+        if (isFirebaseConfigured) { 
+            const app = initializeApp(firebaseConfig); 
+            db = getFirestore(app); 
+            
+            // 1. ENABLE FIRESTORE OFFLINE CACHE (INSTANT LOAD)
+            enableIndexedDbPersistence(db).catch((err) => {
+                if (err.code == 'failed-precondition') {
+                    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
+                } else if (err.code == 'unimplemented') {
+                    console.warn('The current browser does not support all of the features required to enable persistence');
                 }
             });
-        })
-    );
+        }
+
+        window.studentsDB = []; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;window.videosDB = []; window.activeVideoCategory = 'All';
+        
+        // NEW: Global variables for AI Evaluation Memory
+        window.tempAiFeedback = {}; 
+        window.scriptFeedbacks = {};
+
+        let chartInstance = null; let adminProfileChartInstance = null; let analysisChartInstance = null; let fitnessChartInstance = null; let globalTimerInterval = null; window.replyingTo = null; window.activeSubjectFilter = 'All'; window.jitsiApi = null; window.chatJitsiApi = null;
+
+// --- NEW SYLLABUS TABS VARIABLES ---
+window.activeSyllabusSubjectFilter = 'All';
+window.filterSyllabusBySubject = function(sub) { 
+    window.activeSyllabusSubjectFilter = sub; 
+    window.renderSyllabusTracker(); 
+};
+// -----------------------------------
+// Track how many items to show before clicking "See More"
+window.uiLimits = {
+    exams: 5,
+    fitness: 5,
+    sessions: 5
+};
+
+        // 2. UI DEBOUNCER (Prevents the browser from freezing on load)
+        let refreshTimeout = null;
+        window.debouncedRefreshUI = function() {
+            if (refreshTimeout) clearTimeout(refreshTimeout);
+            refreshTimeout = setTimeout(() => {
+                refreshUI();
+            }, 150); // Waits 150ms for all database calls to finish before rendering the screen once
+        };
+// ==========================================
+// PW-STYLE E-LEARNING NATIVE ENGINE (GRID FOLDERS)
+// ==========================================
+window.vhState = { view: 'subjects', subject: null, topic: null };
+window.currentWatchVideoId = null;
+window.currentVideoSearch = ""; 
+
+// 1. SMART URL PARSER
+window.parseVideoLink = function(url) {
+    const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+    if (ytMatch && ytMatch[1]) {
+        return { type: 'youtube', src: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&modestbranding=1`, thumb: `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg` };
+    }
+    const driveMatch = url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+    if (driveMatch && driveMatch[1]) {
+        return { type: 'drive', src: `https://drive.google.com/file/d/${driveMatch[1]}/preview`, thumb: 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg' };
+    }
+    return null;
+};
+
+// 2. ADMIN UPLOAD HANDLER
+// ==========================================
+// BULK UPLOAD ENGINE LOGIC
+// ==========================================
+window.addVideoRow = function() {
+    const container = document.getElementById('bulk-video-container');
+    const rowCount = container.children.length + 1;
+    
+    const div = document.createElement('div');
+    div.className = "video-input-row bg-white p-3 rounded-xl border border-red-100 shadow-sm relative group slide-up";
+    div.innerHTML = `
+        <button type="button" onclick="this.parentElement.remove()" class="absolute -top-2 -right-2 w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-600 hover:text-white transition-colors shadow-sm z-10"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+        <input type="text" required placeholder="Lecture Title (e.g. Part ${rowCount})" class="vid-title-input w-full px-3 py-2 bg-gray-50 rounded-lg outline-none font-bold text-gray-900 text-xs border border-gray-200 mb-2 shadow-sm focus:border-red-300">
+        <input type="url" required placeholder="YouTube or Drive Link" class="vid-url-input w-full px-3 py-2 bg-gray-50 rounded-lg outline-none font-bold text-red-600 text-xs border border-gray-200 shadow-sm focus:border-red-300">
+    `;
+    container.appendChild(div);
+    
+    // Auto-scroll modal to the new row
+    setTimeout(() => {
+        div.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 50);
+};
+
+
+// ==========================================
+// OFFLINE DOWNLOAD ENGINE (BACKGROUND STREAMING)
+// ==========================================
+
+window.checkIsOffline = async function(key) {
+    try { return !!(await localforage.getItem(key)); } catch(e) { return false; }
+};
+
+// --- 1. LECTURE VIDEO DOWNLOAD ---
+window.toggleVideoDownload = async function() {
+    if (!window.currentWatchVideoId) return;
+    const vidId = window.currentWatchVideoId;
+    const vid = window.videosDB.find(v => v.id === vidId);
+    if (!vid) return;
+
+    if (vid.videoType === 'youtube') return alert("YouTube videos cannot be downloaded in-app. Only Drive/MP4 lectures can be saved offline.");
+
+    const key = `exama_video_${vidId}`;
+    const isSaved = await window.checkIsOffline(key);
+
+    // If already saved, ask to delete
+    if (isSaved) {
+        if (confirm("Remove this lecture from offline storage to free up space?")) {
+            await localforage.removeItem(key);
+            window.updateDownloadBtnUI(false);
+            window.showToast("Removed", "Video removed from device.", "info");
+        }
+        return;
+    }
+
+    const btn = document.getElementById('btn-download-video');
+    btn.disabled = true;
+    
+    // Notify user it's happening in the background!
+    window.showToast("Download Started 🚀", "You can continue watching while the lecture saves.", "info");
+
+    try {
+        let downloadUrl = vid.sourceUrl;
+        const match = vid.sourceUrl.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+        if (match) downloadUrl = `https://exama-video-proxy.connect-subhankar-info.workers.dev/?id=${match[1]}&ext=.mp4`;
+
+        const res = await fetch(downloadUrl);
+        if (!res.ok) throw new Error("Download failed");
+
+        // Use Streams to calculate percentage in the background
+        const contentLength = res.headers.get('content-length');
+        let blob;
+
+        if (contentLength && res.body) {
+            const total = parseInt(contentLength, 10);
+            let loaded = 0;
+            const reader = res.body.getReader();
+            const chunks = [];
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                loaded += value.length;
+                
+                const percent = Math.round((loaded / total) * 100);
+                
+                // Update Button UI with Progress!
+                if (btn) {
+                    btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1.5 text-indigo-500"></i> <span class="text-indigo-700">Downloading ${percent}%</span>`;
+                }
+            }
+            blob = new Blob(chunks, { type: 'video/mp4' });
+        } else {
+            // Fallback if no content-length is provided by proxy
+            btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1.5 text-indigo-500"></i> <span class="text-indigo-700">Downloading...</span>`;
+            blob = await res.blob();
+        }
+
+        await localforage.setItem(key, blob);
+        
+        window.updateDownloadBtnUI(true);
+        window.showToast("Saved! 📥", `"${vid.title}" is now available offline.`, "info");
+    } catch(e) {
+        console.error(e);
+        alert("Failed to download video. Check your connection.");
+        window.updateDownloadBtnUI(false);
+    }
+    
+    btn.disabled = false;
+};
+
+window.updateDownloadBtnUI = function(isSaved) {
+    const btn = document.getElementById('btn-download-video');
+    if (!btn) return;
+    if (isSaved) {
+        btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-500 mr-1.5"></i> <span class="text-emerald-700">Saved</span>`;
+        btn.classList.add('bg-emerald-50', 'border-emerald-200');
+    } else {
+        btn.innerHTML = `<i id="icon-download" class="fa-solid fa-cloud-arrow-down mr-1.5"></i> <span id="text-download">Download</span>`;
+        btn.classList.remove('bg-emerald-50', 'border-emerald-200');
+    }
+};
+
+// --- 2. MATERIAL DOWNLOAD LOGIC ---
+window.downloadMaterialFile = async function(url, fileName, type, btnElement) {
+    let uniqueKey = url;
+    const driveMatch = url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+    if (driveMatch && driveMatch[1]) uniqueKey = driveMatch[1]; 
+    else uniqueKey = btoa(encodeURIComponent(url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+    
+    const key = type === 'pdf' ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
+    
+    if (await window.checkIsOffline(key)) {
+        if (confirm("Remove this file from offline storage?")) {
+            await localforage.removeItem(key);
+            btnElement.innerHTML = `<i class="fa-solid fa-cloud-arrow-down text-gray-400"></i>`;
+            btnElement.classList.remove('bg-emerald-100', 'border-emerald-200');
+        }
+        return;
+    }
+
+    // Expand the tiny button slightly to fit the percentage text
+    btnElement.disabled = true;
+    btnElement.classList.remove('w-8', 'sm:w-10'); 
+    btnElement.classList.add('px-2', 'w-auto'); 
+
+    try {
+        let fetchUrl = url;
+        if (type === 'pdf' && driveMatch) {
+            const driveDownloadUrl = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+            fetchUrl = `https://pdf-subhankar.connect-subhankar-info.workers.dev/?url=${encodeURIComponent(driveDownloadUrl)}`;
+        }
+
+        const res = await fetch(fetchUrl);
+        const contentLength = res.headers.get('content-length');
+        let dataToSave;
+
+        if (contentLength && res.body) {
+            const total = parseInt(contentLength, 10);
+            let loaded = 0;
+            const reader = res.body.getReader();
+            const chunks = [];
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                loaded += value.length;
+                
+                const percent = Math.round((loaded / total) * 100);
+                // Update tiny button with progress
+                btnElement.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-indigo-500"></i> <span class="text-[9px] font-bold text-indigo-600 ml-1">${percent}%</span>`;
+            }
+            
+            const blobParts = new Blob(chunks);
+            dataToSave = type === 'pdf' ? await blobParts.arrayBuffer() : blobParts;
+        } else {
+            btnElement.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-indigo-500"></i>`;
+            dataToSave = type === 'pdf' ? await res.arrayBuffer() : await res.blob();
+        }
+        
+        await localforage.setItem(key, dataToSave);
+        
+        // Restore standard button size & display success
+        btnElement.classList.add('w-8', 'sm:w-10'); 
+        btnElement.classList.remove('px-2', 'w-auto');
+        btnElement.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`;
+        btnElement.classList.add('bg-emerald-100', 'border-emerald-200');
+        window.showToast("Saved!", `${fileName.substring(0, 15)}... ready for offline.`, "info");
+        
+    } catch(e) {
+        btnElement.classList.add('w-8', 'sm:w-10'); 
+        btnElement.classList.remove('px-2', 'w-auto');
+        btnElement.innerHTML = `<i class="fa-solid fa-cloud-arrow-down text-gray-400"></i>`;
+        alert("Failed to download file.");
+    }
+    btnElement.disabled = false;
+};
+// ==========================================
+// NOVA AI SCRIPT EVALUATION ENGINE
+// ==========================================
+window.evaluateScriptWithAI = async function(scriptId, examId, solverMobile) {
+    const btn = document.getElementById(`nova-grade-btn-${scriptId}`);
+    if(!btn) return;
+    
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Reading...`;
+    btn.disabled = true;
+    btn.classList.add('opacity-70', 'cursor-not-allowed');
+
+    try {
+        const script = window.peerAnswerScriptsDB.find(s => s.id === scriptId);
+        const questions = window.peerMaterialsDB.find(m => m.examId === examId && m.mobile !== solverMobile);
+        const exam = window.examsDB.find(e => e.id === examId);
+        
+        const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== solverMobile).map(m => m.mobile))].length || 1;
+        const maxMarks = script.assignedMaxMarks || parseFloat((exam.totalMarks / totalOpponents).toFixed(1));
+
+        // NOTE: Make sure your Cloudflare Worker is updated to accept this and route to Gemini Vision
+        const payload = {
+            action: "grade_paper",
+            maxMarks: maxMarks,
+            qUrls: questions.qUrls || [],
+            aUrls: questions.aUrls || [], 
+            scriptUrls: script.imgUrls || []
+        };
+
+        const response = await fetch(window.WORKER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        const aiResult = await response.json();
+        
+        // 1. Auto-fill the input box
+        document.getElementById(`marks-${scriptId}`).value = aiResult.suggested_marks || 0;
+        
+        // 2. Store the feedback temporarily
+        window.tempAiFeedback[scriptId] = aiResult;
+        
+        // 3. Update Button UI
+        btn.innerHTML = `<i class="fa-solid fa-check"></i> Scored: ${aiResult.suggested_marks}`;
+        btn.classList.replace('from-blue-500', 'from-emerald-500');
+        btn.classList.replace('to-indigo-600', 'to-emerald-600');
+        
+        window.showToast("NOVA Evaluation Complete", "Review the suggested score and click Submit.", "info");
+
+    } catch (e) {
+        console.error("AI Evaluation Failed:", e);
+        btn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Failed`;
+        btn.classList.replace('from-blue-500', 'from-red-500');
+        btn.classList.replace('to-indigo-600', 'to-red-600');
+        window.showToast("NOVA Error", "Failed to analyze images. Please grade manually.", "alert");
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-70', 'cursor-not-allowed');
+    }
+};
+
+window.openNovaFeedbackModal = function(scriptId) {
+    const feedback = window.scriptFeedbacks[scriptId] || window.tempAiFeedback[scriptId];
+    if (!feedback) {
+        alert("No detailed analysis available for this script.");
+        return;
+    }
+
+    document.getElementById('nova-fb-overall').innerText = feedback.overallAnalysis || "Evaluation complete.";
+    
+    const mistakesContainer = document.getElementById('nova-fb-mistakes');
+    mistakesContainer.innerHTML = '';
+    
+    const questions = feedback.questions || [];
+    if (questions.length > 0) {
+        questions.forEach(q => {
+            const isCorrect = q.status === "Correct";
+            const isPartial = q.status === "Partially Correct";
+            
+            const badgeBg = isCorrect ? "bg-emerald-100 text-emerald-800 border-emerald-200" : (isPartial ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-rose-100 text-rose-800 border-rose-200");
+            const icon = isCorrect ? "fa-circle-check text-emerald-500" : (isPartial ? "fa-triangle-exclamation text-amber-500" : "fa-circle-xmark text-rose-500");
+
+            mistakesContainer.innerHTML += `
+            <div class="bg-gray-50/90 border border-gray-200 rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-2">
+                <div class="flex items-center justify-between border-b border-gray-200/60 pb-2">
+                    <span class="font-black text-xs sm:text-sm text-gray-900 flex items-center gap-1.5"><i class="fa-solid ${icon}"></i> ${q.questionNumber || "Question"}</span>
+                    <span class="text-[9px] sm:text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md border ${badgeBg}">${q.marksGiven || 0} / ${q.maxMarks || 0} Marks (${q.status})</span>
+                </div>
+
+                ${q.studentWrote ? `
+                <div class="bg-white p-2.5 rounded-xl border border-gray-200 text-xs">
+                    <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-0.5"><i class="fa-solid fa-pen-nib mr-1"></i> Student's Detected Answer</span>
+                    <p class="font-mono text-gray-800 leading-relaxed">${q.studentWrote}</p>
+                </div>` : ''}
+
+                <div class="bg-rose-50/70 p-2.5 rounded-xl border border-rose-100 text-xs">
+                    <span class="text-[9px] font-black text-rose-500 uppercase tracking-widest block mb-0.5"><i class="fa-solid fa-bug mr-1"></i> Why It's Wrong / Mistake Analysis</span>
+                    <p class="font-medium text-rose-900 leading-relaxed">${q.whyItIsWrong || "No conceptual errors found."}</p>
+                </div>
+
+                <div class="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-100 text-xs">
+                    <span class="text-[9px] font-black text-emerald-600 uppercase tracking-widest block mb-0.5"><i class="fa-solid fa-check-double mr-1"></i> Step-by-Step Correct Solution</span>
+                    <p class="font-medium text-emerald-900 leading-relaxed">${q.correctSolution || "Solution followed correct procedure."}</p>
+                </div>
+            </div>`;
+        });
+    } else {
+        mistakesContainer.innerHTML = `<p class="text-xs text-gray-500 italic p-4 text-center border border-dashed rounded-xl">No question-level breakdown returned.</p>`;
+    }
+
+    document.getElementById('nova-feedback-modal').classList.remove('hidden-view');
+};
+// ==========================================
+        // DISCUS CHAT & AUDIO RECORDING ENGINE
+        // ==========================================
+        window.openChat = function() { window.location.hash = 'chat'; }
+        window.deleteChatMessage = async function(id) { if(confirm('Delete this message for everyone?')) { if(isFirebaseConfigured) { await deleteDoc(doc(db, "chat", id)); } else { window.chatDB = window.chatDB.filter(c => c.id !== id); renderChat(); } } }
+        window.toggleChatMenu = function(id) { const actions = document.getElementById(`chat-actions-${id}`); const dot = document.getElementById(`chat-dot-${id}`); if(actions.classList.contains('hidden')) { document.querySelectorAll('[id^="chat-actions-"]').forEach(el => el.classList.add('hidden')); document.querySelectorAll('[id^="chat-dot-"]').forEach(el => el.classList.remove('hidden')); actions.classList.remove('hidden'); dot.classList.add('hidden'); } else { actions.classList.add('hidden'); dot.classList.remove('hidden'); } }
+        window.replyToMessage = function(id, name, text) { window.replyingTo = { id, name, text: text.substring(0, 40) }; document.getElementById('chat-reply-banner').classList.remove('hidden'); document.getElementById('reply-name').innerText = name; document.getElementById('reply-text').innerText = window.replyingTo.text; toggleChatMenu(id); document.getElementById('chat-input').focus(); }
+        window.cancelChatReply = function() { window.replyingTo = null; document.getElementById('chat-reply-banner').classList.add('hidden'); }
+        
+        // Audio Recording
+        let mediaRecorder; let audioChunks = []; let audioBlob = null;
+        window.toggleAudioRecord = async function() {
+            const micBtn = document.getElementById('mic-btn'); const sendBtn = document.getElementById('send-text-btn'); const inputField = document.getElementById('chat-input').parentElement;
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                micBtn.innerHTML = '<i class="fa-solid fa-microphone text-[13px] sm:text-[15px]"></i>'; micBtn.classList.remove('bg-red-500', 'animate-pulse'); micBtn.classList.add('bg-[#128C7E]');
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream); audioChunks = [];
+                    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+                    mediaRecorder.onstop = () => {
+                        audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        document.getElementById('audio-playback').src = URL.createObjectURL(audioBlob);
+                        document.getElementById('chat-audio-preview').classList.remove('hidden');
+                        inputField.classList.add('hidden'); micBtn.classList.add('hidden'); sendBtn.classList.add('hidden');
+                    };
+                    mediaRecorder.start();
+                    micBtn.innerHTML = '<i class="fa-solid fa-stop text-[13px] sm:text-[15px]"></i>'; micBtn.classList.remove('bg-[#128C7E]'); micBtn.classList.add('bg-red-500', 'animate-pulse');
+                } catch (err) { alert("Microphone access denied."); }
+            }
+        }
+        window.cancelAudioRecord = function() {
+            audioBlob = null; audioChunks = [];
+            document.getElementById('chat-audio-preview').classList.add('hidden'); document.getElementById('chat-input').parentElement.classList.remove('hidden'); document.getElementById('mic-btn').classList.remove('hidden'); toggleSendButton();
+        }
+        window.sendAudioMessage = function() {
+            if (!audioBlob) return; showLoader("Sending Voice Note...");
+            const reader = new FileReader(); reader.readAsDataURL(audioBlob);
+            reader.onloadend = async function() {
+                const base64Audio = reader.result;
+                const senderName = window.currentRole === 'student' ? window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name : 'EXAMA';
+                await window.dbSendChat({ text: '', audioUrl: base64Audio, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
+                sendOneSignalPush(`New Voice Note from ${senderName}`, "Tap to listen in Discus."); window.markChatAsRead(); cancelAudioRecord(); hideLoader();
+            };
+        }
+
+        // ==========================================
+        // @ MENTION ENGINE
+        // ==========================================
+        window.mentionStartIndex = -1;
+        
+        document.getElementById('chat-input').addEventListener('input', function() {
+            toggleSendButton();
+            handleMentionInput(this);
+        });
+
+        window.handleMentionInput = function(textarea) {
+            const cursorPosition = textarea.selectionStart;
+            const textBeforeCursor = textarea.value.substring(0, cursorPosition);
+            
+            // Detect if typing a mention (e.g. "@Joh")
+            const mentionMatch = textBeforeCursor.match(/(?:^|\s)@([^\s]*)$/);
+            const dropdown = document.getElementById('mention-dropdown');
+
+            if (mentionMatch) {
+                const query = mentionMatch[1].toLowerCase();
+                window.mentionStartIndex = cursorPosition - mentionMatch[1].length - 1; 
+                showMentionDropdown(query);
+            } else {
+                dropdown.classList.add('hidden');
+                window.mentionStartIndex = -1;
+            }
+        };
+
+        window.showMentionDropdown = function(query) {
+            const dropdown = document.getElementById('mention-dropdown');
+            dropdown.innerHTML = '';
+            
+            // Build user list (All students + Admin)
+            let users = window.studentsDB.map(s => ({ name: s.name, mobile: s.mobile }));
+            users.push({ name: 'Admin', mobile: 'admin' });
+
+            // Filter users based on what is typed after @
+            const filtered = users.filter(u => u.name.toLowerCase().includes(query));
+
+            if (filtered.length === 0) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            dropdown.classList.remove('hidden');
+            
+            filtered.forEach(u => {
+                const dp = window.getStudentAvatar(u.mobile, u.name);
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2 p-2 hover:bg-indigo-50 cursor-pointer transition-colors';
+                div.innerHTML = `<img src="${dp}" class="w-6 h-6 rounded-full object-cover shrink-0"><span class="text-xs font-black text-gray-800">${u.name}</span>`;
+                
+                // When clicked, insert the name
+                div.onclick = function() {
+                    const textarea = document.getElementById('chat-input');
+                    const text = textarea.value;
+                    const beforeMention = text.substring(0, window.mentionStartIndex);
+                    const afterMention = text.substring(textarea.selectionStart);
+                    
+                    textarea.value = beforeMention + `@${u.name} ` + afterMention;
+                    
+                    dropdown.classList.add('hidden');
+                    textarea.focus();
+                    toggleSendButton();
+                };
+                dropdown.appendChild(div);
+            });
+        };
+        function toggleSendButton() { const val = document.getElementById('chat-input').value.trim(); if (val.length > 0) { document.getElementById('mic-btn').classList.add('hidden'); document.getElementById('send-text-btn').classList.remove('hidden'); } else { document.getElementById('mic-btn').classList.remove('hidden'); document.getElementById('send-text-btn').classList.add('hidden'); } }
+
+        window.uploadChatImages = async function(event) {
+            const files = Array.from(event.target.files); if(files.length === 0) return; showLoader(`Uploading ${files.length} Image(s)...`);
+            const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
+            try {
+                let urls = [];
+                for(let file of files) { 
+                    const compressedFile = await window.compressImage(file, 800, 800, 0.8);
+                    const formData = new FormData(); formData.append("image", compressedFile); 
+                    const res = await fetch(`https://api.imgbb.com/1/upload?expiration=86400&key=${IMGBB_API_KEY}`, { method: "POST", body: formData }); 
+                    const data = await res.json(); 
+                    if(data.success) urls.push(data.data.url); 
+                }
+                if(urls.length > 0) {
+                    const senderName = window.currentRole === 'student' ? window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name : 'EXAMA';
+                    await window.dbSendChat({ text: '', imgUrls: urls, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
+                    sendOneSignalPush(`New Photo from ${senderName}`, "Tap to view in Discus."); window.markChatAsRead(); cancelChatReply();
+                }
+                hideLoader(); event.target.value = '';
+            } catch(e) { console.error(e); hideLoader(); alert("Failed to upload images."); }
+        }
+
+        window.sendChatMessage = async function() {
+            const input = document.getElementById('chat-input'); const text = input.value.trim(); if(!text) return; input.value = ''; toggleSendButton();
+            const senderName = window.currentRole === 'student' ? window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name : 'EXAMA';
+            await window.dbSendChat({ text, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
+            sendOneSignalPush(`New Message from ${senderName}`, text); window.markChatAsRead(); cancelChatReply();
+        }
+
+        window.sharePerformance = async function() {
+            if (window.currentRole === 'admin') return; 
+            const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || 'Student';
+            const todayStr = window.formatDateDDMMYYYY();
+            
+            const parseDDMM = (dStr) => { 
+                if(!dStr || !dStr.includes('/')) return new Date(0);
+                const parts = dStr.split('/'); 
+                return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10), 0, 0, 0, 0); 
+            };
+
+            const myRecords = getComputedResults().filter(r => r.mobile === window.loggedInMobile && !r.isVirtual);
+            myRecords.sort((a, b) => { 
+                const exA = window.examsDB.find(e => e.id === a.examId); 
+                const exB = window.examsDB.find(e => e.id === b.examId); 
+                if(!exA || !exB) return 0; 
+                return parseDDMM(exB.date) - parseDDMM(exA.date); 
+            });
+
+            const { mondayMs, sundayMs } = window.getWeeklyRange();
+            
+            // 1. Exam Averages
+            let totalPerc = 0; let weeklyPerc = 0; let weeklyCount = 0; let presents = 0; let totalSaved = 0;
+            myRecords.forEach(r => { 
+                totalPerc += r.percentage; 
+                if(r.status !== 'ABSENT') presents++; 
+                if(r.timeSaved) totalSaved += r.timeSaved; 
+                
+                const exam = window.examsDB.find(e => e.id === r.examId);
+                if(exam && exam.date) {
+                    const eTime = parseDDMM(exam.date).getTime();
+                    if(eTime >= mondayMs && eTime <= sundayMs) {
+                        weeklyPerc += r.percentage;
+                        weeklyCount++;
+                    }
+                }
+            });
+
+            const totalAvg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : '0';
+            const weeklyAvg = weeklyCount > 0 ? (weeklyPerc / weeklyCount).toFixed(1) : '0';
+            const attRate = myRecords.length > 0 ? ((presents / myRecords.length) * 100).toFixed(0) : '0';
+
+            const lb = getOverallLeaderboard();
+            const myExamData = lb.find(s => s.mobile === window.loggedInMobile);
+            const examRank = (myExamData && myExamData.avg > 0) ? `#${[...lb].sort((a,b)=>b.avg - a.avg).findIndex(s => s.mobile === window.loggedInMobile) + 1}` : '#-';
+            const wkExamRank = (myExamData && myExamData.weeklyAvg > 0) ? `#${[...lb].sort((a,b)=>b.weeklyAvg - a.weeklyAvg).findIndex(s => s.mobile === window.loggedInMobile) + 1}` : '#-';
+
+            // 2. Fitness Metrics & Ranks
+            const myLogs = window.fitnessDB.filter(l => l.mobile === window.loggedInMobile);
+            let totalDist = 0; let weeklyDist = 0; let todayDist = 0; 
+            let totalCals = 0; let weeklyCals = 0; let todayTime = 0;
+            myLogs.forEach(l => {
+                if(!l.isAbsent) {
+                    totalDist += l.distance;
+                    totalCals += l.cals;
+                    if(l.timestamp >= mondayMs && l.timestamp <= sundayMs) {
+                        weeklyDist += l.distance;
+                        weeklyCals += l.cals;
+                    }
+                    if(l.date === todayStr) {
+                        todayDist += l.distance;
+                        todayTime += l.time;
+                    }
+                }
+            });
+
+            let todayPaceStr = "0:00";
+            if (todayDist > 0) {
+                const paceMin = todayTime / todayDist;
+                const pM = Math.floor(paceMin);
+                const pS = Math.round((paceMin - pM) * 60).toString().padStart(2, '0');
+                todayPaceStr = `${pM}:${pS}`;
+            }
+
+            const fLb = getFitnessLeaderboard(); 
+            const myFitData = fLb.find(s => s.mobile === window.loggedInMobile);
+            const fitnessRank = (myFitData && myFitData.totalDist > 0) ? `#${[...fLb].sort((a,b)=>b.totalDist - a.totalDist).findIndex(s => s.mobile === window.loggedInMobile) + 1}` : '#-';
+            const wkFitnessRank = (myFitData && myFitData.weeklyDist > 0) ? `#${[...fLb].sort((a,b)=>b.weeklyDist - a.weeklyDist).findIndex(s => s.mobile === window.loggedInMobile) + 1}` : '#-';
+
+            // 3. Focus Session Hours & Ranks
+            const mySessions = window.sessionsDB.filter(s => s.mobile === window.loggedInMobile && s.status !== 'ABSENT');
+            let totalStudyMs = 0; let weeklyStudyMs = 0; let todayStudyMs = 0;
+            mySessions.forEach(s => {
+                totalStudyMs += (s.totalStudyMs || 0);
+                if(s.timestamp >= mondayMs && s.timestamp <= sundayMs) {
+                    weeklyStudyMs += (s.totalStudyMs || 0);
+                }
+                if(s.dateStr === todayStr) {
+                    todayStudyMs += (s.totalStudyMs || 0);
+                }
+            });
+            const totalStudyHrs = (totalStudyMs / 3600000).toFixed(1);
+            const weeklyStudyHrs = (weeklyStudyMs / 3600000).toFixed(1);
+            const todayStudyHrs = (todayStudyMs / 3600000).toFixed(1);
+
+            const sLb = getStudyLeaderboard();
+            const myStudyData = sLb.find(s => s.mobile === window.loggedInMobile);
+            const studyRank = (myStudyData && parseFloat(myStudyData.totalHours) > 0) ? `#${[...sLb].sort((a,b)=>parseFloat(b.totalHours) - parseFloat(a.totalHours)).findIndex(s => s.mobile === window.loggedInMobile) + 1}` : '#-';
+            const wkStudyRank = (myStudyData && parseFloat(myStudyData.weeklyHours) > 0) ? `#${[...sLb].sort((a,b)=>parseFloat(b.weeklyHours) - parseFloat(a.weeklyHours)).findIndex(s => s.mobile === window.loggedInMobile) + 1}` : '#-';
+
+            let latestE = null; let latestR = null; let classRank = null;
+            if(myRecords.length > 0) { 
+                latestR = myRecords[0]; 
+                latestE = window.examsDB.find(e => e.id === latestR.examId); 
+                classRank = calculateClassRank(latestE.id, window.loggedInMobile); 
+            }
+
+            const statsPayload = { 
+                totalAvg, weeklyAvg, 
+                examRank, wkExamRank,
+                studyRank, wkStudyRank, todayStudyHrs,
+                fitnessRank, wkFitnessRank,
+                totalStudyHrs, weeklyStudyHrs, 
+                totalDist: totalDist.toFixed(1), weeklyDist: weeklyDist.toFixed(1), 
+                todayDist: todayDist.toFixed(1), todayPace: todayPaceStr,
+                totalCals, weeklyCals,
+                latestName: latestE ? latestE.name : null, 
+                latestScore: latestR ? `${latestR.obtained}/${latestR.total}` : null, 
+                latestPerc: latestR ? `${latestR.percentage.toFixed(1)}%` : null, 
+                latestStatus: latestR ? latestR.status : null, 
+                classRank: classRank, 
+                examsTaken: myRecords.length, 
+                attRate: attRate, 
+                timeSaved: totalSaved 
+            };
+
+            await window.dbSendChat({ 
+                type: 'performance', 
+                stats: statsPayload, 
+                mobile: window.loggedInMobile, 
+                name: senderName, 
+                timestamp: Date.now(), 
+                replyTo: window.replyingTo ? window.replyingTo : null 
+            });
+            
+            sendOneSignalPush(`Performance Card Shared`, `${senderName} shared their Exam Performance.`); 
+            window.markChatAsRead(); 
+            cancelChatReply();
+        }
+
+        // --- NEW CHAT PAGINATION ENGINE ---
+        window.olderChatDB = [];
+        window.chatHasMoreHistory = true;
+        window.isLoadingOlderChat = false;
+        window.forceFullChatRender = false;
+
+        window.loadOlderChatMessages = async function() {
+            if (window.isLoadingOlderChat || !window.chatHasMoreHistory) return;
+            window.isLoadingOlderChat = true;
+            
+            const btn = document.getElementById('btn-load-more-chat');
+            if (btn) btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Loading...`;
+
+            try {
+                // 1. Find the oldest message timestamp currently loaded
+                let oldestTimestamp = Date.now();
+                const combinedChat = [...window.olderChatDB, ...window.chatDB].sort((a, b) => a.timestamp - b.timestamp);
+                if (combinedChat.length > 0) oldestTimestamp = combinedChat[0].timestamp;
+
+                // 2. Fetch previous 50 messages before that timestamp from Firebase
+                const olderQuery = query(
+                    collection(db, "chat"),
+                    where("timestamp", "<", oldestTimestamp),
+                    orderBy("timestamp", "desc"),
+                    limit(50)
+                );
+
+                const snapshot = await getDocs(olderQuery);
+                
+                if (snapshot.empty || snapshot.docs.length < 50) {
+                    window.chatHasMoreHistory = false; // We reached the absolute beginning of the chat
+                }
+
+                if (!snapshot.empty) {
+                    const newOlderMsgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+                    
+                    // Prepend the new batch of messages to our memory bank
+                    window.olderChatDB = [...newOlderMsgs, ...window.olderChatDB];
+                    
+                    // Preserve the scroll position so the screen doesn't jump wildly
+                    const list = document.getElementById('chat-messages');
+                    const prevScrollHeight = list.scrollHeight;
+                    
+                    // Tell the render engine to clear the HTML and safely rebuild it with the old messages
+                    window.forceFullChatRender = true;
+                    renderChat();
+                    
+                    // Restore scroll position back to where the user clicked the button
+                    setTimeout(() => {
+                        list.scrollTop = list.scrollHeight - prevScrollHeight;
+                    }, 10);
+                } else {
+                    renderChat();
+                }
+            } catch (err) {
+                console.error("Chat Pagination Error:", err);
+                if (btn) btn.innerHTML = `<i class="fa-solid fa-rotate-right mr-1"></i> Retry`;
+            }
+            window.isLoadingOlderChat = false;
+        };
+
+        function renderChat() {
+            const list = document.getElementById('chat-messages'); 
+            if (!list) return;
+            
+            const isAdminView = window.currentRole === 'admin'; 
+            const now = Date.now(); 
+            const activeStudentsCount = window.studentsDB.filter(s => s.lastActive && (now - s.lastActive < 20000)).length || 1;
+            document.getElementById('chat-online-count').innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shadow-[0_0_5px_rgba(74,222,128,0.8)]"></span>Online (${activeStudentsCount})`;
+
+            let shouldScroll = false;
+
+            // 1. MERGE OLD AND NEW MESSAGES
+            const allMessagesMap = new Map();
+            [...(window.olderChatDB || []), ...window.chatDB].forEach(msg => {
+                allMessagesMap.set(msg.id, msg);
+            });
+            // Sort strictly chronologically
+            const fullChat = Array.from(allMessagesMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+            // 2. PREPARE HTML CONTAINER FOR OLD HISTORY
+            if (window.forceFullChatRender) {
+                list.innerHTML = '';
+                window.forceFullChatRender = false;
+            }
+
+            // 3. RENDER 'LOAD MORE' BUTTON AT THE TOP
+            if (window.chatHasMoreHistory === undefined) window.chatHasMoreHistory = true;
+            
+            if (window.chatHasMoreHistory && fullChat.length >= 50) {
+                if (!document.getElementById('chat-load-more-btn-wrapper')) {
+                    const btnWrapper = document.createElement('div');
+                    btnWrapper.id = 'chat-load-more-btn-wrapper';
+                    btnWrapper.className = "flex justify-center my-3 w-full shrink-0 order-first";
+                    btnWrapper.innerHTML = `
+                        <button id="btn-load-more-chat" onclick="window.loadOlderChatMessages()" class="bg-white/80 hover:bg-white text-indigo-600 border border-indigo-200 text-[10px] sm:text-xs font-black px-4 py-1.5 rounded-full shadow-sm active:scale-95 transition-all z-10">
+                            <i class="fa-solid fa-clock-rotate-left mr-1"></i> Load Older Messages
+                        </button>
+                    `;
+                    list.prepend(btnWrapper);
+                }
+            } else if (!window.chatHasMoreHistory) {
+                const btnWrapper = document.getElementById('chat-load-more-btn-wrapper');
+                if (btnWrapper) btnWrapper.innerHTML = `<span class="text-[9px] text-gray-400 font-bold uppercase tracking-wider bg-black/5 px-3 py-1 rounded-full">Beginning of conversation</span>`;
+            }
+
+            // 4. RENDER THE ACTUAL MESSAGES
+            fullChat.forEach(msg => {
+                const isMe = msg.mobile === window.loggedInMobile; 
+                const canDelete = isMe || isAdminView; 
+                const msgAdmin = msg.mobile === '9475757821' || msg.name === 'Admin';
+                const d = new Date(msg.timestamp); 
+                const dateStr = window.formatDateDDMMYYYY(d);
+                
+                const dateSepId = `chat-date-${dateStr.replace(/\//g, '-')}`;
+                if (!document.getElementById(dateSepId)) {
+                    const dateDiv = document.createElement('div');
+                    dateDiv.id = dateSepId;
+                    dateDiv.className = "flex justify-center my-2 sm:my-3 w-full shrink-0";
+                    dateDiv.innerHTML = `<span class="bg-[#e1f0fa] text-gray-600 text-[8px] sm:text-[10px] font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-sm tracking-wider uppercase">${dateStr}</span>`;
+                    list.appendChild(dateDiv);
+                }
+
+                const msgElementId = `chat-msg-${msg.id}`;
+                let wrapper = document.getElementById(msgElementId);
+
+                let isRead = msg.readBy && msg.readBy.length > 0;
+                const timeStr = d.toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}); 
+                const ticksHTML = isMe ? `<i class="fa-solid fa-check-double text-[9px] sm:text-[11px] ml-1 ${isRead ? 'text-[#53bdeb]' : 'text-gray-400'}"></i>` : '';
+
+                if (!wrapper) {
+                    shouldScroll = true;
+
+                    let replyHtml = ''; if(msg.replyTo) { replyHtml = `<div class="bg-black/5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-md sm:rounded-lg mb-1 sm:mb-1.5 text-[9px] sm:text-[11px] border-l-4 border-indigo-500 truncate opacity-90 cursor-pointer break-words"><span class="font-black text-indigo-700">${msg.replyTo.name}</span><br><span class="text-gray-600 font-medium">${msg.replyTo.text || 'Voice/Media'}</span></div>`; }
+                    let imgHtml = ''; if(msg.imgUrls && msg.imgUrls.length > 0) { imgHtml = `<div class="flex flex-wrap gap-1 mt-1 mb-1">`; msg.imgUrls.forEach(url => { imgHtml += `<img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-32 h-auto max-w-full sm:w-48 max-h-48 sm:max-h-60 object-cover rounded-md sm:rounded-lg shadow-sm cursor-pointer hover:opacity-90 transition-opacity">`; }); imgHtml += `</div>`; }
+                    let audioHtml = ''; if(msg.audioUrl) { audioHtml = `<audio controls src="${msg.audioUrl}" class="h-8 sm:h-10 w-40 sm:w-48 mt-1 mb-2 sm:mb-3 outline-none rounded-md sm:rounded-lg max-w-full"></audio>`; }
+
+                    const adminBadge = msgAdmin ? `<span class="bg-indigo-600 text-white text-[6px] sm:text-[8px] px-1 sm:px-1.5 py-0.5 rounded ml-1 tracking-widest font-black">ADMIN</span>` : '';
+                    
+                    let textContent = '';
+                    
+                    if(msg.type === 'performance' && msg.stats) {
+                        const statusColor = msg.stats.latestStatus === 'PASS' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-200'; 
+                        const scoreColor = msg.stats.latestStatus === 'PASS' ? 'text-emerald-600' : 'text-rose-600';
+                        
+                        textContent = `
+                        <div class="w-[260px] sm:w-[320px] md:w-[360px] rounded-[1.5rem] overflow-hidden my-2 shadow-[0_8px_30px_rgba(0,0,0,0.06)] border border-indigo-100/80 relative bg-white/95 backdrop-blur-xl p-3.5 sm:p-4 text-gray-900 max-w-full">
+                            <div class="flex items-center justify-between border-b border-gray-100 pb-2.5 mb-3">
+                                <div class="flex items-center gap-2.5 min-w-0 pr-2">
+                                    <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-black text-sm shadow-md shrink-0"><i class="fa-solid fa-chart-pie"></i></div>
+                                    <div class="min-w-0">
+                                        <h4 class="font-black text-xs sm:text-[15px] text-gray-900 tracking-tight leading-tight truncate">${msg.name}</h4>
+                                        <p class="text-[8px] sm:text-[9px] text-indigo-500 font-bold uppercase tracking-widest mt-0.5 flex items-center gap-1"><i class="fa-solid fa-certificate text-amber-500"></i> Exama Verified</p>
+                                    </div>
+                                </div>
+                                <div class="text-right shrink-0">
+                                    <div class="text-lg sm:text-xl font-black text-indigo-700 leading-none">${msg.stats.totalAvg}%</div>
+                                    <div class="text-[7px] sm:text-[8px] text-gray-400 font-bold uppercase tracking-widest mt-1">life Avg</div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <div class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-graduation-cap text-indigo-400"></i> Academics</div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div class="bg-indigo-50/50 rounded-xl p-2 border border-indigo-100/50 shadow-sm flex flex-col justify-center">
+                                        <div class="text-[8px] sm:text-[9px] text-indigo-500 font-bold uppercase tracking-wider mb-0.5">Lifetime</div>
+                                        <div class="text-xs sm:text-sm font-black text-indigo-900 leading-tight">${msg.stats.examRank}</div>
+                                        <div class="text-[9px] sm:text-[10px] font-bold text-gray-500 mt-0.5">${msg.stats.totalAvg}% Avg</div>
+                                    </div>
+                                    <div class="bg-indigo-50/50 rounded-xl p-2 border border-indigo-100/50 shadow-sm flex flex-col justify-center">
+                                        <div class="text-[8px] sm:text-[9px] text-indigo-500 font-bold uppercase tracking-wider mb-0.5">This Week</div>
+                                        <div class="text-xs sm:text-sm font-black text-indigo-900 leading-tight">${msg.stats.wkExamRank || '#-'}</div>
+                                        <div class="text-[9px] sm:text-[10px] font-bold text-gray-500 mt-0.5">${msg.stats.weeklyAvg}% Avg</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <div class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-stopwatch text-teal-400"></i> Focus Time</div>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <div class="bg-teal-50/50 rounded-xl p-2 border border-teal-100/50 shadow-sm text-center flex flex-col justify-center">
+                                        <div class="text-[7px] sm:text-[8px] text-teal-600 font-bold uppercase tracking-wider mb-0.5">Today</div>
+                                        <div class="text-[11px] sm:text-[13px] font-black text-teal-900 leading-tight">${msg.stats.todayStudyHrs}h</div>
+                                    </div>
+                                    <div class="bg-teal-50/50 rounded-xl p-2 border border-teal-100/50 shadow-sm text-center flex flex-col justify-center">
+                                        <div class="text-[7px] sm:text-[8px] text-teal-600 font-bold uppercase tracking-wider mb-0.5">Wk (${msg.stats.wkStudyRank || '#-'})</div>
+                                        <div class="text-[11px] sm:text-[13px] font-black text-teal-900 leading-tight">${msg.stats.weeklyStudyHrs}h</div>
+                                    </div>
+                                    <div class="bg-teal-50/50 rounded-xl p-2 border border-teal-100/50 shadow-sm text-center flex flex-col justify-center">
+                                        <div class="text-[7px] sm:text-[8px] text-teal-600 font-bold uppercase tracking-wider mb-0.5">Life (${msg.stats.studyRank || '#-'})</div>
+                                        <div class="text-[11px] sm:text-[13px] font-black text-teal-900 leading-tight">${msg.stats.totalStudyHrs}h</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3.5">
+                                <div class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><i class="fa-solid fa-person-running text-rose-400"></i> Fitness Tracker</div>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <div class="bg-rose-50/50 rounded-xl p-2 border border-rose-100/50 shadow-sm text-center flex flex-col justify-center">
+                                        <div class="text-[7px] sm:text-[8px] text-rose-600 font-bold uppercase tracking-wider mb-0.5">Today</div>
+                                        <div class="text-[11px] sm:text-[13px] font-black text-rose-900 leading-tight">${msg.stats.todayDist}<span class="text-[8px] sm:text-[9px]">km</span></div>
+                                        <div class="text-[7px] sm:text-[8px] text-rose-500 font-bold mt-0.5">${msg.stats.todayPace}/km</div>
+                                    </div>
+                                    <div class="bg-rose-50/50 rounded-xl p-2 border border-rose-100/50 shadow-sm text-center flex flex-col justify-center">
+                                        <div class="text-[7px] sm:text-[8px] text-rose-600 font-bold uppercase tracking-wider mb-0.5">Wk (${msg.stats.wkFitnessRank || '#-'})</div>
+                                        <div class="text-[11px] sm:text-[13px] font-black text-rose-900 leading-tight">${msg.stats.weeklyDist}<span class="text-[8px] sm:text-[9px]">km</span></div>
+                                    </div>
+                                    <div class="bg-rose-50/50 rounded-xl p-2 border border-rose-100/50 shadow-sm text-center flex flex-col justify-center">
+                                        <div class="text-[7px] sm:text-[8px] text-rose-600 font-bold uppercase tracking-wider mb-0.5">Life (${msg.stats.fitnessRank || '#-'})</div>
+                                        <div class="text-[11px] sm:text-[13px] font-black text-rose-900 leading-tight">${msg.stats.totalDist}<span class="text-[8px] sm:text-[9px]">km</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                            ${msg.stats.latestName ? `
+                            <div class="bg-gray-50/80 rounded-xl p-3 border border-gray-200/80 shadow-sm">
+                                <div class="flex justify-between items-center mb-1.5">
+                                    <span class="text-[8px] sm:text-[9px] text-gray-500 font-black uppercase tracking-widest"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Latest Exam</span>
+                                    <span class="text-[8px] sm:text-[9px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">Class Rank: #${msg.stats.classRank}</span>
+                                </div>
+                                <div class="flex justify-between items-center mt-1">
+                                    <div class="text-[11px] sm:text-xs font-bold text-gray-900 truncate pr-2 leading-tight">${msg.stats.latestName}</div>
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <span class="font-black ${scoreColor} text-[11px] sm:text-xs">${msg.stats.latestPerc}</span>
+                                        <span class="text-[7px] sm:text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider border ${statusColor}">${msg.stats.latestStatus}</span>
+                                    </div>
+                                </div>
+                            </div>` : `<div class="bg-gray-50/80 rounded-xl p-3 border border-gray-200/80 shadow-sm text-center"><p class="text-[10px] text-gray-500 font-bold italic">No exams taken yet.</p></div>`}
+                        </div>`;
+                    } else if (msg.type === 'call_log') {
+                        const isVideo = msg.callType === 'video';
+                        const callIcon = isVideo ? '<i class="fa-solid fa-video"></i>' : '<i class="fa-solid fa-phone"></i>';
+                        const callColor = isVideo ? 'text-purple-500' : 'text-green-500';
+                        const joinAction = isVideo ? 'window.startDiscusVideoCall(true)' : 'window.startDiscusAudioCall(true)';
+                        
+                        textContent = `
+                        <div onclick="${joinAction}" class="flex items-center gap-3 p-2.5 my-1 rounded-xl bg-black/5 border border-black/5 w-full pr-8 sm:pr-10 min-w-[180px] cursor-pointer hover:bg-black/10 active:scale-[0.98] transition-all">
+                            <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm shrink-0 ${callColor} text-sm">${callIcon}</div>
+                            <div class="flex flex-col min-w-0">
+                                <span class="font-black text-[12px] sm:text-[13px] text-gray-800 leading-tight">${isVideo ? 'Video Call' : 'Audio Call'}</span>
+                                <span class="text-[10px] sm:text-[11px] font-black text-blue-600 mt-0.5 leading-tight truncate"><i class="fa-solid fa-hand-pointer text-[8px] mr-1"></i>Tap to join</span>
+                            </div>
+                        </div>`;
+                    } else if (msg.text) { 
+                        textContent = `<div class="whitespace-pre-wrap break-words font-medium text-[12px] sm:text-[14.2px] leading-[1.35] text-[#111b21] pb-[12px] sm:pb-[14px] pr-10 sm:pr-12 inline-block w-full">${msg.text}</div>`; 
+                    }
+
+                    const msgDp = window.getStudentAvatar(msg.mobile, msg.name);
+                    const bubbleBg = isMe ? 'bg-[#d9fdd3]' : 'bg-white';
+                    const bubbleShape = isMe ? 'rounded-xl rounded-tr-none' : 'rounded-xl rounded-tl-none';
+                    const tailColor = isMe ? 'text-[#d9fdd3]' : 'text-white';
+                    const senderNameHtml = !isMe ? `<div class="text-[9px] sm:text-[11px] font-black text-indigo-500 mb-0.5 flex items-center break-words leading-tight">${msg.name} ${adminBadge}</div>` : '';
+                    
+                    const actionsHtml = `<div id="chat-actions-${msg.id}" class="hidden flex flex-col items-center gap-1.5 sm:gap-2 bg-white rounded-lg sm:rounded-xl px-1.5 sm:px-2 py-1.5 sm:py-2 shadow-lg border border-gray-200 text-[10px] sm:text-[12px] font-bold absolute top-0 ${isMe ? '-left-8 sm:-left-10' : '-right-8 sm:-right-10'} z-20 text-gray-700 transition-all"><button onclick="replyToMessage('${msg.id}', '${msg.name.replace(/'/g,"\\'")}', '${(msg.text || (msg.audioUrl ? 'Voice Note' : 'Media')).replace(/'/g,"\\'")}')" class="hover:text-indigo-600"><i class="fa-solid fa-reply"></i></button>${canDelete ? `<div class="w-2 sm:w-3 h-px bg-gray-300"></div><button onclick="deleteChatMessage('${msg.id}')" class="hover:text-red-600"><i class="fa-solid fa-trash"></i></button>` : ''}</div>`;
+                    
+                    wrapper = document.createElement('div'); 
+                    wrapper.id = msgElementId;
+                    wrapper.className = `flex w-full group ${isMe ? 'justify-end' : 'justify-start'} mb-2 sm:mb-3 shrink-0`;
+                    wrapper.innerHTML = `
+                    <div class="flex items-start gap-1 sm:gap-1.5 max-w-[95%] sm:max-w-[90%] relative">
+                        ${!isMe ? `<img src="${msgDp}" class="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shadow-sm shrink-0 border border-gray-200 mt-0.5 sm:mt-1 cursor-pointer">` : ''}
+                        
+                        <div class="relative flex flex-col items-${isMe ? 'end' : 'start'} min-w-0">
+                            <div class="relative flex items-start group/bubble min-w-0">
+                                ${!isMe ? `<svg viewBox="0 0 8 13" class="absolute -left-[5px] sm:-left-[7px] top-0 w-1.5 sm:w-2 h-2.5 sm:h-3 ${tailColor}"><path fill="currentColor" d="M1.533 3.568L8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z"></path></svg>` : ''}
+                                
+                                <div class="${bubbleBg} ${bubbleShape} px-2 sm:px-2.5 py-1 sm:py-1.5 shadow-sm min-w-[60px] sm:min-w-[80px] max-w-full cursor-pointer" onclick="toggleChatMenu('${msg.id}')">
+                                    ${senderNameHtml}
+                                    ${replyHtml}
+                                    ${imgHtml}
+                                    ${audioHtml}
+                                    <div class="relative w-full text-left min-w-0">
+                                        ${textContent}
+                                        <span class="text-[7px] sm:text-[9px] text-gray-500 whitespace-nowrap absolute bottom-0 right-0 flex items-center justify-end leading-none">${timeStr} <span id="ticks-${msg.id}">${ticksHTML}</span></span>
+                                    </div>
+                                </div>
+                                
+                                ${isMe ? `<svg viewBox="0 0 8 13" class="absolute -right-[5px] sm:-right-[7px] top-0 w-1.5 sm:w-2 h-2.5 sm:h-3 ${tailColor}"><path fill="currentColor" d="M6.467 3.568L0 12.193V1h5.188c1.77 0 2.338 1.156 1.279 2.568z"></path></svg>` : ''}
+                                ${actionsHtml}
+                            </div>
+                        </div>
+                        ${isMe ? `<img src="${msgDp}" class="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shadow-sm shrink-0 border border-gray-200 mt-0.5 sm:mt-1 cursor-pointer">` : ''}
+                    </div>`;
+                    
+                    list.appendChild(wrapper);
+
+                } else {
+                    if (isMe) {
+                        const ticksEl = document.getElementById(`ticks-${msg.id}`);
+                        if (ticksEl) {
+                            ticksEl.innerHTML = ticksHTML; 
+                        }
+                    }
+                }
+            });
+
+            // 5. CLEANUP DELETED MESSAGES
+            Array.from(list.children).forEach(child => {
+                if (child.id && child.id.startsWith('chat-msg-')) {
+                    const dbId = child.id.replace('chat-msg-', '');
+                    if (!allMessagesMap.has(dbId)) {
+                        child.remove();
+                    }
+                }
+            });
+
+            // 6. SCROLL TO BOTTOM IF NEW MESSAGE ARRIVED
+            if (shouldScroll && !window.isLoadingOlderChat) {
+                setTimeout(() => {
+                    list.scrollTop = list.scrollHeight;
+                }, 50);
+            }
+        }
+        
+        // ==========================================
+        // TARGET CALCULATOR ENGINE
+        // ==========================================
+        window.renderTargetCalc = function() {
+            const currentStudent = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+            if (currentStudent && currentStudent.targetPercentage) { 
+                document.getElementById('target-percentage-input').value = currentStudent.targetPercentage; 
+                window.calculateTargetRequired(true); 
+            } 
+            else { 
+                document.getElementById('target-percentage-input').value = ''; 
+                document.getElementById('target-result-card').classList.add('hidden'); 
+            }
+        };
+        
+        window.calculateTargetRequired = async function(isAutoLoad = false) {
+            const target = parseFloat(document.getElementById('target-percentage-input').value); if(isNaN(target)) return;
+            if (!isAutoLoad) {
+                showLoader("Saving Target...");
+                if (isFirebaseConfigured) { try { await updateDoc(doc(db, "students", window.loggedInMobile), { targetPercentage: target }); } catch(e) { console.error("Target Save Error:", e); } } 
+                else { const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile); if(stu) stu.targetPercentage = target; }
+                hideLoader();
+            }
+            
+            const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
+            const myTaken = myComputed.filter(r => !r.isVirtual); const takenCount = myTaken.length;
+            const totalExamsCount = window.examsDB.length; const remainingCount = totalExamsCount - takenCount;
+            
+            if(takenCount === 0) { alert("Please complete at least one exam to use the predictor."); return; }
+            if(remainingCount <= 0) { alert("You have completed all scheduled exams! No pending exams remaining."); return; }
+            
+            const currentTotal = myTaken.reduce((acc, r) => acc + r.percentage, 0); const requiredTotal = target * totalExamsCount; 
+            const neededForRemaining = (requiredTotal - currentTotal) / remainingCount;
+            const maxPossibleWithScheduled = currentTotal + (100 * remainingCount); const maxPossibleAvg = maxPossibleWithScheduled / totalExamsCount;
+
+            const resCard = document.getElementById('target-result-card'); const scoreDisplay = document.getElementById('target-needed-score'); const advice = document.getElementById('target-advice');
+            const imaginaryCard = document.getElementById('target-imaginary-card'); const futureBreakdown = document.getElementById('target-future-breakdown');
+            resCard.classList.remove('hidden');
+
+            if (target > maxPossibleAvg && target <= 100) {
+                let extraExams = Math.ceil(((target * totalExamsCount) - maxPossibleWithScheduled) / (100 - target)); if(extraExams < 1 || !isFinite(extraExams)) extraExams = 1;
+                scoreDisplay.innerText = `Requires > 100%`; scoreDisplay.className = "text-xl sm:text-2xl font-black text-red-500 mt-1 leading-tight"; advice.innerText = `Target is mathematically impossible within the remaining ${remainingCount} scheduled exams.`; 
+                imaginaryCard.classList.remove('hidden'); futureBreakdown.classList.add('hidden');
+                imaginaryCard.innerHTML = `<h4 class="font-black text-red-800 text-xs sm:text-sm flex items-center gap-1 break-words"><i class="fa-solid fa-bolt text-red-500"></i> Imaginary Horizon</h4><p class="text-[10px] sm:text-xs text-red-700 mt-1 font-medium leading-relaxed break-words">Even if you score 100% on the remaining scheduled exams, you will max out at an average of <strong>${maxPossibleAvg.toFixed(1)}%</strong>.</p><p class="text-[10px] sm:text-xs text-red-700 mt-1.5 sm:mt-2 font-medium leading-relaxed break-words">To successfully hit <strong>${target}%</strong>, you would need the administration to schedule <strong>${extraExams} additional exams</strong> and you must score a perfect 100% on all of them.</p>`;
+            } else if (target > 100) {
+                scoreDisplay.innerText = "Invalid Target"; scoreDisplay.className = "text-xl sm:text-2xl font-black text-red-500 mt-1"; advice.innerText = "Target cannot exceed 100%."; imaginaryCard.classList.add('hidden'); futureBreakdown.classList.add('hidden');
+            } else if(neededForRemaining <= 0) { 
+                scoreDisplay.innerText = "0%"; scoreDisplay.className = "text-3xl sm:text-4xl font-black text-green-500 mt-1"; advice.innerText = "You have already secured enough marks to safely hit this target!"; imaginaryCard.classList.add('hidden'); futureBreakdown.classList.remove('hidden');
+            } else { 
+                scoreDisplay.innerText = `${neededForRemaining.toFixed(1)}%`; scoreDisplay.className = "text-3xl sm:text-4xl font-black text-indigo-600 mt-1"; advice.innerText = `You need to average ${neededForRemaining.toFixed(1)}% in your remaining ${remainingCount} scheduled exam(s).`; imaginaryCard.classList.add('hidden'); futureBreakdown.classList.remove('hidden');
+            }
+
+            if(target <= maxPossibleAvg) {
+                const grid = document.getElementById('target-scenarios-grid'); grid.innerHTML = '';
+                const takenIds = myTaken.map(r => r.examId); const upcomingExams = window.examsDB.filter(e => !takenIds.includes(e.id));
+                upcomingExams.forEach(e => {
+                    let requiredMarks = (neededForRemaining / 100) * e.totalMarks; let c = 'text-indigo-700'; let txt = requiredMarks.toFixed(1);
+                    if(requiredMarks <= 0) { c = 'text-green-500'; txt = '0'; }
+                    grid.innerHTML += `<div class="flex justify-between items-center bg-gray-50 p-2 sm:p-3 rounded-lg sm:rounded-xl border border-gray-200 shadow-sm gap-2"><span class="text-[10px] sm:text-xs font-bold text-gray-800 tracking-tight break-words leading-tight min-w-0">${e.name}</span><span class="text-[10px] sm:text-xs font-black ${c} whitespace-nowrap shrink-0">${txt} <span class="text-gray-400 font-bold">/ ${e.totalMarks}</span></span></div>`;
+                });
+            }
+            renderStudentDashboard();
+        };
+        
+        // ==========================================
+        // NOVA EXAM ANALYSIS ENGINE
+        // ==========================================
+        window.generateExamAnalysis = function() {
+            const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
+            const myRecords = getComputedResults().filter(r => r.mobile === window.loggedInMobile && !r.isVirtual);
+            
+            myRecords.sort((a, b) => { const exA = window.examsDB.find(e => e.id === a.examId); const exB = window.examsDB.find(e => e.id === b.examId); if(!exA || !exB) return 0; return parseDDMM(exB.date) - parseDDMM(exA.date); });
+            
+            const contentDiv = document.getElementById('analysis-content'); const bestDiv = document.getElementById('analysis-best'); const worstDiv = document.getElementById('analysis-worst'); const metricsDiv = document.getElementById('analysis-deep-metrics');
+            if (myRecords.length === 0) { contentDiv.innerHTML = `<p class="text-xs sm:text-sm text-gray-600 font-medium break-words">Not enough data yet. Take some exams to generate NOVA insights!</p>`; bestDiv.innerText = "--"; worstDiv.innerText = "--"; metricsDiv.innerHTML = ''; return; }
+            
+            myRecords.sort((a, b) => { 
+                const exA = window.examsDB.find(e => e.id === a.examId); 
+                const exB = window.examsDB.find(e => e.id === b.examId); 
+                if(!exA || !exB) return 0; 
+                return parseDDMM(exB.date) - parseDDMM(exA.date); 
+            });
+
+            let best = myRecords[0]; let worst = myRecords[0]; let total = 0; const labels = []; const lineData = [];
+            
+            myRecords.forEach(r => { 
+                const exam = window.examsDB.find(e => e.id === r.examId); 
+                labels.unshift(exam ? exam.name.substring(0, 5) + '..' : 'Exam'); 
+                lineData.unshift(r.percentage); 
+                
+                if (r.percentage > best.percentage) best = r; 
+                if (r.percentage < worst.percentage) worst = r; 
+                total += r.percentage; 
+            });
+            
+            const avg = total / myRecords.length; const bestExam = window.examsDB.find(e => e.id === best.examId); const worstExam = window.examsDB.find(e => e.id === worst.examId);
+            bestDiv.innerText = bestExam ? bestExam.name.substring(0, 10) + ".." : "N/A"; 
+            worstDiv.innerText = worstExam ? worstExam.name.substring(0, 10) + ".." : "N/A";
+
+            let trajectoryHtml = "";
+            if (myRecords.length >= 2) {
+                const latestScore = myRecords[0].percentage;
+                const previousScore = myRecords[1].percentage;
+                
+                if (latestScore > previousScore) { 
+                    trajectoryHtml = `<div class="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 bg-green-50 rounded-xl text-green-700 border border-green-200"><i class="fa-solid fa-arrow-trend-up text-xl sm:text-2xl shrink-0"></i><div class="min-w-0 pr-1"><h4 class="font-black text-xs sm:text-sm break-words leading-tight">Upward Trend</h4><p class="text-[10px] sm:text-xs font-medium mt-0.5 sm:mt-1 break-words leading-tight">Your latest score (${latestScore.toFixed(0)}%) beat your previous (${previousScore.toFixed(0)}%). Keep it up!</p></div></div>`; 
+                } 
+                else if (latestScore < previousScore) { 
+                    trajectoryHtml = `<div class="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 bg-red-50 rounded-xl text-red-700 border border-red-200"><i class="fa-solid fa-arrow-trend-down text-xl sm:text-2xl shrink-0"></i><div class="min-w-0 pr-1"><h4 class="font-black text-xs sm:text-sm break-words leading-tight">Downward Trend</h4><p class="text-[10px] sm:text-xs font-medium mt-0.5 sm:mt-1 break-words leading-tight">Your latest score (${latestScore.toFixed(0)}%) dropped from your previous (${previousScore.toFixed(0)}%). Focus on revision.</p></div></div>`; 
+                } 
+                else { 
+                    trajectoryHtml = `<div class="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 bg-indigo-50 rounded-xl text-indigo-700 border border-indigo-200"><i class="fa-solid fa-minus text-xl sm:text-2xl shrink-0"></i><div class="min-w-0 pr-1"><h4 class="font-black text-xs sm:text-sm break-words leading-tight">Consistent Performer</h4><p class="text-[10px] sm:text-xs font-medium mt-0.5 sm:mt-1 break-words leading-tight">You maintained your previous score. Steady progress!</p></div></div>`; 
+                }
+            } else { 
+                trajectoryHtml = `<p class="text-[10px] sm:text-xs text-gray-500 font-medium break-words">Take one more exam to unlock trend analysis.</p>`; 
+            }
+
+            const currentStudent = window.studentsDB.find(s => s.mobile === window.loggedInMobile); 
+            const savedTarget = currentStudent ? currentStudent.targetPercentage : null;
+            
+            let targetAnalysisHtml = '';
+            if(savedTarget) {
+                const target = parseFloat(savedTarget);
+                const gap = target - avg;
+                if(gap > 0) {
+                    targetAnalysisHtml = `<div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 sm:p-4 mt-3 sm:mt-4 shadow-sm"><h4 class="text-xs sm:text-sm font-black text-indigo-800 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-bullseye text-indigo-500"></i> NOVA Goal Tracking</h4><p class="text-[10px] sm:text-xs text-indigo-700 mt-1 font-medium leading-relaxed break-words">Your set target is <strong>${target}%</strong>. You are currently averaging <strong>${avg.toFixed(1)}%</strong>, which places you <strong>${gap.toFixed(1)}%</strong> behind your goal. Maintain deep focus!</p></div>`;
+                } else {
+                    targetAnalysisHtml = `<div class="bg-green-50 border border-green-200 rounded-xl p-3 sm:p-4 mt-3 sm:mt-4 shadow-sm"><h4 class="text-xs sm:text-sm font-black text-green-800 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-bullseye text-green-500"></i> NOVA Goal Tracking</h4><p class="text-[10px] sm:text-xs text-green-700 mt-1 font-medium leading-relaxed break-words">Your set target is <strong>${target}%</strong>. You are currently averaging <strong>${avg.toFixed(1)}%</strong>. You are safely <strong>surpassing</strong> your goal by <strong>${Math.abs(gap).toFixed(1)}%</strong>. Outstanding consistency!</p></div>`;
+                }
+            } else {
+                targetAnalysisHtml = `<div class="bg-gray-50 border border-gray-200 rounded-xl p-3 sm:p-4 mt-3 sm:mt-4 shadow-sm"><h4 class="text-xs sm:text-sm font-black text-gray-800 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-bullseye text-gray-500"></i> NOVA Goal Tracking</h4><p class="text-[10px] sm:text-xs text-gray-600 mt-1 font-medium leading-relaxed break-words">You haven't set a target yet. Head over to the Target Planner to set a goal and let NOVA track your trajectory.</p></div>`;
+            }
+
+            const sLogs = window.sessionsDB.filter(s => s.mobile === window.loggedInMobile);
+            let totStudyMs = 0, totBreakMs = 0;
+            sLogs.forEach(s => { totStudyMs += (s.totalStudyMs || 0); totBreakMs += (s.totalBreakMs || 0); });
+            
+            let ratioHtml = '';
+            if (totStudyMs > 0) {
+                const sHrs = (totStudyMs / 3600000).toFixed(1);
+                const bHrs = (totBreakMs / 3600000).toFixed(1);
+                let rMsg = "Great balance! You take healthy breaks to absorb information.";
+                let rColor = "bg-teal-50 border-teal-200 text-teal-800";
+                let rIcon = "fa-scale-balanced text-teal-500";
+                
+                if (totBreakMs === 0 || (totStudyMs / totBreakMs) > 6) {
+                    rMsg = "High intense focus! Remember to take short breaks to prevent mental burnout.";
+                    rColor = "bg-orange-50 border-orange-200 text-orange-800";
+                    rIcon = "fa-fire text-orange-500";
+                } else if ((totBreakMs / totStudyMs) > 0.4) {
+                    rMsg = "Your break times are quite high. Try to stretch your deep focus sessions longer.";
+                    rColor = "bg-rose-50 border-rose-200 text-rose-800";
+                    rIcon = "fa-stopwatch text-rose-500";
+                }
+                
+                ratioHtml = `<div class="${rColor} rounded-xl p-3 sm:p-4 mt-3 sm:mt-4 shadow-sm border"><h4 class="text-xs sm:text-sm font-black flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid ${rIcon}"></i> Study-to-Break Ratio</h4><p class="text-[10px] sm:text-xs mt-1 font-medium leading-relaxed break-words">You logged <strong>${sHrs}h</strong> of focus and <strong>${bHrs}h</strong> of breaks. ${rMsg}</p></div>`;
+            }
+
+            contentDiv.innerHTML = `<div class="space-y-3 sm:space-y-4">${trajectoryHtml}<div class="p-3 sm:p-4 bg-gray-50 rounded-xl border border-gray-200 text-gray-700 text-[10px] sm:text-xs font-medium leading-relaxed shadow-sm break-words">You have an overall average of <strong class="text-indigo-600">${avg.toFixed(1)}%</strong>. Your peak performance was <strong class="text-green-600">${best.percentage.toFixed(0)}%</strong>.</div>${targetAnalysisHtml}${ratioHtml}</div>`;
+            const ctx = document.getElementById('aiAnalysisChart').getContext('2d');
+            if(analysisChartInstance) analysisChartInstance.destroy();
+            analysisChartInstance = new Chart(ctx, { type: 'line', data: { labels: labels, datasets: [{ label: 'Score %', data: lineData, borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.2)', borderWidth: 3, tension: 0.4, fill: true, pointBackgroundColor: '#4f46e5', pointRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, ticks: { font: {size:9} } }, x: { ticks: { font: {size:9} } } } } });
+
+            const allAvgs = getOverallLeaderboard().map(s => parseFloat(s.avg));
+            const belowMe = allAvgs.filter(a => a < avg).length;
+            const percentile = allAvgs.length > 1 ? ((belowMe / (allAvgs.length - 1)) * 100).toFixed(0) : 100;
+            const variance = myRecords.reduce((a,r) => a + Math.pow(r.percentage - avg, 2), 0) / myRecords.length; const sd = Math.sqrt(variance);
+            let consistencyLabel = sd < 5 ? "Highly Consistent 🎯" : (sd < 15 ? "Moderate Variance ⚖️" : "Volatile ⚠️");
+
+            metricsDiv.innerHTML = `<div class="flex justify-between items-center py-1.5 sm:py-2 border-b border-purple-200/50 gap-2"><span class="text-[10px] sm:text-xs font-bold text-gray-600 break-words leading-tight">Global Percentile</span><span class="text-xs sm:text-sm font-black text-purple-700 whitespace-nowrap">Top ${100 - percentile}%</span></div><div class="flex justify-between items-center py-1.5 sm:py-2 border-b border-purple-200/50 gap-2"><span class="text-[10px] sm:text-xs font-bold text-gray-600 break-words leading-tight">Standard Deviation</span><span class="text-xs sm:text-sm font-black text-purple-700 whitespace-nowrap">±${sd.toFixed(1)}%</span></div><div class="flex justify-between items-center py-1.5 sm:py-2 gap-2"><span class="text-[10px] sm:text-xs font-bold text-gray-600 break-words leading-tight">NOVA Rating</span><span class="text-xs sm:text-sm font-black text-purple-700 whitespace-nowrap">${consistencyLabel}</span></div>`;
+        }
+        // ==========================================
+        // NOTICES ENGINE
+        // ==========================================
+        window.openNotices = function() { window.location.hash = 'notices'; }
+        
+        window.toggleNoticeForm = function() { 
+            document.getElementById('admin-notice-form').classList.toggle('hidden'); 
+        }
+        
+        window.deleteNotice = async function(id) { 
+            if(!confirm("Delete this notice?")) return; 
+            if(isFirebaseConfigured) await deleteDoc(doc(db, "notices", id)); 
+            else { 
+                window.noticesDB = window.noticesDB.filter(n => n.id !== id); 
+                window.renderNotices(); 
+                checkUnreadNotices(); 
+            } 
+        }
+        
+        window.renderNotices = function() {
+            const list = document.getElementById('notice-list'); 
+            if (!list) return;
+            list.innerHTML = '';
+            const myMobile = window.loggedInMobile;
+            
+            // Filter notices so students only see what is assigned to them
+            const visibleNotices = window.noticesDB.filter(n => {
+                if (window.currentRole === 'admin') return true;
+                if (!n.assignedTo || n.assignedTo.includes('All')) return true;
+                return n.assignedTo.includes(myMobile);
+            });
+
+            visibleNotices.forEach(n => {
+                const delBtn = window.currentRole === 'admin' ? `<button onclick="deleteNotice('${n.id}')" class="text-red-400 hover:text-red-600 ml-2 sm:ml-3 transition-colors shrink-0" title="Delete"><i class="fa-solid fa-trash text-xs sm:text-sm"></i></button>` : '';
+                let borderColor = 'border-amber-200'; let bgCard = 'bg-white'; let iconColor = 'text-amber-500'; let badgeBg = 'bg-amber-100 text-amber-700';
+                
+                if (n.type === 'new_exam') { borderColor = 'border-blue-300'; bgCard = 'bg-blue-50/50'; iconColor = 'text-blue-500'; badgeBg = 'bg-blue-100 text-blue-700'; } 
+                else if (n.type === 'reset_exam') { borderColor = 'border-red-300'; bgCard = 'bg-red-50/50'; iconColor = 'text-red-500'; badgeBg = 'bg-red-100 text-red-700'; } 
+                else if (n.type === 'exam_ended') { borderColor = 'border-purple-300'; bgCard = 'bg-purple-50/50'; iconColor = 'text-purple-500'; badgeBg = 'bg-purple-100 text-purple-700'; }
+                
+                let imageHtml = n.imageUrl ? `<img src="${n.imageUrl}" onclick="window.openFullScreenImage(this.src)" class="w-full h-auto mt-2 sm:mt-3 rounded-lg sm:rounded-xl object-cover border border-gray-200 shadow-sm cursor-pointer hover:opacity-90 transition-opacity">` : '';
+
+                list.innerHTML += `
+                <div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] space-y-1.5 sm:space-y-2 ${borderColor} ${bgCard} shadow-sm">
+                    <div class="flex justify-between items-center border-b border-gray-200/50 pb-2 sm:pb-3 mb-1.5 sm:mb-2 gap-2">
+                        <h4 class="font-black text-gray-900 text-xs sm:text-[14px] flex items-center gap-1.5 sm:gap-2 leading-tight break-words min-w-0 pr-1">
+                            <i class="fa-solid fa-circle-exclamation ${iconColor} shrink-0"></i>
+                            <span class="break-words">${n.title}</span>
+                        </h4>
+                        <div class="flex items-center shrink-0">
+                            <span class="text-[8px] sm:text-[9px] font-black ${badgeBg} px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md shadow-sm uppercase tracking-widest whitespace-nowrap">${n.date || 'Recent'}</span>
+                            ${delBtn}
+                        </div>
+                    </div>
+                    <p class="text-[11px] sm:text-xs text-gray-700 font-medium leading-relaxed whitespace-pre-wrap break-words">${n.text}</p>
+                    ${imageHtml}
+                </div>`;
+            });
+        }
+        
+        window.submitNotice = async function() {
+            const title = document.getElementById('notice-title').value.trim(); 
+            const text = document.getElementById('notice-body').value.trim(); 
+            const fileInput = document.getElementById('notice-image');
+            if(!title || !text) return; 
+            
+            let imageUrl = null;
+
+            if (fileInput && fileInput.files.length > 0) {
+                showLoader("Uploading Notice Image...");
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append("image", file);
+                const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; // Consider moving this to your proxy eventually
+                
+                try {
+                    const res = await fetch(`https://api.imgbb.com/1/upload?expiration=15552000&key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
+                    const data = await res.json();
+                    if(data.success) { imageUrl = data.data.url; }
+                } catch(e) {
+                    console.error(e);
+                    alert("Image upload failed! Notice will be posted without the image.");
+                }
+            }
+
+            showLoader("Posting Notice...");
+            await window.dbSendNotice({ title, text, imageUrl, date: window.formatDateDDMMYYYY(), timestamp: Date.now() });
+            
+            sendOneSignalPush("New Notice", title, imageUrl); 
+            
+            document.getElementById('notice-title').value = ''; 
+            document.getElementById('notice-body').value = ''; 
+            if(fileInput) fileInput.value = '';
+            document.getElementById('admin-notice-form').classList.add('hidden'); 
+            
+            hideLoader();
+        }
+// ==========================================
+// SYLLABUS TRACKING ENGINE
+// ==========================================
+
+window.toggleSyllabusStudentSelection = function() {
+    const type = document.getElementById('syl-assign-type').value; 
+    const cbContainer = document.getElementById('syl-student-checkboxes');
+    if (type === 'Specific') {
+        cbContainer.classList.remove('hidden');
+        if (cbContainer.children.length === 0) {
+            cbContainer.innerHTML = ''; 
+            window.studentsDB.forEach(s => {
+                cbContainer.innerHTML += `<label class="flex items-center gap-2 p-1.5 hover:bg-indigo-50 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-indigo-100"><input type="checkbox" value="${s.mobile}" class="syl-student-cb w-3.5 h-3.5 text-indigo-600 rounded border-gray-300"><span class="text-xs font-bold text-gray-700 break-words">${s.name} <span class="text-[9px] text-gray-400 font-normal ml-1">(${s.mobile})</span></span></label>`;
+            });
+        }
+    } else { cbContainer.classList.add('hidden'); }
+};
+
+window.submitSyllabusTopic = async function() {
+    const subject = document.getElementById('syl-subject').value.trim(); 
+    const topic = document.getElementById('syl-topic').value.trim();
+    if(!subject || !topic) return alert("Fill Subject and Topic");
+    
+    const assignType = document.getElementById('syl-assign-type').value; 
+    let assignedTo = ['All'];
+    if (assignType === 'Specific') { 
+        const checkboxes = document.querySelectorAll('.syl-student-cb:checked'); 
+        assignedTo = Array.from(checkboxes).map(cb => cb.value); 
+        if (assignedTo.length === 0) return alert("Please select at least one student!"); 
+    }
+    
+    showLoader("Publishing Topic...");
+    const obj = { subject, topic, assignedTo, timestamp: Date.now() };
+    
+    if(isFirebaseConfigured) await addDoc(collection(db, "syllabus_topics"), obj); 
+    else { window.syllabusTopicsDB.push({id: Math.random().toString(), ...obj}); renderSyllabusTracker(); }
+    
+    document.getElementById('syl-topic').value = ''; 
+    if(assignType === 'Specific') document.querySelectorAll('.syl-student-cb').forEach(cb => cb.checked = false);
+    hideLoader();
+};
+
+window.deleteSyllabusTopic = async function(id) { 
+    if(!confirm('Delete this topic permanently?')) return; 
+    if(isFirebaseConfigured) await deleteDoc(doc(db, "syllabus_topics", id)); 
+    else { window.syllabusTopicsDB = window.syllabusTopicsDB.filter(t => t.id !== id); renderSyllabusTracker(); } 
+};
+
+window.updateSyllabusProgress = async function(topicId, field, change) {
+    if(window.currentRole !== 'student') return;
+    const mobile = window.loggedInMobile;
+    let existing = window.studentSyllabusProgressDB.find(p => p.topicId === topicId && p.mobile === mobile);
+    
+    let payload = {};
+    if (existing) {
+        payload = { ...existing };
+        if (field === 'classDone') payload.classDone = !payload.classDone;
+        if (field === 'practice') payload.practiceCount = Math.max(0, (payload.practiceCount || 0) + change);
+        if (field === 'revision') payload.revisionCount = Math.max(0, (payload.revisionCount || 0) + change);
+        payload.timestamp = Date.now();
+        
+        if(isFirebaseConfigured) await updateDoc(doc(db, "student_syllabus_progress", existing.id), payload);
+        else { Object.assign(existing, payload); renderSyllabusTracker(); }
+    } else {
+        payload = { 
+            mobile, 
+            topicId, 
+            classDone: field === 'classDone', 
+            practiceCount: field === 'practice' ? Math.max(0, change) : 0, 
+            revisionCount: field === 'revision' ? Math.max(0, change) : 0, 
+            timestamp: Date.now() 
+        };
+        if(isFirebaseConfigured) await addDoc(collection(db, "student_syllabus_progress"), payload);
+        else { window.studentSyllabusProgressDB.push({id: Math.random().toString(), ...payload}); renderSyllabusTracker(); }
+    }
+};
+
+window.renderSyllabusTracker = function() {
+    const listContainer = document.getElementById('syl-topics-list'); 
+    const tabsContainer = document.getElementById('syl-subject-tabs-container');
+    if(!listContainer) return;
+    
+    listContainer.innerHTML = '';
+    
+    let myTopics = window.syllabusTopicsDB.filter(t => { 
+        if (window.currentRole === 'admin') return true; 
+        if (!t.assignedTo || t.assignedTo.includes('All')) return true; 
+        return t.assignedTo.includes(window.loggedInMobile); 
+    });
+
+    // --- REQUIREMENT 1: OLD TO NEW (Ascending order by timestamp) ---
+    myTopics.sort((a, b) => a.timestamp - b.timestamp);
+
+    // --- OVERALL PROGRESS TRACKING (Calculate for all subjects regardless of active tab) ---
+    let totalClasses = 0; 
+    let completedClasses = 0;
+    
+    myTopics.forEach(topic => {
+        totalClasses++;
+        const prog = window.studentSyllabusProgressDB.find(p => p.topicId === topic.id && p.mobile === window.loggedInMobile) || { classDone: false };
+        if (prog.classDone) completedClasses++;
+    });
+
+    const progPerc = totalClasses > 0 ? Math.round((completedClasses / totalClasses) * 100) : 0;
+    document.getElementById('syl-overall-progress').innerText = `${progPerc}%`; 
+    document.getElementById('syl-overall-bar').style.width = `${progPerc}%`;
+
+    // Empty state safeguard
+    if (myTopics.length === 0) { 
+        if(tabsContainer) tabsContainer.innerHTML = '';
+        listContainer.innerHTML = `<div class="text-center text-gray-500 font-medium py-8 text-xs sm:text-sm bg-white rounded-[1rem] shadow-sm border border-gray-100 px-4">No syllabus topics assigned yet.</div>`; 
+        return; 
+    }
+
+    // --- REQUIREMENT 2: TABS LOGIC ---
+    if(tabsContainer) {
+        const uniqueSubjects = [...new Set(myTopics.map(t => t.subject))];
+        let tabsHtml = `<button onclick="window.filterSyllabusBySubject('All')" class="px-3 sm:px-4 py-1.5 sm:py-2 ${window.activeSyllabusSubjectFilter === 'All' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-indigo-50 border border-gray-200'} font-black text-[10px] sm:text-xs rounded-full shrink-0 transition-colors break-words">All Subjects</button>`;
+        
+        uniqueSubjects.forEach(sub => { 
+            const isActive = window.activeSyllabusSubjectFilter === sub; 
+            tabsHtml += `<button onclick="window.filterSyllabusBySubject('${sub.replace(/'/g, "\\'")}')" class="px-3 sm:px-4 py-1.5 sm:py-2 ${isActive ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-indigo-50 border border-gray-200'} font-black text-[10px] sm:text-xs rounded-full shrink-0 transition-colors break-words">${sub}</button>`; 
+        });
+        tabsContainer.innerHTML = tabsHtml;
+    }
+
+    // --- FILTER DISPLAYED LIST BY SELECTED TAB ---
+    if(window.activeSyllabusSubjectFilter !== 'All') {
+        myTopics = myTopics.filter(t => t.subject === window.activeSyllabusSubjectFilter);
+    }
+
+    if (myTopics.length === 0) {
+        listContainer.innerHTML = `<div class="text-center text-gray-500 font-medium py-8 text-xs sm:text-sm bg-white rounded-[1rem] shadow-sm border border-gray-100 px-4">No topics found for this subject.</div>`;
+        return;
+    }
+
+    const grouped = {}; 
+    const isAdmin = window.currentRole === 'admin';
+    
+    myTopics.forEach(topic => {
+        const prog = window.studentSyllabusProgressDB.find(p => p.topicId === topic.id && p.mobile === window.loggedInMobile) || { classDone: false, practiceCount: 0, revisionCount: 0 };
+        if (!grouped[topic.subject]) grouped[topic.subject] = [];
+        grouped[topic.subject].push({ ...topic, progress: prog });
+    });
+
+    Object.keys(grouped).sort().forEach(subject => {
+        let subjectHtml = `<div class="mb-5"><h4 class="font-black text-gray-900 text-base sm:text-lg border-b-2 border-indigo-500 pb-1 mb-3 flex items-center gap-2"><i class="fa-solid fa-graduation-cap text-indigo-600 text-sm"></i> ${subject}</h4><div class="space-y-3">`;
+        
+        grouped[subject].forEach(t => {
+            const classBtnStyle = t.progress.classDone ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-500 border border-gray-300';
+            const classIcon = t.progress.classDone ? 'fa-circle-check' : 'fa-circle';
+            const delBtn = isAdmin ? `<button onclick="deleteSyllabusTopic('${t.id}')" class="text-red-400 hover:text-red-600 w-6 h-6 rounded flex items-center justify-center shrink-0"><i class="fa-solid fa-trash text-xs"></i></button>` : '';
+
+            let assignBadge = '';
+            if (isAdmin && t.assignedTo && !t.assignedTo.includes('All')) {
+                const names = t.assignedTo.map(mob => { const s = window.studentsDB.find(stu => stu.mobile === mob); return s ? s.name : mob; });
+                assignBadge = `<div class="text-[8px] sm:text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded mt-1 inline-block">👤 ${names.join(', ')}</div>`;
+            }
+
+            subjectHtml += `
+            <div class="bg-white p-3 sm:p-4 rounded-[1.25rem] border border-gray-200 shadow-sm flex flex-col gap-3">
+                <div class="flex justify-between items-start">
+                    <div class="min-w-0 pr-2">
+                        <h5 class="font-bold text-gray-900 text-sm sm:text-[15px] leading-tight break-words">${t.topic}</h5>
+                        ${assignBadge}
+                    </div>
+                    ${delBtn}
+                </div>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
+                    <button onclick="updateSyllabusProgress('${t.id}', 'classDone', null)" class="w-full py-2 rounded-xl flex items-center justify-center gap-1.5 text-xs font-black transition-all active:scale-95 ${classBtnStyle} ${isAdmin ? 'pointer-events-none opacity-50' : ''}">
+                        <i class="fa-solid ${classIcon}"></i> ${t.progress.classDone ? 'Class Done' : 'Mark Class Done'}
+                    </button>
+                    
+                    <div class="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-2 py-1.5">
+                        <span class="text-[10px] font-bold text-blue-800 uppercase tracking-widest ml-1"><i class="fa-solid fa-dumbbell mr-1"></i> Practice</span>
+                        <div class="flex items-center gap-2 bg-white rounded-lg p-0.5 shadow-sm border border-blue-200 ${isAdmin ? 'pointer-events-none opacity-50' : ''}">
+                            <button onclick="updateSyllabusProgress('${t.id}', 'practice', -1)" class="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-blue-600 active:scale-90 bg-gray-50 rounded"><i class="fa-solid fa-minus text-[10px]"></i></button>
+                            <span class="font-black text-blue-600 text-xs w-4 text-center">${t.progress.practiceCount || 0}</span>
+                            <button onclick="updateSyllabusProgress('${t.id}', 'practice', 1)" class="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-blue-600 active:scale-90 bg-gray-50 rounded"><i class="fa-solid fa-plus text-[10px]"></i></button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl px-2 py-1.5">
+                        <span class="text-[10px] font-bold text-emerald-800 uppercase tracking-widest ml-1"><i class="fa-solid fa-rotate mr-1"></i> Revision</span>
+                        <div class="flex items-center gap-2 bg-white rounded-lg p-0.5 shadow-sm border border-emerald-200 ${isAdmin ? 'pointer-events-none opacity-50' : ''}">
+                            <button onclick="updateSyllabusProgress('${t.id}', 'revision', -1)" class="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-emerald-600 active:scale-90 bg-gray-50 rounded"><i class="fa-solid fa-minus text-[10px]"></i></button>
+                            <span class="font-black text-emerald-600 text-xs w-4 text-center">${t.progress.revisionCount || 0}</span>
+                            <button onclick="updateSyllabusProgress('${t.id}', 'revision', 1)" class="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-emerald-600 active:scale-90 bg-gray-50 rounded"><i class="fa-solid fa-plus text-[10px]"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        });
+        subjectHtml += `</div></div>`;
+        listContainer.innerHTML += subjectHtml;
+    });
+};
+// ==========================================
+// EDIT LECTURE LOGIC
+// ==========================================
+window.openEditVideo = function(id) {
+    const vid = window.videosDB.find(v => v.id === id);
+    if (!vid) return;
+    
+    document.getElementById('edit-vid-id').value = vid.id;
+    document.getElementById('edit-vid-subject').value = vid.subject || '';
+    document.getElementById('edit-vid-instructor').value = vid.uploader || '';
+    document.getElementById('edit-vid-topic').value = vid.topic || '';
+    document.getElementById('edit-vid-title').value = vid.title || '';
+    
+    // Reverse-engineer the embed link back into a standard editable link
+    let originalUrl = '';
+    if (vid.videoType === 'youtube') {
+        const match = vid.sourceUrl.match(/embed\/([^?]+)/);
+        if (match) originalUrl = `https://youtu.be/${match[1]}`;
+    } else {
+        const match = vid.sourceUrl.match(/\?id=([^&]+)/);
+        if (match) originalUrl = `https://drive.google.com/file/d/${match[1]}/view`;
+    }
+    document.getElementById('edit-vid-url').value = originalUrl;
+    
+    document.getElementById('video-edit-modal').classList.remove('hidden-view');
+};
+
+window.submitEditVideo = async function() {
+    const id = document.getElementById('edit-vid-id').value;
+    const subject = document.getElementById('edit-vid-subject').value.trim();
+    const instructor = document.getElementById('edit-vid-instructor').value.trim(); 
+    const topic = document.getElementById('edit-vid-topic').value.trim();
+    const title = document.getElementById('edit-vid-title').value.trim();
+    const url = document.getElementById('edit-vid-url').value.trim();
+    
+    if (!subject || !instructor || !topic || !title || !url) return alert("Please fill all fields.");
+    
+    const parsedData = window.parseVideoLink(url);
+    if (!parsedData) return alert("Invalid link! Only YouTube and Google Drive links are supported.");
+
+    showLoader("Updating Lecture...");
+
+    const payload = {
+        title: title, 
+        subject: subject, 
+        topic: topic,
+        videoType: parsedData.type, 
+        sourceUrl: parsedData.src, 
+        thumbnail: parsedData.thumb,
+        uploader: instructor
+    };
+
+    try {
+        if (isFirebaseConfigured) {
+            await updateDoc(doc(db, "videos", id), payload);
+        } else {
+            const index = window.videosDB.findIndex(v => v.id === id);
+            if (index > -1) Object.assign(window.videosDB[index], payload);
+            window.renderVideoFeed(); 
+        }
+        
+        document.getElementById('video-edit-modal').classList.add('hidden-view');
+        window.showToast("Success", "Lecture updated successfully!", "info");
+    } catch(e) {
+        console.error(e);
+        alert("Error updating lecture.");
+    }
+    
+    hideLoader();
+};
+window.submitVideo = async function() {
+    const subject = document.getElementById('vid-subject').value.trim();
+    const instructor = document.getElementById('vid-instructor').value.trim(); 
+    const topic = document.getElementById('vid-topic').value.trim();
+    
+    if (!subject || !instructor || !topic) return alert("Please fill Subject, Instructor, and Topic.");
+    
+    // Collect all rows
+    const rows = document.querySelectorAll('.video-input-row');
+    const payloads = [];
+    
+    // Validate all rows before uploading anything
+    for (let row of rows) {
+        const title = row.querySelector('.vid-title-input').value.trim();
+        const url = row.querySelector('.vid-url-input').value.trim();
+        
+        if (!title || !url) continue;
+        
+        const parsedData = window.parseVideoLink(url);
+        if (!parsedData) {
+            return alert(`Error on "${title}": Invalid link! Only YouTube and Google Drive links are supported.`);
+        }
+
+        payloads.push({
+            title: title, 
+            subject: subject, 
+            topic: topic,
+            videoType: parsedData.type, 
+            sourceUrl: parsedData.src, 
+            thumbnail: parsedData.thumb,
+            uploader: instructor, 
+            watchedBy: [], 
+            // Increment the timestamp by 1 millisecond per row so they sort in perfect order!
+            timestamp: Date.now() + payloads.length 
+        });
+    }
+
+    if (payloads.length === 0) return alert("Please add at least one valid video.");
+
+    showLoader(`Publishing ${payloads.length} Lecture(s)...`);
+
+    try {
+        if (isFirebaseConfigured) {
+            // Upload all videos to Firebase Database simultaneously 
+            const uploadPromises = payloads.map(p => addDoc(collection(db, "videos"), p));
+            await Promise.all(uploadPromises);
+        } else { 
+            if (!window.videosDB) window.videosDB = [];
+            payloads.forEach(p => window.videosDB.push({ id: Math.random().toString(), ...p })); 
+            window.renderVideoFeed(); 
+        }
+        
+        // Reset the form
+        document.getElementById('form-upload-video').reset();
+        
+        // Clear all rows and put exactly 1 fresh row back
+        document.getElementById('bulk-video-container').innerHTML = `
+            <div class="video-input-row bg-white p-3 rounded-xl border border-red-100 shadow-sm relative group">
+                <input type="text" required placeholder="Lecture Title (e.g. Part 1)" class="vid-title-input w-full px-3 py-2 bg-gray-50 rounded-lg outline-none font-bold text-gray-900 text-xs border border-gray-200 mb-2 shadow-sm focus:border-red-300">
+                <input type="url" required placeholder="YouTube or Drive Link" class="vid-url-input w-full px-3 py-2 bg-gray-50 rounded-lg outline-none font-bold text-red-600 text-xs border border-gray-200 shadow-sm focus:border-red-300">
+            </div>
+        `;
+        
+        document.getElementById('video-upload-modal')?.classList.add('hidden-view');
+        window.showToast("Success", `${payloads.length} Lecture(s) added successfully!`, "info");
+        
+    } catch(e) {
+        console.error(e);
+        alert("Error saving videos. Check your connection.");
+    }
+    
+    hideLoader();
+};
+// 3. NAVIGATION CONTROLLER
+window.vhGoBack = function() {
+    if (window.vhState.view === 'lectures') {
+        window.vhState.view = 'topics';
+        window.vhState.topic = null;
+    } else if (window.vhState.view === 'topics') {
+        window.vhState.view = 'subjects';
+        window.vhState.subject = null;
+    } else {
+        safeBack();
+        return;
+    }
+    window.renderVideoFeed();
+};
+
+window.openVHSubject = function(sub) {
+    window.vhState.view = 'topics';
+    window.vhState.subject = sub;
+    window.renderVideoFeed();
+};
+
+window.openVHTopic = function(top) {
+    window.vhState.view = 'lectures';
+    window.vhState.topic = top;
+    window.renderVideoFeed();
+};
+
+function getSubjectIcon(sub) {
+    if (!sub) return { icon: 'fa-graduation-cap', color: 'text-indigo-500', bg: 'bg-indigo-50' }; 
+    const s = String(sub).toLowerCase();
+    if(s.includes('math')) return { icon: 'fa-calculator', color: 'text-blue-500', bg: 'bg-blue-50' };
+    if(s.includes('physic')) return { icon: 'fa-atom', color: 'text-purple-500', bg: 'bg-purple-50' };
+    if(s.includes('chemist')) return { icon: 'fa-flask', color: 'text-emerald-500', bg: 'bg-emerald-50' };
+    if(s.includes('english') || s.includes('vocab')) return { icon: 'fa-book-open', color: 'text-rose-500', bg: 'bg-rose-50' };
+    if(s.includes('reasoning') || s.includes('logic')) return { icon: 'fa-brain', color: 'text-amber-500', bg: 'bg-amber-50' };
+    if(s.includes('gk') || s.includes('knowledge')) return { icon: 'fa-globe', color: 'text-cyan-500', bg: 'bg-cyan-50' };
+    return { icon: 'fa-graduation-cap', color: 'text-indigo-500', bg: 'bg-indigo-50' }; 
+}
+
+// 4. MAIN RENDER ENGINE
+window.renderVideoFeed = function() {
+    const container = document.getElementById('vh-dynamic-container');
+    const titleEl = document.getElementById('vh-header-title');
+    const subEl = document.getElementById('vh-header-subtitle');
+    if (!container) return;
+
+    let vids = (window.videosDB || []).filter(v => v.title && v.subject); 
+    // Sorts by the new custom order first, falling back to time uploaded
+    vids.sort((a, b) => (a.sortIndex ?? a.timestamp) - (b.sortIndex ?? b.timestamp));;
+
+    if (vids.length === 0) {
+        container.innerHTML = `<div class="text-center py-10"><div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3"><i class="fa-solid fa-box-open text-gray-400 text-2xl"></i></div><p class="text-sm text-gray-500 font-bold">No batches assigned yet.</p></div>`;
+        return;
+    }
+
+    if (window.currentVideoSearch) {
+        vids = vids.filter(v => {
+            const titleStr = v.title ? String(v.title).toLowerCase() : "";
+            const topicStr = v.topic ? String(v.topic).toLowerCase() : "";
+            const searchStr = String(window.currentVideoSearch).toLowerCase();
+            return titleStr.includes(searchStr) || topicStr.includes(searchStr);
+        });
+    }
+
+    if (window.vhState.view === 'subjects') {
+        titleEl.innerText = "My Classes";
+        subEl.innerText = "Select a Subject";
+        renderVHSubjects(vids, container);
+    } 
+    else if (window.vhState.view === 'topics') {
+        titleEl.innerText = window.vhState.subject || "Subject";
+        subEl.innerText = "Select a Chapter";
+        renderVHTopics(vids.filter(v => v.subject === window.vhState.subject), container);
+    } 
+    else if (window.vhState.view === 'lectures') {
+        titleEl.innerText = window.vhState.topic || "Topic";
+        subEl.innerText = "Chapter Lectures";
+        renderVHLectures(vids.filter(v => v.subject === window.vhState.subject && v.topic === window.vhState.topic), container);
+    }
+};
+
+// 4.1 RENDER: SUBJECTS (GRID)
+function renderVHSubjects(vids, container) {
+    const uniqueSubjects = [...new Set(vids.map(v => v.subject))];
+    let html = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">';
+    
+    uniqueSubjects.forEach(sub => {
+        const subVids = vids.filter(v => v.subject === sub);
+        const watchedCount = subVids.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length;
+        const totalCount = subVids.length;
+        const perc = totalCount > 0 ? Math.round((watchedCount / totalCount) * 100) : 0;
+        const theme = getSubjectIcon(sub);
+
+        html += `
+        <div onclick="window.openVHSubject('${String(sub).replace(/'/g, "\\'")}')" class="bg-white rounded-[1.5rem] p-4 sm:p-5 shadow-sm border border-gray-200 hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer flex flex-col items-center text-center group">
+            <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl ${theme.bg} flex justify-center items-center ${theme.color} text-2xl sm:text-3xl mb-3 group-hover:scale-110 transition-transform">
+                <i class="fa-solid ${theme.icon}"></i>
+            </div>
+            <h3 class="font-black text-gray-900 text-sm sm:text-base leading-tight w-full truncate px-1">${sub}</h3>
+            <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-1 uppercase tracking-widest">${totalCount} Lectures</p>
+            <div class="w-full mt-3 flex items-center gap-2 px-2">
+                <div class="flex-1 bg-gray-100 h-1.5 rounded-full overflow-hidden">
+                    <div class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: ${perc}%"></div>
+                </div>
+            </div>
+        </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// 4.2 RENDER: TOPICS (GRID)
+function renderVHTopics(vids, container) {
+    const uniqueTopics = [...new Set(vids.map(v => v.topic))];
+    let html = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">';
+
+    uniqueTopics.forEach((top, idx) => {
+        const topVids = vids.filter(v => v.topic === top);
+        const watchedCount = topVids.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length;
+        const totalCount = topVids.length;
+        const isComplete = watchedCount === totalCount && totalCount > 0;
+        const perc = totalCount > 0 ? Math.round((watchedCount / totalCount) * 100) : 0;
+
+        const folderIcon = isComplete ? 'fa-folder-check text-emerald-500' : 'fa-folder text-blue-500';
+        const progressColor = isComplete ? 'bg-emerald-500' : 'bg-gradient-to-r from-blue-400 to-blue-500';
+
+        html += `
+        <div onclick="window.openVHTopic('${String(top).replace(/'/g, "\\'")}')" class="bg-white p-4 sm:p-5 rounded-[1.5rem] flex flex-col items-center justify-center text-center cursor-pointer hover:-translate-y-1 hover:shadow-xl transition-all duration-300 border border-gray-200/60 shadow-sm group relative overflow-hidden">
+            
+            ${isComplete ? `<button onclick="event.stopPropagation(); window.resetTopicProgress('${window.vhState.subject}', '${String(top).replace(/'/g, "\\'")}')" class="absolute top-2 right-2 w-7 h-7 bg-emerald-50 text-emerald-600 hover:bg-red-50 hover:text-red-600 rounded-full flex items-center justify-center transition-colors shadow-sm" title="Reset Topic Progress"><i class="fa-solid fa-rotate-left text-[10px]"></i></button>` : ''}
+
+            <div class="relative z-10 w-full flex flex-col items-center mt-2">
+                <i class="fa-solid ${folderIcon} text-5xl sm:text-6xl mb-3 drop-shadow-sm group-hover:scale-110 transition-transform duration-300"></i>
+                <h3 class="font-black text-gray-900 text-xs sm:text-sm leading-tight break-words mb-1 line-clamp-2 px-1">${top}</h3>
+                <p class="text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">${totalCount} Lectures</p>
+                
+                <!-- Progress Bar inside Folder -->
+                <div class="w-full mx-auto px-1 mt-auto">
+                    <div class="flex justify-between text-[8px] font-black text-gray-400 mb-1.5 uppercase tracking-widest">
+                        <span>Progress</span>
+                        <span class="${isComplete ? 'text-emerald-500' : 'text-gray-500'}">${perc}%</span>
+                    </div>
+                    <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                        <div class="h-full ${progressColor} rounded-full transition-all duration-500" style="width: ${perc}%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// 4.3 RENDER: LECTURES (WITH ARROWS & DRAG-DROP)
+function renderVHLectures(vids, container) {
+    let html = '';
+    vids.forEach((vid, idx) => {
+        const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
+        const isAdmin = window.currentRole === 'admin';
+
+        // NEW: Adds Edit Pen Icon next to the Trash Can
+        const adminActions = isAdmin ? `
+            <div class="absolute top-2 right-2 flex gap-1.5 z-20">
+                <button onclick="event.stopPropagation(); window.openEditVideo('${vid.id}')" class="w-7 h-7 bg-white/90 text-indigo-600 rounded-full flex items-center justify-center hover:scale-110 hover:bg-indigo-600 hover:text-white transition-all shadow-md"><i class="fa-solid fa-pen text-[10px]"></i></button>
+                <button onclick="event.stopPropagation(); deleteVideo('${vid.id}')" class="w-7 h-7 bg-red-600/90 text-white rounded-full flex items-center justify-center hover:scale-110 transition-transform shadow-md"><i class="fa-solid fa-trash text-[10px]"></i></button>
+            </div>
+        ` : '';
+
+        // NEW: Advanced Admin Control Bar (Up Arrow, Drag Grip, Down Arrow)
+        const adminControls = isAdmin ? `
+        <div class="absolute left-0 top-0 bottom-0 w-8 sm:w-10 bg-gray-50 flex flex-col items-center justify-between rounded-l-2xl border-r border-gray-200 z-10 text-gray-400 overflow-hidden">
+            <button onclick="event.stopPropagation(); window.moveVideoDirectly('${vid.id}', -1)" class="w-full py-1.5 hover:bg-indigo-100 hover:text-indigo-600 transition-colors active:bg-indigo-200" title="Move Up"><i class="fa-solid fa-caret-up text-[12px]"></i></button>
+            <div class="drag-grip flex-1 flex items-center justify-center w-full cursor-grab active:cursor-grabbing hover:bg-indigo-50 hover:text-indigo-500 transition-colors" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
+            <button onclick="event.stopPropagation(); window.moveVideoDirectly('${vid.id}', 1)" class="w-full py-1.5 hover:bg-indigo-100 hover:text-indigo-600 transition-colors active:bg-indigo-200" title="Move Down"><i class="fa-solid fa-caret-down text-[12px]"></i></button>
+        </div>` : '';
+
+        html += `
+        <div class="video-item flex gap-3 bg-white p-2 sm:p-3 rounded-2xl border ${isWatched ? 'border-emerald-200' : 'border-gray-200'} shadow-sm hover:shadow-md transition-all group relative ${isAdmin ? 'pl-10 sm:pl-12' : 'cursor-pointer'}" ${!isAdmin ? `onclick="window.playVideo('${vid.id}')"` : ''} data-id="${vid.id}">
+            ${adminControls}
+            <div class="relative w-32 sm:w-40 aspect-video shrink-0 bg-gray-900 rounded-xl overflow-hidden border border-gray-100 cursor-pointer" onclick="window.playVideo('${vid.id}')">
+                <img src="${vid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity">
+                ${isWatched ? `<div class="absolute inset-0 bg-emerald-900/60 backdrop-blur-[1px] flex items-center justify-center"><i class="fa-solid fa-check text-white text-2xl drop-shadow-md"></i></div>` : ''}
+                ${!isWatched ? `<div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><div class="w-10 h-10 rounded-full bg-indigo-600/90 text-white flex items-center justify-center shadow-lg"><i class="fa-solid fa-play ml-1"></i></div></div>` : ''}
+                <span class="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">Lec ${idx + 1}</span>
+                ${adminActions}
+            </div>
+            <div class="flex-1 flex flex-col justify-center min-w-0 pr-1 py-1 cursor-pointer" onclick="window.playVideo('${vid.id}')">
+                <h4 class="font-bold text-gray-900 text-xs sm:text-sm leading-snug line-clamp-2 group-hover:text-indigo-700 transition-colors">${vid.title}</h4>
+                <div class="flex items-center gap-2 mt-2">
+                    <span class="text-[9px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex items-center gap-1"><i class="fa-brands ${vid.videoType === 'youtube' ? 'fa-youtube text-red-500' : 'fa-google-drive text-blue-500'}"></i> ${vid.videoType === 'youtube' ? 'YouTube' : 'Drive'}</span>
+                </div>
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+
+    // Initialize Sortable JS (Restricted to the middle grip icon)
+    if (window.currentRole === 'admin') {
+        new Sortable(container, {
+            handle: '.drag-grip', // IMPORTANT: Only the middle icon drags, arrows just click!
+            animation: 250,
+            ghostClass: 'opacity-40',
+            onEnd: function (evt) {
+                window.saveNewVideoOrder();
+            }
+        });
+    }
+}
+
+// 4.4 NEW: SAVE DRAGGED ORDER TO DATABASE
+window.saveNewVideoOrder = async function() {
+    const container = document.getElementById('vh-dynamic-container');
+    const items = container.querySelectorAll('.video-item');
+    
+    showLoader("Saving New Order...");
+    
+    const updates = [];
+    items.forEach((item, index) => {
+        const vidId = item.getAttribute('data-id');
+        const vid = window.videosDB.find(v => v.id === vidId);
+        if (vid && vid.sortIndex !== index) {
+            vid.sortIndex = index; // Update local array immediately
+            updates.push({ id: vidId, sortIndex: index });
+        }
+    });
+
+    if (isFirebaseConfigured && updates.length > 0) {
+        try {
+            // Update all moved videos in Firebase simultaneously
+            const updatePromises = updates.map(u => updateDoc(doc(db, "videos", u.id), { sortIndex: u.sortIndex }));
+            await Promise.all(updatePromises);
+        } catch(e) {
+            console.error("Error saving video order", e);
+        }
+    }
+    
+    hideLoader();
+    window.renderVideoFeed(); // Re-render to fix the "Lec 1", "Lec 2" tags
+};
+
+
+        // 4.5 NEW: MOVE VIDEO UP OR DOWN VIA ARROW BUTTONS
+window.moveVideoDirectly = async function(vidId, direction) {
+    // Get all videos in the current chapter
+    let topicVids = window.videosDB.filter(v => v.subject === window.vhState.subject && v.topic === window.vhState.topic);
+    
+    // Sort them exactly as they appear on screen
+    topicVids.sort((a, b) => (a.sortIndex ?? a.timestamp) - (b.sortIndex ?? b.timestamp));
+    
+    const currentIndex = topicVids.findIndex(v => v.id === vidId);
+    if (currentIndex === -1) return;
+    
+    const targetIndex = currentIndex + direction; // -1 for Up, +1 for Down
+    
+    // Prevent moving above the top or below the bottom
+    if (targetIndex < 0 || targetIndex >= topicVids.length) return;
+    
+    // Swap the elements in our array
+    const temp = topicVids[currentIndex];
+    topicVids[currentIndex] = topicVids[targetIndex];
+    topicVids[targetIndex] = temp;
+    
+    showLoader("Reordering...");
+    
+    const updates = [];
+    
+    // Re-assign the precise index to all videos in this chapter
+    topicVids.forEach((vid, newIndex) => {
+        const originalVid = window.videosDB.find(v => v.id === vid.id);
+        if (originalVid) {
+            originalVid.sortIndex = newIndex; // Update local array immediately
+            updates.push({ id: vid.id, sortIndex: newIndex });
+        }
+    });
+
+    // Save the new order block to Firebase
+    if (isFirebaseConfigured && updates.length > 0) {
+        try {
+            const updatePromises = updates.map(u => updateDoc(doc(db, "videos", u.id), { sortIndex: u.sortIndex }));
+            await Promise.all(updatePromises);
+        } catch(e) {
+            console.error("Error saving video order", e);
+        }
+    }
+    
+    hideLoader();
+    window.renderVideoFeed(); // Instantly update the UI
+};
+// 5. RESET TOPIC PROGRESS
+window.resetTopicProgress = async function(subject, topic) {
+    if(!confirm(`Reset your progress for "${topic}"?`)) return;
+    showLoader("Resetting...");
+    const topicVids = window.videosDB.filter(v => v.topic === topic && v.subject === subject);
+    for(let vid of topicVids) {
+        let watchedList = vid.watchedBy || [];
+        if (watchedList.includes(window.loggedInMobile)) {
+            watchedList = watchedList.filter(m => m !== window.loggedInMobile);
+            if (isFirebaseConfigured) await updateDoc(doc(db, "videos", vid.id), { watchedBy: watchedList });
+            else vid.watchedBy = watchedList;
+        }
+    }
+    hideLoader();
+    window.renderVideoFeed();
+};
+
+window.deleteVideo = async function(id) {
+    if(!confirm("Delete this lecture permanently?")) return;
+    if(isFirebaseConfigured) await deleteDoc(doc(db, "videos", id));
+    else { window.videosDB = window.videosDB.filter(v => v.id !== id); window.renderVideoFeed(); }
+};
+
+// ==========================================
+// NATIVE IFRAME PLAYER CONTROLLER
+// ==========================================
+window.playVideo = async function(id) {
+    const vid = window.videosDB.find(v => v.id === id);
+    if(!vid) return;
+
+    window.currentWatchVideoId = id;
+    const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
+    window.updateWatchedButtonUI(isWatched);
+    
+    // Check if downloaded offline and update UI
+    const isDownloaded = await window.checkIsOffline(`exama_video_${id}`);
+    window.updateDownloadBtnUI(isDownloaded);
+
+    document.getElementById('watch-header-title').innerText = vid.topic || "Now Playing";
+    document.getElementById('watch-title').innerText = vid.title;
+    document.getElementById('watch-subject').innerText = vid.subject;
+    document.getElementById('watch-topic').innerText = vid.topic;
+    document.getElementById('watch-uploader').innerText = vid.uploader || 'Faculty';
+
+    const container = document.getElementById('native-player-container');
+    if (window.vjsPlayer) { window.vjsPlayer.dispose(); window.vjsPlayer = null; }
+    container.innerHTML = `<video id="exama-video-js" class="video-js vjs-default-skin w-full h-full absolute inset-0" controls preload="auto" playsinline></video>`;
+
+    const vjsOptions = {
+        autoplay: true, fluid: false, responsive: true,
+        playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+        userActions: { hotkeys: true },
+        controlBar: {
+            playToggle: true, volumePanel: { inline: false }, currentTimeDisplay: true,
+            timeDivider: true, durationDisplay: true, progressControl: true, liveDisplay: true,
+            playbackRateMenuButton: true, pictureInPictureToggle: true, fullscreenToggle: true
+        }
+    };
+
+    // 🔥 OFFLINE PLAYBACK LOGIC 🔥
+    if (isDownloaded) {
+        const localBlob = await localforage.getItem(`exama_video_${id}`);
+        const blobUrl = URL.createObjectURL(localBlob);
+        window.vjsPlayer = videojs('exama-video-js', { ...vjsOptions, sources: [{ type: "video/mp4", src: blobUrl }] });
+        window.showToast("Offline Mode ⚡", "Playing lecture from device storage.", "info");
+    } 
+    else if (vid.videoType === 'youtube') {
+        window.vjsPlayer = videojs('exama-video-js', { ...vjsOptions, techOrder: ["youtube"], sources: [{ type: "video/youtube", src: vid.sourceUrl }] });
+    } else {
+        let dId = ""; const match = vid.sourceUrl.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/); if (match) dId = match[1];
+        const proxyUrl = `https://exama-video-proxy.connect-subhankar-info.workers.dev/?id=${dId}&ext=.mp4`;
+        window.vjsPlayer = videojs('exama-video-js', { ...vjsOptions, sources: [{ type: "video/mp4", src: proxyUrl }] });
+        
+        window.vjsPlayer.on('error', function() {
+            if (window.vjsPlayer) { window.vjsPlayer.dispose(); window.vjsPlayer = null; }
+            const fallbackContainer = document.getElementById('native-player-container');
+            if(fallbackContainer) fallbackContainer.innerHTML = `<iframe src="https://drive.google.com/file/d/${dId}/preview" class="w-full h-full border-0 relative z-10" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+        });
+    }
+
+    window.vjsPlayer.ready(function() {
+        this.el().focus = function() {};
+        const fsToggle = this.controlBar.getChild('fullscreenToggle');
+        if (fsToggle) {
+            fsToggle.off('click'); fsToggle.off('tap');
+            const customFsHandler = function(e) { e.preventDefault(); e.stopPropagation(); window.toggleVideoFullscreen(); };
+            fsToggle.on('click', customFsHandler); fsToggle.on('tap', customFsHandler);
+        }
+        this.tech_.off('dblclick');
+        this.on('dblclick', function(e) { e.preventDefault(); window.toggleVideoFullscreen(); });
+    });
+
+    window.renderUpNext(vid);
+    window.location.hash = 'watch-video';
+};
+window.closeWatchView = function() {
+    const container = document.getElementById('native-player-container');
+    
+    // Safety check: If clicked while in CSS fullscreen, just exit fullscreen
+    if (container && container.classList.contains('fixed')) {
+        window.toggleVideoFullscreen();
+        return;
+    }
+
+    // Destroy Video.js to stop audio & clear memory
+    if (window.vjsPlayer) {
+        window.vjsPlayer.dispose();
+        window.vjsPlayer = null;
+    }
+    
+    if (container) {
+        container.innerHTML = ''; 
+        // Remove fullscreen classes AND clear rotation styles
+        container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
+        container.style.width = '';
+        container.style.height = '';
+        container.style.transformOrigin = '';
+        container.style.transform = '';
+        
+        // Restore perfect 16:9 ratio
+        container.classList.add('aspect-video', 'relative');
+    }
+    
+    if (typeof window.renderVideoFeed === 'function') window.renderVideoFeed(); 
+    safeBack(); 
+};
+// ==========================================
+// HYBRID FULLSCREEN ENGINE (NATIVE TABLET + CSS MOBILE)
+// ==========================================
+
+window.updateCSSFullscreenLayout = function() {
+    const container = document.getElementById('native-player-container');
+    if (!container || !container.classList.contains('fixed')) return;
+
+    const isMobileSize = window.innerWidth < 768;
+    const isPortrait = window.innerHeight > window.innerWidth;
+
+    if (isMobileSize) {
+        if (isPortrait) {
+            // 📱 Phone in PORTRAIT: Force CSS rotation to fake landscape
+            container.style.width = window.innerHeight + 'px';
+            container.style.height = window.innerWidth + 'px';
+            container.style.transformOrigin = 'top left';
+            container.style.transform = 'translateY(100vh) rotate(-90deg)';
+        } else {
+            // 📱 Phone in LANDSCAPE: Remove CSS rotation and just fill screen
+            container.style.width = '100vw';
+            container.style.height = '100dvh';
+            container.style.transformOrigin = '';
+            container.style.transform = 'none';
+        }
+    }
+};
+
+// 👂 Listen for physical screen rotations
+window.addEventListener('resize', window.updateCSSFullscreenLayout);
+window.addEventListener('orientationchange', function() {
+    setTimeout(window.updateCSSFullscreenLayout, 150); 
 });
+
+window._enterCSSFullscreen = function() {
+    const container = document.getElementById('native-player-container');
+    const videoApi = document.querySelector('.video-js video'); 
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
+    // Check if device is a Tablet/Desktop
+    const isTabletOrDesktop = window.innerWidth >= 768;
+
+    if (isIOS && videoApi && videoApi.webkitEnterFullscreen) {
+        videoApi.webkitEnterFullscreen(); 
+    } else if (isTabletOrDesktop) {
+        // 🖥️ TABLET/DESKTOP: Use Native API to maximize video over the Status Bar!
+        if (container.requestFullscreen) container.requestFullscreen();
+        else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
+        else if (container.msRequestFullscreen) container.msRequestFullscreen();
+        
+        try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{}); } catch (err) {}
+    } else {
+        // 📱 MOBILE: Use pure CSS to avoid conflicting with the App's global Fullscreen
+        container.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
+        container.classList.remove('aspect-video', 'relative'); 
+        
+        window.updateCSSFullscreenLayout();
+        
+        try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{}); } catch (err) {}
+    }
+    
+    if(window.vjsPlayer) window.vjsPlayer.isFullscreen(true); 
+};
+
+window._exitCSSFullscreen = function() {
+    const container = document.getElementById('native-player-container');
+    const videoApi = document.querySelector('.video-js video'); 
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isTabletOrDesktop = window.innerWidth >= 768;
+    
+    const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+
+    if (isIOS && videoApi && videoApi.webkitExitFullscreen) {
+        videoApi.webkitExitFullscreen();
+    } else if (isTabletOrDesktop && isNativeFullscreen) {
+        // 🖥️ TABLET/DESKTOP: Exit Native Video Fullscreen
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        else if (document.msExitFullscreen) document.msExitFullscreen();
+    } 
+    
+    // 🧹 ALWAYS RUN CSS CLEANUP (Safe for all devices)
+    container.classList.remove('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
+    container.style.width = '';
+    container.style.height = '';
+    container.style.transformOrigin = '';
+    container.style.transform = '';
+    container.classList.add('aspect-video', 'relative'); 
+    
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (err) {}
+    
+    if(window.vjsPlayer) window.vjsPlayer.isFullscreen(false); 
+};
+
+window.toggleVideoFullscreen = function() {
+    const container = document.getElementById('native-player-container');
+    if(!container) return;
+
+    const isCSSFullscreen = container.classList.contains('fixed');
+    const isTabletOrDesktop = window.innerWidth >= 768;
+    const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    
+    // Determine if the video is currently maximized based on device type
+    let isCurrentlyMaximized = false;
+    if (isTabletOrDesktop) {
+        isCurrentlyMaximized = isNativeFullscreen;
+    } else {
+        isCurrentlyMaximized = isCSSFullscreen;
+    }
+    
+    if (!isCurrentlyMaximized) {
+        // PUSH dummy history state for Mobile Android Back Button
+        if (!isTabletOrDesktop) history.pushState({ isVideoFullscreen: true }, "");
+        window._enterCSSFullscreen();
+    } else {
+        // TRIGGER Back to safely shrink video on Mobile, or manually exit on Tablet
+        if (!isTabletOrDesktop && isCSSFullscreen) {
+            history.back(); // This safely calls _exitCSSFullscreen via the popstate listener
+        } else {
+            window._exitCSSFullscreen();
+        }
+    }
+};
+
+// 🛡️ MOBILE RESCUE: Hardware Back Button
+window.addEventListener('popstate', function(event) {
+    const container = document.getElementById('native-player-container');
+    if (container && container.classList.contains('fixed')) {
+        window._exitCSSFullscreen();
+    }
+});
+
+// 🛡️ TABLET RESCUE: Listen for Desktop ESC key or Tablet UI exit
+document.addEventListener('fullscreenchange', syncNativeFullscreenExit);
+document.addEventListener('webkitfullscreenchange', syncNativeFullscreenExit);
+
+function syncNativeFullscreenExit() {
+    const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!isNativeFullscreen) {
+        window._exitCSSFullscreen();
+        
+        // 🔥 THE AGGRESSIVE REFLOW HACK: Forces Android Tablet to restore the Status Bar gap cleanly!
+        setTimeout(() => {
+            const appFrame = document.getElementById('app');
+            if (appFrame) {
+                appFrame.style.height = '99dvh'; 
+                window.scrollTo(0, 1);
+                
+                setTimeout(() => {
+                    appFrame.style.height = '100dvh';
+                    window.dispatchEvent(new Event('resize'));
+                    window.scrollTo(0, 0);
+                }, 50);
+            }
+        }, 150);
+    }
+}
+
+ 
+
+window.renderUpNext = function(currentVid) {
+    const relatedList = document.getElementById('watch-related-list');
+    const progressText = document.getElementById('topic-progress-text');
+    
+    // Fetch all videos in this topic
+    let topicVideos = window.videosDB.filter(v => v.topic === currentVid.topic && v.subject === currentVid.subject);
+    
+    // SORT BY ADMIN CUSTOM INDEX
+    topicVideos.sort((a, b) => (a.sortIndex ?? a.timestamp) - (b.sortIndex ?? b.timestamp)); 
+    
+    // Find all UNWATCHED videos EXCEPT the currently playing one
+    const unwatched = topicVideos.filter(v => !(v.watchedBy || []).includes(window.loggedInMobile) && v.id !== currentVid.id);
+    const watchedCount = topicVideos.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length;
+    
+    progressText.innerText = `${watchedCount}/${topicVideos.length} Done`;
+
+    // Empty state if user finished the topic
+    if (unwatched.length === 0) {
+        relatedList.innerHTML = `
+        <div class="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-6 text-center shadow-inner mt-2">
+            <div class="w-14 h-14 bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-md border border-emerald-100">
+                <i class="fa-solid fa-trophy text-emerald-500 text-2xl"></i>
+            </div>
+            <h3 class="text-emerald-800 font-black text-base sm:text-lg mb-1 leading-tight">Topic Completed! 🎉</h3>
+            <p class="text-[10px] sm:text-xs text-emerald-600 font-bold mb-4 leading-tight">You've finished all lectures in "${currentVid.topic}".</p>
+            <button onclick="window.closeWatchView()" class="bg-emerald-600 text-white font-black px-6 py-3 rounded-xl active:scale-95 shadow-lg shadow-emerald-500/30 w-full text-xs sm:text-sm transition-transform">Return to Folders</button>
+        </div>`;
+        return;
+    }
+
+    // Render ALL unwatched videos in the correct order
+    let playlistHtml = '';
+    
+    unwatched.forEach((upNextVid, index) => {
+        const platformIcon = upNextVid.videoType === 'youtube' ? '<i class="fa-brands fa-youtube text-red-500"></i>' : '<i class="fa-brands fa-google-drive text-blue-500"></i>';
+        const badge = index === 0 ? `<span class="absolute top-1.5 left-1.5 bg-blue-500 text-white text-[7px] sm:text-[8px] font-black px-2 py-0.5 rounded-sm shadow-md uppercase tracking-widest z-10 border border-blue-400">Play Next</span>` : '';
+        const highlightBorder = index === 0 ? 'border-blue-300 bg-blue-50/50 shadow-md' : 'border-gray-200 bg-white hover:bg-gray-50';
+        const borderIndicator = index === 0 ? '<div class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 z-10"></div>' : '';
+
+        playlistHtml += `
+        <div class="flex gap-2.5 sm:gap-3 items-start p-2.5 sm:p-3 rounded-xl shadow-sm border cursor-pointer transition-all group relative overflow-hidden ${highlightBorder}" onclick="window.playVideo('${upNextVid.id}')">
+            ${borderIndicator}
+            <div class="relative w-28 sm:w-32 aspect-video shrink-0 bg-gray-900 rounded-lg overflow-hidden border border-gray-200 ${index === 0 ? 'ml-1' : ''}">
+                ${badge}
+                <img src="${upNextVid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity">
+                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
+                    <div class="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-600/90 rounded-full flex items-center justify-center text-white shadow-md">
+                        <i class="fa-solid fa-play ml-0.5 text-xs sm:text-sm"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="min-w-0 pr-1 py-0.5 flex flex-col h-full w-full">
+                <h4 class="font-bold text-gray-900 text-xs sm:text-[13px] leading-snug line-clamp-2 break-words group-hover:text-indigo-600 transition-colors">${upNextVid.title}</h4>
+                <div class="mt-auto pt-1 flex items-center gap-1.5">
+                    <span class="text-[8px] sm:text-[9px] font-bold text-gray-500 bg-white border border-gray-200 px-1.5 py-0.5 rounded-md flex items-center gap-1 w-max shadow-sm">${platformIcon} ${upNextVid.videoType === 'youtube' ? 'YouTube' : 'Drive'}</span>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    relatedList.innerHTML = playlistHtml;
+};
+
+window.playNextInTopic = function(currentVid) {
+    let topicVideos = window.videosDB.filter(v => v.topic === currentVid.topic && v.subject === currentVid.subject);
+    topicVideos.sort((a, b) => a.timestamp - b.timestamp); 
+    const currentIndex = topicVideos.findIndex(v => v.id === currentVid.id);
+    if (currentIndex > -1 && currentIndex < topicVideos.length - 1) {
+        window.playVideo(topicVideos[currentIndex + 1].id);
+    }
+};
+
+window.updateWatchedButtonUI = function(isWatched) {
+    const btn = document.getElementById('btn-mark-watched');
+    const icon = document.getElementById('icon-watched');
+    const text = document.getElementById('text-watched');
+
+    if (isWatched) {
+        btn.className = "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-emerald-200";
+        icon.className = "fa-solid fa-circle-check mr-1.5";
+        text.innerText = "Completed";
+    } else {
+        btn.className = "bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg flex items-center justify-center transition-all active:scale-90 shadow-sm text-[10px] sm:text-xs font-black tracking-wide border border-gray-200";
+        icon.className = "fa-regular fa-circle mr-1.5";
+        text.innerText = "Mark Completed";
+    }
+};
+
+window.toggleVideoWatched = async function() {
+    if (window.currentRole === 'admin') return alert("Only students can mark videos.");
+    if (!window.currentWatchVideoId) return;
+
+    const vid = window.videosDB.find(v => v.id === window.currentWatchVideoId);
+    if (!vid) return;
+
+    let watchedList = vid.watchedBy || [];
+    const isWatched = watchedList.includes(window.loggedInMobile);
+
+    if (isWatched) watchedList = watchedList.filter(m => m !== window.loggedInMobile);
+    else watchedList.push(window.loggedInMobile);
+
+    window.updateWatchedButtonUI(!isWatched);
+
+    if (isFirebaseConfigured) await updateDoc(doc(db, "videos", vid.id), { watchedBy: watchedList });
+    else vid.watchedBy = watchedList;
+    
+    window.renderUpNext(vid); 
+    if (!isWatched) window.playNextInTopic(vid);
+};
+
+     
+     // --- 2. LEADERBOARD NEW SUB-TAB LOGIC ---
+        window.lbMainTab = 'score';
+        window.lbSubTab = 'weekly';
+
+        window.switchLbMainTab = function(tab) { 
+    window.lbMainTab = tab; 
+    document.getElementById('lb-main-score').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all whitespace-nowrap px-2 ${tab === 'score' ? 'segment-active' : 'segment-inactive'}`; 
+    document.getElementById('lb-main-study').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all whitespace-nowrap px-2 ${tab === 'study' ? 'segment-active' : 'segment-inactive'}`; 
+    document.getElementById('lb-main-target').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all whitespace-nowrap px-2 ${tab === 'target' ? 'segment-active' : 'segment-inactive'}`; 
+    document.getElementById('lb-main-fitness').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all whitespace-nowrap px-2 ${tab === 'fitness' ? 'segment-active' : 'segment-inactive'}`; 
+    
+    const wkBtn = document.getElementById('lb-sub-weekly');
+    const totBtn = document.getElementById('lb-sub-total');
+    
+    let activeColor = 'text-indigo-600 bg-indigo-50 border-indigo-100'; // Defaults for 'score'
+    if(tab === 'study') activeColor = 'text-teal-600 bg-teal-50 border-teal-100';
+    if(tab === 'target') activeColor = 'text-purple-600 bg-purple-50 border-purple-100';
+    if(tab === 'fitness') activeColor = 'text-rose-600 bg-rose-50 border-rose-100'; // New Fitness Theme
+    
+    if(window.lbSubTab === 'weekly') {
+        wkBtn.className = `px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-md sm:rounded-lg transition-all shadow-sm border ${activeColor}`;
+        totBtn.className = "px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest rounded-md sm:rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
+    } else {
+        totBtn.className = `px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-md sm:rounded-lg transition-all shadow-sm border ${activeColor}`;
+        wkBtn.className = "px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest rounded-md sm:rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
+    }
+    renderLeaderboard(); 
+}
+
+window.switchLbSubTab = function(tab) { 
+    window.lbSubTab = tab; 
+    const wkBtn = document.getElementById('lb-sub-weekly');
+    const totBtn = document.getElementById('lb-sub-total');
+    
+    let activeColor = 'text-indigo-600 bg-indigo-50 border-indigo-100';
+    if(window.lbMainTab === 'study') activeColor = 'text-teal-600 bg-teal-50 border-teal-100';
+    if(window.lbMainTab === 'target') activeColor = 'text-purple-600 bg-purple-50 border-purple-100';
+    if(window.lbMainTab === 'fitness') activeColor = 'text-rose-600 bg-rose-50 border-rose-100'; // New Fitness Theme
+
+    if(tab === 'weekly') {
+        wkBtn.className = `px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-md sm:rounded-lg transition-all shadow-sm border ${activeColor}`;
+        totBtn.className = "px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest rounded-md sm:rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
+    } else {
+        totBtn.className = `px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-md sm:rounded-lg transition-all shadow-sm border ${activeColor}`;
+        wkBtn.className = "px-4 sm:px-6 py-1.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest rounded-md sm:rounded-lg text-gray-500 hover:text-gray-800 transition-all border border-transparent";
+    }
+    renderLeaderboard(); 
+}
+       
+        // --- HELPER: MON-SUN WEEK CALCULATOR ---
+       window.getWeeklyRange = function(d = new Date()) {
+    const date = new Date(d);
+    date.setHours(0, 0, 0, 0);
+
+    const day = date.getDay();
+    // Adjust so Monday is day 0 and Sunday is day 6
+    const diffToMon = date.getDate() - day + (day === 0 ? -6 : 1);
+    
+    const monday = new Date(date.setDate(diffToMon));
+    monday.setHours(0, 0, 0, 0);
+    
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    
+    return { 
+        mondayMs: monday.getTime(), 
+        sundayMs: sunday.getTime() 
+    };
+};
+
+        // GLOBAL CHART UPDATER
+        window.updateChart = function(canvasId, instance, labels, data, statuses, saveInstanceCB) {
+            const ctx = document.getElementById(canvasId).getContext('2d'); if(instance) instance.destroy(); 
+            let passGrad = ctx.createLinearGradient(0, 0, 0, 400); passGrad.addColorStop(0, '#4f46e5'); passGrad.addColorStop(1, '#818cf8');
+            let failGrad = ctx.createLinearGradient(0, 0, 0, 400); failGrad.addColorStop(0, '#ef4444'); failGrad.addColorStop(1, '#f87171');
+            const newInst = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ data: data, backgroundColor: c => statuses[c.dataIndex] === 'PASS' ? passGrad : failGrad, borderRadius: 8, barPercentage: 0.6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { max: 100, ticks: { display: false }, grid: { drawBorder: false } }, x: { grid: { display: false }, ticks: { font: { size: 9, family: "'Inter', sans-serif" } } } }, animation: { y: { duration: 1000, easing: 'easeOutQuart' } } } });
+            saveInstanceCB(newInst);
+        };
+
+        function startTimerEngine() {
+            if(globalTimerInterval) clearInterval(globalTimerInterval);
+            globalTimerInterval = setInterval(() => { if (window.activeExamId) updateActiveTimerDisplay(); }, 1000);
+        }
+
+        window.addEventListener('hashchange', handleHashChange);
+        
+        // --- GLOBAL DATE FORMATTER ---
+        window.formatDateDDMMYYYY = function(dateObj = new Date()) {
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const y = dateObj.getFullYear();
+            return `${d}/${m}/${y}`;
+        };
+
+        let sessionTimerInterval = null; let sessionChartInstance = null; const TOTAL_SESSION_MS = 14400000; 
+
+        function formatTime(ms) {
+            if(ms < 0) ms = 0; const totalSecs = Math.floor(ms / 1000);
+            const h = String(Math.floor(totalSecs / 3600)).padStart(2, '0'); const m = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0'); const s = String(totalSecs % 60).padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        window.toggleSessionState = async function(action) {
+            const mobile = window.loggedInMobile; const dateStr = window.formatDateDDMMYYYY(); let sessionType = '';
+            if(action === 'START' || action === 'ABSENT') {
+                const selectEl = document.getElementById('session-type-select'); if(!selectEl || !selectEl.value) return alert("Please select a session first!");
+                sessionType = selectEl.value;
+            } else {
+                const active = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK' || s.status === 'OVERTIME_PAUSE'));
+                if(active) sessionType = active.sessionType; else return;
+            }
+
+            showLoader("Updating Session..."); const id = `${mobile}_${dateStr.replace(/\//g,'-')}_${sessionType.split(' ')[0]}`;
+            let existing = window.sessionsDB.find(s => s.id === id); const now = Date.now();
+            
+            if (action === 'START' && existing && existing.status === 'COMPLETED') { existing.totalStudyMs = 0; existing.totalBreakMs = 0; existing.status = 'STUDYING'; existing.lastToggleTime = now; existing.overtimePrompted = false; }
+            if (!existing) {
+                existing = { id, mobile, dateStr, sessionType, name: window.studentsDB.find(s => s.mobile === mobile).name, status: action === 'START' ? 'STUDYING' : 'ABSENT', lastToggleTime: now, totalStudyMs: 0, totalBreakMs: 0, timestamp: now, logs: [{ action: action, time: now }], overtimePrompted: false };
+            } else {
+                const elapsed = now - existing.lastToggleTime;
+               if (existing.status === 'STUDYING') {
+    existing.totalStudyMs += elapsed;
+    
+    // NEW: Lock the timer exactly at 4 hours (14,400,000 ms) when the modal pops up
+    if (action === 'OVERTIME_PAUSE') {
+        existing.totalStudyMs = 14400000;
+    }
+}
+if (existing.status === 'BREAK') existing.totalBreakMs += elapsed;
+                
+                if (action === 'START' || action === 'RESUME') existing.status = 'STUDYING'; 
+                if (action === 'BREAK') existing.status = 'BREAK'; 
+                if (action === 'STOP') existing.status = 'COMPLETED'; 
+                if (action === 'ABSENT') existing.status = 'ABSENT';
+                if (action === 'OVERTIME_PAUSE') existing.status = 'OVERTIME_PAUSE';
+                
+                existing.lastToggleTime = now; if (!existing.logs) existing.logs = []; existing.logs.push({ action: action, time: now });
+            }
+
+            if (isFirebaseConfigured) await setDoc(doc(db, "sessions", id), existing); else { window.sessionsDB = window.sessionsDB.filter(s => s.id !== id); window.sessionsDB.push(existing); }
+            
+            const timeString = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); const sessionShortName = sessionType.split(' ')[0];
+            if (action === 'START') sendOneSignalPush("Focus Session Started 🚀", `${existing.name} started their ${sessionShortName} at ${timeString}.`);
+            else if (action === 'BREAK') sendOneSignalPush("Session Pause ☕", `${existing.name} took a break at ${timeString}.`);
+            else if (action === 'RESUME') sendOneSignalPush("Session Resumed ⚡", `${existing.name} resumed studying at ${timeString}.`);
+            else if (action === 'STOP') sendOneSignalPush("Session Ended 🏁", `${existing.name} ended their ${sessionShortName} at ${timeString}.`);
+            else if (action === 'OVERTIME_PAUSE') sendOneSignalPush("Goal Reached 🎯", `${existing.name} hit 4 hours of focus!`);
+            
+            hideLoader(); renderSessionTimer();
+        };
+
+        window.renderSessionTimer = function() {
+            if(sessionTimerInterval) clearInterval(sessionTimerInterval);
+            const mobile = window.loggedInMobile; const dateStr = window.formatDateDDMMYYYY();
+            let mySession = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK' || s.status === 'OVERTIME_PAUSE'));
+            const controlDiv = document.getElementById('session-controls');
+            
+            if (!mySession) {
+                document.getElementById('current-session-name').innerText = "Select a Session";
+                document.getElementById('st-study-time').className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words";
+                document.getElementById('st-study-time').innerText = "04:00:00"; document.getElementById('st-break-time').innerText = "00:00:00";
+                controlDiv.innerHTML = `<select id="session-type-select" class="w-full mb-3 sm:mb-4 px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-200 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm text-gray-700 outline-none cursor-pointer break-words"><option value="" disabled selected>-- Select Session to Start --</option><option value="Morning Session (6 AM - 12 PM)">Morning Session (6 AM - 12 PM)</option><option value="Afternoon Session (12 PM - 6 PM)">Afternoon Session (12 PM - 6 PM)</option><option value="Evening Session (6 PM - 12 AM)">Evening Session (6 PM - 12 AM)</option></select><div class="flex flex-col sm:flex-row gap-2 w-full"><button onclick="toggleSessionState('START')" class="flex-[2] bg-gradient-to-r from-orange-500 to-red-600 text-white text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl shadow-lg active:scale-95 transition-all"><i class="fa-solid fa-play mr-2"></i>Start Timer</button><button onclick="toggleSessionState('ABSENT')" class="flex-1 bg-gray-100 text-gray-500 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-gray-200 active:scale-95 transition-all">Absent</button></div>`;
+            } else {
+                document.getElementById('current-session-name').innerText = mySession.sessionType;
+                if (mySession.status === 'STUDYING') { 
+                    controlDiv.innerHTML = `<button onclick="toggleSessionState('BREAK')" class="flex-1 bg-amber-100 text-amber-700 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-amber-200 active:scale-95 transition-all"><i class="fa-solid fa-mug-hot mr-2"></i>Take Break</button><button onclick="confirmEndSession()" class="flex-1 bg-red-100 text-red-700 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-red-200 active:scale-95 transition-all"><i class="fa-solid fa-stop mr-2"></i>End Session</button>`; 
+                } 
+                else if (mySession.status === 'BREAK') { 
+                    controlDiv.innerHTML = `<button onclick="toggleSessionState('RESUME')" class="flex-1 bg-green-100 text-green-700 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-green-200 active:scale-95 transition-all"><i class="fa-solid fa-play mr-2"></i>Resume</button><button onclick="confirmEndSession()" class="flex-1 bg-red-100 text-red-700 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-red-200 active:scale-95 transition-all"><i class="fa-solid fa-stop mr-2"></i>End Session</button>`; 
+                }
+                else if (mySession.status === 'OVERTIME_PAUSE') {
+                    controlDiv.innerHTML = `<button onclick="handleOvertimeChoice('CONTINUE')" class="flex-[2] bg-indigo-100 text-indigo-700 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-indigo-200 active:scale-95 transition-all shadow-sm"><i class="fa-solid fa-play mr-2"></i>Extra Study</button><button onclick="confirmEndSession()" class="flex-1 bg-red-100 text-red-700 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-red-200 active:scale-95 transition-all"><i class="fa-solid fa-stop mr-2"></i>End</button>`;
+                }
+            }
+            sessionTimerInterval = setInterval(() => { updateLiveTimers(mySession); }, 1000); updateLiveTimers(mySession); renderSessionHistory();
+        };
+
+        window.confirmEndSession = function() {
+            if (confirm("Are you sure you want to end this focus session? This action will save your progress and finish the session.")) {
+                toggleSessionState('STOP');
+            }
+        };
+
+       window.handleOvertimeChoice = function(choice) {
+    // Hide the popup modal
+    document.getElementById('session-overtime-modal').classList.add('hidden-view');
+    
+    if (choice === 'STOP') {
+        // Ends the session and saves progress
+        toggleSessionState('STOP');
+    } else if (choice === 'CONTINUE') {
+        // Resumes the session to count upwards (+00:00:01...)
+        toggleSessionState('RESUME');
+    }
+};
+
+        function updateLiveTimers(mySession) {
+            const now = Date.now(); const todayStr = window.formatDateDDMMYYYY();
+            
+            if (mySession) {
+                let studyMs = mySession.totalStudyMs; let breakMs = mySession.totalBreakMs || 0;
+                if (mySession.status === 'STUDYING') studyMs += (now - mySession.lastToggleTime);
+                if (mySession.status === 'BREAK') breakMs += (now - mySession.lastToggleTime);
+                
+                let isOvertime = studyMs >= TOTAL_SESSION_MS;
+                
+                // Pause and Trigger Modal exactly when they hit 4 Hours!
+                if (isOvertime && !mySession.overtimePrompted && mySession.status === 'STUDYING') {
+                    mySession.overtimePrompted = true;
+                    if(isFirebaseConfigured) updateDoc(doc(db, "sessions", mySession.id), { overtimePrompted: true });
+                    
+                    toggleSessionState('OVERTIME_PAUSE');
+                    document.getElementById('session-overtime-modal').classList.remove('hidden-view');
+                    playChime();
+                    return; 
+                }
+
+                let displayStr = "00:00:00";
+                let studyTimeEl = document.getElementById('st-study-time');
+
+                if (isOvertime) {
+    let extraMs = studyMs - TOTAL_SESSION_MS;
+    
+    // NEW: Safety guard to prevent negative zero rendering
+    if (extraMs < 0) extraMs = 0; 
+    
+    displayStr = "+" + formatTime(extraMs);
+    studyTimeEl.className = "text-4xl sm:text-5xl md:text-6xl font-mono font-black tracking-tighter text-emerald-500 drop-shadow-sm leading-none py-1 break-words";
+} else {
+    let remainingStudyMs = TOTAL_SESSION_MS - studyMs;
+    displayStr = formatTime(remainingStudyMs);
+    studyTimeEl.className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words";
+}
+                studyTimeEl.innerText = displayStr;
+                document.getElementById('st-break-time').innerText = formatTime(breakMs); 
+            }
+
+            const todaysSessions = window.sessionsDB.filter(s => s.mobile === window.loggedInMobile && s.dateStr === todayStr);
+            let totalTodayMs = 0; let totalBreakTodayMs = 0;
+            todaysSessions.forEach(s => { 
+                let sStudy = s.totalStudyMs; let sBreak = s.totalBreakMs || 0;
+                if (s.status === 'STUDYING') sStudy += (now - s.lastToggleTime); 
+                if (s.status === 'BREAK') sBreak += (now - s.lastToggleTime); 
+                totalTodayMs += sStudy; 
+                totalBreakTodayMs += sBreak;
+            });
+            const totalTodayEl = document.getElementById('st-total-today'); if(totalTodayEl) totalTodayEl.innerText = formatTime(totalTodayMs);
+            const totalBreakTodayEl = document.getElementById('st-total-break-today'); if(totalBreakTodayEl) totalBreakTodayEl.innerText = formatTime(totalBreakTodayMs);
+
+            const peersDiv = document.getElementById('live-peers-list');
+            const activePeers = window.sessionsDB.filter(s => s.dateStr === todayStr && (s.status === 'STUDYING' || s.status === 'BREAK' || s.status === 'OVERTIME_PAUSE') && s.mobile !== window.loggedInMobile);
+
+            if (peersDiv) {
+                if (activePeers.length === 0) { 
+                    peersDiv.innerHTML = `
+                        <div class="flex flex-col items-center justify-center p-4 sm:p-6 bg-white/50 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-dashed border-gray-200 shadow-sm">
+                            <div class="w-10 h-10 sm:w-12 sm:h-12 bg-gray-100 rounded-full flex items-center justify-center mb-2 sm:mb-3 shadow-inner">
+                                <i class="fa-solid fa-moon text-gray-400 text-base sm:text-lg"></i>
+                            </div>
+                            <p class="text-[10px] sm:text-xs text-gray-500 font-bold tracking-tight text-center break-words">It's quiet... no peers are currently live.</p>
+                        </div>`; 
+                } 
+                else {
+                 let peersHtml = '';
+                    activePeers.forEach(peer => {
+                        let pStudy = peer.totalStudyMs; if (peer.status === 'STUDYING') pStudy += (now - peer.lastToggleTime);
+                        let pRem = TOTAL_SESSION_MS - pStudy;
+                        let pDisplay = pRem <= 0 ? "+" + formatTime(pStudy - TOTAL_SESSION_MS) : formatTime(pRem);
+                        
+                        let avatarGrad, avatarText, avatarBorder, dotColor, dotPing, badgeBg, badgeText, badgeBorder, statusIcon, statusText;
+                        
+                        if (peer.status === 'STUDYING') {
+                            avatarGrad = 'from-emerald-100 to-teal-100'; avatarText = 'text-teal-700'; avatarBorder = 'border-teal-200';
+                            dotColor = 'bg-emerald-500'; dotPing = 'animate-ping';
+                            badgeBg = 'bg-emerald-50'; badgeText = 'text-emerald-700'; badgeBorder = 'border-emerald-200';
+                            statusIcon = 'fa-fire text-orange-500 animate-pulse'; statusText = 'Focusing';
+                        } else {
+                            avatarGrad = 'from-amber-100 to-orange-100'; avatarText = 'text-orange-700'; avatarBorder = 'border-orange-200';
+                            dotColor = 'bg-amber-500'; dotPing = '';
+                            badgeBg = 'bg-amber-50'; badgeText = 'text-amber-700'; badgeBorder = 'border-amber-200';
+                            statusIcon = peer.status === 'OVERTIME_PAUSE' ? 'fa-medal text-indigo-500' : 'fa-mug-hot text-amber-600'; 
+                            statusText = peer.status === 'OVERTIME_PAUSE' ? 'Goal Met' : 'On Break';
+                        }
+
+                        // NEW: Fetch the actual Profile Picture
+                        const peerDp = window.getStudentAvatar(peer.mobile, peer.name);
+
+                        peersHtml += `
+                        <div class="group flex flex-wrap sm:flex-nowrap items-center justify-between bg-white/80 backdrop-blur-md p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] shadow-sm hover:shadow-md border border-gray-100 hover:${avatarBorder} hover:-translate-y-1 transition-all duration-300 gap-2">
+                            <div class="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                                <div class="relative shrink-0">
+                                    <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center shadow-inner border ${avatarBorder} overflow-hidden">
+                                        <img src="${peerDp}" class="w-full h-full object-cover" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(peer.name)}&background=4f46e5&color=fff'">
+                                    </div>
+                                    <div class="absolute -top-1 -right-1 w-3 sm:w-3.5 h-3 sm:h-3.5 ${dotColor} rounded-full border-2 border-white ${dotPing} z-10"></div>
+                                    <div class="absolute -top-1 -right-1 w-3 sm:w-3.5 h-3 sm:h-3.5 ${dotColor} rounded-full border-2 border-white z-0"></div>
+                                </div>
+                                <div class="min-w-0 pr-1">
+                                    <h4 class="font-black text-gray-900 text-[11px] sm:text-[13px] flex items-center gap-1 sm:gap-1.5 leading-tight mb-0.5 sm:mb-1 break-words">
+                                        ${peer.name} 
+                                        <span class="bg-gray-100 text-gray-500 text-[7px] sm:text-[8px] px-1 sm:px-1.5 py-0.5 rounded-md font-bold uppercase tracking-widest shrink-0">${peer.sessionType.split(' ')[0]}</span>
+                                    </h4>
+                                    <p class="text-[9px] sm:text-[10px] font-bold text-gray-500 flex items-center gap-1 sm:gap-1.5 break-words leading-tight">
+                                        <i class="fa-solid fa-stopwatch text-gray-400"></i> <span class="text-gray-700 font-mono tracking-tight">${pDisplay}</span> ${pRem <= 0 ? 'extra' : 'left'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-1 sm:gap-1.5 ${badgeBg} ${badgeText} px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border ${badgeBorder} shadow-sm text-[8px] sm:text-[9px] font-black uppercase tracking-widest shrink-0">
+                                <i class="fa-solid ${statusIcon}"></i> ${statusText}
+                            </div>
+                        </div>`;
+                    });
+                    peersDiv.innerHTML = peersHtml;
+                }
+            }
+            
+            const timelineCard = document.getElementById('session-timeline-card'); const timelineList = document.getElementById('session-timeline-list');
+            if (timelineCard && timelineList) {
+                let allTodayLogs = [];
+                todaysSessions.forEach(session => { if (session.logs && session.logs.length > 0) { session.logs.forEach(log => { allTodayLogs.push({ ...log, sessionName: session.sessionType }); }); } });
+                if (allTodayLogs.length > 0) {
+                    timelineCard.classList.remove('hidden'); let logHtml = '';
+                    allTodayLogs.sort((a, b) => b.time - a.time).forEach(log => {
+                        const t = new Date(log.time).toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'});
+                        let icon = 'fa-play'; let color = 'text-green-500'; let bg = 'bg-green-100'; let text = 'Started Session';
+                        if(log.action === 'BREAK') { icon = 'fa-mug-hot'; color = 'text-amber-500'; bg = 'bg-amber-100'; text = 'Took a Break'; }
+                        if(log.action === 'RESUME') { icon = 'fa-play'; color = 'text-green-500'; bg = 'bg-green-100'; text = 'Resumed Studying'; }
+                        if(log.action === 'STOP') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Ended Session'; }
+                        if(log.action === 'OVERTIME_PAUSE') { icon = 'fa-medal'; color = 'text-indigo-500'; bg = 'bg-indigo-100'; text = 'Hit 4 Hours Goal'; }
+                        const shortName = log.sessionName.split(' ')[0];
+                        logHtml += `<div class="flex items-center gap-2 sm:gap-3 bg-gray-50 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-gray-100 shadow-sm"><div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0"><i class="fa-solid ${icon} text-[9px] sm:text-[10px]"></i></div><div class="flex-1 min-w-0 pr-1"><p class="text-[10px] sm:text-xs font-bold text-gray-800 break-words leading-tight">${text}</p><p class="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">${shortName} Session</p></div><div class="text-[8px] sm:text-[10px] font-black text-gray-400 shrink-0">${t}</div></div>`;
+                    });
+                    timelineList.innerHTML = logHtml;
+                } else { timelineCard.classList.add('hidden'); }
+            }
+        }
+
+        function renderSessionHistory() {
+            const myHistory = window.sessionsDB.filter(s => s.mobile === window.loggedInMobile).sort((a,b) => b.timestamp - a.timestamp);
+            const histDiv = document.getElementById('session-history-list'); histDiv.innerHTML = ''; 
+            const chartLabels = []; const chartData = []; const chartColors = [];
+            
+            const ctx = document.getElementById('sessionChart').getContext('2d'); 
+            if(sessionChartInstance) sessionChartInstance.destroy();
+
+            // Day-wise Color Palette (0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat)
+            const dayPalette = [
+                ['#ef4444', '#b91c1c'], // Sun: Vibrant Red
+                ['#3b82f6', '#1d4ed8'], // Mon: Electric Blue
+                ['#10b981', '#047857'], // Tue: Emerald Green
+                ['#f59e0b', '#b45309'], // Wed: Amber Orange
+                ['#ec4899', '#be185d'], // Thu: Rose Pink
+                ['#8b5cf6', '#6d28d9'], // Fri: Royal Purple
+                ['#06b6d4', '#0e7490']  // Sat: Bright Cyan
+            ];
+
+           // 1. MATH LOOP (Extracts chart data only)
+            myHistory.forEach((session, idx) => {
+                if(idx < 7 && session.status !== 'ABSENT') { 
+                    chartLabels.unshift(session.dateStr.substring(0,5) + ' ' + session.sessionType.substring(0, 3)); 
+                    chartData.unshift((session.totalStudyMs / 3600000).toFixed(2)); 
+
+                    // Extract Day of the Week
+                    let dayIdx = 0;
+                    if(session.timestamp) {
+                        dayIdx = new Date(session.timestamp).getDay();
+                    } else if(session.dateStr) {
+                        const parts = session.dateStr.split('/');
+                        if(parts.length === 3) dayIdx = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getDay();
+                    }
+
+                    // Generate gradient specifically for that day
+                    const [c1, c2] = dayPalette[dayIdx] || ['#f97316', '#ef4444'];
+                    let g = ctx.createLinearGradient(0, 0, 0, 150);
+                    g.addColorStop(0, c1);
+                    g.addColorStop(1, c2);
+                    chartColors.unshift(g);
+                }
+            });
+
+            // 2. RENDER LOOP (Builds HTML with Limits)
+            let sessionHtml = '';
+            myHistory.slice(0, window.uiLimits.sessions).forEach((session) => {
+                let statusColor = 'text-gray-500 bg-gray-100'; 
+                if(session.status === 'COMPLETED' || session.status === 'STUDYING') statusColor = 'text-green-600 bg-green-100'; 
+                if(session.status === 'ABSENT') statusColor = 'text-red-600 bg-red-100';
+                
+                sessionHtml += `<div class="glass-card p-2.5 sm:p-3 rounded-xl sm:rounded-2xl flex justify-between items-center shadow-sm"><div class="min-w-0 pr-2"><h4 class="font-bold text-gray-900 text-[11px] sm:text-xs mb-0.5 sm:mb-1 break-words leading-tight">${session.sessionType}</h4><p class="text-[8px] sm:text-[9px] text-gray-400 font-bold uppercase tracking-widest break-words leading-tight">${session.dateStr}</p></div><div class="text-right shrink-0"><p class="text-[8px] sm:text-[10px] font-black ${statusColor} px-1.5 sm:px-2 py-0.5 rounded uppercase inline-block mb-1">${session.status}</p><p class="text-[8px] sm:text-[10px] text-gray-600 font-bold break-words leading-tight">⏱ ${formatTime(session.totalStudyMs)} Studied</p></div></div>`;
+            });
+
+            if (window.uiLimits.sessions < myHistory.length) {
+                sessionHtml += `
+                <div class="flex justify-center mt-2">
+                    <button onclick="window.uiLimits.sessions += 10; refreshUI();" class="px-6 py-2.5 bg-white border border-orange-200 text-orange-600 rounded-xl font-bold text-xs shadow-sm hover:bg-orange-50 active:scale-95 transition-all">
+                        <i class="fa-solid fa-chevron-down mr-1.5"></i> See Older Sessions
+                    </button>
+                </div>`;
+            }
+
+            histDiv.innerHTML = sessionHtml;
+            if(myHistory.length === 0) histDiv.innerHTML = `<p class="text-[10px] sm:text-xs text-gray-500 font-medium text-center break-words px-2">No past sessions found.</p>`;
+
+            sessionChartInstance = new Chart(ctx, { 
+                type: 'bar', 
+                data: { 
+                    labels: chartLabels, 
+                    datasets: [{ 
+                        label: 'Study Hrs', 
+                        data: chartData, 
+                        backgroundColor: chartColors.length > 0 ? chartColors : '#f97316', 
+                        borderRadius: 6,
+                        barPercentage: 0.65
+                    }] 
+                }, 
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { legend: { display: false } }, 
+                    scales: { 
+                        y: { beginAtZero: true, max: 4, ticks: { font: {size:9} } }, 
+                        x: { ticks: { font: {size:9} } } 
+                    } 
+                } 
+            });
+        }
+
+        function cleanupJitsi() {
+            if (window.jitsiApi) { window.jitsiApi.dispose(); window.jitsiApi = null; }
+            if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
+        }
+
+        function safeBack() {
+            cleanupJitsi();
+            if (window.history.length > 1) { window.history.back(); } else { window.location.hash = window.currentRole || 'login'; }
+        }
+        window.safeBack = safeBack;
+
+       function handleHashChange() {
+    const rawHash = window.location.hash.replace('#', ''); 
+    const hash = rawHash || 'login';
+    
+    if(hash !== 'login' && !window.currentRole) { 
+        window.location.hash = 'login'; 
+        return; 
+    }
+    
+    // 1. UPDATED VIEWS ARRAY: Added 'video-hub-view' and 'video-watch-view'
+    // 1. UPDATED VIEWS ARRAY: Added 'syllabus-view' at the end
+    const views = [ 'login-view', 'student-view', 'admin-view', 'admin-profile-view', 'leaderboard-view', 'exam-analysis-view', 'community-chat-view', 'notice-board-view', 'target-calc-view', 'materials-view', 'active-exam-view', 'fitness-view', 'weekly-targets-view', 'session-timer-view', 'nova-chat-view', 'video-hub-view', 'video-watch-view', 'syllabus-view' ];
+    
+    // Hide all views first (Using ?. to prevent crashes)
+    views.forEach(v => { 
+        const el = document.getElementById(v); 
+        if(el) el?.classList.add('hidden-view'); 
+    });
+
+    // Unhide the specific view based on the hash
+    switch(hash) {
+        case 'login': if (window.currentRole) window.location.hash = window.currentRole; else document.getElementById('login-view')?.classList.remove('hidden-view'); break;
+        case 'student': if(window.currentRole === 'student') document.getElementById('student-view')?.classList.remove('hidden-view'); else window.location.hash = 'admin'; break;
+        case 'admin': if(window.currentRole === 'admin') document.getElementById('admin-view')?.classList.remove('hidden-view'); else window.location.hash = 'student'; break;
+        case 'chat': document.getElementById('community-chat-view')?.classList.remove('hidden-view'); document.getElementById('chat-alert-banner')?.classList.add('hidden-view'); if(window.currentRole === 'student') document.getElementById('chat-share-btn')?.classList.remove('hidden'); else document.getElementById('chat-share-btn')?.classList.add('hidden'); window.markChatAsRead(); renderChat(); break;
+        case 'notices': if(window.currentRole === 'admin') document.getElementById('add-notice-btn')?.classList.remove('hidden'); else document.getElementById('add-notice-btn')?.classList.add('hidden'); document.getElementById('notice-board-view')?.classList.remove('hidden-view'); renderNotices(); break;
+        case 'session-timer': document.getElementById('session-timer-view')?.classList.remove('hidden-view'); renderSessionTimer(); break;
+        case 'materials': if (window.currentRole === 'admin') { document.getElementById('btn-upload-material')?.classList.remove('hidden'); } else { document.getElementById('btn-upload-material')?.classList.add('hidden'); } document.getElementById('materials-view')?.classList.remove('hidden-view'); renderStudyMaterials(); break;
+        case 'fitness': document.getElementById('fitness-view')?.classList.remove('hidden-view'); renderFitnessMonitor(); break;
+        case 'weekly-targets': document.getElementById('weekly-targets-view')?.classList.remove('hidden-view'); if (window.currentRole === 'admin') { document.getElementById('admin-target-form')?.classList.remove('hidden'); } else { document.getElementById('admin-target-form')?.classList.add('hidden'); } renderWeeklyTargets(); break;
+        case 'exam-analysis': generateExamAnalysis(); document.getElementById('exam-analysis-view')?.classList.remove('hidden-view'); break;
+        case 'target-calc': window.renderTargetCalc(); document.getElementById('target-calc-view')?.classList.remove('hidden-view'); break;
+        case 'leaderboard': document.getElementById('leaderboard-view')?.classList.remove('hidden-view'); renderLeaderboard(); break;
+        case 'admin-profile': if(window.selectedAdminProfile) { renderAdminProfile(window.selectedAdminProfile); document.getElementById('admin-profile-view')?.classList.remove('hidden-view'); } else { safeBack(); } break;
+        case 'active-exam': if(window.activeExamId) { renderActiveExam(window.activeExamId); document.getElementById('active-exam-view')?.classList.remove('hidden-view'); } else { safeBack(); } break;
+        case 'nova-chat': document.getElementById('nova-chat-view')?.classList.remove('hidden-view'); break;
+        case 'syllabus': 
+    document.getElementById('syllabus-view')?.classList.remove('hidden-view'); 
+    if (window.currentRole === 'admin') { document.getElementById('admin-syllabus-form')?.classList.remove('hidden'); } else { document.getElementById('admin-syllabus-form')?.classList.add('hidden'); } 
+    renderSyllabusTracker(); 
+    break;
+ case 'video-hub':
+            document.getElementById('video-hub-view')?.classList.remove('hidden-view');
+            if (window.currentRole === 'admin') {
+                document.getElementById('btn-upload-video')?.classList.remove('hidden');
+            } else {
+                document.getElementById('btn-upload-video')?.classList.add('hidden');
+            }
+            
+            // 3. GHOST AUDIO FIX FOR VIDEO.JS
+            if (window.vjsPlayer) {
+                window.vjsPlayer.dispose();
+                window.vjsPlayer = null;
+            }
+            const natContainer = document.getElementById('native-player-container');
+            if(natContainer) natContainer.innerHTML = '';
+            
+            if (typeof window.renderVideoFeed === 'function') {
+                window.renderVideoFeed();
+            }
+            break;
+
+        // 4. NEW ROUTE: Opens the Native Player Watch View
+        case 'watch-video':
+            document.getElementById('video-watch-view')?.classList.remove('hidden-view');
+            break;
+        
+        default: window.location.hash = window.currentRole || 'login'; break;
+    }
+}
+       async function sendOneSignalPush(title, message, imageUrl = null) {
+            const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
+            const payload = { app_id: ONESIGNAL_APP_ID, included_segments: ["All"], headings: { "en": title }, contents: { "en": message }, target_channel: "push" };
+            if (imageUrl) {
+                payload.big_picture = imageUrl; 
+                payload.ios_attachments = { "id1": imageUrl }; 
+            }
+            const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
+            try { const response = await fetch(secureProxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (!response.ok) throw new Error("Push blocked or failed"); } 
+            catch (e) { console.warn("API Push Failed"); sendPushNotification(title, message); }
+        }
+
+        window.showLoader = function(message) { const loaderText = document.getElementById('loader-text'); if (loaderText && message) { loaderText.innerText = message; } document.getElementById('global-loader').classList.remove('hidden-view'); };
+        window.hideLoader = function() { document.getElementById('global-loader').classList.add('hidden-view'); };
+        
+        window.currentImgScale = 1;
+        window.openFullScreenImage = function(src) {
+            const img = document.getElementById('fullscreen-img-src'); const pdf = document.getElementById('fullscreen-pdf-src'); const controls = document.getElementById('img-zoom-controls');
+            if (src.toLowerCase().endsWith('.pdf') || src.includes('pdf')) { img.classList.add('hidden'); pdf.classList.remove('hidden'); pdf.src = src; controls.classList.add('hidden'); } 
+            else { pdf.classList.add('hidden'); img.classList.remove('hidden'); img.src = src; controls.classList.remove('hidden'); window.currentImgScale = 1; img.style.transform = `scale(1)`; }
+            document.getElementById('fullscreen-image-modal').classList.remove('hidden-view');
+        }
+        window.zoomImg = function(dir) { if(dir === 1) window.currentImgScale = Math.min(4, window.currentImgScale + 0.5); else window.currentImgScale = Math.max(1, window.currentImgScale - 0.5); document.getElementById('fullscreen-img-src').style.transform = `scale(${window.currentImgScale})`; }
+        window.closeFullScreenImage = function() { document.getElementById('fullscreen-image-modal').classList.add('hidden-view'); document.getElementById('fullscreen-img-src').src = ''; document.getElementById('fullscreen-pdf-src').src = ''; }
+        
+        function getGreeting() { const hr = new Date().getHours(); if(hr < 12) return "Good Morning,"; if(hr < 18) return "Good Afternoon,"; return "Good Evening,"; }
+        function playChime() { try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(587.33, ctx.currentTime); osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.1, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4); osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.4); } catch(e){} }
+        function requestNotificationPermission() { if ("Notification" in window && Notification.permission === "default") { Notification.requestPermission(); } }
+        function sendPushNotification(title, body) { if ("Notification" in window && Notification.permission === "granted") { if (document.hidden) { new Notification(title, { body: body, icon: "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" }); } } }
+        
+        window.showToast = function(title, message, type = "info") {
+            const container = document.getElementById('toast-container'); const toastId = 'toast_' + Date.now();
+            let icon = '<i class="fa-solid fa-bell text-blue-500"></i>'; let border = 'border-blue-500'; let bg = 'bg-white/95 backdrop-blur-xl';
+            if(type === 'chat') { icon = '<i class="fa-solid fa-comment text-indigo-500"></i>'; border = 'border-indigo-500'; bg = 'bg-indigo-50/95 backdrop-blur-xl'; }
+            if(type === 'alert') { icon = '<i class="fa-solid fa-bullhorn text-amber-500"></i>'; border = 'border-amber-500'; bg = 'bg-amber-50/95 backdrop-blur-xl'; }
+
+            const toast = document.createElement('div'); toast.id = toastId;
+            toast.className = `${bg} p-3 sm:p-3.5 rounded-xl sm:rounded-2xl border-l-4 ${border} shadow-2xl flex items-start gap-2.5 sm:gap-3 w-full transform translate-x-full opacity-0 transition-all duration-300 pointer-events-auto cursor-pointer`;
+            toast.innerHTML = `<div class="mt-0.5 text-base sm:text-lg">${icon}</div><div class="flex-1 min-w-0 break-words"><h4 class="text-xs sm:text-[13px] font-black text-gray-900 break-words leading-tight">${title}</h4><p class="text-[10px] sm:text-[11px] font-medium text-gray-600 line-clamp-2 leading-tight mt-0.5 whitespace-pre-wrap break-words">${message}</p></div><button onclick="event.stopPropagation(); this.parentElement.remove();" class="text-gray-400 hover:text-gray-700 active:scale-90 p-1 shrink-0"><i class="fa-solid fa-xmark text-xs sm:text-sm"></i></button>`;
+            toast.onclick = () => { if(type === 'chat') window.location.hash = 'chat'; if(type === 'alert') window.location.hash = 'notices'; toast.remove(); };
+            container.appendChild(toast); requestAnimationFrame(() => { toast.classList.remove('translate-x-full', 'opacity-0'); });
+            setTimeout(() => { if(document.getElementById(toastId)) { toast.classList.add('translate-x-full', 'opacity-0'); setTimeout(() => { if(document.getElementById(toastId)) toast.remove(); }, 300); } }, 5000);
+        }
+
+        window.updatePresence = async function() { if(!window.loggedInMobile || window.currentRole !== 'student') return; if(isFirebaseConfigured) { try { await updateDoc(doc(db, "students", window.loggedInMobile), { lastActive: Date.now() }); } catch(e) {} } else { const s = window.studentsDB.find(s=>s.mobile===window.loggedInMobile); if(s) s.lastActive = Date.now(); refreshUI(); } }
+        setInterval(window.updatePresence, 5000); 
+
+        window.markChatAsRead = async function() {
+            if(!window.loggedInMobile) return; const myMobile = window.loggedInMobile;
+            const unreadMsgs = window.chatDB.filter(m => m.mobile !== myMobile && !(m.readBy && m.readBy.includes(myMobile)));
+            if (unreadMsgs.length > 0) {
+                if (isFirebaseConfigured) { const updatePromises = unreadMsgs.map(msg => { return updateDoc(doc(db, "chat", msg.id), { readBy: arrayUnion(myMobile) }); }); await Promise.all(updatePromises); } 
+                else { unreadMsgs.forEach(msg => { if(!msg.readBy) msg.readBy = []; if(!msg.readBy.includes(myMobile)) msg.readBy.push(myMobile); }); }
+            }
+            updateChatUnreadCount();
+        }
+
+        function updateChatUnreadCount() {
+            if(!window.currentRole || !window.loggedInMobile) return; const myMobile = window.loggedInMobile;
+            const unreadCount = window.chatDB.filter(m => m.mobile !== myMobile && !(m.readBy && m.readBy.includes(myMobile))).length;
+            const badges = document.querySelectorAll('.chat-unread-badge');
+            badges.forEach(b => { if (unreadCount > 0) { b.innerText = unreadCount; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } });
+        }
+
+        async function fetchInitialData() {
+            if (isFirebaseConfigured) {
+                onSnapshot(collection(db, "students"), (snapshot) => { window.studentsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); debouncedRefreshUI(); });
+                onSnapshot(collection(db, "exams"), (snapshot) => { window.examsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); debouncedRefreshUI(); });
+                onSnapshot(collection(db, "results"), (snapshot) => { window.resultsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); debouncedRefreshUI(); });
+                
+                onSnapshot(collection(db, "peer_exams"), (snapshot) => { 
+                    const allMaterials = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
+                    const now = Date.now(); 
+                    window.peerMaterialsDB = allMaterials.filter(m => m.expiresAt > now); 
+                    debouncedRefreshUI(); 
+                    allMaterials.forEach(async (m) => { if(m.expiresAt <= now) { await deleteDoc(doc(db, "peer_exams", m.id)); } }); 
+                });
+                onSnapshot(collection(db, "syllabus_topics"), (snapshot) => { window.syllabusTopicsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('syllabus-view').classList.contains('hidden-view')) renderSyllabusTracker(); });
+onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.studentSyllabusProgressDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('syllabus-view').classList.contains('hidden-view')) renderSyllabusTracker(); });
+                
+                onSnapshot(collection(db, "peer_answer_scripts"), (snapshot) => { window.peerAnswerScriptsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); });
+                
+                // LIMIT MATERIALS TO LATEST 100
+                onSnapshot(query(collection(db, "materials"), orderBy("timestamp", "desc"), limit(100)), (snapshot) => { window.materialsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('materials-view').classList.contains('hidden-view')) renderStudyMaterials(); });
+                
+                // LIMIT FITNESS LOGS TO LATEST 200
+                onSnapshot(query(collection(db, "fitness_logs"), orderBy("timestamp", "desc"), limit(200)), (snapshot) => { window.fitnessDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('fitness-view').classList.contains('hidden-view')) renderFitnessMonitor(); });
+                
+                onSnapshot(collection(db, "weekly_tasks"), (snapshot) => { window.weeklyTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets(); if(!document.getElementById('target-calc-view')?.classList.contains('hidden-view')) window.renderTargetCalc(); });
+                onSnapshot(collection(db, "student_tasks"), (snapshot) => { window.studentTasksDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('weekly-targets-view').classList.contains('hidden-view')) renderWeeklyTargets(); if(!document.getElementById('admin-profile-view').classList.contains('hidden-view') && window.selectedAdminProfile) { window.renderAdminProfile(window.selectedAdminProfile); } });
+                onSnapshot(collection(db, "sessions"), (snapshot) => { window.sessionsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('session-timer-view')?.classList.contains('hidden-view')) { renderSessionTimer(); } });
+                
+                // VERY IMPORTANT: LIMIT CHAT TO LATEST 50 MESSAGES
+                onSnapshot(query(collection(db, "chat"), orderBy("timestamp", "desc"), limit(50)), (snapshot) => {
+                    const oldLen = window.chatDB.length; 
+                    // Reverse it back to ascending order for the UI
+                    window.chatDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})).reverse();
+                    
+                    if(window.chatDB.length > oldLen && oldLen > 0) {
+                        const latest = window.chatDB[window.chatDB.length - 1];
+                        if(latest && latest.mobile !== window.loggedInMobile) {
+                            playChime(); const msgText = latest.text || (latest.audioUrl ? 'Shared a Voice Message' : 'Shared a Performance Card/Photo');
+                            sendPushNotification(`New Message from ${latest.name}`, msgText);
+                            if(document.getElementById('community-chat-view').classList.contains('hidden-view')) { showToast(`Message from ${latest.name}`, msgText, 'chat'); }
+                        }
+                    }
+                    if(!document.getElementById('community-chat-view').classList.contains('hidden-view')) { renderChat(); window.markChatAsRead(); } else { updateChatUnreadCount(); }
+                });
+
+                onSnapshot(query(collection(db, "videos"), orderBy("timestamp", "asc")), (snapshot) => { 
+                    window.videosDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
+                    if(!document.getElementById('video-hub-view')?.classList.contains('hidden-view')) {
+                        renderVideoFeed(); 
+                    }
+                });
+
+                // LIMIT NOTICES TO LATEST 20
+                onSnapshot(query(collection(db, "notices"), orderBy("timestamp", "desc"), limit(20)), (snapshot) => {
+                    const oldLen = window.noticesDB.length; window.noticesDB = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+                    if(window.noticesDB.length > oldLen && oldLen > 0) { const latest = window.noticesDB[0]; sendPushNotification("New EXAMA Notice", latest.title); showToast("New Notice", latest.title, 'alert'); }
+                    if(!document.getElementById('notice-board-view').classList.contains('hidden-view')) renderNotices(); checkUnreadNotices();
+                });
+
+                onSnapshot(doc(db, "active_calls", "discus_call"), (snapshot) => {
+                    if (snapshot.exists()) {
+                        const callData = snapshot.data();
+                        const now = Date.now();
+                        if (callData.status === 'ringing' && callData.callerMobile !== window.loggedInMobile && (now - callData.timestamp < 30000)) {
+                            window.showIncomingCallPopup(callData);
+                        }
+                    }
+                });
+
+                await new Promise(r => setTimeout(r, 800)); // Lowered artificial timeout to make app feel faster
+            } else {
+                // Dummy Data Fallback...
+                window.studentsDB = [{ mobile: '123', password: '123', name: 'Demo Student' }];
+                window.examsDB = [{ id: 'e1', name: 'Demo Math Exam', date: window.formatDateDDMMYYYY(new Date(Date.now() + 86400000)), totalMarks: 100, duration: 60, passPercentage: 40, examPin: '', globalStartTime: null, isPaused: false, pausedElapsed: 0, isProctored: false }];
+                window.resultsDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];
+                window.chatDB = [{id: '1', mobile: 'admin', name: 'Admin', text: 'Welcome to Exama Community!', timestamp: Date.now()}];
+                await new Promise(r => setTimeout(r, 1000)); debouncedRefreshUI(); checkUnreadNotices(); updateChatUnreadCount();
+            }
+        }
+
+        window.dbSubmitStudent = async function(obj) { if(isFirebaseConfigured) await setDoc(doc(db, "students", obj.mobile), obj); else { window.studentsDB.push(obj); refreshUI(); } }
+        window.dbSubmitExam = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "exams"), obj); else { window.examsDB.push({id: 'e'+Math.random(), ...obj}); refreshUI(); } }
+        window.dbUpdateExam = async function(id, obj) { if(isFirebaseConfigured) await updateDoc(doc(db, "exams", id), obj); else { const idx = window.examsDB.findIndex(e=>e.id===id); if(idx>-1) {window.examsDB[idx]={...window.examsDB[idx],...obj}; refreshUI();} } }
+       window.dbSubmitResult = async function(obj) { 
+    if(isFirebaseConfigured) {
+        // 1. Check if a result already exists for this exam and student
+        const existingQuery = query(
+            collection(db, "results"), 
+            where("examId", "==", obj.examId), 
+            where("mobile", "==", obj.mobile)
+        );
+        const snapshot = await getDocs(existingQuery);
+        
+        if (!snapshot.empty) {
+            // 2. If exists, OVERWRITE the old document with new marks
+            const docId = snapshot.docs[0].id;
+            await updateDoc(doc(db, "results", docId), obj);
+        } else {
+            // 3. If it doesn't exist, create a new one
+            await addDoc(collection(db, "results"), obj);
+        }
+    } else { 
+        // Fallback for Local DB (No Firebase)
+        const existingIdx = window.resultsDB.findIndex(r => r.examId === obj.examId && r.mobile === obj.mobile);
+        if (existingIdx > -1) {
+            window.resultsDB[existingIdx] = { ...window.resultsDB[existingIdx], ...obj };
+        } else {
+            window.resultsDB.push({id: 'r'+Math.random(), ...obj}); 
+        }
+        refreshUI(); 
+    } 
+}
+        window.dbDeleteExam = async function(id) { if(isFirebaseConfigured) { await deleteDoc(doc(db, "exams", id)); } else { window.examsDB = window.examsDB.filter(e => e.id !== id); refreshUI(); } }
+        window.dbSendChat = async function(obj) { obj.readBy = []; if(isFirebaseConfigured) await addDoc(collection(db, "chat"), obj); else { window.chatDB.push({id: Math.random().toString(), ...obj}); renderChat(); updateChatUnreadCount(); } }
+        window.dbSendNotice = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "notices"), { ...obj, readBy: [] }); else { window.noticesDB.unshift({id: Math.random().toString(), ...obj, readBy: []}); renderNotices(); checkUnreadNotices(); } }
+        window.dbSendMaterial = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "materials"), obj); else { window.materialsDB.unshift({id: Math.random().toString(), ...obj}); renderStudyMaterials(); } }
+        window.dbSendFitnessLog = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "fitness_logs"), obj); else { window.fitnessDB.unshift({id: Math.random().toString(), ...obj}); renderFitnessMonitor(); } }
+
+        function checkUnreadNotices() {
+            if(!window.currentRole || !window.loggedInMobile) return; const myMobile = window.loggedInMobile;
+            
+            // UPDATED: Filter to show unread notices specifically assigned to this student
+            const unread = window.noticesDB.filter(n => {
+                const assignedToMe = window.currentRole === 'admin' || !n.assignedTo || n.assignedTo.includes('All') || n.assignedTo.includes(myMobile);
+                return assignedToMe && !(n.readBy && n.readBy.includes(myMobile));
+            });
+
+            const badge = document.getElementById('dash-notice-badge');
+            if(badge) { if(unread.length > 0) badge.classList.remove('hidden'); else badge.classList.add('hidden'); }
+
+            if (unread.length > 0) {
+                const latest = unread[0]; 
+                document.getElementById('notice-popup-title').innerText = latest.title; 
+                document.getElementById('notice-popup-text').innerText = latest.text;
+                
+                const popupImg = document.getElementById('notice-popup-img');
+                if (latest.imageUrl) {
+                    popupImg.src = latest.imageUrl;
+                    popupImg.classList.remove('hidden');
+                } else {
+                    popupImg.src = '';
+                    popupImg.classList.add('hidden');
+                }
+
+                const btn = document.getElementById('notice-popup-btn');
+                btn.onclick = async () => {
+                    const originalText = btn.innerHTML; btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i>Saving...`; btn.disabled = true;
+                    if (isFirebaseConfigured && latest.id) { try { await updateDoc(doc(db, "notices", latest.id), { readBy: arrayUnion(myMobile) }); } catch(e) { console.error("Notice Save Error:", e); } } 
+                    if (!latest.readBy) latest.readBy = []; if (!latest.readBy.includes(myMobile)) latest.readBy.push(myMobile);
+                    btn.innerHTML = originalText; btn.disabled = false; document.getElementById('notice-popup-modal').classList.add('hidden-view'); checkUnreadNotices(); 
+                };
+                document.getElementById('notice-popup-modal').classList.remove('hidden-view');
+            }
+        }
+        window.openPeerUpload = function(examId) { document.getElementById('peer-upload-exam-id').value = examId; document.getElementById('peer-upload-modal').classList.remove('hidden-view'); }
+     window.submitPeerImages = async function() {
+    const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
+    const examId = document.getElementById('peer-upload-exam-id').value;
+    
+    const qFiles = Array.from(document.getElementById('peer-q-file').files);
+
+    if(qFiles.length === 0) return alert("Please upload at least one question image.");
+    showLoader(`Uploading ${qFiles.length} Pages... 0%`); 
+
+    try {
+        let loadedBytesQ = new Array(qFiles.length).fill(0); 
+        const totalBytes = qFiles.reduce((acc, file) => acc + file.size, 0);
+
+        const updateProgress = () => { 
+            if (totalBytes === 0) return; 
+            let totalLoaded = loadedBytesQ.reduce((a, b) => a + b, 0); 
+            let percent = Math.round((totalLoaded / totalBytes) * 100); 
+            if(percent > 100) percent = 100; 
+            document.getElementById('loader-text').innerText = `Uploading Pages... ${percent}%`; 
+        }
+
+        const uploadToImgBB = async (file, index, loadedArray) => {
+            const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
+
+            return new Promise((resolve, reject) => { 
+                const xhr = new XMLHttpRequest(); 
+                const formData = new FormData(); 
+                formData.append("image", compressedFile); 
+                
+                xhr.upload.onprogress = (event) => { 
+                    if (event.lengthComputable) { 
+                        loadedArray[index] = event.loaded; 
+                        updateProgress(); 
+                    } 
+                }; 
+                
+                xhr.onload = () => { 
+                    if (xhr.status >= 200 && xhr.status < 300) { 
+                        try { 
+                            const result = JSON.parse(xhr.responseText); 
+                            if(result.success) resolve(result.data.url); 
+                            else reject(result.error.message); 
+                        } catch(e) { reject("Parsing error"); } 
+                    } else { reject("Upload failed"); } 
+                }; 
+                xhr.onerror = () => reject("Network error"); 
+                
+                // 🔥 REMOVED EXPIRATION: These images will now live forever on ImgBB
+                xhr.open("POST", `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, true); 
+                xhr.send(formData); 
+            }); 
+        };
+
+        // Upload Question files permanently
+        let allQUrls = await Promise.all(qFiles.map((file, idx) => uploadToImgBB(file, idx, loadedBytesQ)));
+        
+        // 1. Save to the Active P2P Live Exam Room (No answer key needed)
+        const data = { 
+            examId, 
+            mobile: window.loggedInMobile, 
+            qUrls: allQUrls, 
+            createdAt: Date.now(), 
+            expiresAt: Date.now() + (2 * 24 * 60 * 60 * 1000) 
+        };
+        
+        if(isFirebaseConfigured) { 
+            await addDoc(collection(db, "peer_exams"), data); 
+        } else { 
+            window.peerMaterialsDB.push({ id: Math.random().toString(), ...data }); 
+        }
+        
+        // 2. 🔥 AUTO-ADD TO MATERIAL HUB FOREVER
+        const exam = window.examsDB.find(e => e.id === examId);
+        const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+        const uploaderName = student ? student.name : "Peer Student";
+        const examName = exam ? exam.name : "Unknown Exam";
+
+        const materialFiles = [];
+        allQUrls.forEach((url, idx) => {
+            materialFiles.push({ name: `Question_Page_${idx+1}.jpg`, url: url, type: 'image' });
+        });
+
+        // Silently push the permanent set to the Material Database
+        await window.dbSendMaterial({
+            subject: "Question Set",           
+            topic: examName,                   
+            title: `Questions by ${uploaderName}`, 
+            extLink: null,
+            files: materialFiles,
+            uploader: uploaderName,
+            uploaderMobile: window.loggedInMobile,
+            timestamp: Date.now()
+        });
+
+        document.getElementById('peer-q-file').value = ''; 
+        document.getElementById('peer-upload-modal').classList.add('hidden-view'); 
+        
+        hideLoader(); 
+        alert("Questions Published & Saved to Material Hub!"); 
+        refreshUI();
+
+    } catch(e) { 
+        console.error(e); 
+        hideLoader(); 
+        alert("Upload failed. Please try again."); 
+    }
+}
+
+        window.openMaterialUploadModal = function() { document.getElementById('material-upload-modal').classList.remove('hidden-view'); }
+        window.deleteStudyMaterial = async function(id) { if(!confirm("Are you sure you want to delete this material?")) return; if(isFirebaseConfigured) await deleteDoc(doc(db, "materials", id)); else { window.materialsDB = window.materialsDB.filter(m => m.id !== id); renderStudyMaterials(); } }
+        window.submitStudyMaterial = async function() {
+            const subject = document.getElementById('mat-subject').value.trim(); const topic = document.getElementById('mat-topic').value.trim(); const title = document.getElementById('mat-title').value.trim(); const extLink = document.getElementById('mat-ext-link').value.trim(); const files = Array.from(document.getElementById('mat-files').files);
+            if(!topic || !title || !subject) return alert("Please fill Subject, Topic, and Title."); if(files.length === 0 && !extLink) return alert("Please attach files or provide a Link.");
+            showLoader(`Uploading Material Files (${files.length})...`);
+            const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; let uploadedFiles = [];
+            try {
+                for (let file of files) { if (file.type.startsWith('image/')) { const formData = new FormData(); formData.append("image", file); const res = await fetch(`https://api.imgbb.com/1/upload?expiration=15552000&key=${IMGBB_API_KEY}`, { method: "POST", body: formData }); const data = await res.json(); if(data.success) uploadedFiles.push({ name: file.name, url: data.data.url, type: 'image' }); } else if (file.type === 'application/pdf') { const reader = new FileReader(); const pdfDataUrl = await new Promise((resolve) => { reader.onload = e => resolve(e.target.result); reader.readAsDataURL(file); }); uploadedFiles.push({ name: file.name, url: pdfDataUrl, type: 'pdf' }); } }
+                const uploaderName = window.studentsDB.find(s=>s.mobile===window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'EXAMA' : 'Student');
+                await window.dbSendMaterial({ subject, topic, title, extLink: extLink || null, files: uploadedFiles, uploader: uploaderName, uploaderMobile: window.loggedInMobile, timestamp: Date.now() });
+                document.getElementById('form-upload-material').reset(); document.getElementById('material-upload-modal').classList.add('hidden-view'); hideLoader(); alert("Material Published Successfully!"); renderStudyMaterials();
+            } catch(e) { console.error(e); hideLoader(); alert("Failed to upload material."); }
+        }
+
+        window.filterMaterialsBySubject = function(sub) { window.activeSubjectFilter = sub; renderStudyMaterials(); }
+        function renderStudyMaterials() {
+            const list = document.getElementById('materials-directory-list'); const tabsContainer = document.getElementById('subject-tabs-container'); if(!list || !tabsContainer) return;
+            const uniqueSubjects = [...new Set(window.materialsDB.map(m => m.subject))];
+            let tabsHtml = `<button onclick="filterMaterialsBySubject('All')" class="px-3 sm:px-4 py-1.5 sm:py-2 ${window.activeSubjectFilter === 'All' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-blue-50 border border-gray-200'} font-black text-[10px] sm:text-xs rounded-full shrink-0 transition-colors break-words">All Subjects</button>`;
+            uniqueSubjects.forEach(sub => { const isActive = window.activeSubjectFilter === sub; tabsHtml += `<button onclick="filterMaterialsBySubject('${sub.replace(/'/g, "\\'")}')" class="px-3 sm:px-4 py-1.5 sm:py-2 ${isActive ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-blue-50 border border-gray-200'} font-black text-[10px] sm:text-xs rounded-full shrink-0 transition-colors break-words">${sub}</button>`; });
+            tabsContainer.innerHTML = tabsHtml; list.innerHTML = '';
+            let filtered = window.materialsDB; if(window.activeSubjectFilter !== 'All') { filtered = filtered.filter(m => m.subject === window.activeSubjectFilter); }
+            if(filtered.length === 0) { list.innerHTML = `<div class="glass-card p-6 sm:p-8 rounded-[1.5rem] sm:rounded-[2rem] text-center text-gray-500 font-medium border-dashed border-2 border-gray-300 text-xs sm:text-sm">No study materials available for this category yet. Click + to upload!</div>`; return; }
+            const topicGroups = {}; filtered.forEach(m => { const key = `${m.subject} • ${m.topic}`; if(!topicGroups[key]) topicGroups[key] = []; topicGroups[key].push(m); });
+            Object.keys(topicGroups).forEach(topicKey => {
+                const materialsInTopic = topicGroups[topicKey]; let itemsHtml = '';
+                materialsInTopic.forEach(mat => {
+                    let filesHtml = ''; 
+                    if(mat.extLink) { 
+                        filesHtml += `<button onclick="window.openCustomPDFViewer('${mat.extLink}', '${mat.title.replace(/'/g,"\\'")}')" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white text-[10px] sm:text-xs font-black tracking-wide rounded-lg sm:rounded-xl shadow-md shadow-indigo-500/30 flex items-center gap-1 sm:gap-1.5 active:scale-95 transition-all truncate max-w-full"><i class="fa-solid fa-book-open"></i> <span class="truncate">Read</span></button>`; 
+                    }
+                   mat.files.forEach(f => { 
+    const icon = f.type === 'pdf' ? '<i class="fa-solid fa-file-pdf text-rose-500 mr-1 sm:mr-1.5"></i>' : '<i class="fa-solid fa-file-image text-blue-500 mr-1 sm:mr-1.5"></i>'; 
+    const action = f.type === 'pdf' ? `window.openCustomPDFViewer('${f.url}', '${f.name.replace(/'/g,"\\'")}')` : `window.openFullScreenImage('${f.url}')`;
+    
+    let solveBtn = '';
+    if (f.type === 'image' && mat.subject === 'Question Set') {
+        solveBtn = `<button onclick="window.solveQuestionWithNOVA('${f.url}')" class="px-3 py-1.5 sm:py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-[10px] sm:text-xs font-black rounded-lg sm:rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition-all shrink-0"><i class="fa-solid fa-robot text-blue-200"></i>NOVA ANALYSIS</button>`;
+    }
+
+    // NEW: Offline Download Button for Materials
+    let uniqueKey = f.url;
+    const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+    if (match) uniqueKey = match[1]; else uniqueKey = btoa(encodeURIComponent(f.url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+    const storageKey = f.type === 'pdf' ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
+    
+    // We render a placeholder ID and let a background script update its color if it's already downloaded
+    const btnId = `dl-btn-${storageKey}`;
+    
+    window.checkIsOffline(storageKey).then(isSaved => {
+        const btn = document.getElementById(btnId);
+        if(btn && isSaved) {
+            btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`;
+            btn.classList.add('bg-emerald-100', 'border-emerald-200');
+        }
+    });
+
+    filesHtml += `<div class="flex gap-2 w-full max-w-full">
+        <button onclick="${action}" class="flex-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-gray-50 text-gray-700 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl border border-gray-200 shadow-sm flex items-center gap-1.5 active:scale-95 transition-all truncate overflow-hidden">${icon} <span class="truncate">${f.name}</span></button>
+        
+        <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g,"\\'")}', '${f.type}', this)" class="w-8 sm:w-10 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-400 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm transition-all active:scale-90 shrink-0">
+            <i class="fa-solid fa-cloud-arrow-down"></i>
+        </button>
+
+        ${solveBtn}
+    </div>`; 
+});
+                    const delBtn = window.currentRole === 'admin' ? `<button onclick="deleteStudyMaterial('${mat.id}')" class="text-red-400 hover:text-red-600 p-1.5 sm:p-2"><i class="fa-solid fa-trash text-sm"></i></button>` : '';
+                    itemsHtml += `<div class="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow group flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4"><div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 hidden sm:flex"><i class="fa-solid fa-clipboard-list"></i></div><div class="flex-1 space-y-1.5 sm:space-y-2 w-full"><div class="flex justify-between items-start"><div><h5 class="font-bold text-gray-900 text-xs sm:text-sm leading-tight group-hover:text-blue-600 transition-colors break-words">${mat.title}</h5><p class="text-[9px] sm:text-[10px] text-gray-400 font-medium mt-0.5 break-words">Posted by ${mat.uploader} • ${new Date(mat.timestamp).toLocaleDateString('en-GB')}</p></div>${delBtn}</div><div class="flex flex-wrap gap-1.5 sm:gap-2 pt-1">${filesHtml}</div></div></div>`;
+                });
+                list.innerHTML += `<div class="space-y-3 sm:space-y-4"><div class="flex items-center gap-2 sm:gap-3 border-b-2 border-blue-500 pb-1.5 sm:pb-2"><h4 class="font-black text-blue-600 text-base sm:text-lg tracking-tight break-words">${topicKey}</h4></div><div class="space-y-2 sm:space-y-3 pl-1 sm:pl-2">${itemsHtml}</div></div>`;
+            });
+        }
+
+        window.tokenClient = null; window.gdriveAccessToken = null;
+        function initGoogleDriveAPI() { if(window.google && google.accounts) { window.tokenClient = google.accounts.oauth2.initTokenClient({ client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', scope: 'https://www.googleapis.com/auth/drive.file', callback: (tokenResponse) => { if (tokenResponse && tokenResponse.access_token) { window.gdriveAccessToken = tokenResponse.access_token; document.getElementById('gdrive-file-input').click(); } } }); } else { setTimeout(initGoogleDriveAPI, 500); } } 
+        initGoogleDriveAPI();
+        window.uploadDirectToDrive = function() { if (!window.gdriveAccessToken) { if(!window.tokenClient) return alert("Google API is still loading or Client ID is missing."); window.tokenClient.requestAccessToken({prompt: 'consent'}); } else { document.getElementById('gdrive-file-input').click(); } }
+        document.getElementById('gdrive-file-input').addEventListener('change', function(e) { if (this.files.length > 0) { window.executeDriveUpload(); } });
+        window.executeDriveUpload = function() {
+            const file = document.getElementById('gdrive-file-input').files[0]; 
+            if (!file) return;
+
+            const statusEl = document.getElementById('gdrive-upload-status'); 
+            statusEl.innerText = "Preparing upload..."; 
+            statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); 
+            statusEl.classList.add('text-blue-600');
+
+            // ==========================================
+            // PASTE YOUR GOOGLE DRIVE FOLDER ID BELOW
+            // ==========================================
+            const DEFAULT_FOLDER_ID = "Ngxpjs1j7AkbCgDLZ3Ua0C4mkaCGV"; 
+
+            // Add the 'parents' array to push it directly to your specific folder
+            const metadata = { 
+                'name': file.name, 
+                'mimeType': file.type,
+                'parents': [DEFAULT_FOLDER_ID] 
+            }; 
+            
+            const form = new FormData(); 
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' })); 
+            form.append('file', file);
+            
+            const xhr = new XMLHttpRequest(); 
+            xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink'); 
+            xhr.setRequestHeader('Authorization', 'Bearer ' + window.gdriveAccessToken);
+            
+            xhr.upload.onprogress = function(event) { 
+                if (event.lengthComputable) { 
+                    const percentComplete = Math.round((event.loaded / event.total) * 100); 
+                    statusEl.innerText = `Uploading to Drive... ${percentComplete}%`; 
+                } 
+            };
+            
+            xhr.onload = async function() {
+                if (xhr.status >= 200 && xhr.status < 300) { 
+                    try { 
+                        const data = JSON.parse(xhr.responseText); 
+                        if (data.id && data.webViewLink) { 
+                            statusEl.innerText = "Making file public..."; 
+                            await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, { 
+                                method: 'POST', 
+                                headers: { 'Authorization': 'Bearer ' + window.gdriveAccessToken, 'Content-Type': 'application/json' }, 
+                                body: JSON.stringify({ role: 'reader', type: 'anyone' }) 
+                            }); 
+                            document.getElementById('mat-ext-link').value = data.webViewLink; 
+                            statusEl.innerText = "Uploaded & made Public! Link auto-filled."; 
+                            statusEl.classList.remove('text-blue-600', 'text-red-600'); 
+                            statusEl.classList.add('text-green-600'); 
+                        } else { 
+                            throw new Error("No link returned."); 
+                        } 
+                    } catch (err) { 
+                        statusEl.innerText = "Upload Error: " + err.message; 
+                        statusEl.classList.remove('text-blue-600', 'text-green-600'); 
+                        statusEl.classList.add('text-red-600'); 
+                    } 
+                } else { 
+                    statusEl.innerText = "Drive Upload Failed. Check permissions."; 
+                    statusEl.classList.remove('text-blue-600', 'text-green-600'); 
+                    statusEl.classList.add('text-red-600'); 
+                }
+                document.getElementById('gdrive-file-input').value = '';
+            };
+            xhr.send(form);
+        }
+
+        window.submitFitnessAbsent = async function() { showLoader("Marking Absent..."); await window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance: 0, time: 0, pace: 'ABSENT', cals: 0, isAbsent: true, date: window.formatDateDDMMYYYY(), timestamp: Date.now() }); hideLoader(); }
+        window.submitFitnessLog = async function() {
+            const distance = parseFloat(document.getElementById('fit-dist').value); const time = parseFloat(document.getElementById('fit-time').value);
+            if(isNaN(distance) || isNaN(time) || distance <= 0 || time <= 0) return alert("Invalid inputs.");
+            showLoader("Logging Run..."); const paceMin = time / distance; const paceMinsStr = Math.floor(paceMin); const paceSecsStr = Math.round((paceMin - paceMinsStr) * 60).toString().padStart(2, '0'); const pace = `${paceMinsStr}:${paceSecsStr}`; const cals = Math.round(distance * 60);
+            await window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance, time, pace, cals, date: window.formatDateDDMMYYYY(), timestamp: Date.now() });
+            document.getElementById('fit-dist').value = ''; document.getElementById('fit-time').value = ''; hideLoader();
+        }
+
+        function renderFitnessMonitor() {
+            const myLogs = window.fitnessDB.filter(l => l.mobile === window.loggedInMobile).sort((a, b) => b.timestamp - a.timestamp);
+            let totalDist = 0; let totalCals = 0; let totalTime = 0; const labels = []; const data = []; const listEl = document.getElementById('fitness-log-list'); listEl.innerHTML = '';
+            
+            // Calculate Mon-Sun Weekly Fitness Stats
+            const { mondayMs, sundayMs } = window.getWeeklyRange();
+            let weeklyDist = 0; let weeklyCals = 0; let weeklyTime = 0; let weeklyRunCount = 0;
+
+           if(myLogs.length === 0) { listEl.innerHTML = `<div class="text-center text-gray-500 font-medium py-4 text-xs">No runs logged yet. Put on your shoes and start tracking!</div>`; }
+            
+            // 1. MATH LOOP (Calculates total KM and Calories)
+            myLogs.forEach((log, idx) => {
+                totalDist += log.distance; totalCals += log.cals; totalTime += log.time;
+                
+                if(log.timestamp >= mondayMs && log.timestamp <= sundayMs && !log.isAbsent) {
+                    weeklyDist += log.distance; weeklyCals += log.cals; weeklyTime += log.time; weeklyRunCount++;
+                }
+
+                if (idx < 7 && !log.isAbsent) { labels.unshift(log.date); data.unshift(log.distance); } else if (idx < 7 && log.isAbsent) { labels.unshift(log.date); data.unshift(0); }
+            });
+
+            // 2. RENDER LOOP (Only draws limited items)
+            let fitnessHtml = '';
+            myLogs.slice(0, window.uiLimits.fitness).forEach((log) => {
+                let runDataHtml = '';
+                if(log.isAbsent || log.pace === 'ABSENT') { runDataHtml = `<div class="text-right shrink-0"><h5 class="font-black text-red-500 text-xs sm:text-sm tracking-widest break-words">ABSENT</h5><p class="text-[8px] sm:text-[10px] text-gray-400 font-bold uppercase tracking-wider break-words">0 mins • 0 kcal</p></div>`; } 
+                else { runDataHtml = `<div class="text-right shrink-0"><h5 class="font-black text-gray-700 text-xs sm:text-sm break-words">${log.pace} /km</h5><p class="text-[8px] sm:text-[10px] text-orange-400 font-bold uppercase tracking-wider break-words">${log.time} mins • ${log.cals} kcal</p></div>`; }
+                fitnessHtml += `<div class="glass-card p-3 sm:p-4 rounded-xl sm:rounded-2xl flex justify-between items-center shadow-sm"><div class="flex items-center gap-2 sm:gap-3 min-w-0 pr-2"><div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0 ${log.isAbsent ? 'bg-gray-100 text-gray-400' : 'bg-rose-100 text-rose-500'} flex items-center justify-center"><i class="fa-solid ${log.isAbsent ? 'fa-bed' : 'fa-shoe-prints'} text-sm"></i></div><div class="min-w-0"><h5 class="font-black ${log.isAbsent ? 'text-gray-400' : 'text-gray-900'} text-xs sm:text-sm break-words leading-tight">${log.distance.toFixed(2)} KM</h5><p class="text-[8px] sm:text-[10px] text-gray-400 font-bold uppercase tracking-wider break-words leading-tight mt-0.5">${log.date}</p></div></div>${runDataHtml}</div>`;
+            });
+
+            if (window.uiLimits.fitness < myLogs.length) {
+                fitnessHtml += `
+                <div class="flex justify-center mt-2">
+                    <button onclick="window.uiLimits.fitness += 10; refreshUI();" class="px-6 py-2.5 bg-white border border-rose-200 text-rose-600 rounded-xl font-bold text-xs shadow-sm hover:bg-rose-50 active:scale-95 transition-all">
+                        <i class="fa-solid fa-chevron-down mr-1.5"></i> See Older Runs
+                    </button>
+                </div>`;
+            }
+            listEl.innerHTML = fitnessHtml;
+
+            // Weekly Pace Logic
+            const wkPaceDec = weeklyDist > 0 ? (weeklyTime / weeklyDist) : 0;
+            const wkPaceMin = Math.floor(wkPaceDec); const wkPaceSec = Math.round((wkPaceDec - wkPaceMin) * 60).toString().padStart(2, '0');
+            document.getElementById('fit-weekly-dist').innerText = `${weeklyDist.toFixed(1)} KM`;
+            document.getElementById('fit-weekly-pace').innerText = weeklyDist > 0 ? `${wkPaceMin}:${wkPaceSec}` : '0:00';
+            document.getElementById('fit-weekly-cals').innerText = `${weeklyCals} kcal`;
+            document.getElementById('fit-weekly-runs-count').innerText = `${weeklyRunCount} Runs`;
+
+            // Total Pace Logic
+            const avgPaceDecimal = totalDist > 0 ? (totalTime / totalDist) : 0; const avgPaceMins = Math.floor(avgPaceDecimal); const avgPaceSecs = Math.round((avgPaceDecimal - avgPaceMins) * 60).toString().padStart(2, '0');
+            document.getElementById('fit-total-dist').innerText = totalDist.toFixed(1); document.getElementById('fit-avg-pace').innerText = totalDist > 0 ? `${avgPaceMins}:${avgPaceSecs}` : '0:00'; document.getElementById('fit-total-cal').innerText = totalCals;
+            
+            const ctx = document.getElementById('fitnessChart').getContext('2d'); if(fitnessChartInstance) fitnessChartInstance.destroy();
+            let fillGrad = ctx.createLinearGradient(0, 0, 0, 150); fillGrad.addColorStop(0, 'rgba(244, 63, 94, 0.4)'); fillGrad.addColorStop(1, 'rgba(244, 63, 94, 0)');
+            fitnessChartInstance = new Chart(ctx, { type: 'line', data: { labels: labels, datasets: [{ label: 'KM Run', data: data, borderColor: '#f43f5e', backgroundColor: fillGrad, borderWidth: 3, tension: 0.4, fill: true, pointBackgroundColor: '#be123c', pointRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { min: 0, ticks: { font: {size:9} } }, x: { ticks: { font: {size:9} } } } } });
+        }
+
+        window.getTargetWeekInfo = function(offset = 0) {
+            const today = new Date(); 
+            today.setHours(0, 0, 0, 0); 
+            
+            const day = today.getDay();
+            const diffToMon = today.getDate() - day + (day === 0 ? -6 : 1);
+            
+            const monday = new Date(today.setDate(diffToMon + (offset * 7)));
+            monday.setHours(0, 0, 0, 0);
+            
+            const sunday = new Date(monday); 
+            sunday.setDate(monday.getDate() + 6);
+            sunday.setHours(23, 59, 59, 999);
+            
+            const year = monday.getFullYear(); 
+            const month = String(monday.getMonth() + 1).padStart(2, '0'); 
+            const dateNum = String(monday.getDate()).padStart(2, '0'); 
+            const weekKey = `${year}-${month}-${dateNum}`;
+            
+            const displayStr = `${window.formatDateDDMMYYYY(monday)} - ${window.formatDateDDMMYYYY(sunday)}`;
+            return { weekKey, displayStr };
+        };
+
+        window.toggleStudentSelection = function() {
+            const type = document.getElementById('wt-assign-type').value; const cbContainer = document.getElementById('wt-student-checkboxes');
+            if (type === 'Specific') {
+                cbContainer.classList.remove('hidden');
+                if (cbContainer.children.length === 0) {
+                    cbContainer.innerHTML = ''; window.studentsDB.forEach(s => {
+                        cbContainer.innerHTML += `<label class="flex items-center gap-2 p-1.5 hover:bg-teal-50 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-teal-100"><input type="checkbox" value="${s.mobile}" class="wt-student-cb w-3.5 h-3.5 text-teal-600 rounded border-gray-300"><span class="text-xs font-bold text-gray-700 break-words">${s.name} <span class="text-[9px] text-gray-400 font-normal ml-1">(${s.mobile})</span></span></label>`;
+                    });
+                }
+            } else { cbContainer.classList.add('hidden'); }
+        }
+        
+        window.toggleExamStudentSelection = function(mode) {
+            const type = document.getElementById(`${mode}-exam-assign-type`).value; 
+            const cbContainer = document.getElementById(`${mode}-exam-student-checkboxes`);
+            if (type === 'Specific') {
+                cbContainer.classList.remove('hidden');
+                if (cbContainer.children.length === 0) {
+                    cbContainer.innerHTML = ''; 
+                    window.studentsDB.forEach(s => {
+                        cbContainer.innerHTML += `<label class="flex items-center gap-2 p-1.5 hover:bg-teal-50 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-teal-100"><input type="checkbox" value="${s.mobile}" class="${mode}-exam-student-cb w-3.5 h-3.5 text-teal-600 rounded border-gray-300"><span class="text-xs font-bold text-gray-700 break-words">${s.name} <span class="text-[9px] text-gray-400 font-normal ml-1">(${s.mobile})</span></span></label>`;
+                    });
+                }
+            } else { 
+                cbContainer.classList.add('hidden'); 
+            }
+        };
+
+        window.changeWeekView = function(offset) { window.currentWeekViewOffset += offset; if (window.currentRole === 'admin') { document.getElementById('admin-target-form').classList.remove('hidden'); } else { document.getElementById('admin-target-form').classList.add('hidden'); } renderWeeklyTargets(); }
+        window.handleWeekPickerSelect = function(dateString) {
+            if(!dateString) return; const [y, m, d] = dateString.split('-'); const selectedDate = new Date(y, m - 1, d); const today = new Date(); today.setHours(0,0,0,0);
+            const getMonday = (date) => { const day = date.getDay(); const diff = date.getDate() - day + (day === 0 ? -6 : 1); return new Date(date.setDate(diff)).getTime(); };
+            const selMondayTime = getMonday(new Date(selectedDate)); const curMondayTime = getMonday(new Date(today));
+            const offset = Math.round((selMondayTime - curMondayTime) / (7 * 24 * 60 * 60 * 1000));
+            window.currentWeekViewOffset = offset; if (window.currentRole === 'admin') { document.getElementById('admin-target-form').classList.remove('hidden'); } renderWeeklyTargets();
+        };
+
+        window.submitWeeklyTask = async function() {
+            const subject = document.getElementById('wt-subject').value.trim(); const topic = document.getElementById('wt-topic').value.trim(); const taskDesc = document.getElementById('wt-task').value.trim();
+            if(!subject || !topic || !taskDesc) return alert("Fill all fields");
+            const assignType = document.getElementById('wt-assign-type').value; let assignedTo = ['All'];
+            if (assignType === 'Specific') { const checkboxes = document.querySelectorAll('.wt-student-cb:checked'); assignedTo = Array.from(checkboxes).map(cb => cb.value); if (assignedTo.length === 0) return alert("Please select at least one student!"); }
+            const { weekKey } = getTargetWeekInfo(window.currentWeekViewOffset); showLoader("Adding Task...");
+            const obj = { weekKey, subject, topic, taskDesc, assignedTo, timestamp: Date.now() };
+            if(isFirebaseConfigured) await addDoc(collection(db, "weekly_tasks"), obj); else window.weeklyTasksDB.push({id: Math.random().toString(), ...obj});
+            document.getElementById('wt-task').value = ''; if(assignType === 'Specific') { document.querySelectorAll('.wt-student-cb').forEach(cb => cb.checked = false); }
+            hideLoader(); renderWeeklyTargets();
+        }
+
+        window.deleteWeeklyTask = async function(taskId) { if(!confirm('Delete this task?')) return; if(isFirebaseConfigured) await deleteDoc(doc(db, "weekly_tasks", taskId)); else window.weeklyTasksDB = window.weeklyTasksDB.filter(t => t.id !== taskId); renderWeeklyTargets(); }
+        window.toggleTaskCompletion = async function(taskId) {
+            if(window.currentRole !== 'student') return; const mobile = window.loggedInMobile; const existing = window.studentTasksDB.find(st => st.taskId === taskId && st.mobile === mobile);
+            if(existing) { if(isFirebaseConfigured) await deleteDoc(doc(db, "student_tasks", existing.id)); else window.studentTasksDB = window.studentTasksDB.filter(st => st.id !== existing.id); } 
+            else { const obj = { mobile, taskId, completed: true, timestamp: Date.now() }; if(isFirebaseConfigured) await addDoc(collection(db, "student_tasks"), obj); else window.studentTasksDB.push({id: Math.random().toString(), ...obj}); }
+            if(!isFirebaseConfigured) renderWeeklyTargets();
+        }
+
+        window.renderWeeklyTargets = function() {
+            const { weekKey, displayStr } = getTargetWeekInfo(window.currentWeekViewOffset); document.getElementById('wt-display-date').innerText = displayStr;
+            const labelEl = document.getElementById('wt-week-label'); const labelSub = document.getElementById('wt-week-label-sub');
+            let weekText = "Current Week"; if(window.currentWeekViewOffset === -1) weekText = "Last Week"; else if(window.currentWeekViewOffset > 0) weekText = "Future Week"; else if(window.currentWeekViewOffset < -1) weekText = "Past Week";
+            if(labelEl) labelEl.innerText = weekText; if(labelSub) labelSub.innerText = weekText;
+
+            const weeksTasks = window.weeklyTasksDB.filter(t => { if (t.weekKey !== weekKey) return false; if (window.currentRole === 'admin') return true; if (!t.assignedTo || t.assignedTo.includes('All')) return true; return t.assignedTo.includes(window.loggedInMobile); });
+            const listContainer = document.getElementById('wt-tasks-list'); listContainer.innerHTML = '';
+            if (weeksTasks.length === 0) { document.getElementById('wt-progress-text').innerText = "0%"; document.getElementById('wt-progress-bar').style.width = "0%"; listContainer.innerHTML = `<div class="text-center text-gray-500 font-medium py-6 sm:py-8 text-xs sm:text-sm bg-white rounded-[1rem] shadow-sm border border-gray-100 px-4 break-words">No targets assigned to you for this week.</div>`; return; }
+
+            const grouped = {}; let totalTasks = 0; let completedTasks = 0;
+            weeksTasks.sort((a, b) => a.timestamp - b.timestamp);
+            weeksTasks.forEach(task => { totalTasks++; const isCompleted = window.studentTasksDB.some(st => st.taskId === task.id && st.mobile === window.loggedInMobile); if (isCompleted) completedTasks++; if (!grouped[task.subject]) grouped[task.subject] = {}; if (!grouped[task.subject][task.topic]) grouped[task.subject][task.topic] = []; grouped[task.subject][task.topic].push({ ...task, isCompleted }); });
+            const progPerc = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+            document.getElementById('wt-progress-text').innerText = `${progPerc}%`; document.getElementById('wt-progress-bar').style.width = `${progPerc}%`;
+
+            const subjectOrder = ['Calculation', 'Vocabulary', 'English', 'Mathematics', 'Stenography', 'General Knowledge', 'Reasoning', 'Academic']; const topicOrder = ['Major', 'Practice', 'Revision', 'Classes', 'New', 'Exam', 'Minor'];
+            const sortedSubjects = Object.keys(grouped).sort((a, b) => { const idxA = subjectOrder.indexOf(a); const idxB = subjectOrder.indexOf(b); if (idxA !== -1 && idxB !== -1) return idxA - idxB; if (idxA !== -1) return -1; if (idxB !== -1) return 1; return a.localeCompare(b); });
+
+            sortedSubjects.forEach(subject => {
+                let subjectHtml = `<div class="mb-4 sm:mb-6"><h4 class="font-black text-gray-900 text-base sm:text-lg border-b-2 border-teal-500 pb-1 mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-book-open text-teal-600 text-sm"></i> ${subject}</h4><div class="space-y-2 sm:space-y-3 pl-1 sm:pl-2">`;
+                const sortedTopics = Object.keys(grouped[subject]).sort((a, b) => { const idxA = topicOrder.indexOf(a); const idxB = topicOrder.indexOf(b); if (idxA !== -1 && idxB !== -1) return idxA - idxB; if (idxA !== -1) return -1; if (idxB !== -1) return 1; return a.localeCompare(b); });
+                sortedTopics.forEach(topic => {
+                    let tasksHtml = '';
+                    grouped[subject][topic].forEach(task => {
+                        const isAdmin = window.currentRole === 'admin'; const checkClass = task.isCompleted ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-gray-100 border-gray-300 text-transparent'; const textClass = task.isCompleted ? 'line-through text-gray-400' : 'text-gray-800';
+                        const delBtn = isAdmin ? `<button onclick="deleteWeeklyTask('${task.id}')" class="ml-auto text-red-400 hover:text-white hover:bg-red-500 w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center transition-all shrink-0"><i class="fa-solid fa-trash text-[9px] sm:text-[10px]"></i></button>` : '';
+                        let assignBadge = '';
+                        if (isAdmin && task.assignedTo && !task.assignedTo.includes('All')) {
+                            const studentNames = task.assignedTo.map(mob => { const s = window.studentsDB.find(stu => stu.mobile === mob); return s ? s.name : mob; });
+                            assignBadge = `<span class="bg-indigo-100 text-indigo-700 border border-indigo-200 text-[7px] sm:text-[9px] px-1.5 sm:px-2 py-0.5 rounded font-black tracking-wide uppercase ml-1 sm:ml-2 shadow-sm whitespace-normal sm:whitespace-nowrap break-words inline-block mt-0.5" title="Assigned to: ${studentNames.join(', ')}">👤 ${studentNames.join(', ')}</span>`;
+                        }
+                        tasksHtml += `<div class="flex items-start sm:items-center gap-2 sm:gap-3 py-1.5 sm:py-2 group border-b border-gray-50 last:border-0"><div onclick="toggleTaskCompletion('${task.id}')" class="w-4 h-4 sm:w-5 sm:h-5 rounded flex items-center justify-center border-2 transition-all cursor-pointer shrink-0 mt-0.5 sm:mt-0 ${checkClass} ${isAdmin ? 'pointer-events-none opacity-50' : 'hover:scale-110 shadow-sm'}"><i class="fa-solid fa-check text-[8px] sm:text-[10px]"></i></div><span class="text-[11px] sm:text-[13px] font-bold ${textClass} transition-all cursor-pointer select-none leading-tight flex flex-col sm:flex-row sm:items-center flex-wrap gap-0.5 sm:gap-1 break-words w-full pr-1" onclick="toggleTaskCompletion('${task.id}')"><span class="break-words">${task.taskDesc}</span> ${assignBadge}</span>${delBtn}</div>`;
+                    });
+                    subjectHtml += `<div class="bg-white p-3 sm:p-4 rounded-[1rem] border border-gray-200 shadow-sm mb-2 sm:mb-3"><h5 class="text-[9px] sm:text-[11px] font-black text-teal-800 uppercase tracking-widest mb-1.5 sm:mb-2 pb-1 border-b border-gray-100 break-words">${topic}</h5><div class="flex flex-col">${tasksHtml}</div></div>`;
+                });
+                subjectHtml += `</div></div>`; listContainer.innerHTML += subjectHtml;
+            });
+        }
+
+    window.getComputedResults = function() {
+    let all = [];
+    const todayDate = new Date(); todayDate.setHours(0,0,0,0);
+    const parseDDMM = (dStr) => { if(!dStr) return new Date(0); const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
+
+    (window.studentsDB || []).forEach(stu => { 
+        (window.examsDB || []).forEach(ex => { 
+            const isAssigned = !ex.assignedTo || ex.assignedTo.includes('All') || ex.assignedTo.includes(stu.mobile);
+            if(!isAssigned) return;
+
+            const myScripts = window.peerAnswerScriptsDB.filter(s => s.examId === ex.id && s.solverMobile === stu.mobile);
+            const standardResult = window.resultsDB.find(r => r.examId === ex.id && r.mobile === stu.mobile);
+
+            // 🔥 CRITICAL FIX: If Admin manually logged a result (standardResult exists), 
+            // it must ALWAYS OVERRIDE the auto-calculations, no matter the exam type!
+            if (standardResult) {
+                all.push(standardResult);
+                return; // Skip calculation, the admin's manual grade is final.
+            }
+
+            if (ex.examType === 'anytime' || ex.examType === 'online') {
+                if (myScripts.length > 0) {
+                    let totalObtained = 0; let totalMaxAssigned = 0; let allGraded = true;
+                    myScripts.forEach(script => {
+                        if (script.isGraded) {
+                            totalObtained += script.marksAwarded;
+                            totalMaxAssigned += script.maxMarks;
+                        } else { allGraded = false; }
+                    });
+
+                    const percentage = totalMaxAssigned > 0 ? (totalObtained / ex.totalMarks) * 100 : 0;
+                    
+                    all.push({ 
+                        id: 'calc_'+ex.id+'_'+stu.mobile, 
+                        examId: ex.id, 
+                        mobile: stu.mobile, 
+                        obtained: parseFloat(totalObtained.toFixed(1)), 
+                        total: ex.totalMarks, 
+                        percentage: parseFloat(percentage.toFixed(1)), 
+                        status: allGraded ? (percentage >= (ex.passPercentage||40) ? 'PASS' : 'FAIL') : 'EVALUATING', 
+                        isVirtual: false,
+                        scriptsData: myScripts 
+                    });
+                } else if (parseDDMM(ex.date) < todayDate && ex.examType !== 'anytime') {
+                    all.push({ id: 'virt_'+ex.id+'_'+stu.mobile, examId: ex.id, mobile: stu.mobile, obtained: 0, total: ex.totalMarks, percentage: 0, status: 'ABSENT', isVirtual: true }); 
+                }
+            } else {
+                if (parseDDMM(ex.date) < todayDate) all.push({ id: 'virt_'+ex.id+'_'+stu.mobile, examId: ex.id, mobile: stu.mobile, obtained: 0, total: ex.totalMarks, percentage: 0, status: 'ABSENT', isVirtual: true }); 
+            }
+        }); 
+    }); 
+    return all; 
+}
+        window.currentLeaderboardTab = 'exam';
+        window.switchLeaderboardTab = function(tab) { window.currentLeaderboardTab = tab; document.getElementById('lb-tab-exam').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all ${tab === 'exam' ? 'segment-active' : 'segment-inactive'}`; document.getElementById('lb-tab-study').className = `flex-1 py-2 sm:py-2.5 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all ${tab === 'study' ? 'segment-active' : 'segment-inactive'}`; renderLeaderboard(); }
+
+        // --- 1. STUDY (SESSION) LEADERBOARD ENGINE ---
+        function getStudyLeaderboard() {
+            const todayStr = window.formatDateDDMMYYYY(); 
+            const studentStudy = {};
+            const { mondayMs, sundayMs } = window.getWeeklyRange();
+            const now = Date.now();
+
+            // Initialize all students with 0
+            window.studentsDB.forEach(s => studentStudy[s.mobile] = { mobile: s.mobile, name: s.name, totalStudyMs: 0, weeklyStudyMs: 0 });
+
+            window.sessionsDB.forEach(s => { 
+                if (studentStudy[s.mobile] && s.status !== 'ABSENT') { 
+                    let ms = s.totalStudyMs || 0; 
+                    
+                    // Add live ongoing time if currently studying
+                    if (s.status === 'STUDYING' && s.dateStr === todayStr) {
+                        ms += (now - s.lastToggleTime); 
+                    }
+
+                    // Add to total
+                    studentStudy[s.mobile].totalStudyMs += ms; 
+
+                    // Add to weekly if the session started between this Monday and Sunday
+                    if(s.timestamp >= mondayMs && s.timestamp <= sundayMs) {
+                        studentStudy[s.mobile].weeklyStudyMs += ms;
+                    }
+                } 
+            });
+
+            // Convert MS to Hours
+            const leaderboard = Object.values(studentStudy).map(s => ({ 
+                ...s, 
+                totalHours: (s.totalStudyMs / 3600000).toFixed(2),
+                weeklyHours: (s.weeklyStudyMs / 3600000).toFixed(2)
+            }));
+
+            return leaderboard;
+        }
+// --- 3.5 FITNESS LEADERBOARD ENGINE ---
+function getFitnessLeaderboard() {
+    const studentStats = {};
+    const { mondayMs, sundayMs } = window.getWeeklyRange();
+
+    // Initialize all students
+    window.studentsDB.forEach(s => {
+        studentStats[s.mobile] = { mobile: s.mobile, name: s.name, totalDist: 0, weeklyDist: 0 };
+    });
+
+    // Calculate total and weekly distance run
+    window.fitnessDB.forEach(log => {
+        if (!log.isAbsent && studentStats[log.mobile]) {
+            studentStats[log.mobile].totalDist += log.distance;
+            
+            // Check if run belongs to this week
+            if (log.timestamp >= mondayMs && log.timestamp <= sundayMs) {
+                studentStats[log.mobile].weeklyDist += log.distance;
+            }
+        }
+    });
+
+    // Format output
+    return Object.values(studentStats).map(s => ({
+        ...s,
+        totalDist: parseFloat(s.totalDist.toFixed(1)),
+        weeklyDist: parseFloat(s.weeklyDist.toFixed(1))
+    }));
+}
+      
+        // --- 2. EXAM (SCORE) LEADERBOARD ENGINE ---
+        function getOverallLeaderboard() {
+            const studentData = {}; 
+            const { mondayMs, sundayMs } = window.getWeeklyRange();
+            
+            // Safe Date Parser
+            const parseDDMM = (dStr) => { 
+                if(!dStr || !dStr.includes('/')) return 0;
+                const [d, m, y] = dStr.split('/'); 
+                return new Date(`${y}-${m}-${d}T00:00:00`).getTime(); 
+            };
+
+            // Initialize all students
+            window.studentsDB.forEach(s => studentData[s.mobile] = { mobile: s.mobile, name: s.name, totalPerc: 0, count: 0, weeklyPerc: 0, weeklyCount: 0 });
+
+            getComputedResults().forEach(r => { 
+                if(studentData[r.mobile]) { 
+                    // Add to total average
+                    studentData[r.mobile].totalPerc += r.percentage; 
+                    studentData[r.mobile].count += 1; 
+
+                    // Find exam date and check if it belongs to this week
+                    const exam = window.examsDB.find(e => e.id === r.examId);
+                    if(exam && exam.date) {
+                        const examTime = parseDDMM(exam.date);
+                        if(examTime >= mondayMs && examTime <= sundayMs) {
+                            studentData[r.mobile].weeklyPerc += r.percentage;
+                            studentData[r.mobile].weeklyCount += 1;
+                        }
+                    }
+                } 
+            });
+
+            const leaderboard = Object.values(studentData).map(s => ({ 
+                ...s, 
+                avg: s.count > 0 ? parseFloat((s.totalPerc / s.count).toFixed(1)) : 0, 
+                weeklyAvg: s.weeklyCount > 0 ? parseFloat((s.weeklyPerc / s.weeklyCount).toFixed(1)) : 0,
+                count: s.count,
+                weeklyCount: s.weeklyCount
+            }));
+
+            return leaderboard;
+        }
+
+        // --- 3. TARGET (WEEKLY TASKS) LEADERBOARD ENGINE ---
+        function getTargetLeaderboard() {
+            const studentTargets = {};
+            const { weekKey: currentWeekKey } = window.getTargetWeekInfo(0);
+
+            // Initialize all students
+            window.studentsDB.forEach(s => {
+                studentTargets[s.mobile] = { mobile: s.mobile, name: s.name, totalTasks: 0, completedTasks: 0, weeklyTasks: 0, weeklyCompleted: 0 };
+            });
+
+            // Calculate total and weekly tasks assigned per student
+            window.weeklyTasksDB.forEach(task => {
+                const isCurrentWeek = task.weekKey === currentWeekKey;
+                window.studentsDB.forEach(s => {
+                    if (!task.assignedTo || task.assignedTo.includes('All') || task.assignedTo.includes(s.mobile)) {
+                        studentTargets[s.mobile].totalTasks++;
+                        if (isCurrentWeek) studentTargets[s.mobile].weeklyTasks++;
+                    }
+                });
+            });
+
+            // Calculate completions
+            window.studentTasksDB.forEach(st => {
+                if (st.completed && studentTargets[st.mobile]) {
+                    const task = window.weeklyTasksDB.find(t => t.id === st.taskId);
+                    if (task) {
+                        studentTargets[st.mobile].completedTasks++;
+                        if (task.weekKey === currentWeekKey) {
+                            studentTargets[st.mobile].weeklyCompleted++;
+                        }
+                    }
+                }
+            });
+
+            // Calculate percentages
+            return Object.values(studentTargets).map(s => ({
+                ...s,
+                totalPerc: s.totalTasks > 0 ? Math.round((s.completedTasks / s.totalTasks) * 100) : 0,
+                weeklyPerc: s.weeklyTasks > 0 ? Math.round((s.weeklyCompleted / s.weeklyTasks) * 100) : 0
+            }));
+        }
+
+        // --- 4. DYNAMIC LEADERBOARD RENDERER ---
+        window.renderLeaderboard = function() {
+            const list = document.getElementById('leaderboard-list'); list.innerHTML = '';
+            
+            if (window.lbMainTab === 'score') {
+                const leaderboard = getOverallLeaderboard();
+                let sortedList = window.lbSubTab === 'weekly' 
+                    ? [...leaderboard].sort((a, b) => b.weeklyAvg - a.weeklyAvg) 
+                    : [...leaderboard].sort((a, b) => b.avg - a.avg);
+
+                sortedList.forEach((s, idx) => {
+                    const rank = idx + 1;
+                    const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyAvg : s.avg;
+                    const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Avg' : 'Total Avg';
+                    const secondaryVal = window.lbSubTab === 'weekly' ? `Total Avg: ${s.avg}%` : `Wk Avg: ${s.weeklyAvg}%`;
+
+                    let badge = ''; let bg = 'glass-card';
+                    if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-amber-100/80 to-amber-200/80 border-amber-300'; } 
+                    else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; } 
+                    else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; } 
+                    else { badge = `#${rank}`; }
+
+                    const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-indigo-50/90 border-indigo-200';
+                    list.innerHTML += `
+                        <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2">
+                            <div class="flex items-center gap-2 sm:gap-4 min-w-0">
+                                <div class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl sm:rounded-2xl bg-white/60 flex items-center justify-center font-black text-base sm:text-lg shadow-sm border border-white/50">${badge}</div>
+                                <div class="min-w-0 pr-1">
+                                    <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-indigo-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
+                                    <span class="bg-indigo-100/80 text-indigo-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">%</span></p>
+                                <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
+                            </div>
+                        </div>`;
+                });
+            } else if (window.lbMainTab === 'study') {
+                const leaderboard = getStudyLeaderboard();
+                let sortedList = window.lbSubTab === 'weekly' 
+                    ? [...leaderboard].sort((a, b) => parseFloat(b.weeklyHours) - parseFloat(a.weeklyHours)) 
+                    : [...leaderboard].sort((a, b) => parseFloat(b.totalHours) - parseFloat(a.totalHours));
+
+                sortedList.forEach((s, idx) => {
+                    const rank = idx + 1;
+                    const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyHours : s.totalHours;
+                    const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Focus' : 'Total Focus';
+                    const secondaryVal = window.lbSubTab === 'weekly' ? `Total: ${s.totalHours}h` : `Wk: ${s.weeklyHours}h`;
+
+                    let badge = ''; let bg = 'glass-card';
+                    if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-emerald-100/80 to-teal-200/80 border-teal-300'; } 
+                    else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; } 
+                    else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; } 
+                    else { badge = `#${rank}`; }
+
+                    const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-teal-50/90 border-teal-200';
+                    list.innerHTML += `
+                        <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2">
+                            <div class="flex items-center gap-2 sm:gap-4 min-w-0">
+                                <div class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl sm:rounded-2xl bg-white/60 flex items-center justify-center font-black text-base sm:text-lg shadow-sm border border-white/50">${badge}</div>
+                                <div class="min-w-0 pr-1">
+                                    <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-teal-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
+                                    <span class="bg-teal-100/80 text-teal-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">h</span></p>
+                                <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
+                            </div>
+                        </div>`;
+                });
+            } else if (window.lbMainTab === 'target') {
+                const leaderboard = getTargetLeaderboard();
+                let sortedList = window.lbSubTab === 'weekly' 
+                    ? [...leaderboard].sort((a, b) => b.weeklyPerc - a.weeklyPerc) 
+                    : [...leaderboard].sort((a, b) => b.totalPerc - a.totalPerc);
+
+                sortedList.forEach((s, idx) => {
+                    const rank = idx + 1;
+                    const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyPerc : s.totalPerc;
+                    const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Target' : 'Total Target';
+                    const secondaryVal = window.lbSubTab === 'weekly' 
+                        ? `${s.weeklyCompleted}/${s.weeklyTasks} Tasks (Tot: ${s.totalPerc}%)` 
+                        : `${s.completedTasks}/${s.totalTasks} Tasks (Wk: ${s.weeklyPerc}%)`;
+
+                    let badge = ''; let bg = 'glass-card';
+                    if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-purple-100/80 to-purple-200/80 border-purple-300'; } 
+                    else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; } 
+                    else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; } 
+                    else { badge = `#${rank}`; }
+
+                    const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-purple-50/90 border-purple-200';
+                    list.innerHTML += `
+                        <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2">
+                            <div class="flex items-center gap-2 sm:gap-4 min-w-0">
+                                <div class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl sm:rounded-2xl bg-white/60 flex items-center justify-center font-black text-base sm:text-lg shadow-sm border border-white/50">${badge}</div>
+                                <div class="min-w-0 pr-1">
+                                    <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-purple-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
+                                    <span class="bg-purple-100/80 text-purple-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">%</span></p>
+                                <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
+                            </div>
+                        </div>`;
+                });
+            } else if (window.lbMainTab === 'fitness') {
+        const leaderboard = getFitnessLeaderboard();
+        let sortedList = window.lbSubTab === 'weekly' 
+            ? [...leaderboard].sort((a, b) => b.weeklyDist - a.weeklyDist) 
+            : [...leaderboard].sort((a, b) => b.totalDist - a.totalDist);
+
+        sortedList.forEach((s, idx) => {
+            const rank = idx + 1;
+            const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyDist : s.totalDist;
+            const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Run' : 'Total Run';
+            const secondaryVal = window.lbSubTab === 'weekly' 
+                ? `Total: ${s.totalDist} KM` 
+                : `Wk: ${s.weeklyDist} KM`;
+
+            let badge = ''; let bg = 'glass-card';
+            if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-rose-100/80 to-rose-200/80 border-rose-300'; } 
+            else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; } 
+            else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; } 
+            else { badge = `#${rank}`; }
+
+            const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-rose-50/90 border-rose-200';
+            list.innerHTML += `
+                <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2">
+                    <div class="flex items-center gap-2 sm:gap-4 min-w-0">
+                        <div class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-xl sm:rounded-2xl bg-white/60 flex items-center justify-center font-black text-base sm:text-lg shadow-sm border border-white/50">${badge}</div>
+                        <div class="min-w-0 pr-1">
+                            <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-rose-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
+                            <span class="bg-rose-100/80 text-rose-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">KM</span></p>
+                        <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
+                    </div>
+                </div>`;
+        });
+    }
+        }
+
+        window.renderAdminProfile = function(mobile) {
+            const student = window.studentsDB.find(s => s.mobile === mobile);
+            if (!student) return safeBack();
+
+            document.getElementById('ap-name').innerText = student.name;
+            document.getElementById('ap-mobile').innerHTML = `${student.mobile} <span class="text-gray-400 mx-1 sm:mx-2">|</span> <span class="text-indigo-300 font-normal">PIN: ${student.password}</span>`;
+
+            const myRecords = getComputedResults().filter(r => r.mobile === mobile);
+            const parseUniversalDate = (dStr) => {
+                if (!dStr) return 0;
+                if (dStr.includes('/')) {
+                    const p = dStr.split('/');
+                    if (p.length === 3) return new Date(`${p[2]}-${p[1]}-${p[0]}T00:00:00`).getTime();
+                }
+                return new Date(dStr).getTime() || 0;
+            };
+
+            myRecords.sort((a, b) => {
+                const exA = window.examsDB.find(e => e.id === a.examId);
+                const exB = window.examsDB.find(e => e.id === b.examId);
+                if (!exA || !exB) return 0;
+                return parseUniversalDate(exB.date) - parseUniversalDate(exA.date);
+            });
+            let totalPerc = 0; let passes = 0; let totalSaved = 0;
+            const chartLabels = []; const chartData = []; const chartStatuses = [];
+            const recordsList = document.getElementById('ap-records-list');
+            recordsList.innerHTML = '';
+
+            myRecords.forEach(r => {
+                const exam = window.examsDB.find(e => e.id === r.examId);
+                if(!exam) return;
+                totalPerc += r.percentage;
+                if(r.status === 'PASS') passes++;
+                if(r.timeSaved) totalSaved += r.timeSaved;
+                
+                chartLabels.unshift(exam.name.substring(0, 6) + '..');
+                chartData.unshift(r.percentage);
+                chartStatuses.unshift(r.status);
+                
+                const isAbsent = r.status === 'ABSENT'; 
+                const c = isAbsent ? 'red' : (r.status === 'PASS' ? 'green' : 'red'); 
+                const rank = calculateClassRank(exam.id, r.mobile);
+                
+                recordsList.innerHTML += `
+                    <div class="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all mb-2.5 sm:mb-3 relative overflow-hidden group">
+                        <div class="absolute left-0 top-0 bottom-0 w-1 sm:w-1.5 bg-${c}-500"></div>
+                        <div class="flex justify-between items-start ml-2 sm:ml-3">
+                            <div class="min-w-0 pr-2">
+                                <h4 class="font-black text-gray-900 text-xs sm:text-sm group-hover:text-indigo-600 transition-colors break-words leading-tight">${exam.name}</h4>
+                                <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1 break-words leading-tight"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • ${exam.examType === 'testbook' ? 'Testbook' : (exam.examType === 'offline' ? 'Offline' : 'Online')} • Dur: ${exam.duration}m</p>
+                                <div class="flex flex-wrap gap-1.5 sm:gap-2 mt-2 sm:mt-2.5">
+                                    <span class="bg-gray-100 text-gray-600 px-1.5 sm:px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-black uppercase shadow-sm whitespace-nowrap">Rank #${rank}</span>
+                                    ${!isAbsent && r.timeSaved > 0 ? `<span class="bg-emerald-50 text-emerald-600 border border-emerald-100 px-1.5 sm:px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-black uppercase shadow-sm whitespace-nowrap">Saved ${r.timeSaved}m</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="text-right shrink-0">
+                                <div class="font-black text-lg sm:text-xl text-gray-900 leading-none break-words">${r.obtained}<span class="text-[10px] sm:text-xs text-gray-400">/${r.total}</span></div>
+                                <div class="text-[8px] sm:text-[9px] font-black text-${c}-700 bg-${c}-50 px-1.5 sm:px-2 py-1 rounded border border-${c}-100 inline-block mt-1.5 sm:mt-2 tracking-widest uppercase shadow-sm whitespace-nowrap">${isAbsent ? 'ABSENT' : r.status} (${r.percentage.toFixed(0)}%)</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            const avg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : 0;
+            document.getElementById('ap-avg').innerHTML = `${avg}<span class="text-[10px] sm:text-sm text-gray-400">%</span>`;
+            document.getElementById('ap-pass-rate').innerText = myRecords.length > 0 ? `${Math.round((passes / myRecords.length) * 100)}%` : '0%';
+            document.getElementById('ap-target').innerText = student.targetPercentage ? `${student.targetPercentage}%` : 'N/A';
+
+            const lb = getOverallLeaderboard();
+            const rankIdx = lb.findIndex(s => s.mobile === mobile);
+            document.getElementById('ap-rank').innerText = rankIdx !== -1 ? `#${rankIdx + 1}` : '#-';
+
+            window.updateChart('adminProfileChart', window.adminProfileChartInstance, chartLabels, chartData, chartStatuses, inst => window.adminProfileChartInstance = inst);
+
+            const allTasks = window.weeklyTasksDB || [];
+            const myTasks = allTasks.filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile));
+            const myCompleted = window.studentTasksDB.filter(st => st.mobile === mobile && st.completed);
+            const tPerc = myTasks.length > 0 ? Math.round((myCompleted.length / myTasks.length) * 100) : 0;
+            document.getElementById('ap-task-count').innerText = `${myCompleted.length} / ${myTasks.length} Tasks`;
+            document.getElementById('ap-task-perc').innerText = `${tPerc}%`;
+            document.getElementById('ap-task-bar').style.width = `${tPerc}%`;
+
+            const fLogs = window.fitnessDB.filter(l => l.mobile === mobile && !l.isAbsent);
+            let fDist = 0, fCals = 0, fTime = 0;
+            fLogs.forEach(l => { fDist += l.distance; fCals += l.cals; fTime += l.time; });
+            document.getElementById('ap-fit-dist').innerText = fDist.toFixed(1);
+            document.getElementById('ap-fit-cals').innerText = fCals;
+            const pM = fDist > 0 ? Math.floor(fTime / fDist) : 0;
+            const pS = fDist > 0 ? Math.round(((fTime / fDist) - pM) * 60).toString().padStart(2, '0') : '00';
+            document.getElementById('ap-fit-pace').innerText = `${pM}:${pS}`;
+
+            const sLogs = window.sessionsDB.filter(s => s.mobile === mobile);
+            let sToday = 0, sWeek = 0, sTotal = 0;
+            const todayStr = window.formatDateDDMMYYYY();
+            const weekAgo = Date.now() - 604800000;
+            
+            sLogs.forEach(s => {
+                let ms = s.totalStudyMs;
+                if(s.status === 'STUDYING' && s.dateStr === todayStr) ms += (Date.now() - s.lastToggleTime);
+                sTotal += ms;
+                if(s.dateStr === todayStr) sToday += ms;
+                if(s.timestamp >= weekAgo) sWeek += ms;
+            });
+
+            document.getElementById('ap-session-today').innerText = (sToday / 3600000).toFixed(2) + 'h';
+            document.getElementById('ap-session-week').innerText = (sWeek / 3600000).toFixed(2) + 'h';
+            document.getElementById('ap-session-total').innerText = (sTotal / 3600000).toFixed(2) + 'h';
+            
+            const histDiv = document.getElementById('ap-session-history');
+            histDiv.className = "space-y-3 sm:space-y-4 max-h-[300px] sm:max-h-[400px] overflow-y-auto pr-1 no-scrollbar mt-3 sm:mt-4";
+            histDiv.innerHTML = sLogs.length === 0 ? '<div class="text-center p-4 sm:p-6 text-gray-400 text-[10px] sm:text-xs font-bold border-2 border-dashed border-gray-200 rounded-xl sm:rounded-2xl break-words">No live tracking data found for this student.</div>' : '';
+            
+            sLogs.sort((a,b) => b.timestamp - a.timestamp).slice(0, 10).forEach(s => {
+                let timelineHtml = '';
+                if (s.logs && s.logs.length > 0) {
+                    timelineHtml = `<div class="mt-3 sm:mt-4 pl-2.5 sm:pl-3 border-l-[2px] sm:border-l-[3px] border-orange-200/60 space-y-2.5 sm:space-y-3 relative">`;
+                    s.logs.forEach(log => {
+                        const t = new Date(log.time).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit', second: '2-digit'});
+                        let icon, color, bg, text;
+                        
+                        if(log.action === 'START') { icon = 'fa-play'; color = 'text-emerald-500'; bg = 'bg-emerald-100'; text = 'Session Started'; }
+                        else if(log.action === 'BREAK') { icon = 'fa-mug-hot'; color = 'text-amber-500'; bg = 'bg-amber-100'; text = 'Took a Break'; }
+                        else if(log.action === 'RESUME') { icon = 'fa-rotate-right'; color = 'text-blue-500'; bg = 'bg-blue-100'; text = 'Resumed Studying'; }
+                        else if(log.action === 'STOP') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Session Terminated'; }
+                        else if(log.action === 'ABSENT') { icon = 'fa-bed'; color = 'text-gray-500'; bg = 'bg-gray-200'; text = 'Marked Absent'; }
+                        else { icon = 'fa-bolt'; color = 'text-orange-500'; bg = 'bg-orange-100'; text = log.action; }
+
+                        timelineHtml += `
+                            <div class="flex items-center gap-2 sm:gap-3 relative group">
+                                <div class="absolute -left-[20px] sm:-left-[24px] w-[16px] sm:w-[20px] h-[16px] sm:h-[20px] rounded-full ${bg} ${color} flex items-center justify-center border-2 border-white shadow-sm transition-transform group-hover:scale-125 z-10">
+                                    <i class="fa-solid ${icon} text-[6px] sm:text-[8px]"></i>
+                                </div>
+                                <div class="flex-1 bg-white p-1.5 sm:p-2 rounded-lg border border-orange-50 shadow-sm flex flex-wrap justify-between items-center gap-1 group-hover:border-orange-200 transition-colors min-w-0">
+                                    <span class="text-[9px] sm:text-[11px] font-bold text-gray-700 break-words leading-tight">${text}</span>
+                                    <span class="text-[8px] sm:text-[9px] font-black text-gray-400 bg-gray-50 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded shadow-inner border border-gray-100 tracking-wider whitespace-nowrap shrink-0">${t}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    timelineHtml += `</div>`;
+                }
+
+                let statusColor = s.status === 'ABSENT' ? 'bg-red-100 text-red-600 border-red-200' : 'bg-green-100 text-green-600 border-green-200';
+                if (s.status === 'STUDYING' || s.status === 'BREAK') statusColor = 'bg-amber-100 text-amber-600 border-amber-200 animate-pulse';
+
+                let studyTime = (s.totalStudyMs / 3600000).toFixed(2);
+                let breakTime = s.totalBreakMs ? (s.totalBreakMs / 60000).toFixed(0) : 0;
+
+                histDiv.innerHTML += `
+                    <div class="bg-gradient-to-b from-white to-orange-50/20 p-3 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] border border-orange-100 shadow-sm hover:shadow-md transition-shadow">
+                        <div class="flex justify-between items-start border-b border-orange-100/50 pb-2 sm:pb-3 gap-2">
+                            <div class="min-w-0">
+                                <h5 class="text-[11px] sm:text-xs font-black text-gray-900 break-words leading-tight">${s.sessionType}</h5>
+                                <p class="text-[8px] sm:text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5 sm:mt-1 break-words leading-tight"><i class="fa-regular fa-calendar text-orange-400 mr-1"></i>${s.dateStr}</p>
+                            </div>
+                            <div class="flex flex-col items-end gap-1 sm:gap-1.5 shrink-0">
+                                <span class="${statusColor} border px-1.5 sm:px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-black tracking-widest uppercase shadow-sm whitespace-nowrap">${s.status}</span>
+                                <div class="flex flex-wrap gap-1 sm:gap-2 justify-end items-center mt-0.5 sm:mt-1">
+                                    <span class="text-[8px] sm:text-[10px] font-black text-orange-600 bg-orange-100/50 px-1.5 sm:px-2 py-0.5 rounded whitespace-nowrap"><i class="fa-solid fa-stopwatch mr-1"></i>${studyTime}h</span>
+                                    ${breakTime > 0 ? `<span class="text-[7px] sm:text-[9px] font-bold text-gray-500 bg-gray-100 px-1.5 sm:px-2 py-0.5 rounded whitespace-nowrap"><i class="fa-solid fa-mug-hot mr-1"></i>${breakTime}m</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        ${timelineHtml}
+                    </div>
+                `;
+            });
+        
+            
+            // ---------------------------------------------------------
+            // --- NEW: SYLLABUS TRACKER LOGIC FOR ADMIN PROFILE ---
+            // ---------------------------------------------------------
+            const mySyllabusTopics = (window.syllabusTopicsDB || []).filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile));
+            let totalSylClasses = mySyllabusTopics.length;
+            let completedSylClasses = 0;
+            
+            const sylGrouped = {};
+            
+            mySyllabusTopics.forEach(topic => {
+                const prog = (window.studentSyllabusProgressDB || []).find(p => p.topicId === topic.id && p.mobile === mobile) || { classDone: false, practiceCount: 0, revisionCount: 0 };
+                if (prog.classDone) completedSylClasses++;
+                
+                if (!sylGrouped[topic.subject]) sylGrouped[topic.subject] = [];
+                sylGrouped[topic.subject].push({ ...topic, progress: prog });
+            });
+
+            const sylPerc = totalSylClasses > 0 ? Math.round((completedSylClasses / totalSylClasses) * 100) : 0;
+            
+            const apSylPerc = document.getElementById('ap-syl-perc');
+            const apSylBar = document.getElementById('ap-syl-bar');
+            if(apSylPerc) apSylPerc.innerText = `${sylPerc}%`;
+            if(apSylBar) apSylBar.style.width = `${sylPerc}%`;
+
+            const apSylBreakdown = document.getElementById('ap-syl-breakdown');
+            if (apSylBreakdown) {
+                if (totalSylClasses === 0) {
+                    apSylBreakdown.innerHTML = '<div class="text-center text-gray-400 text-[10px] sm:text-xs font-bold border-2 border-dashed border-gray-200 rounded-xl sm:rounded-2xl p-4 break-words">No syllabus topics assigned to this student.</div>';
+                } else {
+                    let sylHtml = '';
+                    Object.keys(sylGrouped).sort().forEach(subject => {
+                        sylHtml += `<div class="bg-gray-50/80 rounded-xl p-2.5 sm:p-3 border border-gray-200">
+                            <h5 class="text-[10px] sm:text-[11px] font-black text-indigo-800 uppercase tracking-widest border-b border-gray-200/60 pb-1.5 mb-2 flex items-center gap-1.5"><i class="fa-solid fa-graduation-cap text-indigo-400"></i> ${subject}</h5>
+                            <div class="space-y-2">`;
+                        
+                        sylGrouped[subject].forEach(t => {
+                            const statusIcon = t.progress.classDone ? '<i class="fa-solid fa-circle-check text-emerald-500"></i>' : '<i class="fa-regular fa-circle text-gray-300"></i>';
+                            const textClass = t.progress.classDone ? 'text-gray-900' : 'text-gray-500';
+                            
+                            sylHtml += `
+                                <div class="flex justify-between items-center gap-2">
+                                    <div class="flex items-center gap-1.5 min-w-0 pr-2">
+                                        ${statusIcon}
+                                        <span class="text-[10px] sm:text-xs font-bold ${textClass} truncate leading-tight">${t.topic}</span>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <span class="text-[9px] font-bold text-blue-700 bg-blue-100/80 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm border border-blue-200" title="Practice Sessions Done"><i class="fa-solid fa-dumbbell text-blue-500"></i> ${t.progress.practiceCount || 0}</span>
+                                        <span class="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm border border-emerald-200" title="Revision Sessions Done"><i class="fa-solid fa-rotate text-emerald-500"></i> ${t.progress.revisionCount || 0}</span>
+                                    </div>
+                                </div>`;
+                        });
+                        sylHtml += `</div></div>`;
+                    });
+                    apSylBreakdown.innerHTML = sylHtml;
+                }
+            }
+        };
+
+        window.downloadAdminStudentReport = function() { if(window.selectedAdminProfile) { generatePDFReport(window.selectedAdminProfile); } }
+        window.generatePDFReport = function(targetMobile = null) {
+            const mobileToUse = typeof targetMobile === 'string' ? targetMobile : window.loggedInMobile; showLoader("Generating Report...");
+            const student = window.studentsDB.find(s => s.mobile === mobileToUse); if (!student) { hideLoader(); alert("Student profile data not found."); return; }
+            
+            const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
+            const myRecords = getComputedResults().filter(r => r.mobile === mobileToUse); myRecords.sort((a, b) => { const exA = window.examsDB.find(e => e.id === a.examId); const exB = window.examsDB.find(e => e.id === b.examId); if (!exA || !exB) return 0; return parseDDMM(exB.date) - parseDDMM(exA.date); });
+            let totalPerc = 0; let totalSaved = 0; let presents = 0; myRecords.forEach(r => { totalPerc += r.percentage; if(r.timeSaved) totalSaved+=r.timeSaved; if(r.status !== 'ABSENT') presents++; });
+            const avg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : 0; const attRate = myRecords.length > 0 ? ((presents/myRecords.length)*100).toFixed(0) : 0;
+            const lb = getOverallLeaderboard(); const myRankIdx = lb.findIndex(s => s.mobile === mobileToUse); const rank = myRankIdx !== -1 ? `#${myRankIdx+1}` : '#-'; const percentile = lb.length > 1 ? (((lb.length - (myRankIdx+1)) / (lb.length - 1)) * 100).toFixed(0) : 100;
+
+            let html = `<div style="padding: 40px; font-family: Helvetica, Arial, sans-serif; color: #0f172a; width: 800px; background: white;"><div style="text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px;"><div style="width: 60px; height: 60px; background: #4f46e5; border-radius: 12px; margin: 0 auto 10px auto; color: white; font-size: 40px; font-weight: bold; line-height: 60px; text-align: center;">E</div><h1 style="font-size: 32px; font-weight: bold; color: #4f46e5; margin: 0;">EXAMA</h1><p style="font-size: 11px; font-weight: bold; color: #64748b; margin-top: 5px; text-transform: uppercase; letter-spacing: 2px;">Official Performance Transcript</p></div><div style="width: 100%; display: table; margin-bottom: 30px;"><div style="display: table-cell; vertical-align: bottom;"><h2 style="font-size: 26px; font-weight: bold; margin: 0;">${student.name}</h2><p style="font-size: 14px; color: #64748b; margin-top: 5px; font-weight: bold;">Student ID / Mobile: ${student.mobile}</p></div><div style="display: table-cell; text-align: right; vertical-align: bottom;"><p style="font-size: 12px; font-weight: bold; color: #94a3b8;">Date Generated: ${window.formatDateDDMMYYYY()}</p></div></div><div style="width: 100%; display: table; margin-bottom: 30px; table-layout: fixed;"><div style="display: table-cell; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;"><p style="font-size: 10px; color: #64748b; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Overall Average</p><p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #0f172a;">${avg}%</p></div><div style="display: table-cell; width: 15px;"></div><div style="display: table-cell; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;"><p style="font-size: 10px; color: #64748b; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Global Rank</p><p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #4f46e5;">${rank}</p></div><div style="display: table-cell; width: 15px;"></div><div style="display: table-cell; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;"><p style="font-size: 10px; color: #64748b; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Attendance</p><p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #0f172a;">${attRate}%</p></div></div><div style="margin-bottom: 30px; background: #f1f5f9; padding: 15px 20px; border-radius: 8px; width: 100%; display: table;"><div style="display: table-cell;"><strong style="font-size:12px; color:#475569;">Global Percentile:</strong> <span style="font-size:14px; font-weight:bold; color:#4f46e5;">Top ${100 - percentile}%</span></div><div style="display: table-cell; text-align: center;"><strong style="font-size:12px; color:#475569;">Time Saved:</strong> <span style="font-size:14px; font-weight:bold; color:#10b981;">${totalSaved} mins early</span></div><div style="display: table-cell; text-align: right;"><strong style="font-size:12px; color:#475569;">Total Exams:</strong> <span style="font-size:14px; font-weight:bold; color:#0f172a;">${myRecords.length}</span></div></div><h3 style="font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #0f172a; border-bottom: 2px solid #0f172a; display: inline-block; padding-bottom: 4px;">Detailed Exam History</h3><table style="width: 100%; border-collapse: collapse; margin-bottom: 40px; margin-top: 10px;"><thead><tr style="background: #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; letter-spacing: 1px;"><th style="padding: 12px; border-radius: 8px 0 0 8px;">Exam Name</th><th style="padding: 12px;">Date</th><th style="padding: 12px;">Pass Req.</th><th style="padding: 12px;">Score</th><th style="padding: 12px; border-radius: 0 8px 8px 0;">Status</th></tr></thead><tbody>`;
+            myRecords.forEach(r => { const exam = window.examsDB.find(e => e.id === r.examId); if(!exam) return; const c = r.status === 'PASS' ? '#16a34a' : '#dc2626'; html += `<tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 12px; font-weight: bold; font-size: 13px; color: #0f172a;">${exam.name}</td><td style="padding: 12px; font-size: 12px; color: #64748b;">${exam.date}</td><td style="padding: 12px; font-size: 12px; color: #64748b; font-weight: bold;">${exam.passPercentage || 40}%</td><td style="padding: 12px; font-weight: bold; font-size: 14px; color: #0f172a;">${r.obtained}/${r.total} <span style="font-size: 11px; color: #64748b;">(${r.percentage.toFixed(0)}%)</span></td><td style="padding: 12px; font-weight: bold; font-size: 12px; color: ${c};">${r.status}</td></tr>`; });
+            html += `</tbody></table><div style="text-align: center; margin-top: 50px; padding-top: 20px; border-top: 2px solid #e2e8f0;"><div style="width: 30px; height: 30px; background: #4f46e5; border-radius: 6px; margin: 0 auto 8px auto; color: white; font-size: 20px; font-weight: bold; line-height: 30px; text-align: center;">E</div><p style="font-size: 10px; font-weight: bold; color: #94a3b8; letter-spacing: 2px; margin-bottom: 4px;">POWERED BY EXAMA APP</p></div></div>`;
+            const downloadDate = new Date().toISOString().split('T')[0];
+            const opt = { margin: 0, filename: `${student.name.replace(/\s+/g, '_')}_Exama_Report_${downloadDate}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, logging: false }, jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } };
+            const safeTimeout = setTimeout(() => { hideLoader(); alert("The PDF generation took too long or was blocked. Please try again."); }, 8000);
+            html2pdf().set(opt).from(html).save().then(() => { clearTimeout(safeTimeout); hideLoader(); }).catch(err => { console.error(err); clearTimeout(safeTimeout); hideLoader(); alert("Failed to generate PDF. Check browser console."); });
+        }
+
+        window.onload = async function() {
+            showLoader("Let's Crack !t"); await fetchInitialData(); initGoogleDriveAPI();
+            const savedRole = localStorage.getItem('exama_role'); const savedMob = localStorage.getItem('exama_mob'); const savedPass = localStorage.getItem('exama_pass'); const savedName = localStorage.getItem('exama_name') || 'Student'; 
+            if (savedRole && savedMob && savedPass) {
+                let isValid = false;
+                if (savedRole === 'admin' && savedMob === '9475757821' && savedPass === 'Subhankar@0513') { isValid = true; } 
+                else if (savedRole === 'student') {
+                    const stu = window.studentsDB.find(s => s.mobile === savedMob && s.password === savedPass);
+                    if (stu) { isValid = true; localStorage.setItem('exama_name', stu.name); } 
+                    else if (window.studentsDB.length === 0) { isValid = true; window.studentsDB.push({ mobile: savedMob, password: savedPass, name: savedName }); }
+                }
+                if (isValid) { window.currentRole = savedRole; window.loggedInMobile = savedMob; executeLoginUI(savedRole, savedMob); hideLoader(); return; }
+            }
+            hideLoader(); window.location.hash = 'login'; handleHashChange();
+        };
+
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const role = document.getElementById('role').value; const mob = document.getElementById('mobile').value; const pass = document.getElementById('password').value;
+            showLoader("Authenticating..."); 
+            if (role === 'admin') { if (mob !== '9475757821' || pass !== 'Subhankar@0513') { hideLoader(); alert("Invalid Super Admin Credentials!"); return; } } 
+            else { const stu = window.studentsDB.find(s => s.mobile === mob && s.password === pass); if (!stu) { hideLoader(); alert("Invalid Student Credentials!"); return; } localStorage.setItem('exama_name', stu.name); }
+            localStorage.setItem('exama_role', role); localStorage.setItem('exama_mob', mob); localStorage.setItem('exama_pass', pass);
+            window.currentRole = role; window.loggedInMobile = mob; executeLoginUI(role, mob); hideLoader();
+        });
+
+ function executeLoginUI(role, mob) {
+            
+
+            window.updatePresence(); requestNotificationPermission(); 
+            if(window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { try { if(OneSignal.User){ await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch(e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
+            checkUnreadNotices(); updateChatUnreadCount(); refreshUI(); startTimerEngine();
+            if(window.location.hash.replace('#','') !== role && !['chat','notices','leaderboard','target-calc','exam-analysis','materials','fitness','active-exam'].includes(window.location.hash.replace('#',''))) { window.location.hash = role; } else { handleHashChange(); }
+            if(role === 'student') { 
+                const curStu = window.studentsDB.find(s => s.mobile === mob);
+                document.getElementById('student-greeting').innerText = getGreeting(); 
+                document.getElementById('student-name-display').innerText = curStu.name; 
+                
+                // Load DP or generate Initials Avatar
+                const dpImg = document.getElementById('student-nav-dp');
+                if(dpImg) {
+                    // Double security: if both custom DP and ui-avatars fail, show Google default
+                    dpImg.onerror = function() {
+                        this.onerror = null;
+                        this.src = "https://lh3.googleusercontent.com/a/default-user=s120-c";
+                    };
+                    const defaultDp = "https://ui-avatars.com/api/?name=" + encodeURIComponent(curStu.name) + "&background=4f46e5&color=fff&bold=true";
+                    
+                    const cachedDpUrl = localStorage.getItem(`exama_dp_${mob}`);
+                    if (cachedDpUrl) {
+                        dpImg.src = cachedDpUrl;
+                    } else {
+                        dpImg.src = defaultDp; 
+                    }
+
+                    const latestFirebaseDp = curStu.dpUrl || defaultDp;
+                    
+                    if (dpImg.src !== latestFirebaseDp) {
+                        dpImg.src = latestFirebaseDp;
+                        localStorage.setItem(`exama_dp_${mob}`, latestFirebaseDp);
+                    }
+                }
+
+                // --- DAILY MOTIVATIONAL QUOTES LOGIC ---
+                const motivationalQuotes = [
+                    "The beautiful thing about learning is that no one can take it away from you. – B.B. King",
+                    "Education is the most powerful weapon which you can use to change the world. – Nelson Mandela",
+                    "The secret of getting ahead is getting started. – Mark Twain",
+                    "There are no shortcuts to any place worth going. – Beverly Sills",
+                    "Success is the sum of small efforts, repeated day in and day out. – Robert Collier",
+                    "Don't let what you cannot do interfere with what you can do. – John Wooden",
+                    "Strive for progress, not perfection. – Unknown",
+                    "I find that the harder I work, the more luck I seem to have. – Thomas Jefferson",
+                    "You don't have to be great to start, but you have to start to be great. – Zig Ziglar"
+                ];
+                
+                const now = new Date();
+                const start = new Date(now.getFullYear(), 0, 0);
+                const diff = now - start;
+                const oneDay = 1000 * 60 * 60 * 24;
+                const dayOfYear = Math.floor(diff / oneDay);
+                
+                const todaysQuote = motivationalQuotes[dayOfYear % motivationalQuotes.length];
+                const quoteEl = document.getElementById('daily-quote-text');
+                if(quoteEl) quoteEl.innerText = todaysQuote;
+
+                checkAbsentWarning(); 
+            }
+        }
+
+        window.checkAbsentWarning = function() {
+            if(window.currentRole !== 'student' || !window.loggedInMobile) return; const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile); if(!student) return;
+            const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile); const absentRecords = myComputed.filter(r => r.status === 'ABSENT');
+            const ack = student.acknowledgedAbsences || []; const unack = absentRecords.filter(r => !ack.includes(r.examId));
+            if(unack.length > 0) { document.getElementById('warning-text').innerText = `You have been marked ABSENT for ${unack.length} recent exam(s). This severely lowers your overall score.`; document.getElementById('warning-modal').classList.remove('hidden-view'); window.unackAbsences = unack.map(r => r.examId); }
+        }
+
+        window.acknowledgeAbsentWarning = async function() {
+            const btn = document.getElementById('btn-acknowledge-absent'); const origText = btn.innerHTML; btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i>Saving...`; btn.disabled = true;
+            if (isFirebaseConfigured && window.unackAbsences && window.unackAbsences.length > 0) { try { await updateDoc(doc(db, "students", window.loggedInMobile), { acknowledgedAbsences: arrayUnion(...window.unackAbsences) }); } catch(e) { console.error("Absent Save Error", e); } } 
+            else { const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile); if(student) { if(!student.acknowledgedAbsences) student.acknowledgedAbsences = []; student.acknowledgedAbsences.push(...(window.unackAbsences || [])); } }
+            btn.innerHTML = origText; btn.disabled = false; document.getElementById('warning-modal').classList.add('hidden-view'); window.unackAbsences = [];
+        }
+
+        window.logout = function() {
+            cleanupJitsi(); localStorage.clear(); if(globalTimerInterval) clearInterval(globalTimerInterval);
+            window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null;
+            window.location.hash = 'login'; document.getElementById('login-form').reset();
+        }
+
+      window.refreshUI = function() {
+          if(!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
+            if(!window.currentRole) return;
+            if(window.currentRole === 'student') renderStudentDashboard();
+            if(window.currentRole === 'admin') renderAdminDashboard();
+            
+            if(!document.getElementById('leaderboard-view')?.classList.contains('hidden-view')) window.renderLeaderboard();
+            if(!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) renderChat();
+            if(!document.getElementById('materials-view')?.classList.contains('hidden-view')) renderStudyMaterials();
+            if(!document.getElementById('fitness-view')?.classList.contains('hidden-view')) renderFitnessMonitor();
+            
+            // FIX: Tell the app to redraw the Sessions view when the button is clicked!
+            if(!document.getElementById('session-timer-view')?.classList.contains('hidden-view')) window.renderSessionTimer();
+            
+            updateChatUnreadCount();
+            if(!document.getElementById('weekly-targets-view')?.classList.contains('hidden-view')) window.renderWeeklyTargets();
+        };
+        
+        // Also attach it as a standard function so other internal scripts can use it
+        function refreshUI() { window.refreshUI(); }
+
+        function calculateClassRank(examId, mobile) {
+            const examResults = getComputedResults().filter(r => r.examId === examId);
+            examResults.sort((a, b) => b.percentage - a.percentage);
+            const rankIndex = examResults.findIndex(r => r.mobile === mobile);
+            return rankIndex === -1 ? '-' : (rankIndex + 1);
+        }
+
+        function buildRecordHTML(r, exam, rank) {
+    if(!exam) return ''; 
+    const isAbsent = r.status === 'ABSENT'; 
+    const c = isAbsent ? 'red' : (r.status === 'PASS' ? 'green' : (r.status === 'EVALUATING' ? 'amber' : 'red')); 
+    
+    let breakdownHtml = '';
+    if (r.scriptsData && r.scriptsData.length > 0) {
+        breakdownHtml = `<div class="mt-3 space-y-2 border-t border-gray-100 pt-3">`;
+        r.scriptsData.forEach(script => {
+            const peerName = window.studentsDB.find(s=>s.mobile===script.targetPeerMobile)?.name || 'Peer';
+            const dp = window.getStudentAvatar(script.targetPeerMobile, peerName);
+            const statusTxt = script.isGraded ? `<span class="text-green-600">${script.marksAwarded}/${script.maxMarks}</span>` : `<span class="text-amber-500">Pending</span>`;
+            
+            let aiButtonHtml = '';
+            if (script.aiFeedback) {
+                window.scriptFeedbacks[script.id] = script.aiFeedback;
+                aiButtonHtml = `<button onclick="window.openNovaFeedbackModal('${script.id}')" class="mt-1.5 text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-1 rounded shadow-sm flex items-center gap-1 active:scale-95 transition-all w-max"><i class="fa-solid fa-sparkles text-amber-500"></i> View NOVA Feedback</button>`;
+            }
+
+            breakdownHtml += `
+            <div class="bg-gray-50 p-2 sm:p-2.5 rounded-lg border border-gray-200 shadow-sm flex flex-col">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2 min-w-0 pr-2">
+                        <img src="${dp}" class="w-6 h-6 rounded-full object-cover shadow-sm shrink-0 border border-gray-300">
+                        <span class="text-[10px] font-bold text-gray-700 truncate leading-tight">Evaluator: ${peerName}</span>
+                    </div>
+                    <div class="text-[10px] font-black shrink-0">${statusTxt}</div>
+                </div>
+                ${aiButtonHtml}
+            </div>`;
+        });
+        breakdownHtml += `</div>`;
+    }
+
+    return `<div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] relative overflow-hidden hover:-translate-y-1 transition-all duration-300 gap-2"><div class="absolute left-0 top-0 bottom-0 w-1.5 sm:w-2 bg-gradient-to-b from-${c}-400 to-${c}-600"></div><div class="flex justify-between items-start ml-2 sm:ml-3 min-w-0 pr-2"><div><h4 class="font-bold text-gray-900 text-sm sm:text-[15px] break-words leading-tight">${exam.name}</h4><p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-1 sm:mt-1.5 break-words leading-tight"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • ${exam.examType === 'testbook' ? 'Testbook' : (exam.examType === 'offline' ? 'Offline' : (exam.examType === 'anytime' ? 'Anytime' : 'Online'))}</p></div><div class="text-right shrink-0"><div class="font-black text-xl sm:text-2xl text-gray-900 leading-none break-words">${r.obtained}<span class="text-[10px] sm:text-xs text-gray-400 font-bold">/${r.total}</span></div><div class="text-[8px] sm:text-[10px] font-black text-${c}-700 bg-${c}-100/80 px-1.5 sm:px-2 py-1 sm:py-1.5 rounded-md sm:rounded-lg border border-${c}-200 inline-block mt-1.5 sm:mt-2 tracking-wider shadow-sm whitespace-nowrap">${isAbsent ? 'ABSENT' : r.status} (${r.percentage.toFixed(0)}%)</div></div></div>${breakdownHtml}</div>`;
+}
+
+        // --- 4. HOME DASHBOARD UPDATER ---
+        function renderStudentDashboard() {
+            const curStu = window.studentsDB.find(s => s.mobile === window.loggedInMobile); 
+            if (curStu) { 
+                document.getElementById('student-name-display').innerText = curStu.name; 
+                
+                // Keep DP and Cache synchronized on real-time database updates
+                const dpImg = document.getElementById('student-nav-dp');
+                if (dpImg) {
+                    const defaultDp = "https://ui-avatars.com/api/?name=" + encodeURIComponent(curStu.name) + "&background=4f46e5&color=fff&bold=true";
+                    const latestFirebaseDp = curStu.dpUrl || defaultDp;
+                    const cachedDpUrl = localStorage.getItem(`exama_dp_${window.loggedInMobile}`);
+                    
+                    if (latestFirebaseDp !== cachedDpUrl) {
+                        dpImg.src = latestFirebaseDp;
+                        localStorage.setItem(`exama_dp_${window.loggedInMobile}`, latestFirebaseDp);
+                    }
+                }
+            }
+            const pendingList = document.getElementById('student-pending-exams'); const recordsList = document.getElementById('student-records-list'); pendingList.innerHTML = ''; recordsList.innerHTML = '';
+            
+            const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
+            const todayDate = new Date(); todayDate.setHours(0,0,0,0);
+            const { mondayMs, sundayMs } = window.getWeeklyRange();
+
+           const myRecords = getComputedResults().filter(r => r.mobile === window.loggedInMobile); 
+myRecords.sort((a, b) => { 
+    const exA = window.examsDB.find(e => e.id === a.examId); 
+    const exB = window.examsDB.find(e => e.id === b.examId); 
+    if (!exA || !exB) return 0; 
+    return parseDDMM(exB.date).getTime() - parseDDMM(exA.date).getTime(); 
+});
+            
+            let totalPerc = 0; let weeklyPerc = 0; let weeklyCount = 0; const chartLabels = []; const chartData = []; const chartStatuses = []; const today = window.formatDateDDMMYYYY();
+            const currentStudent = window.studentsDB.find(s => s.mobile === window.loggedInMobile); const savedTarget = currentStudent ? currentStudent.targetPercentage : null; let neededForNextExam = null;
+            
+            if(savedTarget) { const targetPerc = parseFloat(savedTarget); const myTaken = myRecords.filter(r => !r.isVirtual); const currentTotal = myTaken.reduce((acc, r) => acc + r.percentage, 0); const remCount = window.examsDB.length - myTaken.length; if(remCount > 0) { neededForNextExam = ((targetPerc * window.examsDB.length) - currentTotal) / remCount; } }
+
+            let todayExamsHtml = '';
+            let upcomingExamsHtml = '';
+window.examsDB.forEach(exam => {
+    // Hide if not assigned to this student
+    if (exam.assignedTo && !exam.assignedTo.includes('All') && !exam.assignedTo.includes(window.loggedInMobile)) {
+        return; 
+    }
+
+    const eDate = parseDDMM(exam.date);
+    
+    const hasResult = myRecords.find(r => r.examId === exam.id);
+    const hasSubmittedAnswers = window.peerAnswerScriptsDB.some(s => s.examId === exam.id && s.solverMobile === window.loggedInMobile);
+    const isFinished = hasResult || hasSubmittedAnswers;
+    const eType = exam.examType || 'self';
+
+    const myPendingEvalsForDisplay = window.peerAnswerScriptsDB.filter(s =>
+        s.examId === exam.id &&
+        s.targetPeerMobile === window.loggedInMobile &&
+        !s.isGraded
+    );
+
+    // Show the card if the date is valid OR there are pending evaluations, AND exam isn't ended by admin
+    if ((eDate >= todayDate || myPendingEvalsForDisplay.length > 0) && !exam.isEnded) {
+        
+        // --- NEW EXAM STATE LOGIC ---
+        const allQuestions = window.peerMaterialsDB.filter(m => m.examId === exam.id && m.mobile !== window.loggedInMobile);
+        const myAnswers = window.peerAnswerScriptsDB.filter(s => s.examId === exam.id && s.solverMobile === window.loggedInMobile);
+        const answeredPeerMobiles = myAnswers.map(a => a.targetPeerMobile);
+
+        const unansweredQuestions = allQuestions.filter(q => !answeredPeerMobiles.includes(q.mobile));
+
+        const nowTime = Date.now();
+        const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000;
+        const myPendingEvals = window.peerAnswerScriptsDB.filter(s => 
+            s.examId === exam.id && 
+            s.targetPeerMobile === window.loggedInMobile && 
+            !s.isGraded && 
+            (nowTime - s.timestamp < SIX_DAYS_MS)
+        );
+
+        const anytimeBadge = exam.examType === 'anytime' 
+            ? `<span class="bg-indigo-600 text-white px-2 py-0.5 rounded text-[8px] font-black tracking-widest uppercase shadow-sm ml-2">Anytime</span>` 
+            : '';
+
+        let actionHtml = ''; 
+
+        if (exam.examType === 'testbook') {
+            actionHtml = `<button onclick="window.directSubmitTestbook('${exam.id}')" class="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-[10px] sm:text-xs font-black py-2.5 px-3 rounded-xl shadow-md active:scale-95 transition-all"><i class="fa-solid fa-clipboard-check"></i> Submit Marks</button>`;
+        } else if (exam.examType === 'offline') {
+            actionHtml = `<button onclick="window.handleStartExam('${exam.id}')" class="flex-1 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white text-[10px] sm:text-xs font-black py-2.5 px-3 rounded-xl shadow-md active:scale-95 transition-all">Enter Room</button>`;
+        } else {
+            // DYNAMIC P2P LOGIC
+            const hasUploadedMyQuestions = window.peerMaterialsDB.some(m => m.examId === exam.id && m.mobile === window.loggedInMobile);
+            
+            if (!hasUploadedMyQuestions) { 
+                actionHtml = `
+                <button onclick="window.openPeerUpload('${exam.id}')" class="flex-1 bg-white border border-indigo-200 text-indigo-600 text-[10px] sm:text-xs font-black py-2.5 px-3 rounded-xl shadow-sm active:scale-95 transition-all"><i class="fa-solid fa-cloud-arrow-up"></i> Submit Question First</button>
+                <button onclick="alert('Attach Peer Q&A to unlock!')" class="w-9 h-9 rounded-xl bg-gray-100 text-gray-400 flex items-center justify-center text-xs shadow-sm"><i class="fa-solid fa-lock"></i></button>`; 
+            } else {
+                if (unansweredQuestions.length > 0) {
+                    actionHtml = `
+                    <button onclick="window.handleStartExam('${exam.id}')" class="flex-1 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white text-[10px] sm:text-xs font-black uppercase py-2.5 px-3 rounded-xl shadow-md active:scale-95 transition-all">
+                        Enter Room (${unansweredQuestions.length} New) <i class="fa-solid fa-chevron-right text-[8px]"></i>
+                    </button>`;
+                } 
+                else if (myPendingEvals.length > 0) {
+                    actionHtml = `
+                    <button onclick="window.openPeerEvaluationRoom('${exam.id}')" class="flex-1 bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-[10px] sm:text-xs font-black py-2.5 px-3 rounded-xl shadow-md active:scale-95 transition-all">
+                        <i class="fa-solid fa-clipboard-user"></i> Evaluation Room
+                    </button>`;
+                } 
+                else {
+                    actionHtml = `<button disabled class="flex-1 bg-gray-100 text-gray-400 text-[10px] sm:text-xs font-black py-2.5 px-3 rounded-xl shadow-sm cursor-not-allowed"><i class="fa-solid fa-check-circle"></i> Waiting for Peers</button>`;
+                }
+            }
+        }
+
+        let timerStatusHTML = '';
+        if (!exam.globalStartTime) { 
+            timerStatusHTML = `<span class="bg-gray-100 text-gray-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-gray-200 shadow-sm">Awaiting</span>`; 
+        } else if (exam.isPaused) { 
+            timerStatusHTML = `<span class="bg-amber-50 text-amber-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-amber-200 shadow-sm">Paused</span>`; 
+        } else { 
+            timerStatusHTML = `<span class="bg-emerald-50 text-emerald-600 px-2 py-0.5 sm:py-1 rounded-md text-[8px] sm:text-[9px] font-bold uppercase tracking-widest border border-emerald-200 shadow-sm flex items-center gap-1"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span>Live</span>`; 
+        }
+
+        let targetHtml = '';
+        if(neededForNextExam !== null) {
+            let reqMarks = (neededForNextExam / 100) * exam.totalMarks; 
+            let tColor = 'text-gray-900'; 
+            let reqTxt = `${reqMarks.toFixed(1)} / ${exam.totalMarks}`;
+            
+            if(neededForNextExam > 100) { tColor = 'text-rose-600'; reqTxt = 'Exceeds Max'; } 
+            if(neededForNextExam <= 0) { tColor = 'text-emerald-600'; reqTxt = 'Goal Met'; }
+            
+            targetHtml = `
+            <div class="mt-2.5 mb-1 flex items-center justify-between text-[10px] sm:text-[11px] bg-white/60 rounded-lg py-1.5 px-2.5 border border-white/80 shadow-sm">
+                <span class="text-gray-600 font-bold tracking-wide flex items-center gap-1.5"><i class="fa-solid fa-bullseye text-indigo-500"></i> Target Required</span>
+                <span class="font-black ${tColor}">${reqTxt}</span>
+            </div>`;
+        }
+
+        const isToday = (exam.date === today);
+        const badgeStyle = isToday ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-blue-50 text-blue-600 border-blue-200';
+        const borderStyle = isToday ? 'border-rose-200/60' : 'border-blue-200/60';
+
+        const cardHtml = `
+        <div class="glass-card w-full mb-3 rounded-[1.25rem] sm:rounded-[1.5rem] p-3 sm:p-4 hover:-translate-y-1 transition-all duration-300 shadow-sm border ${borderStyle} group">
+            <div class="flex items-start justify-between gap-2 mb-2 sm:mb-2.5">
+                <h4 class="font-black text-gray-900 text-[13px] sm:text-[15px] tracking-tight leading-tight truncate flex-1 group-hover:text-indigo-600 transition-colors">
+                    ${exam.name}${anytimeBadge}
+                </h4>
+                <div class="shrink-0 mt-0.5">
+                    ${timerStatusHTML}
+                </div>
+            </div>
+            <div class="flex items-center flex-wrap gap-1.5 text-[9px] sm:text-[10px] font-bold text-gray-600">
+                <span class="font-black uppercase tracking-widest px-2 py-0.5 sm:py-1 rounded-md border ${badgeStyle} shadow-sm">
+                    ${isToday ? 'Today' : exam.date}
+                </span>
+                <span class="flex items-center gap-1 bg-white/80 px-2 py-0.5 sm:py-1 rounded-md border border-gray-200 shadow-sm"><i class="fa-regular fa-clock text-indigo-500"></i> ${exam.duration}m</span>
+                <span class="flex items-center gap-1 bg-white/80 px-2 py-0.5 sm:py-1 rounded-md border border-gray-200 shadow-sm"><i class="fa-solid fa-medal text-amber-500"></i> ${exam.totalMarks} Mk</span>
+                <span class="flex items-center gap-1 bg-white/80 px-2 py-0.5 sm:py-1 rounded-md border border-gray-200 shadow-sm"><i class="fa-solid fa-list-ul text-teal-500"></i> ${exam.examType === 'testbook' ? 'Testbook' : (exam.examType === 'offline' ? 'Offline' : 'Online')}</span>
+            </div>
+            ${targetHtml}
+            <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200/60">
+                ${actionHtml}
+            </div>
+        </div>`;
+        if (isToday) todayExamsHtml += cardHtml;
+        else upcomingExamsHtml += cardHtml;
+    }
+});
+
+            let finalPendingHtml = '';
+            if (todayExamsHtml) {
+                finalPendingHtml += `<div class="relative w-full col-span-1 md:col-span-2 mb-4 bg-transparent overflow-hidden py-2 flex justify-center items-center">
+  <h4 class="relative z-10 text-[13px] sm:text-[14px] font-black text-red-800 uppercase tracking-[0.15em] flex items-center gap-2.5">
+    <div class="relative flex items-center justify-center w-6 h-6">
+      <span class="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-50 animate-ping"></span>
+      <div class="relative flex items-center justify-center w-full h-full bg-red-100 text-red-700 rounded-full text-xs">
+        <i class="fa-solid fa-calendar-day"></i>
+      </div>
+    </div>
+    Today's  Exam
+  </h4>
+  <div class="absolute bottom-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-red-500 to-transparent animate-pulse opacity-80"></div>
+</div>${todayExamsHtml}`;
+            }
+            if (upcomingExamsHtml) {
+                finalPendingHtml += `<div class="relative w-full col-span-1 md:col-span-2 mb-4 bg-transparent overflow-hidden py-2 flex justify-center items-center">
+  <h4 class="relative z-10 text-[13px] sm:text-[14px] font-black text-blue-800 uppercase tracking-[0.15em] flex items-center gap-2.5">
+    <div class="relative flex items-center justify-center w-6 h-6">
+      <span class="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-50 animate-ping"></span>
+      <div class="relative flex items-center justify-center w-full h-full bg-blue-100 text-blue-700 rounded-full text-xs">
+        <i class="fa-solid fa-calendar-day"></i>
+      </div>
+    </div>
+    Upcoming  Exams
+  </h4>
+  <div class="absolute bottom-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-blue-500 to-transparent animate-pulse opacity-80"></div>
+</div>${upcomingExamsHtml}`;
+            }
+            if (!finalPendingHtml) {
+                finalPendingHtml = `<div class="col-span-1 md:col-span-2 text-[10px] sm:text-xs text-gray-500 font-medium italic p-6 text-center border border-dashed border-gray-300 rounded-2xl w-full">No active or upcoming exams currently assigned.</div>`;
+            }
+
+          pendingList.innerHTML = finalPendingHtml;
+
+            myRecords.forEach(r => { 
+                const exam = window.examsDB.find(e => e.id === r.examId); 
+                if(!exam) return; 
+                totalPerc += r.percentage; 
+                
+                const eTime = parseDDMM(exam.date).getTime();
+                if(eTime >= mondayMs && eTime <= sundayMs) {
+                    weeklyPerc += r.percentage;
+                    weeklyCount++;
+                }
+
+                chartLabels.push(exam.name.substring(0,6) + '...'); chartData.push(r.percentage); chartStatuses.push(r.status); 
+            });
+
+            let historyHtml = '';
+            myRecords.slice(0, window.uiLimits.exams).forEach(r => {
+                const exam = window.examsDB.find(e => e.id === r.examId);
+                if(exam) historyHtml += buildRecordHTML(r, exam, calculateClassRank(exam.id, r.mobile));
+            });
+
+            if (window.uiLimits.exams < myRecords.length) {
+                historyHtml += `
+                <div class="col-span-1 md:col-span-2 flex justify-center mt-2 pb-4">
+                    <button onclick="window.uiLimits.exams += 10; refreshUI();" class="px-6 py-2.5 bg-white border border-indigo-200 text-indigo-600 rounded-xl font-bold text-xs shadow-sm hover:bg-indigo-50 active:scale-95 transition-all">
+                        <i class="fa-solid fa-chevron-down mr-1.5"></i> See More Exams
+                    </button>
+                </div>`;
+            }
+            recordsList.innerHTML = historyHtml;
+
+            const totAvg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : 0;
+            const wkAvg = weeklyCount > 0 ? (weeklyPerc / weeklyCount).toFixed(1) : 0;
+            
+            document.getElementById('student-weekly-avg').innerHTML = `${wkAvg}<span class="text-lg sm:text-xl text-gray-400 font-bold">%</span><span class="text-[8px] sm:text-[10px] font-bold text-indigo-500 ml-1 sm:ml-2 uppercase tracking-wide">Weekly</span>`;
+            document.getElementById('student-total-avg').innerText = `Lifetime: ${totAvg}%`;
+            
+            // Exam Ranks
+            const lb = getOverallLeaderboard(); 
+            const weeklySortedExam = [...lb].sort((a, b) => b.weeklyAvg - a.weeklyAvg);
+            const totalSortedExam = [...lb].sort((a, b) => b.avg - a.avg);
+
+            const myWkExamRank = weeklySortedExam.findIndex(s => s.mobile === window.loggedInMobile);
+            const myTotExamRank = totalSortedExam.findIndex(s => s.mobile === window.loggedInMobile);
+
+            document.getElementById('student-weekly-exam-rank').innerHTML = myWkExamRank !== -1 ? `☸${myWkExamRank+1} <span class="text-[6px] sm:text-[8px] text-gray-400 font-normal tracking-wide">Wk</span>` : '#- <span class="text-[6px] sm:text-[8px] text-gray-400 font-normal tracking-wide">Wk</span>';
+            document.getElementById('student-total-exam-rank').innerText = myTotExamRank !== -1 ? `Lifetime: ☸${myTotExamRank+1}` : 'Life: #-';
+
+            // Study Ranks
+            const sLb = getStudyLeaderboard();
+            const weeklySortedStudy = [...sLb].sort((a, b) => parseFloat(b.weeklyHours) - parseFloat(a.weeklyHours));
+            const totalSortedStudy = [...sLb].sort((a, b) => parseFloat(b.totalHours) - parseFloat(a.totalHours));
+
+            const myWkStudyRank = weeklySortedStudy.findIndex(s => s.mobile === window.loggedInMobile);
+            const myTotStudyRank = totalSortedStudy.findIndex(s => s.mobile === window.loggedInMobile);
+
+            document.getElementById('student-weekly-study-rank').innerHTML = myWkStudyRank !== -1 ? `☸${myWkStudyRank+1} <span class="text-[6px] sm:text-[8px] text-gray-400 font-normal tracking-wide">Wk</span>` : '#- <span class="text-[6px] sm:text-[8px] text-gray-400 font-normal tracking-wide">Wk</span>';
+            document.getElementById('student-total-study-rank').innerText = myTotStudyRank !== -1 ? `Lifetime: ☸${myTotStudyRank+1}` : 'Life: #';
+            
+            window.updateChart('studentChart', chartInstance, chartLabels, chartData, chartStatuses, inst => chartInstance = inst);
+        }
+
+        function renderAdminDashboard() {
+            const examList = document.getElementById('admin-exams-list');
+            const stuList = document.getElementById('admin-students-directory');
+            examList.innerHTML = ''; stuList.innerHTML = '';
+
+            const todayStr = window.formatDateDDMMYYYY();
+            let todayExams = []; let upcomingExams = []; let doneExams = [];
+
+            const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
+            const todayDate = new Date(); todayDate.setHours(0,0,0,0);
+
+            window.examsDB.forEach(exam => {
+                const eDate = parseDDMM(exam.date);
+                if (exam.isEnded || eDate < todayDate) { doneExams.push(exam); } 
+                else if (exam.date === todayStr) { todayExams.push(exam); } 
+                else { upcomingExams.push(exam); }
+            });
+
+            upcomingExams.sort((a, b) => parseDDMM(a.date) - parseDDMM(b.date));
+            doneExams.sort((a, b) => parseDDMM(b.date) - parseDDMM(a.date));
+
+            const generateCard = (exam) => {
+                const pinIcon = exam.examPin ? `<i class="fa-solid fa-key text-indigo-400 ml-1.5 sm:ml-2 text-[10px] sm:text-xs shrink-0" title="Passkey: ${exam.examPin}"></i>` : '';
+                const proctorIcon = exam.isProctored ? `<i class="fa-solid fa-video text-purple-500 ml-1.5 sm:ml-2 text-[10px] sm:text-xs shrink-0" title="Video Proctoring"></i>` : '';
+                
+                let statusBadge = `<span class="bg-gray-100 text-gray-500 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm whitespace-nowrap">Ready</span>`;
+                if(exam.isEnded) statusBadge = `<span class="bg-purple-100 text-purple-600 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm whitespace-nowrap">Ended</span>`;
+                else if(exam.globalStartTime && !exam.isPaused) statusBadge = `<span class="bg-green-100 text-green-600 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm pulse-red whitespace-nowrap">Running</span>`;
+                else if(exam.isPaused) statusBadge = `<span class="bg-red-100 text-red-600 text-[8px] sm:text-[9px] font-black tracking-widest px-1.5 sm:px-2 py-0.5 sm:py-1 rounded uppercase shadow-sm whitespace-nowrap">Paused</span>`;
+
+                let timerControls = '';
+                if(exam.isEnded) { timerControls = `<span class="text-[10px] sm:text-xs font-bold text-gray-400 bg-gray-100 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg whitespace-nowrap shrink-0"><i class="fa-solid fa-lock"></i> Closed</span>`; } 
+                else if (!exam.globalStartTime && !exam.isPaused) { timerControls = `<button onclick="window.startGlobalExam('${exam.id}')" class="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all shrink-0"><i class="fa-solid fa-play mr-1"></i>Start</button><button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all ml-1.5 sm:ml-2 shrink-0"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`; } 
+                else if (exam.globalStartTime && !exam.isPaused) { timerControls = `<button onclick="window.pauseGlobalExam('${exam.id}')" class="bg-amber-100 hover:bg-amber-200 text-amber-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all shrink-0"><i class="fa-solid fa-pause mr-1"></i>Pause</button><button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all ml-1.5 sm:ml-2 shrink-0"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`; } 
+                else if (exam.isPaused) { timerControls = `<button onclick="window.resumeGlobalExam('${exam.id}')" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all shrink-0"><i class="fa-solid fa-play mr-1"></i>Resume</button><button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all ml-1.5 sm:ml-2 shrink-0"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`; }
+
+                return `<div class="glass-card p-3 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] flex flex-col gap-2 sm:gap-3 group hover:-translate-y-1 transition-all duration-300"><div class="flex justify-between items-start gap-2"><div class="min-w-0 pr-2 w-full"><h4 class="font-bold text-gray-900 text-xs sm:text-[15px] tracking-tight mb-0.5 sm:mb-1 break-words leading-tight flex items-center">${exam.name}${pinIcon}${proctorIcon}</h4><p class="text-[8px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest break-words leading-tight"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • ${exam.examType === 'testbook' ? 'Testbook' : (exam.examType === 'offline' ? 'Offline' : 'Online')} • ${exam.duration}m</p></div><div class="shrink-0">${statusBadge}</div></div><div class="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-2 sm:gap-2 pt-2 sm:pt-3 border-t border-gray-200/60 mt-0.5 sm:mt-1"><div class="flex flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto">${timerControls}</div><div class="flex gap-1.5 sm:gap-2 justify-end w-full sm:w-auto"><button onclick="window.restartExam('${exam.id}')" class="px-2 sm:px-3 h-7 sm:h-8 rounded-md sm:rounded-lg bg-gray-100 text-gray-600 border border-gray-200 flex items-center justify-center active:scale-90 transition-all shadow-sm text-[8px] sm:text-[9px] font-bold shrink-0" title="Reset Exam Data"><i class="fa-solid fa-rotate-right mr-1"></i> Reset</button><button onclick="window.openEditExam('${exam.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white text-gray-700 border border-gray-200 flex items-center justify-center active:scale-90 transition-all hover:text-indigo-600 hover:border-indigo-200 shadow-sm shrink-0" title="Edit Exam"><i class="fa-solid fa-pen text-[9px] sm:text-[10px]"></i></button><button onclick="window.deleteExam('${exam.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-red-50 text-red-500 border border-red-100 flex items-center justify-center active:scale-90 transition-all hover:bg-red-500 hover:text-white shadow-sm shrink-0" title="Delete Exam"><i class="fa-solid fa-trash text-[9px] sm:text-[10px]"></i></button></div></div></div>`;
+            };
+
+            const buildSection = (title, icon, textColor, borderColor, exams) => {
+                if (exams.length === 0) return '';
+                return `<div class="mb-3 sm:mb-4"><h4 class="text-xs sm:text-sm font-black ${textColor} uppercase tracking-widest mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2 border-b ${borderColor} pb-1.5 sm:pb-2 break-words"><i class="${icon}"></i> ${title} <span class="bg-gray-100 text-gray-600 text-[8px] sm:text-[9px] px-1.5 sm:px-2 py-0.5 rounded-md shadow-sm ml-auto shrink-0">${exams.length}</span></h4><div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">${exams.map(e => generateCard(e)).join('')}</div></div>`;
+            };
+
+            let finalHtml = '';
+            finalHtml += buildSection("Today's Exams", "fa-solid fa-bolt", "text-rose-600", "border-rose-200", todayExams);
+            finalHtml += buildSection("Upcoming Exams", "fa-solid fa-calendar-day", "text-blue-600", "border-blue-200", upcomingExams);
+            finalHtml += buildSection("Completed / Past Exams", "fa-solid fa-check-double", "text-purple-600", "border-purple-200", doneExams);
+
+            if (!finalHtml) finalHtml = `<div class="text-[10px] sm:text-xs text-gray-500 font-medium italic p-4 sm:p-6 text-center border border-dashed border-gray-300 rounded-xl sm:rounded-2xl w-full break-words">No exams available. Create one using the floating + button!</div>`;
+            examList.innerHTML = finalHtml;
+
+            // Admin Student Directory
+            window.studentsDB.forEach(stu => {
+                const stuRecords = getComputedResults().filter(r => r.mobile === stu.mobile);
+                const examsTaken = stuRecords.length; 
+                let avgStr = 'No exams';
+                if(examsTaken > 0) {
+                    avgStr = `Avg: ${(stuRecords.reduce((a, r) => a + r.percentage, 0) / examsTaken).toFixed(1)}%`;
+                }
+                
+                const stuDp = window.getStudentAvatar(stu.mobile, stu.name);
+
+                stuList.innerHTML += `
+                <div onclick="window.selectedAdminProfile='${stu.mobile}'; window.location.hash='admin-profile';" class="glass-card p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex flex-col active:scale-[0.98] hover:-translate-y-1 transition-all duration-300 cursor-pointer shadow-sm gap-2">
+                    <div class="flex justify-between items-center w-full gap-2">
+                        <div class="flex items-center gap-2 sm:gap-4 min-w-0 pr-2">
+                            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl overflow-hidden border border-indigo-200/50 shadow-sm shrink-0 bg-indigo-50">
+                                <img src="${stuDp}" class="w-full h-full object-cover" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(stu.name)}&background=4f46e5&color=fff'">
+                            </div>
+                            <div class="min-w-0">
+                                <h4 class="font-bold text-gray-900 text-xs sm:text-sm break-words leading-tight">${stu.name}</h4>
+                                <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold tracking-widest mt-0.5 break-words leading-tight">${stu.mobile}</p>
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <p class="text-[10px] sm:text-xs font-black text-indigo-600 whitespace-nowrap">${avgStr}</p>
+                            <p class="text-[8px] sm:text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-1 whitespace-nowrap">${examsTaken} exams <i class="fa-solid fa-chevron-right ml-0.5 sm:ml-1"></i></p>
+                        </div>
+                    </div>
+                </div>`;
+            });
+        }
+        
+        window.openBottomSheet = function() {
+            const selExam = document.getElementById('select-exam'); selExam.innerHTML = '<option value="" disabled selected>-- Select Exam --</option>'; window.examsDB.forEach(e => selExam.innerHTML += `<option value="${e.id}">${e.name} (Max: ${e.totalMarks})</option>`); selExam.required = true;
+            const selStu = document.getElementById('select-student'); selStu.innerHTML = '<option value="" disabled selected>-- Select Student --</option>'; window.studentsDB.forEach(s => selStu.innerHTML += `<option value="${s.mobile}">${s.name} (${s.mobile})</option>`);
+            document.getElementById('admin-tabs').classList.remove('hidden'); document.getElementById('btn-mark-absent').classList.remove('hidden'); document.getElementById('field-exam-dropdown').classList.remove('hidden'); 
+            if(window.currentRole === 'admin') { document.getElementById('field-student-dropdown').classList.remove('hidden'); document.getElementById('select-student').required = true; window.switchTab('log-result'); } 
+            else { document.getElementById('admin-tabs').classList.add('hidden'); document.getElementById('field-student-dropdown').classList.add('hidden'); document.getElementById('select-student').required = false; document.getElementById('sheet-title').innerText = "Submit My Marks"; window.switchTab('log-result'); }
+            document.getElementById('modal-overlay').classList.remove('hidden-view'); document.getElementById('action-sheet').classList.remove('hidden-view');
+        }
+        
+        window.closeBottomSheet = function() { document.getElementById('modal-overlay').classList.add('hidden-view'); document.getElementById('action-sheet').classList.add('hidden-view'); window.frozenTimeSaved = undefined; window.frozenTimeTaken = undefined; if(window.activeExamId && window.currentRole === 'admin'){ safeBack(); } }
+
+        window.switchTab = function(tab) {
+            ['log', 'create-exam', 'create-student'].forEach(t => document.getElementById('tab-' + t).className = "flex-1 py-2 sm:py-3 text-[9px] sm:text-[11px] font-black uppercase tracking-widest rounded-lg sm:rounded-xl segment-inactive transition-all break-words");
+            document.getElementById('tab-' + tab.replace('create-exam', 'create-exam').replace('create-student', 'create-student').replace('log-result', 'log')).className = "flex-1 py-2 sm:py-3 text-[9px] sm:text-[11px] font-black uppercase tracking-widest rounded-lg sm:rounded-xl segment-active transition-all break-words";
+            if(tab === 'log-result') document.getElementById('sheet-title').innerText = "Log Result";
+            if(tab === 'create-exam') document.getElementById('sheet-title').innerText = "Create New Exam";
+            if(tab === 'create-student') document.getElementById('sheet-title').innerText = "Create Student";
+            window.switchForms(tab);
+        }
+        window.switchForms = function(activeId) { ['form-log-result', 'form-create-exam', 'form-edit-exam', 'form-create-student'].forEach(id => document.getElementById(id).classList.add('hidden')); document.getElementById('form-' + activeId).classList.remove('hidden'); }
+
+        window.submitStudent = async function() { showLoader("Saving Student..."); await window.dbSubmitStudent({ name: document.getElementById('new-stu-name').value, mobile: document.getElementById('new-stu-mobile').value, password: document.getElementById('new-stu-password').value }); hideLoader(); closeBottomSheet(); document.getElementById('form-create-student').reset(); }
+        
+        window.submitExam = async function() {
+            showLoader("Creating Exam...");
+            const examName = document.getElementById('new-exam-name').value; 
+            const examDate = window.formatDateDDMMYYYY(new Date(document.getElementById('new-exam-date').value));
+            const duration = document.getElementById('new-exam-duration').value; 
+            const totalMarks = document.getElementById('new-exam-total').value;
+            const examType = document.getElementById('new-exam-type').value; 
+            const assignType = document.getElementById('new-exam-assign-type').value; 
+            let assignedTo = ['All'];
+            if (assignType === 'Specific') { 
+                const checkboxes = document.querySelectorAll('.new-exam-student-cb:checked'); 
+                assignedTo = Array.from(checkboxes).map(cb => cb.value); 
+                if (assignedTo.length === 0) { hideLoader(); return alert("Please select at least one student!"); }
+            }
+
+            await window.dbSubmitExam({ name: examName, date: examDate, totalMarks: parseFloat(totalMarks), passPercentage: parseFloat(document.getElementById('new-exam-pass').value) || 40, duration: parseFloat(duration), examType: examType, isProctored: document.getElementById('new-exam-proctor').checked, globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false, assignedTo: assignedTo });
+            sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`);
+            await window.dbSendNotice({ title: `🗓️ New Exam: ${examName}`, text: `A new exam has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard!`, date: window.formatDateDDMMYYYY(), type: 'new_exam', timestamp: Date.now(), assignedTo: assignedTo });
+            hideLoader(); closeBottomSheet(); document.getElementById('form-create-exam').reset();
+        }
+
+        window.openEditExam = function(id) {
+            const ex = window.examsDB.find(e => e.id === id); if(!ex) return;
+            const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return `${y}-${m}-${d}`; };
+            document.getElementById('edit-exam-id').value = ex.id; document.getElementById('edit-exam-name').value = ex.name; document.getElementById('edit-exam-date').value = parseDDMM(ex.date); document.getElementById('edit-exam-total').value = ex.totalMarks; document.getElementById('edit-exam-pass').value = ex.passPercentage || 40; document.getElementById('edit-exam-duration').value = ex.duration; 
+            document.getElementById('edit-exam-type').value = ex.examType || 'self'; 
+            document.getElementById('edit-exam-proctor').checked = ex.isProctored || false;
+            document.getElementById('sheet-title').innerText = "Edit Exam"; document.getElementById('admin-tabs').classList.add('hidden'); window.switchForms('edit-exam'); document.getElementById('modal-overlay').classList.remove('hidden-view'); document.getElementById('action-sheet').classList.remove('hidden-view');
+
+            const assignTypeEl = document.getElementById('edit-exam-assign-type');
+            const cbContainer = document.getElementById('edit-exam-student-checkboxes');
+
+            if (ex.assignedTo && ex.assignedTo.length > 0 && !ex.assignedTo.includes('All')) {
+                assignTypeEl.value = 'Specific';
+                window.toggleExamStudentSelection('edit'); 
+                setTimeout(() => {
+                    document.querySelectorAll('.edit-exam-student-cb').forEach(cb => {
+                        cb.checked = ex.assignedTo.includes(cb.value);
+                    });
+                }, 50);
+            } else {
+                assignTypeEl.value = 'All';
+                cbContainer.classList.add('hidden');
+            }
+        }
+
+        window.submitEditExam = async function() {
+            showLoader("Updating Exam..."); const id = document.getElementById('edit-exam-id').value;
+            const assignType = document.getElementById('edit-exam-assign-type').value; 
+            let assignedTo = ['All'];
+            if (assignType === 'Specific') { 
+                const checkboxes = document.querySelectorAll('.edit-exam-student-cb:checked'); 
+                assignedTo = Array.from(checkboxes).map(cb => cb.value); 
+                if (assignedTo.length === 0) { hideLoader(); return alert("Please select at least one student!"); }
+            }
+
+            await window.dbUpdateExam(id, { name: document.getElementById('edit-exam-name').value, date: window.formatDateDDMMYYYY(new Date(document.getElementById('edit-exam-date').value)), totalMarks: parseFloat(document.getElementById('edit-exam-total').value), passPercentage: parseFloat(document.getElementById('edit-exam-pass').value) || 40, duration: parseFloat(document.getElementById('edit-exam-duration').value), examType: document.getElementById('edit-exam-type').value, isProctored: document.getElementById('edit-exam-proctor').checked, assignedTo: assignedTo });
+            hideLoader(); closeBottomSheet(); document.getElementById('form-edit-exam').reset();
+        }
+
+        window.restartExam = async function(id) {
+            if(!confirm("Are you sure? This resets the timer, deletes ALL student results, and clears all Q&A uploads for this exam.")) return; 
+            showLoader("Resetting Exam Data...");
+            
+            const exam = window.examsDB.find(e => e.id === id); 
+            await window.dbUpdateExam(id, { globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false });
+            
+            if(isFirebaseConfigured) { 
+                const q1 = query(collection(db, "results"), where("examId", "==", id)); 
+                const snap1 = await getDocs(q1); 
+                await Promise.all(snap1.docs.map(docSnap => deleteDoc(doc(db, "results", docSnap.id)))); 
+                
+                const q2 = query(collection(db, "peer_exams"), where("examId", "==", id)); 
+                const snap2 = await getDocs(q2); 
+                await Promise.all(snap2.docs.map(docSnap => deleteDoc(doc(db, "peer_exams", docSnap.id)))); 
+
+                const q3 = query(collection(db, "peer_answer_scripts"), where("examId", "==", id)); 
+                const snap3 = await getDocs(q3); 
+                await Promise.all(snap3.docs.map(docSnap => deleteDoc(doc(db, "peer_answer_scripts", docSnap.id))));
+                
+            } else { 
+                window.resultsDB = window.resultsDB.filter(r => r.examId !== id); 
+                window.peerMaterialsDB = window.peerMaterialsDB.filter(m => m.examId !== id); 
+                window.peerAnswerScriptsDB = window.peerAnswerScriptsDB.filter(s => s.examId !== id); 
+            }
+            
+            if (exam) { 
+                const title = `⚠️ Exam Reset: ${exam.name}`; 
+                const msg = `The admin has fully reset "${exam.name}". All previous submissions have been cleared. You MUST re-upload your Q&A materials to unlock the exam again!`; 
+                sendOneSignalPush(title, msg); 
+                await window.dbSendNotice({ title: title, text: msg, date: window.formatDateDDMMYYYY(), type: 'reset_exam', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] }); 
+            }
+            
+            hideLoader(); 
+            alert("Exam reset successfully. All Q&A, results, and answer scripts cleared.");
+            refreshUI();
+        }
+
+        window.endExam = async function(id) {
+            if(!confirm("Are you sure? This will END the exam permanently, auto-grade pending evaluations to their PORTION marks, and mark lazy evaluators/non-submitters as ABSENT.")) return;
+            showLoader("Ending Exam...");
+            const exam = window.examsDB.find(e => e.id === id);
+
+            const pendingScripts = window.peerAnswerScriptsDB.filter(s => s.examId === id && !s.isGraded);
+            const lazyEvaluators = new Set();
+            const scriptPromises = [];
+
+            pendingScripts.forEach(script => {
+                lazyEvaluators.add(script.targetPeerMobile); 
+                const fallbackOpponents = [...new Set(window.peerAnswerScriptsDB.filter(s => s.examId === id).map(s => s.targetPeerMobile))].length || 1;
+                const maxMarksForThisSet = script.assignedMaxMarks || parseFloat((exam.totalMarks / fallbackOpponents).toFixed(1));
+
+                const payload = { isGraded: true, marksAwarded: maxMarksForThisSet, maxMarks: maxMarksForThisSet, evaluatorTime: Date.now() };
+
+                if (isFirebaseConfigured) {
+                    scriptPromises.push(updateDoc(doc(db, "peer_answer_scripts", script.id), payload));
+                } else {
+                    Object.assign(script, payload);
+                }
+            });
+            await Promise.all(scriptPromises);
+
+            await window.dbUpdateExam(id, { isEnded: true, globalStartTime: null, isPaused: false });
+
+            const absentPromises = [];
+            window.studentsDB.forEach(stu => {
+                const isAssigned = !exam.assignedTo || exam.assignedTo.includes('All') || exam.assignedTo.includes(stu.mobile);
+                if (!isAssigned) return;
+
+                const hasResult = window.resultsDB.some(r => r.examId === id && r.mobile === stu.mobile);
+                const hasScripts = window.peerAnswerScriptsDB.some(s => s.examId === id && s.solverMobile === stu.mobile);
+                const isLazyEvaluator = lazyEvaluators.has(stu.mobile);
+
+                if ((!hasScripts && !hasResult) || isLazyEvaluator) {
+                    if (!hasResult || isLazyEvaluator) {
+                        absentPromises.push(window.dbSubmitResult({ examId: id, mobile: stu.mobile, obtained: 0, total: exam.totalMarks, percentage: 0, status: 'ABSENT', timeTaken: 0, timeSaved: 0 }));
+                    }
+                }
+            });
+            await Promise.all(absentPromises);
+
+            await window.dbSendNotice({ title: `🏁 Exam Ended: ${exam.name}`, text: `The exam "${exam.name}" has officially ended. Pending evaluations were auto-graded to their max portion marks, and lazy evaluators/absentees were marked ABSENT.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
+            hideLoader();
+            alert("Exam ended. Pending scripts given their portion marks. Absentees & lazy evaluators marked absent.");
+        }
+        window.deleteExam = async function(id) { if(!confirm("Delete this exam completely? This action cannot be undone.")) return; showLoader("Deleting Exam..."); await window.dbDeleteExam(id); hideLoader(); }
+        window.startGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); showLoader("Starting Exam for All..."); await window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 }); hideLoader(); if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`); }
+        window.pauseGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); if(!ex) return; showLoader("Pausing Exam..."); const additionalElapsed = Date.now() - ex.globalStartTime; await window.dbUpdateExam(id, { isPaused: true, pausedElapsed: (ex.pausedElapsed || 0) + additionalElapsed }); hideLoader(); }
+        window.resumeGlobalExam = async function(id) { showLoader("Resuming Exam..."); await window.dbUpdateExam(id, { isPaused: false, globalStartTime: Date.now() }); hideLoader(); }
+        
+        window.handleStartExam = function(examId) {
+            window.activeExamId = examId; 
+            window.location.hash = 'active-exam';
+        }
+
+        window.directSubmitTestbook = function(examId) {
+            window.activeExamId = examId;
+            window.proceedToLogMarks();
+        }
+
+        window.submitFromActiveExam = function() { 
+            const exam = window.examsDB.find(e => e.id === window.activeExamId);
+            if(exam.isPaused || !exam.globalStartTime) return alert("Cannot submit while exam is paused or waiting.");
+            
+            let elapsed = exam.pausedElapsed || 0; elapsed += Date.now() - exam.globalStartTime; let remMs = (exam.duration * 60 * 1000) - elapsed; if (remMs < 0) remMs = 0;
+            window.frozenTimeSaved = Math.floor(remMs / 60000); window.frozenTimeTaken = exam.duration - window.frozenTimeSaved;
+
+            if (exam.examType === 'offline') {
+                window.proceedToLogMarks();
+                return;
+            }
+
+            document.getElementById('active-exam-view').classList.add('hidden-view');
+            cleanupJitsi();
+
+            const uploadList = document.getElementById('answer-upload-list');
+            uploadList.innerHTML = '';
+            
+            if (window.currentExamPeers && window.currentExamPeers.length > 0) {
+                const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
+                
+                uniquePeers.forEach(peer => {
+                    uploadList.innerHTML += `
+                    <div class="bg-indigo-50/80 p-4 rounded-xl border border-indigo-200 shadow-sm">
+                        <label class="block text-[11px] font-black text-indigo-900 uppercase tracking-widest mb-2 break-words">Upload ${peer.name}'s Answer Script</label>
+                        <p class="text-[9px] text-gray-500 mb-2 font-bold">Select the photos of your answers to ${peer.name}'s questions.</p>
+                        <input type="file" id="ans-file-${peer.mobile}" accept="image/*" multiple class="w-full text-xs font-medium text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-black file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer bg-white rounded-lg shadow-inner">
+                    </div>`;
+                });
+                document.getElementById('answer-upload-modal').classList.remove('hidden-view');
+            } else {
+                window.openPeerEvaluationRoom(exam.id);
+            }
+        }
+
+        window.submitAllPeerAnswers = async function() {
+            const examId = window.activeExamId;
+            const exam = window.examsDB.find(e => e.id === examId);
+            const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
+            const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
+            
+            let hasFiles = false;
+            for (let peer of uniquePeers) {
+                if(document.getElementById(`ans-file-${peer.mobile}`)?.files.length > 0) hasFiles = true;
+            }
+            
+            if(!hasFiles && uniquePeers.length > 0) {
+                if(!confirm("You haven't attached any answer scripts. Submit anyway with 0 marks?")) return;
+            }
+
+            const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId).map(m => m.mobile))].length || 1;
+            const assignedMaxMarks = parseFloat((exam.totalMarks / totalOpponents).toFixed(1));
+
+            showLoader("Sending Answers to Peers...");
+            
+            try {
+                for (let peer of uniquePeers) {
+                    const fileInput = document.getElementById(`ans-file-${peer.mobile}`);
+                    if(fileInput && fileInput.files.length > 0) {
+                        const files = Array.from(fileInput.files);
+                        let urls = [];
+                        for(let file of files) {
+                            const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
+                            const formData = new FormData(); formData.append("image", compressedFile); 
+                            const res = await fetch(`https://api.imgbb.com/1/upload?expiration=172800&key=${IMGBB_API_KEY}`, { method: "POST", body: formData }); 
+                            const data = await res.json(); 
+                            if(data.success) urls.push(data.data.url);
+                        }
+                        
+                        const payload = { 
+                            examId: examId, 
+                            solverMobile: window.loggedInMobile, 
+                            targetPeerMobile: peer.mobile, 
+                            imgUrls: urls, 
+                            timestamp: Date.now(),
+                            attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
+                            isGraded: false,
+                            assignedMaxMarks: assignedMaxMarks 
+                        };
+                        
+                        if(isFirebaseConfigured) await addDoc(collection(db, "peer_answer_scripts"), payload); 
+                        else { 
+                            if(!window.peerAnswerScriptsDB) window.peerAnswerScriptsDB = []; 
+                            window.peerAnswerScriptsDB.push({id: Math.random().toString(), ...payload}); 
+                        }
+                    } else {
+                        // EMPTY SUBMISSION FIX
+                        const payload = {
+                            examId: examId,
+                            solverMobile: window.loggedInMobile,
+                            targetPeerMobile: peer.mobile,
+                            imgUrls: [],
+                            timestamp: Date.now(),
+                            attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
+                            isGraded: true, // Auto-graded to 0
+                            marksAwarded: 0,
+                            maxMarks: assignedMaxMarks,
+                            assignedMaxMarks: assignedMaxMarks
+                        };
+                        if(isFirebaseConfigured) await addDoc(collection(db, "peer_answer_scripts"), payload);
+                        else window.peerAnswerScriptsDB.push({id: Math.random().toString(), ...payload});
+                    }
+                }
+                hideLoader();
+                document.getElementById('answer-upload-modal').classList.add('hidden-view');
+                window.openPeerEvaluationRoom(examId);
+            } catch(e) {
+                console.error(e); hideLoader(); alert("Error sending answers. Check your connection.");
+            }
+        }
+
+        window.proceedToLogMarks = function() {
+            document.getElementById('evaluation-modal').classList.add('hidden-view'); document.getElementById('admin-tabs').classList.add('hidden'); document.getElementById('field-student-dropdown').classList.add('hidden'); document.getElementById('select-student').required = false; 
+            const selExam = document.getElementById('select-exam'); selExam.innerHTML = `<option value="${window.activeExamId}" selected>Active Exam</option>`; selExam.required = false;
+            document.getElementById('field-exam-dropdown').classList.add('hidden'); document.getElementById('sheet-title').innerText = "Submit Exam Result"; document.getElementById('btn-mark-absent').classList.add('hidden'); 
+            window.switchForms('log-result'); document.getElementById('modal-overlay').classList.remove('hidden-view'); document.getElementById('action-sheet').classList.remove('hidden-view'); cleanupJitsi();
+        }
+window.submitResult = async function(isAbsent = false) {
+    // 1. Grab inputs from the bottom sheet modal
+    const examId = document.getElementById('select-exam').value;
+    const studentMobile = window.currentRole === 'admin' ? document.getElementById('select-student').value : window.loggedInMobile;
+    const obtainedInput = document.getElementById('input-obtained').value;
+
+    // Validate selections
+    if (!examId || (!studentMobile && window.currentRole === 'admin')) {
+        return alert("Please select both an Exam and a Student.");
+    }
+
+    const exam = window.examsDB.find(e => e.id === examId);
+    if (!exam) return alert("Exam not found!");
+
+    let obtained = parseFloat(obtainedInput);
+    let status = 'FAIL';
+    let percentage = 0;
+
+    // 2. Calculate percentage and status
+    if (isAbsent) {
+        obtained = 0;
+        status = 'ABSENT';
+    } else {
+        if (isNaN(obtained)) return alert("Please enter valid marks.");
+        if (obtained > exam.totalMarks || obtained < 0) {
+            return alert(`Marks must be between 0 and ${exam.totalMarks}`);
+        }
+        percentage = (obtained / exam.totalMarks) * 100;
+        status = percentage >= (exam.passPercentage || 40) ? 'PASS' : 'FAIL';
+    }
+
+    showLoader("Saving Marks...");
+
+    // 3. Prepare the data payload
+    const resultPayload = {
+        examId: examId,
+        mobile: studentMobile,
+        obtained: obtained,
+        total: exam.totalMarks,
+        percentage: percentage,
+        status: status,
+        timeTaken: window.frozenTimeTaken || 0,
+        timeSaved: window.frozenTimeSaved || 0,
+        timestamp: Date.now()
+    };
+
+    // 4. Send to the upgraded database function
+    try {
+        await window.dbSubmitResult(resultPayload);
+        
+        hideLoader();
+        closeBottomSheet();
+        document.getElementById('form-log-result').reset();
+        window.showToast("Success", "Student marks updated successfully!", "info");
+        refreshUI();
+    } catch (e) {
+        console.error("Error saving result:", e);
+        hideLoader();
+        alert("Failed to save result. Please check your connection.");
+    }
+};
+        // ==========================================
+        // ACTIVE EXAM & AUTO-SUBMIT ENGINE
+        // ==========================================
+        window.renderActiveExam = function(examId) {
+            const exam = window.examsDB.find(e => e.id === examId); if(!exam) return;
+            document.getElementById('active-exam-name').innerText = exam.name; 
+            document.getElementById('ae-total').innerText = `${exam.totalMarks} Marks`; 
+            document.getElementById('ae-pass').innerText = `Pass ${exam.passPercentage || 40}%`; 
+            document.getElementById('ae-dur').innerText = `${exam.duration} mins`;
+            
+            // Clean Jitsi logic
+            const meetContainer = document.getElementById('proctoring-iframe-container'); 
+            const proctorPanel = document.getElementById('live-proctoring-panel');
+            cleanupJitsi();
+          if (exam.isProctored) {
+                proctorPanel.classList.remove('hidden'); 
+                meetContainer.innerHTML = '';
+                
+                const domain = "8x8.vc"; 
+                const roomName = `vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_${examId.replace(/[^a-zA-Z0-9]/g, '')}`;
+                const studentName = window.studentsDB.find(s=>s.mobile===window.loggedInMobile)?.name || 'Admin';
+                
+                // 🔥 NEW: Perfect UI Configuration for the Proctoring Camera
+                const options = { 
+                    roomName: roomName, 
+                    parentNode: meetContainer, 
+                    width: '100%',   // Force it to fill the box exactly
+                    height: '100%',  // Force it to fill the box exactly
+                    userInfo: { displayName: studentName },
+                    configOverwrite: { 
+                        prejoinPageEnabled: false,      // Skip the "Join" screen completely
+                        prejoinConfig: { enabled: false }, 
+                        disableDeepLinking: true,       // Prevent app from trying to open the native Jitsi app
+                        startWithAudioMuted: true,      // Mute audio by default to prevent echo
+                        startWithVideoMuted: false      // Auto-start camera
+                    }, 
+                    interfaceConfigOverwrite: { 
+                        TOOLBAR_BUTTONS: ['microphone', 'camera', 'tileview'], // Minimalist toolbar
+                        SHOW_JITSI_WATERMARK: false, 
+                        SHOW_WATERMARK_FOR_GUESTS: false,
+                        HIDE_INVITE_MORE_HEADER: true   // Hide bulky text at the top
+                    } 
+                };
+                
+                window.jitsiApi = new window.JitsiMeetExternalAPI(domain, options);
+                
+                // Auto-hide the Jitsi toolbar after 2 seconds to make it look like a pure security camera
+                setTimeout(() => {
+                    if (window.jitsiApi) window.jitsiApi.executeCommand('toggleToolbar');
+                }, 2000);
+
+            } else { 
+                proctorPanel.classList.add('hidden'); 
+            }
+            
+            // NEW FILTER: ONLY load questions you haven't answered yet
+            const allMaterials = window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== window.loggedInMobile);
+            const myAnswers = window.peerAnswerScriptsDB.filter(s => s.examId === examId && s.solverMobile === window.loggedInMobile);
+            const answeredMobiles = myAnswers.map(a => a.targetPeerMobile);
+            const materials = allMaterials.filter(m => !answeredMobiles.includes(m.mobile));
+            
+            window.currentExamPeers = []; 
+            const qContainer = document.getElementById('active-exam-q-images'); qContainer.innerHTML = '';
+            
+            if(materials.length === 0) {
+                qContainer.innerHTML = `<div class="p-6 text-center text-gray-400 text-xs font-bold border-2 border-dashed border-gray-600 rounded-xl w-full">No new questions found.</div>`;
+            }
+
+            materials.forEach(m => {
+                const uploaderName = window.studentsDB.find(s=>s.mobile===m.mobile)?.name || 'Peer';
+                window.currentExamPeers.push({ mobile: m.mobile, name: uploaderName }); 
+                let questions = m.qUrls || []; if(m.qUrl && questions.length === 0) questions = [m.qUrl];
+                questions.forEach((url, index) => {
+                    qContainer.innerHTML += `
+                    <div class="w-full max-w-sm flex flex-col items-center relative mb-6">
+                        <span class="text-[10px] font-bold text-indigo-200 bg-indigo-900 px-5 py-2 rounded-t-xl z-10 text-center">Question By ${uploaderName} (Pg ${index+1})</span>
+                        <img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-auto rounded-2xl border-2 border-indigo-500 object-contain bg-gray-900 cursor-pointer">
+                    </div>`;
+                });
+            });
+
+            // ANYTIME LOGIC SWITCH
+            const preRoom = document.getElementById('anytime-preroom-panel');
+            const timerCircle = document.getElementById('active-exam-circle');
+            const submitBtn = document.getElementById('active-exam-submit-btn');
+            
+            if (exam.examType === 'anytime') {
+                qContainer.classList.add('hidden');
+                timerCircle.classList.add('hidden');
+                submitBtn.classList.add('hidden');
+                preRoom.classList.remove('hidden');
+                document.getElementById('anytime-preroom-text').innerText = `You have ${window.currentExamPeers.length} new question set(s) waiting.`;
+                window.activeAttemptStartTime = null; 
+            } else {
+                preRoom.classList.add('hidden');
+                qContainer.classList.remove('hidden');
+                timerCircle.classList.remove('hidden');
+                submitBtn.classList.remove('hidden');
+                updateActiveTimerDisplay(); 
+            }
+        };
+
+        window.startAnytimeAttempt = function() {
+            window.activeAttemptStartTime = Date.now();
+            document.getElementById('anytime-preroom-panel').classList.add('hidden');
+            document.getElementById('active-exam-q-images').classList.remove('hidden');
+            document.getElementById('active-exam-circle').classList.remove('hidden');
+            document.getElementById('active-exam-submit-btn').classList.remove('hidden');
+            updateActiveTimerDisplay();
+        };
+
+        window.submitFromActiveExam = function() { 
+            const exam = window.examsDB.find(e => e.id === window.activeExamId);
+            if(exam.isPaused || !exam.globalStartTime) return alert("Cannot submit while exam is paused or waiting.");
+            
+            let elapsed = exam.pausedElapsed || 0; elapsed += Date.now() - exam.globalStartTime; let remMs = (exam.duration * 60 * 1000) - elapsed; if (remMs < 0) remMs = 0;
+            window.frozenTimeSaved = Math.floor(remMs / 60000); window.frozenTimeTaken = exam.duration - window.frozenTimeSaved;
+
+            if (exam.examType === 'offline') {
+                window.proceedToLogMarks();
+                return;
+            }
+
+            document.getElementById('active-exam-view').classList.add('hidden-view');
+            cleanupJitsi();
+
+            const uploadList = document.getElementById('answer-upload-list');
+            uploadList.innerHTML = '';
+            
+            if (window.currentExamPeers && window.currentExamPeers.length > 0) {
+                const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
+                
+                uniquePeers.forEach(peer => {
+                    uploadList.innerHTML += `
+                    <div class="bg-indigo-50/80 p-4 rounded-xl border border-indigo-200 shadow-sm">
+                        <label class="block text-[11px] font-black text-indigo-900 uppercase tracking-widest mb-2 break-words">Upload ${peer.name}'s Answer Script</label>
+                        <p class="text-[9px] text-gray-500 mb-2 font-bold">Select the photos of your answers to ${peer.name}'s questions.</p>
+                        <input type="file" id="ans-file-${peer.mobile}" accept="image/*" multiple class="w-full text-xs font-medium text-gray-700 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-black file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer bg-white rounded-lg shadow-inner">
+                    </div>`;
+                });
+                document.getElementById('answer-upload-modal').classList.remove('hidden-view');
+            } else {
+                window.openPeerEvaluationRoom(exam.id);
+            }
+        };
+
+        window.submitAllPeerAnswers = async function() {
+            const examId = window.activeExamId;
+            const exam = window.examsDB.find(e => e.id === examId);
+            const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
+            const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
+            
+            let hasFiles = false;
+            for (let peer of uniquePeers) {
+                if(document.getElementById(`ans-file-${peer.mobile}`)?.files.length > 0) hasFiles = true;
+            }
+            
+            if(!hasFiles && uniquePeers.length > 0) {
+                if(!confirm("You haven't attached any answer scripts. Submit anyway with 0 marks?")) return;
+            }
+
+            const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId).map(m => m.mobile))].length || 1;
+            const assignedMaxMarks = parseFloat((exam.totalMarks / totalOpponents).toFixed(1));
+
+            showLoader("Sending Answers to Peers...");
+            
+            try {
+                for (let peer of uniquePeers) {
+                    const fileInput = document.getElementById(`ans-file-${peer.mobile}`);
+                    if(fileInput && fileInput.files.length > 0) {
+                        const files = Array.from(fileInput.files);
+                        let urls = [];
+                        for(let file of files) {
+                            const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
+                            const formData = new FormData(); formData.append("image", compressedFile); 
+                            const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: formData }); 
+                            const data = await res.json(); 
+                            if(data.success) urls.push(data.data.url);
+                        }
+                        
+                        const payload = { 
+                            examId: examId, 
+                            solverMobile: window.loggedInMobile, 
+                            targetPeerMobile: peer.mobile, 
+                            imgUrls: urls, 
+                            timestamp: Date.now(),
+                            attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
+                            isGraded: false,
+                            assignedMaxMarks: assignedMaxMarks 
+                        };
+                        
+                        if(isFirebaseConfigured) await addDoc(collection(db, "peer_answer_scripts"), payload); 
+                        else { 
+                            if(!window.peerAnswerScriptsDB) window.peerAnswerScriptsDB = []; 
+                            window.peerAnswerScriptsDB.push({id: Math.random().toString(), ...payload}); 
+                        }
+                    } else {
+                        // EMPTY SUBMISSION FIX
+                        const payload = {
+                            examId: examId,
+                            solverMobile: window.loggedInMobile,
+                            targetPeerMobile: peer.mobile,
+                            imgUrls: [],
+                            timestamp: Date.now(),
+                            attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
+                            isGraded: true, // Auto-graded to 0
+                            marksAwarded: 0,
+                            maxMarks: assignedMaxMarks,
+                            assignedMaxMarks: assignedMaxMarks
+                        };
+                        if(isFirebaseConfigured) await addDoc(collection(db, "peer_answer_scripts"), payload);
+                        else window.peerAnswerScriptsDB.push({id: Math.random().toString(), ...payload});
+                    }
+                }
+                hideLoader();
+                document.getElementById('answer-upload-modal').classList.add('hidden-view');
+                window.openPeerEvaluationRoom(examId);
+            } catch(e) {
+                console.error(e); hideLoader(); alert("Error sending answers. Check your connection.");
+            }
+        };
+
+        window.proceedToLogMarks = function() {
+            document.getElementById('evaluation-modal').classList.add('hidden-view'); document.getElementById('admin-tabs').classList.add('hidden'); document.getElementById('field-student-dropdown').classList.add('hidden'); document.getElementById('select-student').required = false; 
+            const selExam = document.getElementById('select-exam'); selExam.innerHTML = `<option value="${window.activeExamId}" selected>Active Exam</option>`; selExam.required = false;
+            document.getElementById('field-exam-dropdown').classList.add('hidden'); document.getElementById('sheet-title').innerText = "Submit Exam Result"; document.getElementById('btn-mark-absent').classList.add('hidden'); 
+            window.switchForms('log-result'); document.getElementById('modal-overlay').classList.remove('hidden-view'); document.getElementById('action-sheet').classList.remove('hidden-view'); cleanupJitsi();
+        };
+
+        function updateActiveTimerDisplay() {
+            if (!window.activeExamId) return; const exam = window.examsDB.find(e => e.id === window.activeExamId);
+            const el = document.getElementById('active-exam-timer'); const circle = document.getElementById('active-exam-circle');
+            const overlay = document.getElementById('active-exam-overlay'); const submitBtn = document.getElementById('active-exam-submit-btn');
+            const badgeRunning = document.getElementById('ae-status-badge'); const badgeWaiting = document.getElementById('ae-waiting-badge');
+
+            if (exam) {
+                if (!exam.globalStartTime && !exam.isPaused && !exam.pausedElapsed) {
+                    el.innerText = "00:00"; overlay.classList.remove('hidden'); document.getElementById('overlay-msg-title').innerText = "Waiting Area"; document.getElementById('overlay-msg-sub').innerText = "The exam will begin when the admin starts the timer.";
+                    submitBtn.disabled = true; submitBtn.classList.add('opacity-50', 'cursor-not-allowed'); badgeWaiting.classList.remove('hidden'); badgeRunning.parentElement.classList.add('hidden');
+                } else if (exam.isPaused) {
+                    overlay.classList.remove('hidden'); document.getElementById('overlay-msg-title').innerText = "Exam Paused"; document.getElementById('overlay-msg-sub').innerText = "The administrator has paused the timer.";
+                    submitBtn.disabled = true; submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    let remainingMs = (exam.duration * 60 * 1000) - (exam.pausedElapsed || 0); if (remainingMs <= 0) remainingMs = 0;
+                    const m = Math.floor(remainingMs / 60000).toString().padStart(2, '0'); const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0');
+                    el.innerText = `${m}:${s}`; badgeWaiting.classList.add('hidden'); badgeRunning.parentElement.classList.remove('hidden'); badgeRunning.innerText = "PAUSED"; badgeRunning.previousElementSibling.classList.remove('animate-pulse');
+                } else {
+                    overlay.classList.add('hidden'); submitBtn.disabled = false; submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    badgeWaiting.classList.add('hidden'); badgeRunning.parentElement.classList.remove('hidden'); badgeRunning.innerText = "Live Exam Running"; badgeRunning.previousElementSibling.classList.add('animate-pulse');
+                    let remainingMs = 0;
+                    if (exam.examType === 'anytime') {
+                        if (!window.activeAttemptStartTime) return; 
+                        let elapsed = Date.now() - window.activeAttemptStartTime;
+                        remainingMs = (exam.duration * 60 * 1000) - elapsed;
+                        badgeWaiting.classList.add('hidden'); 
+                        badgeRunning.parentElement.classList.remove('hidden'); 
+                        badgeRunning.innerText = "Running";
+                        overlay.classList.add('hidden');
+                        submitBtn.disabled = false;
+                    } else {
+                        let elapsed = exam.pausedElapsed || 0; 
+                        elapsed += Date.now() - exam.globalStartTime; 
+                        remainingMs = (exam.duration * 60 * 1000) - elapsed;
+                    }
+                    
+                    if (remainingMs <= 0) {
+                        el.innerText = "00:00"; el.classList.add('text-red-500'); circle.classList.add('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]', 'sm:shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.remove('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]', 'sm:shadow-[0_0_80px_rgba(79,70,229,0.3)]');
+                        if (!window.autoSubmitTriggered) { 
+                            window.autoSubmitTriggered = true; 
+                            alert("Time is up! Submitting answers..."); 
+                            document.querySelector('#answer-upload-modal button')?.remove();
+                            window.submitFromActiveExam(); 
+                        }
+                    } else {
+                        window.autoSubmitTriggered = false; const m = Math.floor(remainingMs / 60000).toString().padStart(2, '0'); const s = Math.floor((remainingMs % 60000) / 1000).toString().padStart(2, '0'); el.innerText = `${m}:${s}`;
+                        if (remainingMs <= 60000) { el.classList.add('text-red-500'); circle.classList.add('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]', 'sm:shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.remove('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]', 'sm:shadow-[0_0_80px_rgba(79,70,229,0.3)]'); } 
+                        else { el.classList.remove('text-red-500'); circle.classList.remove('border-red-500', 'shadow-[0_0_30px_rgba(239,68,68,0.4)]', 'sm:shadow-[0_0_50px_rgba(239,68,68,0.4)]'); circle.classList.add('border-indigo-500/30', 'shadow-[0_0_60px_rgba(79,70,229,0.3)]', 'sm:shadow-[0_0_80px_rgba(79,70,229,0.3)]'); }
+                    }
+                }
+            }
+        }
+       
+        
+// ==========================================
+// NOVA AI VISUAL SOLVER ENGINE
+// ==========================================
+window.solveQuestionWithNOVA = async function(imgUrl) {
+    // 1. Open the Chat Interface
+    window.openNovaChat();
+    
+    // 2. Visually show the image and request in the chat UI
+    const chatBox = document.getElementById('nova-chat-messages');
+    const wrapper = document.createElement('div');
+    wrapper.className = `flex w-full justify-end shrink-0 relative z-10`;
+    wrapper.innerHTML = `
+    <div class="bg-indigo-600 text-white rounded-[1.25rem] rounded-tr-sm px-3.5 py-2.5 shadow-md max-w-[85%] text-[12px] sm:text-[14px] font-semibold break-words leading-relaxed border border-indigo-500">
+        <img src="${imgUrl}" class="w-48 h-auto rounded-lg mb-2 border border-white/20 shadow-sm object-cover" onclick="window.openFullScreenImage(this.src)">
+        <i class="fa-solid fa-magnifying-glass mr-1"></i> Please solve this question and guide me step-by-step.
+    </div>`;
+    chatBox.appendChild(wrapper);
+    setTimeout(() => { if (chatBox) chatBox.scrollTop = chatBox.scrollHeight; }, 50);
+
+    window.showNovaTyping();
+
+    try {
+        // 3. Convert Image URL to Base64 (Required for Gemini API)
+        const response = await fetch(imgUrl);
+        const blob = await response.blob();
+        const base64data = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+            reader.readAsDataURL(blob);
+        });
+
+        // 4. Construct the Multimodal Prompt for Gemini
+        const promptText = "Please carefully read the question in the provided image. Solve it step-by-step, explain the concepts clearly, and guide me to the correct answer. Act as an encouraging mentor.";
+        
+        window.novaChatHistory.push({ 
+            role: "user", 
+            parts: [
+                { text: promptText },
+                { inlineData: { data: base64data, mimeType: "image/jpeg" } } // Gemini Vision Payload
+            ] 
+        });
+
+        const systemContext = window.buildNovaSystemContext();
+        const payload = {
+            system_instruction: { parts: [{ text: systemContext }] },
+            contents: window.novaChatHistory,
+            generationConfig: { temperature: 0.5 } // Lower temp for factual math/reasoning
+        };
+
+        // 5. Send to your Cloudflare Worker / Gemini Backend
+        const apiRes = await fetch(window.WORKER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await apiRes.json();
+        window.hideNovaTyping();
+
+        if (data.error) {
+            window.appendNovaMessage('model', `**API Error:** ${data.error.message}`);
+            window.novaChatHistory.pop(); 
+            return;
+        }
+
+        // 6. Display AI's Solution!
+        const aiText = data.candidates[0].content.parts[0].text;
+        window.novaChatHistory.push({ role: "model", parts: [{ text: aiText }] });
+        window.appendNovaMessage('model', aiText);
+
+    } catch(e) {
+        console.error(e);
+        window.hideNovaTyping();
+        window.appendNovaMessage('model', "Sorry, I failed to process the image. Please check your internet connection.");
+        window.novaChatHistory.pop();
+    }
+};
+
+
+        // ==========================================
+        // CALL RINGTONE & INCOMING CALL POPUP ENGINE
+        // ==========================================
+        let ringtoneInterval = null; window.currentIncomingCall = null;
+        function startRingtone() {
+            stopRingtone();
+            try {
+                const playRingPattern = () => { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc1 = ctx.createOscillator(); const osc2 = ctx.createOscillator(); const gain = ctx.createGain(); osc1.type = 'sine'; osc2.type = 'sine'; osc1.frequency.setValueAtTime(440, ctx.currentTime); osc2.frequency.setValueAtTime(480, ctx.currentTime); gain.gain.setValueAtTime(0.15, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.8); osc1.connect(gain); osc2.connect(gain); gain.connect(ctx.destination); osc1.start(); osc2.start(); osc1.stop(ctx.currentTime + 1.8); osc2.stop(ctx.currentTime + 1.8); };
+                playRingPattern(); ringtoneInterval = setInterval(playRingPattern, 2500);
+            } catch(e) { console.warn("Ringtone blocked or not supported."); }
+        }
+        function stopRingtone() { if (ringtoneInterval) { clearInterval(ringtoneInterval); ringtoneInterval = null; } }
+
+        window.showIncomingCallPopup = function(callData) {
+            window.currentIncomingCall = callData; document.getElementById('incoming-caller-name').innerText = callData.callerName || 'Peer Student';
+            const isVideo = callData.callType === 'video'; document.getElementById('incoming-call-type-text').innerText = isVideo ? "Incoming Video Call" : "Incoming Audio Call"; document.getElementById('incoming-call-icon').className = isVideo ? "fa-solid fa-video animate-pulse" : "fa-solid fa-phone-volume animate-pulse";
+            document.getElementById('incoming-call-modal').classList.remove('hidden-view'); startRingtone();
+        };
+
+        window.acceptIncomingCall = function() {
+            stopRingtone(); 
+            document.getElementById('incoming-call-modal').classList.add('hidden-view');
+            window.location.hash = 'chat'; 
+
+            if (window.currentIncomingCall) { 
+                const isVideo = window.currentIncomingCall.callType === 'video'; 
+                window.currentIncomingCall = null; 
+                if (isVideo) window.startDiscusVideoCall(true); 
+                else window.startDiscusAudioCall(true); 
+            }
+        };
+
+        window.declineIncomingCall = function() { stopRingtone(); document.getElementById('incoming-call-modal').classList.add('hidden-view'); window.currentIncomingCall = null; };
+
+        window.startDiscusVideoCall = async function(isAnswering = false) {
+            const container = document.getElementById('discus-jitsi-container'); const modal = document.getElementById('discus-video-modal');
+            document.getElementById('call-icon-indicator').className = "fa-solid fa-video text-green-400 animate-pulse"; document.getElementById('call-title-indicator').innerText = "Discus Live Video Call";
+            modal.classList.remove('hidden-view'); container.innerHTML = ''; if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
+            const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'EXAMA' : 'Student');
+            const options = { roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall', parentNode: container, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: false, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: senderName } };
+            window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options); window.chatJitsiApi.executeCommand('join');
+            
+            if (!isAnswering) {
+                const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'video', status: 'ringing', timestamp: Date.now() };
+                if (isFirebaseConfigured) await setDoc(doc(db, "active_calls", "discus_call"), callPayload);
+                await window.dbSendChat({ type: 'call_log', callType: 'video', text: "Started a Video Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
+                sendOneSignalPush(`🎥 Incoming Video Call`, `${senderName} started a live video call in Discus Community.`);
+            }
+        };
+
+        window.startDiscusAudioCall = async function(isAnswering = false) {
+            const container = document.getElementById('discus-jitsi-container'); const modal = document.getElementById('discus-video-modal');
+            document.getElementById('call-icon-indicator').className = "fa-solid fa-phone-volume text-green-400 animate-pulse"; document.getElementById('call-title-indicator').innerText = "Discus Live Audio Call";
+            modal.classList.remove('hidden-view'); container.innerHTML = ''; if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
+            const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'EXAMA' : 'Student');
+            const options = { roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall', parentNode: container, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: true, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: senderName } };
+            window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options); window.chatJitsiApi.executeCommand('join');
+            
+            if (!isAnswering) {
+                const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'audio', status: 'ringing', timestamp: Date.now() };
+                if (isFirebaseConfigured) await setDoc(doc(db, "active_calls", "discus_call"), callPayload);
+                await window.dbSendChat({ type: 'call_log', callType: 'audio', text: "Started an Audio Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
+                sendOneSignalPush(`📞 Incoming Audio Call`, `${senderName} started a live audio call in Discus Community.`);
+            }
+        };
+
+        window.closeDiscusVideoCall = function() {
+            stopRingtone(); if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; } document.getElementById('discus-video-modal').classList.add('hidden-view');
+        };
+
+        // ==========================================
+        // CUSTOM MATERIAL READER ENGINE
+        // ==========================================
+        window.openCustomPDFViewer = async function(url, title = 'Material Reader') {
+            document.getElementById('pdf-viewer-title').innerText = title;
+            const loader = document.getElementById('pdf-loader');
+            const loaderText = loader.querySelector('p');
+            loader.classList.remove('hidden');
+            document.getElementById('custom-pdf-viewer-modal').classList.remove('hidden-view');
+            document.getElementById('pdf-pagination-controls').classList.add('hidden');
+            if(pdfCanvas) pdfCanvas.classList.add('hidden');
+            
+            window.pdfPageNum = 1;
+            window.currentPdfRawUrl = url;
+            
+            const wrapper = document.getElementById('pdf-iframe-wrapper');
+            if(wrapper) {
+                wrapper.style.transform = `scale(1)`;
+                wrapper.style.width = `100%`;
+                wrapper.style.height = `100%`;
+            }
+            
+            let uniqueKey = url;
+            const driveMatch = url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+            if (driveMatch && driveMatch[1]) {
+                uniqueKey = driveMatch[1]; 
+            } else {
+                uniqueKey = btoa(encodeURIComponent(url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+            }
+            window.currentPdfId = uniqueKey; 
+
+            try {
+                let pdfArrayBuffer = null;
+
+                if (typeof localforage !== 'undefined') {
+                    pdfArrayBuffer = await localforage.getItem(`exama_pdf_${window.currentPdfId}`);
+                }
+                
+                if (!pdfArrayBuffer) {
+                    loaderText.innerText = "Downloading for offline use...";
+                    
+                    let fetchUrl = url; 
+
+                    if (url.includes('drive.google.com')) {
+                        if (driveMatch && driveMatch[1]) {
+                            const driveDownloadUrl = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+                            const myWorkerUrl = "https://pdf-subhankar.connect-subhankar-info.workers.dev/"; 
+                            fetchUrl = `${myWorkerUrl}?url=${encodeURIComponent(driveDownloadUrl)}`;
+                        }
+                    }
+
+                    console.log("Fetching PDF from:", fetchUrl);
+                    const response = await fetch(fetchUrl);
+                    
+                    if(!response.ok) {
+                        if (response.status === 408) throw new Error("Proxy connection timed out.");
+                        throw new Error(`HTTP Error: ${response.status}`);
+                    }
+                    
+                    pdfArrayBuffer = await response.arrayBuffer();
+                    
+                    const headerString = new TextDecoder('utf-8').decode(pdfArrayBuffer.slice(0, 15));
+                    if (headerString.toLowerCase().includes("<!doctype html>")) {
+                        throw new Error("File too large for direct download (Google Drive virus scan block).");
+                    }
+                    
+                    if (typeof localforage !== 'undefined' && pdfArrayBuffer) {
+                        await localforage.setItem(`exama_pdf_${window.currentPdfId}`, pdfArrayBuffer);
+                    }
+                }
+
+                if (!pdfArrayBuffer) throw new Error("File data is completely empty.");
+
+                loaderText.innerText = "Rendering Engine...";
+
+                const loadingTask = pdfjsLib.getDocument({ data: pdfArrayBuffer });
+                window.pdfDoc = await loadingTask.promise;
+                
+                document.getElementById('pdf-page-count').textContent = window.pdfDoc.numPages;
+                
+                const firstPage = await window.pdfDoc.getPage(1);
+                const unscaledViewport = firstPage.getViewport({ scale: 1 });
+                const containerWidth = document.getElementById('pdf-scroll-wrapper').clientWidth || window.innerWidth;
+                
+                window.currentPdfScale = (containerWidth - 20) / unscaledViewport.width;
+                if (window.currentPdfScale > 2.0) window.currentPdfScale = 2.0;
+                if (window.currentPdfScale < 0.4) window.currentPdfScale = 0.4;
+
+                await window.renderPdfPage(window.pdfPageNum);
+                
+                if(pdfCanvas) pdfCanvas.classList.remove('hidden');
+                document.getElementById('pdf-pagination-controls').classList.remove('hidden');
+                loader.classList.add('hidden');
+
+            } catch (error) {
+                console.error("Native PDF Render Failed:", error);
+                
+                loaderText.innerText = "Opening in browser...";
+                alert(`Native reader unavailable: ${error.message}\n\nOpening the standard viewer instead.`);
+                
+                window.open(window.currentPdfRawUrl, '_blank');
+                window.closeCustomPDFViewer(); 
+            }
+        };
+
+        window.closeCustomPDFViewer = function() {
+            const header = document.getElementById('pdf-modal-header');
+            if (header && header.classList.contains('hidden')) {
+                window.togglePdfFullscreen();
+            }
+
+            document.getElementById('custom-pdf-viewer-modal').classList.add('hidden-view');
+            if(pdfCanvas) pdfCanvas.classList.add('hidden');
+            window.pdfDoc = null;
+        };
+
+        window.zoomCustomPdf = function(dir) {
+            if (!window.pdfDoc) return;
+            const zoomStep = 0.25; 
+            if (dir === 1) {
+                window.currentPdfScale = Math.min(4.0, window.currentPdfScale + zoomStep);
+            } else {
+                window.currentPdfScale = Math.max(0.3, window.currentPdfScale - zoomStep);
+            }
+            window.queueRenderPage(window.pdfPageNum);
+        };
+
+        window.togglePdfFullscreen = function() {
+            const header = document.getElementById('pdf-modal-header');
+            const icon = document.getElementById('icon-pdf-fullscreen');
+            if(!header || !icon) return;
+
+            const isCurrentlyFullscreen = header.classList.contains('hidden');
+
+            if (!isCurrentlyFullscreen) {
+                header.classList.add('hidden'); 
+                icon.classList.replace('fa-expand', 'fa-compress');
+            } else {
+                header.classList.remove('hidden'); 
+                icon.classList.replace('fa-compress', 'fa-expand');
+            }
+        };
+
+        window.downloadCustomPdf = function() {
+            if(!window.currentPdfRawUrl) return;
+            showLoader("Starting Download...");
+            
+            let downloadUrl = window.currentPdfRawUrl;
+
+            if (window.currentPdfRawUrl.includes('drive.google.com')) {
+                const match = window.currentPdfRawUrl.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+                if (match && match[1]) {
+                    downloadUrl = `https://drive.google.com/uc?export=download&id=${match[1]}`;
+                }
+            }
+
+            const a = document.createElement("a");
+            a.href = downloadUrl;
+            a.target = "_blank";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            setTimeout(() => hideLoader(), 1500);
+        };
+
+        window.getStudentAvatar = function(mobile, name = 'Student') {
+            if (mobile === '9475757821' || mobile === 'admin' || name === 'EXAMA' || name === 'Admin') {
+                return 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg';
+            }
+
+            const stu = window.studentsDB.find(s => s.mobile === mobile);
+            if (stu && stu.dpUrl) return stu.dpUrl;
+            
+            return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Exama')}&background=4f46e5&color=fff&bold=true`;
+        };
+
+       window.uploadStudentDP = async function(input) {
+            if (!input.files || input.files.length === 0) return;
+            const originalFile = input.files[0];
+            
+            showLoader("Optimizing & Uploading...");
+            
+            try {
+                const compressedFile = await window.compressImage(originalFile, 400, 400, 0.8);
+                
+                const formData = new FormData();
+                formData.append("image", compressedFile);
+                const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
+                
+                const res = await fetch(`https://api.imgbb.com/1/upload?expiration=15552000&key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
+                const data = await res.json();
+                
+                if(data.success) {
+                    const imageUrl = data.data.url;
+                    
+                    if (isFirebaseConfigured) {
+                        await updateDoc(doc(db, "students", window.loggedInMobile), { dpUrl: imageUrl });
+                    } else {
+                        const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+                        if(stu) stu.dpUrl = imageUrl;
+                    }
+                    
+                    localStorage.setItem(`exama_dp_${window.loggedInMobile}`, imageUrl);
+                    
+                    const navDp = document.getElementById('student-nav-dp');
+                    if (navDp) navDp.src = imageUrl;
+                    
+                    refreshUI();
+                    showToast("Success", "Profile Picture updated lightning fast!", "info");
+                }
+            } catch(e) {
+                console.error(e);
+                alert("Failed to upload image. Please try again.");
+            }
+            
+            input.value = '';
+            hideLoader();
+        };
+
+// ==========================================
+// NOVA AI GEMINI CHAT ENGINE
+// ==========================================
+window.WORKER_URL = "https://xama-gemini-proxy.connect-subhankar-info.workers.dev/"; 
+window.novaChatHistory = [];
+
+window.openNovaChat = function() {
+    if (window.currentRole === 'admin') return alert("NOVA Chat is currently personalized for student accounts.");
+    window.location.hash = 'nova-chat';
+    
+    setTimeout(() => {
+        const chatBox = document.getElementById('nova-chat-messages');
+        if (chatBox) {
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    }, 100);
+};
+
+window.formatNovaMarkdown = function(text) {
+    return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-800 font-black">$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em class="text-indigo-600">$1</em>')
+        .replace(/`(.*?)`/g, '<code class="bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded text-[10px] font-mono font-bold">$1</code>')
+        .replace(/\n/g, '<br>');
+};
+
+window.appendNovaMessage = function(role, text) {
+    const chatBox = document.getElementById('nova-chat-messages');
+    if (!chatBox) return; 
+
+    const wrapper = document.createElement('div');
+    const isMe = role === 'user';
+    
+    wrapper.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'} shrink-0 relative z-10`;
+    
+    if (isMe) {
+        wrapper.innerHTML = `
+        <div class="bg-indigo-600 text-white rounded-[1.25rem] rounded-tr-sm px-3.5 py-2.5 shadow-[0_5px_15px_rgba(79,70,229,0.2)] max-w-[85%] text-[12px] sm:text-[14px] font-semibold break-words leading-relaxed border border-indigo-500">
+            ${text}
+        </div>`;
+    } else {
+        wrapper.innerHTML = `
+        <div class="bg-white rounded-[1.25rem] rounded-tl-sm px-3.5 py-2.5 shadow-sm max-w-[90%] text-[11.5px] sm:text-[13.5px] text-gray-800 font-medium break-words leading-relaxed border border-indigo-100/60">
+            <span class="font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 block mb-1 uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-1"><i class="fa-solid fa-robot"></i> NOVA AI</span>
+            ${window.formatNovaMarkdown(text)}
+        </div>`;
+    }
+    
+    chatBox.appendChild(wrapper);
+    setTimeout(() => { 
+        if (chatBox) chatBox.scrollTop = chatBox.scrollHeight; 
+    }, 50);
+};
+
+window.showNovaTyping = function() {
+    const chatBox = document.getElementById('nova-chat-messages');
+    if (!chatBox) return; 
+    
+    const wrapper = document.createElement('div');
+    wrapper.id = 'nova-typing-indicator';
+    wrapper.className = `flex w-full justify-start shrink-0 relative z-10`;
+    wrapper.innerHTML = `
+    <div class="bg-white rounded-[1.25rem] rounded-tl-sm px-4 py-3 shadow-sm max-w-[50%] border border-indigo-100/60 flex items-center gap-1">
+        <div class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style="animation-delay: 0s"></div>
+        <div class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+        <div class="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+    </div>`;
+    chatBox.appendChild(wrapper);
+    setTimeout(() => { 
+        if (chatBox) chatBox.scrollTop = chatBox.scrollHeight; 
+    }, 50);
+};
+
+window.hideNovaTyping = function() {
+    const ind = document.getElementById('nova-typing-indicator');
+    if (ind) ind.remove();
+};
+
+window.clearNovaChat = function() {
+    if(confirm("Clear conversation with NOVA?")) {
+        window.novaChatHistory = [];
+        const chatBox = document.getElementById('nova-chat-messages');
+        if (chatBox) {
+            chatBox.innerHTML = `
+            <div class="flex justify-start relative z-10 w-full">
+                <div class="bg-white rounded-[1.25rem] rounded-tl-sm p-3.5 shadow-sm border border-indigo-100/60 max-w-[90%] text-[11px] sm:text-[13px] text-gray-800 font-medium whitespace-pre-wrap leading-relaxed"><span class="font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 block mb-1 uppercase tracking-widest text-[9px] sm:text-[10px] flex items-center gap-1"><i class="fa-solid fa-robot"></i> NOVA SYSTEM</span>Memory cleared. What's next?</div>
+            </div>`;
+        }
+    }
+};
+
+window.buildNovaSystemContext = function() {
+    const student = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
+    if (!student) return "You are an AI assistant.";
+
+    const resultsArray = typeof getComputedResults === 'function' ? getComputedResults() : [];
+    const records = resultsArray.filter(r => r.mobile === window.loggedInMobile && !r.isVirtual);
+    const avg = records.length > 0 ? (records.reduce((a, b) => a + b.percentage, 0) / records.length).toFixed(1) : 0;
+    
+    let examHistory = records.map(r => {
+        const ex = (window.examsDB || []).find(e => e.id === r.examId);
+        return `- ${ex ? ex.name : 'Exam'}: ${r.obtained}/${r.total} marks (${r.percentage.toFixed(0)}%). Status: ${r.status}`;
+    }).join('\n');
+    if(!examHistory) examHistory = "No exams taken yet.";
+
+    const sessions = (window.sessionsDB || []).filter(s => s.mobile === window.loggedInMobile);
+    const totalStudyMs = sessions.reduce((a, b) => a + (b.totalStudyMs || 0), 0);
+    const totalStudyHrs = (totalStudyMs / 3600000).toFixed(1);
+
+    const fitLogs = (window.fitnessDB || []).filter(l => l.mobile === window.loggedInMobile && !l.isAbsent);
+    const totalKm = fitLogs.reduce((a, b) => a + (b.distance || 0), 0).toFixed(1);
+    const totalCals = fitLogs.reduce((a, b) => a + (b.cals || 0), 0);
+
+    let targetText = student.targetPercentage ? `They have set a target goal of ${student.targetPercentage}%.` : `They have not set a target goal yet.`;
+
+    const myTasks = (window.weeklyTasksDB || []).filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(window.loggedInMobile));
+    const completedTasks = (window.studentTasksDB || []).filter(st => st.mobile === window.loggedInMobile && st.completed).length;
+
+    return `
+You are NOVA, the highly intelligent, motivating, and analytical AI mentor inside the EXAMA application.
+You are currently talking directly to the student named: ${student.name}.
+
+Here is ${student.name}'s live real-time academic and fitness data:
+- Current Overall Academic Average: ${avg}%
+- ${targetText}
+- Total Deep Focus Study Time Logged: ${totalStudyHrs} hours
+- Fitness Monitor: ${totalKm} KM run, ${totalCals} Calories burned
+- Syllabus Progress: Completed ${completedTasks} out of ${myTasks.length} assigned tasks.
+
+Detailed Exam History:
+${examHistory}
+
+YOUR DIRECTIVES:
+1. Act as an encouraging, expert mentor. 
+2. Keep your answers concise, structured, and easy to read. 
+3. If they ask about their performance, analyze the data provided above and point out trends.
+4. If they ask for study schedules, factor in their focus time and suggest balancing it with their running/fitness.
+5. Use markdown for bolding important concepts and bullet points. Do NOT use overly long paragraphs.
+6. Acknowledge them by their name occasionally to make it personal.
+`;
+};
+
+window.sendNovaMessage = async function() {
+    const input = document.getElementById('nova-chat-input');
+    const sendBtn = document.getElementById('nova-send-btn');
+    const text = input.value.trim();
+    if (!text) return;
+
+    if (window.GEMINI_API_KEY === "YOUR_GEMINI_API_KEY_HERE") {
+        alert("Please set your Gemini API Key in the source code first!");
+        return;
+    }
+
+    input.value = '';
+    input.style.height = 'auto'; 
+    sendBtn.disabled = true;
+    sendBtn.classList.add('opacity-50');
+
+    window.appendNovaMessage('user', text);
+    window.novaChatHistory.push({ role: "user", parts: [{ text: text }] });
+
+    window.showNovaTyping();
+
+    try {
+        const systemContext = window.buildNovaSystemContext();
+
+        const payload = {
+            system_instruction: { parts: [{ text: systemContext }] },
+            contents: window.novaChatHistory,
+            generationConfig: { temperature: 0.7 }
+        };
+
+       const response = await fetch(window.WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+});
+
+        const data = await response.json();
+        window.hideNovaTyping();
+        sendBtn.disabled = false;
+        sendBtn.classList.remove('opacity-50');
+
+        if (data.error) {
+            window.appendNovaMessage('model', `**API Error:** ${data.error.message}`);
+            window.novaChatHistory.pop(); 
+            return;
+        }
+
+        const aiText = data.candidates[0].content.parts[0].text;
+        
+        window.novaChatHistory.push({ role: "model", parts: [{ text: aiText }] });
+        window.appendNovaMessage('model', aiText);
+
+    } catch (e) {
+        console.error(e);
+        window.hideNovaTyping();
+        sendBtn.disabled = false;
+        sendBtn.classList.remove('opacity-50');
+        window.appendNovaMessage('model', "I'm having trouble connecting to my servers right now. Please check your internet connection and API key.");
+        window.novaChatHistory.pop(); 
+    }
+};
+
+const novaInput = document.getElementById('nova-chat-input');
+if(novaInput) {
+    novaInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = (this.scrollHeight) + 'px';
+    });
+}
+    
+        // ==========================================
+        // CUSTOM PULL-TO-REFRESH (NATIVE APP FEEL)
+        // ==========================================
+        let ptrStartY = 0;
+        let ptrCurrentY = 0;
+        let isPulling = false;
+        let isRefreshing = false;
+        
+        const ptrEl = document.getElementById('ptr-indicator');
+        const ptrIcon = document.getElementById('ptr-icon');
+
+        function getScrollParent(node) {
+            if (node == null || node === document.body) return null;
+            if (node.scrollHeight > node.clientHeight && window.getComputedStyle(node).overflowY.includes('auto')) {
+                return node;
+            }
+            return getScrollParent(node.parentNode);
+        }
+
+        document.getElementById('app').addEventListener('touchstart', (e) => {
+            if (isRefreshing) return;
+            
+            const scrollParent = getScrollParent(e.target);
+            if (!scrollParent || scrollParent.scrollTop <= 0) {
+                ptrStartY = e.touches[0].clientY;
+                ptrCurrentY = ptrStartY; 
+                isPulling = true;
+                ptrEl.style.transition = 'none'; 
+            }
+        }, { passive: true });
+
+        document.getElementById('app').addEventListener('touchmove', (e) => {
+            if (!isPulling || isRefreshing) return;
+            
+            ptrCurrentY = e.touches[0].clientY;
+            const deltaY = ptrCurrentY - ptrStartY;
+
+            if (deltaY > 0) {
+                const pullDistance = Math.min(deltaY * 0.4, 80); 
+                ptrEl.style.transform = `translate(-50%, ${pullDistance}px)`;
+                ptrIcon.style.transform = `rotate(${pullDistance * 3.5}deg)`;
+
+                if (e.cancelable) e.preventDefault(); 
+            } else {
+                isPulling = false;
+            }
+        }, { passive: false });
+
+        document.getElementById('app').addEventListener('touchend', (e) => {
+            if (!isPulling || isRefreshing) return;
+            isPulling = false;
+            
+            const deltaY = ptrCurrentY - ptrStartY;
+            ptrEl.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'; 
+
+            if (deltaY * 0.4 > 60) {
+                isRefreshing = true;
+                ptrEl.style.transform = `translate(-50%, 30px)`; 
+                ptrIcon.classList.add('fa-spin');
+                
+                executeAppRefresh();
+            } else {
+                ptrEl.style.transform = `translate(-50%, -150%)`;
+            }
+        });
+
+        function executeAppRefresh() {
+            if (navigator.vibrate) navigator.vibrate(50);
+            setTimeout(() => {
+                window.location.reload(); 
+            }, 400);
+        }
+        
+        // ==========================================
+        // CLIENT-SIDE IMAGE COMPRESSOR
+        // ==========================================
+        window.compressImage = function(file, maxWidth = 400, maxHeight = 400, quality = 0.8) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = event => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > height) {
+                            if (width > maxWidth) {
+                                height *= maxWidth / width;
+                                width = maxWidth;
+                            }
+                        } else {
+                            if (height > maxHeight) {
+                                width *= maxHeight / height;
+                                height = maxHeight;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        canvas.toBlob(blob => {
+                            const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { 
+                                type: 'image/jpeg', 
+                                lastModified: Date.now() 
+                            });
+                            resolve(compressedFile);
+                        }, 'image/jpeg', quality);
+                    };
+                    img.onerror = error => reject(error);
+                };
+                reader.onerror = error => reject(error);
+            });
+        };
+   
+// ==========================================
+// SMART P2P PEER EVALUATION ROOM ENGINE
+// ==========================================
+window.openPeerEvaluationRoom = function(examId) {
+    document.getElementById('peer-eval-room-modal').classList.remove('hidden-view');
+    const evalList = document.getElementById('peer-eval-list');
+    const exam = window.examsDB.find(e => e.id === examId);
+    
+    // 🚀 NEW: Memory Tracker. Remembers what is already on screen!
+    window.renderedScriptIds = new Set();
+    
+    // Reset list HTML immediately upon opening
+    evalList.innerHTML = '';
+
+    const checkAndRenderScripts = () => {
+        const nowTime = Date.now();
+        const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000;
+        
+        const scriptsToGrade = window.peerAnswerScriptsDB.filter(s => 
+            s.examId === examId && 
+            s.targetPeerMobile === window.loggedInMobile && 
+            !s.isGraded &&
+            (nowTime - s.timestamp < SIX_DAYS_MS) // 6-DAY WINDOW ENFORCEMENT
+        );
+        
+        // Handle the "Waiting" empty state
+        if (scriptsToGrade.length === 0) {
+            // Only show empty state if nothing has been rendered yet and it's not already showing
+            if (window.renderedScriptIds.size === 0 && !evalList.querySelector('.fa-mug-hot')) {
+                evalList.innerHTML = `<div class="glass-card p-6 text-center rounded-2xl border-dashed border-2 border-indigo-200 mt-10">
+                    <i class="fa-solid fa-mug-hot text-indigo-300 text-4xl mb-4 animate-bounce"></i>
+                    <h4 class="text-indigo-900 font-black text-lg mb-2">Waiting for papers...</h4>
+                    <p class="text-xs text-gray-500 font-medium px-4">When peers finish your question sets, they will magically appear here within the 6-day window.</p>
+                    <button onclick="closePeerEvalRoom()" class="mt-6 px-6 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl font-bold border border-indigo-200">Exit</button>
+                </div>`;
+            }
+            return;
+        }
+
+        // If the empty state IS showing but we just got a script, clear the empty state!
+        if (evalList.querySelector('.fa-mug-hot')) {
+            evalList.innerHTML = '';
+        }
+
+        // 🚀 ADVANCED REFRESH: Only append NEW scripts. Never overwrite active typing!
+        scriptsToGrade.forEach(script => {
+            if (!window.renderedScriptIds.has(script.id) && !document.getElementById(`script-card-${script.id}`)) {
+                
+                // Add to our memory so it never renders twice
+                window.renderedScriptIds.add(script.id);
+                
+                const solverName = window.studentsDB.find(s=>s.mobile===script.solverMobile)?.name || 'Peer';
+                
+                const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== script.solverMobile).map(m => m.mobile))].length;
+                const maxMarksForThisSet = totalOpponents > 0 ? parseFloat((exam.totalMarks / totalOpponents).toFixed(1)) : exam.totalMarks;
+                
+                let imgsHtml = '';
+                script.imgUrls.forEach((url, i) => {
+                    imgsHtml += `<div class="relative w-full h-40"><img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-full object-cover rounded-lg border border-gray-300 shadow-sm cursor-pointer hover:opacity-90 transition-opacity"><span class="absolute top-2 right-2 bg-black/80 text-white text-[9px] font-black px-2 py-1 rounded shadow-md uppercase">Pg ${i+1}</span></div>`;
+                });
+                
+                // We build the card into a string...
+                const cardHtml = `
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-lg border border-indigo-100 mb-5 relative overflow-hidden slide-up" id="script-card-${script.id}">
+                    <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
+                    <div class="flex justify-between items-center mb-3 ml-2">
+                        <span class="text-xs font-black text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-100 uppercase tracking-widest"><i class="fa-solid fa-user-pen mr-1"></i> Solved by ${solverName}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mb-4 max-h-60 overflow-y-auto p-3 bg-gray-50 rounded-xl border border-gray-200 ml-2">
+                        ${imgsHtml}
+                    </div>
+                    
+                    <div id="feedback-box-${script.id}" class="hidden mb-3 ml-2 pr-2">
+                        <textarea id="feedback-input-${script.id}" placeholder="Instructor/AI Feedback..." class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 outline-none focus:border-indigo-300" rows="2"></textarea>
+                    </div>
+
+                    <div class="flex gap-2 sm:gap-3 items-center ml-2">
+                        <div class="relative flex-1">
+                            <input type="number" id="marks-${script.id}" placeholder="Max Marks: ${maxMarksForThisSet}" class="w-full px-3 py-3 bg-indigo-50/50 rounded-xl border border-indigo-200 font-black text-indigo-900 outline-none text-sm">
+                        </div>
+                        
+                        <button onclick="autoGradeScript('${script.id}', this)" class="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition-all shrink-0" title="Auto Grade via NOVA">
+                            <i class="fa-solid fa-robot text-lg animate-pulse"></i>
+                        </button>
+                        
+                        <button onclick="submitPeerMarks('${script.id}', '${script.solverMobile}', '${examId}', this)" class="bg-gradient-to-r from-emerald-500 to-green-600 text-white font-black px-4 py-3 rounded-xl active:scale-95 shadow-md text-sm shrink-0">Submit</button>
+                    </div>
+                </div>`;
+                
+                // 🚀 SMART INJECTION: insertAdjacentHTML adds new items to the bottom WITHOUT resetting the inputs above!
+                evalList.insertAdjacentHTML('beforeend', cardHtml);
+            }
+        });
+    };
+    
+    checkAndRenderScripts();
+    // Polls quietly in the background. Does not disrupt typing!
+    window.evalPollInterval = setInterval(checkAndRenderScripts, 3000);
+};
+
+window.closePeerEvalRoom = function() {
+    if(window.evalPollInterval) clearInterval(window.evalPollInterval);
+    document.getElementById('peer-eval-room-modal').classList.add('hidden-view');
+    window.renderedScriptIds = new Set(); // Clean memory
+    window.activeExamId = null;
+    safeBack(); 
+};
+
+// ==========================================
+// REAL NOVA MULTIMODAL AUTO-GRADING ENGINE
+// ==========================================
+window.autoGradeScript = async function(scriptId, btnElement) {
+    const originalHtml = btnElement.innerHTML;
+    const marksInput = document.getElementById(`marks-${scriptId}`);
+    if (!marksInput) return;
+
+    const script = window.peerAnswerScriptsDB.find(s => s.id === scriptId);
+    if (!script || !script.imgUrls || script.imgUrls.length === 0) {
+        alert("No handwritten script images found to evaluate.");
+        return;
+    }
+
+    const exam = window.examsDB.find(e => e.id === script.examId);
+    const questions = window.peerMaterialsDB.find(m => m.examId === script.examId && m.mobile !== script.solverMobile);
+    
+    const placeholderText = marksInput.getAttribute('placeholder') || "";
+    const maxMarksMatch = placeholderText.match(/(\d+(\.\d+)?)/);
+    const maxMarks = maxMarksMatch ? parseFloat(maxMarksMatch[1]) : (exam ? exam.totalMarks : 100);
+
+    // 1. Loading UI
+    btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-sm"></i> Analyzing...`;
+    btnElement.disabled = true;
+    btnElement.classList.add('opacity-70', 'cursor-not-allowed');
+
+    try {
+        // Helper to convert Image URL to Base64
+        const urlToBase64 = async (url) => {
+            const res = await fetch(url);
+            const blob = await res.blob();
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                reader.readAsDataURL(blob);
+            });
+        };
+
+        showLoader("NOVA is reading handwriting & analyzing steps...");
+
+        // 2. Convert Questions & Scripts to Base64 Parts
+        const parts = [];
+
+        // Prompt
+        parts.push({
+            text: `Please evaluate this handwritten test paper. Total Max Marks for this submission: ${maxMarks}.
+Examine each question, assess the student's solution, deduct marks where steps or logic are flawed, and provide detailed analytical corrections.
+
+Respond strictly in JSON using this format:
+{
+  "marksAwarded": number,
+  "maxMarks": ${maxMarks},
+  "overallAnalysis": "2-3 sentences summarizing performance, conceptual clarity, and handwriting legibility.",
+  "questions": [
+    {
+      "questionNumber": "Question 1",
+      "status": "Correct" | "Partially Correct" | "Incorrect",
+      "marksGiven": number,
+      "maxMarks": number,
+      "studentWrote": "Exact transcription of what the student wrote or attempted",
+      "whyItIsWrong": "Detailed analysis of why the answer is incorrect, where the formula or logic broke down, or what error was made",
+      "correctSolution": "Complete step-by-step correct solution or correction"
+    }
+  ]
+}`
+        });
+
+        // Attach Question Images
+        if (questions && questions.qUrls) {
+            for (let qUrl of questions.qUrls) {
+                const b64 = await urlToBase64(qUrl);
+                parts.push({ inlineData: { data: b64, mimeType: "image/jpeg" } });
+            }
+        }
+
+        // Attach Student's Handwritten Script Images
+        for (let sUrl of script.imgUrls) {
+            const b64 = await urlToBase64(sUrl);
+            parts.push({ inlineData: { data: b64, mimeType: "image/jpeg" } });
+        }
+
+        // 3. Send payload to Worker
+        const response = await fetch(window.WORKER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                action: "grade_paper",
+                maxMarks: maxMarks,
+                contents: [{ role: "user", parts: parts }]
+            })
+        });
+
+        const data = await response.json();
+        hideLoader();
+
+        if (data.error) throw new Error(data.error.message || "Failed AI Evaluation");
+
+        // Parse AI JSON response
+        const rawAiText = data.candidates[0].content.parts[0].text;
+        const analysisResult = JSON.parse(rawAiText);
+
+        // 4. Fill in the Real Calculated Marks
+        const finalScore = Math.min(maxMarks, Math.max(0, analysisResult.marksAwarded || 0));
+        marksInput.value = finalScore;
+        marksInput.classList.remove('bg-indigo-50/50', 'border-indigo-200', 'text-indigo-900');
+        marksInput.classList.add('bg-emerald-50', 'border-emerald-400', 'text-emerald-800', 'shadow-[0_0_15px_rgba(16,185,129,0.3)]');
+
+        // 5. Store the Deep Analysis Object
+        window.tempAiFeedback[scriptId] = analysisResult;
+        window.scriptFeedbacks[scriptId] = analysisResult;
+
+        // 6. Show "View Full Analysis" button on the card
+        const feedbackBox = document.getElementById(`feedback-box-${scriptId}`);
+        if (feedbackBox) {
+            feedbackBox.classList.remove('hidden');
+            feedbackBox.innerHTML = `
+                <div class="bg-indigo-50/80 p-3 rounded-xl border border-indigo-200 flex items-center justify-between gap-2 shadow-sm">
+                    <div class="min-w-0">
+                        <span class="text-[9px] font-black text-indigo-800 uppercase tracking-widest block"><i class="fa-solid fa-microchip mr-1"></i> Analysis Ready</span>
+                        <p class="text-[11px] text-gray-600 truncate font-medium">${analysisResult.overallAnalysis || "Detailed error breakdown ready."}</p>
+                    </div>
+                    <button type="button" onclick="window.openNovaFeedbackModal('${scriptId}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black shrink-0 active:scale-95 transition-all shadow-sm">
+                        View Analysis
+                    </button>
+                </div>
+            `;
+        }
+
+        btnElement.innerHTML = `<i class="fa-solid fa-check"></i> Scored: ${finalScore}`;
+        btnElement.classList.replace('from-blue-500', 'from-emerald-500');
+        btnElement.classList.replace('to-indigo-600', 'to-emerald-600');
+
+        window.showToast("Analysis Complete", `NOVA graded the paper: ${finalScore} / ${maxMarks}. Click 'View Analysis' to see mistakes.`, "info");
+
+    } catch (err) {
+        console.error("Auto-Grade Error:", err);
+        hideLoader();
+        btnElement.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Manual`;
+        btnElement.classList.replace('from-blue-500', 'from-rose-500');
+        btnElement.classList.replace('to-indigo-600', 'to-rose-600');
+        window.showToast("Handwriting Alert", "Handwriting unclear or server timed out. Please grade manually.", "alert");
+    } finally {
+        btnElement.disabled = false;
+        btnElement.classList.remove('opacity-70', 'cursor-not-allowed');
+    }
+};
+window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnElement) {
+    const marksInput = document.getElementById(`marks-${scriptId}`);
+    const obtained = parseFloat(marksInput.value);
+    
+    const exam = window.examsDB.find(e => e.id === examId);
+    const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== solverMobile).map(m => m.mobile))].length;
+    const maxMarksForThisSet = totalOpponents > 0 ? parseFloat((exam.totalMarks / totalOpponents).toFixed(1)) : exam.totalMarks;
+    
+    if(isNaN(obtained)) return alert("Please enter valid marks.");
+    if(obtained < 0 || obtained > maxMarksForThisSet) return alert(`Marks must be between 0 and ${maxMarksForThisSet}`);
+
+    if(btnElement) {
+        btnElement.disabled = true;
+        btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+    }
+    showLoader("Saving Evaluation...");
+
+    try {
+        // Grab the deep analysis object if generated
+        const aiAnalysisData = window.tempAiFeedback[scriptId] || null;
+
+        const payload = { 
+            isGraded: true, 
+            marksAwarded: obtained, 
+            maxMarks: maxMarksForThisSet, 
+            evaluatorTime: Date.now(),
+            aiFeedback: aiAnalysisData // Saved permanently
+        };
+
+        if (isFirebaseConfigured) {
+            await updateDoc(doc(db, "peer_answer_scripts", scriptId), payload);
+        } else {
+            const script = window.peerAnswerScriptsDB.find(x => x.id === scriptId);
+            if (script) Object.assign(script, payload);
+        }
+        
+        document.getElementById(`script-card-${scriptId}`).innerHTML = `
+            <div class="p-5 text-center bg-emerald-50 rounded-2xl border border-emerald-200">
+                <div class="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg"><i class="fa-solid fa-check"></i></div>
+                <h4 class="text-emerald-900 font-black text-sm">Graded (${obtained} / ${maxMarksForThisSet})</h4>
+                <p class="text-[10px] text-emerald-700 font-bold mt-1">Evaluation & deep mistake analysis saved.</p>
+            </div>`;
+            
+        hideLoader();
+    } catch(err) {
+        console.error(err); 
+        hideLoader(); 
+        alert("Failed to submit marks.");
+    }
+};
+   
+ 
+    // Check if the browser/WebView supports Service Workers
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then((registration) => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch((error) => {
+                    console.log('ServiceWorker registration failed: ', error);
+                });
+        });
+    }
+
+  
+  
+    </script>
+</body>
+</html>
