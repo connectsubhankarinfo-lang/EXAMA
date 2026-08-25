@@ -7565,11 +7565,18 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
             try {
                 let pdfArrayBuffer = null;
 
+                // 1. STRICT CACHE CHECK FIRST
                 if (typeof localforage !== 'undefined') {
+                    loaderText.innerText = "Checking Offline Storage...";
                     pdfArrayBuffer = await localforage.getItem(`exama_pdf_${window.currentPdfId}`);
                 }
                 
-                if (!pdfArrayBuffer) {
+                if (pdfArrayBuffer) {
+                    // CACHE HIT: Skip download completely!
+                    loaderText.innerText = "Opening from Offline Cache ⚡...";
+                    window.showToast("Offline Mode", "Opening document instantly from device storage.", "info");
+                } else {
+                    // CACHE MISS: Download from network
                     loaderText.innerText = "Downloading for offline use...";
                     
                     let fetchUrl = url; 
@@ -7596,6 +7603,7 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
                         throw new Error("File too large for direct download. Try opening in browser.");
                     }
                     
+                    // Save to Cache for next time
                     if (typeof localforage !== 'undefined' && pdfArrayBuffer) {
                         await localforage.setItem(`exama_pdf_${window.currentPdfId}`, pdfArrayBuffer);
                     }
