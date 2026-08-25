@@ -4754,7 +4754,7 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
         window.dbSubmitStudent = async function(obj) { if(isFirebaseConfigured) await setDoc(doc(db, "students", obj.mobile), obj); else { window.studentsDB.push(obj); refreshUI(); } }
         window.dbSubmitExam = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "exams"), obj); else { window.examsDB.push({id: 'e'+Math.random(), ...obj}); refreshUI(); } }
         window.dbUpdateExam = async function(id, obj) { if(isFirebaseConfigured) await updateDoc(doc(db, "exams", id), obj); else { const idx = window.examsDB.findIndex(e=>e.id===id); if(idx>-1) {window.examsDB[idx]={...window.examsDB[idx],...obj}; refreshUI();} } }
-        window.dbSubmitResult = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "results"), obj); else { window.resultsDB.push({id: 'r'+Math.random(), ...obj}); refreshUI(); } }
+        window.dbSubmitResult = async function(obj) {      if(isFirebaseConfigured) {         // 1. Search Firebase for an existing mark for this student + exam         const q = query(collection(db, "results"), where("examId", "==", obj.examId), where("mobile", "==", obj.mobile));         const snap = await getDocs(q);                  if (!snap.empty) {             // 2. Erase any duplicates and OVERWRITE the existing mark             const docId = snap.docs[0].id;             await updateDoc(doc(db, "results", docId), obj);             for(let i = 1; i < snap.docs.length; i++) await deleteDoc(doc(db, "results", snap.docs[i].id));         } else {             // 3. If no mark exists, create a new one             await addDoc(collection(db, "results"), obj);         }     } else {          // Offline / Local array handling         window.resultsDB = window.resultsDB.filter(r => !(r.examId === obj.examId && r.mobile === obj.mobile));         window.resultsDB.push({id: 'r'+Math.random(), ...obj});          refreshUI();      }  };
         window.dbDeleteExam = async function(id) { if(isFirebaseConfigured) { await deleteDoc(doc(db, "exams", id)); } else { window.examsDB = window.examsDB.filter(e => e.id !== id); refreshUI(); } }
         window.dbSendChat = async function(obj) { obj.readBy = []; if(isFirebaseConfigured) await addDoc(collection(db, "chat"), obj); else { window.chatDB.push({id: Math.random().toString(), ...obj}); renderChat(); updateChatUnreadCount(); } }
         window.dbSendNotice = async function(obj) { if(isFirebaseConfigured) await addDoc(collection(db, "notices"), { ...obj, readBy: [] }); else { window.noticesDB.unshift({id: Math.random().toString(), ...obj, readBy: []}); renderNotices(); checkUnreadNotices(); } }
@@ -5221,7 +5221,7 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
             });
         }
 
-    window.getComputedResults = function() {
+window.getComputedResults = function() {
     let all = [];
     const todayDate = new Date(); todayDate.setHours(0,0,0,0);
     const parseDDMM = (dStr) => { if(!dStr) return new Date(0); const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
@@ -5234,10 +5234,10 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
             const myScripts = window.peerAnswerScriptsDB.filter(s => s.examId === ex.id && s.solverMobile === stu.mobile);
             const standardResult = window.resultsDB.find(r => r.examId === ex.id && r.mobile === stu.mobile);
 
-            // NEW: Prioritize explicit ABSENT markers (forces lazy evaluators to score 0 even if they submitted answers)
-            if (standardResult && standardResult.status === 'ABSENT') {
+            // 🔥 GOD MODE OVERRIDE: If the Admin manually logged a mark or an ABSENT, it overwrites EVERYTHING
+            if (standardResult) {
                 all.push(standardResult);
-                return; // Skip calculation
+                return; // Skip peer calculation entirely!
             }
 
             if (ex.examType === 'anytime' || ex.examType === 'online') {
@@ -5267,8 +5267,7 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                     all.push({ id: 'virt_'+ex.id+'_'+stu.mobile, examId: ex.id, mobile: stu.mobile, obtained: 0, total: ex.totalMarks, percentage: 0, status: 'ABSENT', isVirtual: true }); 
                 }
             } else {
-                if (standardResult) all.push(standardResult);
-                else if (parseDDMM(ex.date) < todayDate) all.push({ id: 'virt_'+ex.id+'_'+stu.mobile, examId: ex.id, mobile: stu.mobile, obtained: 0, total: ex.totalMarks, percentage: 0, status: 'ABSENT', isVirtual: true }); 
+                if (parseDDMM(ex.date) < todayDate) all.push({ id: 'virt_'+ex.id+'_'+stu.mobile, examId: ex.id, mobile: stu.mobile, obtained: 0, total: ex.totalMarks, percentage: 0, status: 'ABSENT', isVirtual: true }); 
             }
         }); 
     }); 
