@@ -7464,13 +7464,79 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
         };
 
         // ==========================================
-        // CUSTOM MATERIAL READER ENGINE
+        // CUSTOM MATERIAL READER ENGINE (PDF.js)
         // ==========================================
-       window.openCustomPDFViewer = async function(url, title = 'Material Reader') {
+
+        // 1. Global State for PDF
+        window.pdfPageRendering = false;
+        window.pdfPageNumPending = null;
+        window.pdfDoc = null;
+        window.pdfPageNum = 1;
+        window.currentPdfScale = 1;
+
+        // 2. Core Rendering Functions
+        window.renderPdfPage = async function(num) {
+            window.pdfPageRendering = true;
+            try {
+                const page = await window.pdfDoc.getPage(num);
+                const canvas = document.getElementById('native-pdf-canvas');
+                const ctx = canvas.getContext('2d');
+                
+                const viewport = page.getViewport({ scale: window.currentPdfScale });
+                
+                const outputScale = window.devicePixelRatio || 1;
+                canvas.width = Math.floor(viewport.width * outputScale);
+                canvas.height = Math.floor(viewport.height * outputScale);
+                canvas.style.width = Math.floor(viewport.width) + "px";
+                canvas.style.height = Math.floor(viewport.height) + "px";
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
+                    viewport: viewport
+                };
+
+                await page.render(renderContext).promise;
+                
+                window.pdfPageRendering = false;
+                if (window.pdfPageNumPending !== null) {
+                    window.renderPdfPage(window.pdfPageNumPending);
+                    window.pdfPageNumPending = null;
+                }
+                
+                document.getElementById('pdf-page-num').textContent = num;
+            } catch (e) {
+                console.error("Error rendering page", e);
+                window.pdfPageRendering = false;
+            }
+        };
+
+        window.queueRenderPage = function(num) {
+            if (window.pdfPageRendering) {
+                window.pdfPageNumPending = num;
+            } else {
+                window.renderPdfPage(num);
+            }
+        };
+
+        window.onPdfPrevPage = function() {
+            if (!window.pdfDoc || window.pdfPageNum <= 1) return;
+            window.pdfPageNum--;
+            window.queueRenderPage(window.pdfPageNum);
+        };
+
+        window.onPdfNextPage = function() {
+            if (!window.pdfDoc || window.pdfPageNum >= window.pdfDoc.numPages) return;
+            window.pdfPageNum++;
+            window.queueRenderPage(window.pdfPageNum);
+        };
+
+        // 3. Open Custom PDF Viewer (Main Handler)
+        window.openCustomPDFViewer = async function(url, title = 'Material Reader') {
             document.getElementById('pdf-viewer-title').innerText = title;
             const loader = document.getElementById('pdf-loader');
             const loaderText = loader.querySelector('p');
-            const pdfCanvas = document.getElementById('native-pdf-canvas'); // FIXED
+            const pdfCanvas = document.getElementById('native-pdf-canvas');
             
             loader.classList.remove('hidden');
             document.getElementById('custom-pdf-viewer-modal').classList.remove('hidden-view');
@@ -7527,7 +7593,7 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
                     
                     const headerString = new TextDecoder('utf-8').decode(pdfArrayBuffer.slice(0, 15));
                     if (headerString.toLowerCase().includes("<!doctype html>")) {
-                        throw new Error("File too large for direct download (Google Drive virus scan block).");
+                        throw new Error("File too large for direct download. Try opening in browser.");
                     }
                     
                     if (typeof localforage !== 'undefined' && pdfArrayBuffer) {
@@ -7537,9 +7603,18 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
 
                 if (!pdfArrayBuffer) throw new Error("File data is completely empty.");
 
-                loaderText.innerText = "Rendering Engine...";
+                loaderText.innerText = "Initializing Engine...";
 
-                const loadingTask = pdfjsLib.getDocument({ data: pdfArrayBuffer });
+                // Safely load the PDF.js library and background worker
+                const activePdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
+                if (!activePdfjsLib) throw new Error("PDF Engine is still loading in the background. Please wait a second and click Read again.");
+                if (!activePdfjsLib.GlobalWorkerOptions.workerSrc) {
+                    activePdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+                }
+
+                loaderText.innerText = "Rendering Pages...";
+
+                const loadingTask = activePdfjsLib.getDocument({ data: pdfArrayBuffer });
                 window.pdfDoc = await loadingTask.promise;
                 
                 document.getElementById('pdf-page-count').textContent = window.pdfDoc.numPages;
@@ -7560,10 +7635,8 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
 
             } catch (error) {
                 console.error("Native PDF Render Failed:", error);
-                
                 loaderText.innerText = "Opening in browser...";
                 alert(`Native reader unavailable: ${error.message}\n\nOpening the standard viewer instead.`);
-                
                 window.open(window.currentPdfRawUrl, '_blank');
                 window.closeCustomPDFViewer(); 
             }
@@ -7576,7 +7649,7 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
             }
 
             document.getElementById('custom-pdf-viewer-modal').classList.add('hidden-view');
-            const pdfCanvas = document.getElementById('native-pdf-canvas'); // FIXED
+            const pdfCanvas = document.getElementById('native-pdf-canvas');
             if(pdfCanvas) pdfCanvas.classList.add('hidden');
             window.pdfDoc = null;
         };
@@ -7629,60 +7702,6 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
             document.body.removeChild(a);
 
             setTimeout(() => hideLoader(), 1500);
-        };
-
-        window.getStudentAvatar = function(mobile, name = 'Student') {
-            if (mobile === '9475757821' || mobile === 'admin' || name === 'EXAMA' || name === 'Admin') {
-                return 'https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg';
-            }
-
-            const stu = window.studentsDB.find(s => s.mobile === mobile);
-            if (stu && stu.dpUrl) return stu.dpUrl;
-            
-            return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Exama')}&background=4f46e5&color=fff&bold=true`;
-        };
-
-       window.uploadStudentDP = async function(input) {
-            if (!input.files || input.files.length === 0) return;
-            const originalFile = input.files[0];
-            
-            showLoader("Optimizing & Uploading...");
-            
-            try {
-                const compressedFile = await window.compressImage(originalFile, 400, 400, 0.8);
-                
-                const formData = new FormData();
-                formData.append("image", compressedFile);
-                const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
-                
-                const res = await fetch(`https://api.imgbb.com/1/upload?expiration=15552000&key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
-                const data = await res.json();
-                
-                if(data.success) {
-                    const imageUrl = data.data.url;
-                    
-                    if (isFirebaseConfigured) {
-                        await updateDoc(doc(db, "students", window.loggedInMobile), { dpUrl: imageUrl });
-                    } else {
-                        const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
-                        if(stu) stu.dpUrl = imageUrl;
-                    }
-                    
-                    localStorage.setItem(`exama_dp_${window.loggedInMobile}`, imageUrl);
-                    
-                    const navDp = document.getElementById('student-nav-dp');
-                    if (navDp) navDp.src = imageUrl;
-                    
-                    refreshUI();
-                    showToast("Success", "Profile Picture updated lightning fast!", "info");
-                }
-            } catch(e) {
-                console.error(e);
-                alert("Failed to upload image. Please try again.");
-            }
-            
-            input.value = '';
-            hideLoader();
         };
 
 // ==========================================
