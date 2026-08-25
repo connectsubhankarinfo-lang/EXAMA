@@ -4962,112 +4962,94 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
         }
         window.openPeerUpload = function(examId) { document.getElementById('peer-upload-exam-id').value = examId; document.getElementById('peer-upload-modal').classList.remove('hidden-view'); }
      window.submitPeerImages = async function() {
-    const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
-    const examId = document.getElementById('peer-upload-exam-id').value;
-    
-    const qFiles = Array.from(document.getElementById('peer-q-file').files);
+            const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
+            const examId = document.getElementById('peer-upload-exam-id').value;
+            
+            const qFiles = Array.from(document.getElementById('peer-q-file').files);
+            const aFiles = Array.from(document.getElementById('peer-a-file').files || []); // Grab optional answer keys
 
-    if(qFiles.length === 0) return alert("Please upload at least one question image.");
-    showLoader(`Uploading ${qFiles.length} Pages... 0%`); 
+            if(qFiles.length === 0) return alert("Please upload at least one question image.");
+            showLoader(`Uploading ${qFiles.length + aFiles.length} Pages... 0%`); 
 
-    try {
-        let loadedBytesQ = new Array(qFiles.length).fill(0); 
-        const totalBytes = qFiles.reduce((acc, file) => acc + file.size, 0);
+            try {
+                let loadedBytesQ = new Array(qFiles.length).fill(0); 
+                let loadedBytesA = new Array(aFiles.length).fill(0); 
+                const totalBytes = [...qFiles, ...aFiles].reduce((acc, file) => acc + file.size, 0);
 
-        const updateProgress = () => { 
-            if (totalBytes === 0) return; 
-            let totalLoaded = loadedBytesQ.reduce((a, b) => a + b, 0); 
-            let percent = Math.round((totalLoaded / totalBytes) * 100); 
-            if(percent > 100) percent = 100; 
-            document.getElementById('loader-text').innerText = `Uploading Pages... ${percent}%`; 
+                const updateProgress = () => { 
+                    if (totalBytes === 0) return; 
+                    let totalLoaded = loadedBytesQ.reduce((a, b) => a + b, 0) + loadedBytesA.reduce((a, b) => a + b, 0); 
+                    let percent = Math.round((totalLoaded / totalBytes) * 100); 
+                    if(percent > 100) percent = 100; 
+                    document.getElementById('loader-text').innerText = `Uploading Pages... ${percent}%`; 
+                }
+
+                const uploadToImgBB = async (file, index, loadedArray) => {
+                    const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
+                    return new Promise((resolve, reject) => { 
+                        const xhr = new XMLHttpRequest(); 
+                        const formData = new FormData(); 
+                        formData.append("image", compressedFile); 
+                        
+                        xhr.upload.onprogress = (event) => { 
+                            if (event.lengthComputable) { 
+                                loadedArray[index] = event.loaded; 
+                                updateProgress(); 
+                            } 
+                        }; 
+                        
+                        xhr.onload = () => { 
+                            if (xhr.status >= 200 && xhr.status < 300) { 
+                                try { 
+                                    const result = JSON.parse(xhr.responseText); 
+                                    if(result.success) resolve(result.data.url); 
+                                    else reject(result.error.message); 
+                                } catch(e) { reject("Parsing error"); } 
+                            } else { reject("Upload failed"); } 
+                        }; 
+                        xhr.onerror = () => reject("Network error"); 
+                        
+                        xhr.open("POST", `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, true); 
+                        xhr.send(formData); 
+                    }); 
+                };
+
+                // Upload Question and Answer files
+                let allQUrls = await Promise.all(qFiles.map((file, idx) => uploadToImgBB(file, idx, loadedBytesQ)));
+                let allAUrls = await Promise.all(aFiles.map((file, idx) => uploadToImgBB(file, idx, loadedBytesA)));
+                
+                // 1. Save to the Active P2P Live Exam Room
+                const data = { 
+                    examId, 
+                    mobile: window.loggedInMobile, 
+                    qUrls: allQUrls, 
+                    aUrls: allAUrls, // Saved answer keys securely (hidden from peers until evaluation or end)
+                    createdAt: Date.now(), 
+                    expiresAt: Date.now() + (2 * 24 * 60 * 60 * 1000) 
+                };
+                
+                if(isFirebaseConfigured) { 
+                    await addDoc(collection(db, "peer_exams"), data); 
+                } else { 
+                    window.peerMaterialsDB.push({ id: Math.random().toString(), ...data }); 
+                }
+                
+                // 🔥 (REMOVED: The code that auto-published to Material Hub immediately is moved to endExam)
+
+                document.getElementById('peer-q-file').value = ''; 
+                document.getElementById('peer-a-file').value = ''; 
+                document.getElementById('peer-upload-modal').classList.add('hidden-view'); 
+                
+                hideLoader(); 
+                alert("Questions Published to Live Room!"); 
+                refreshUI();
+
+            } catch(e) { 
+                console.error(e); 
+                hideLoader(); 
+                alert("Upload failed. Please try again."); 
+            }
         }
-
-        const uploadToImgBB = async (file, index, loadedArray) => {
-            const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
-
-            return new Promise((resolve, reject) => { 
-                const xhr = new XMLHttpRequest(); 
-                const formData = new FormData(); 
-                formData.append("image", compressedFile); 
-                
-                xhr.upload.onprogress = (event) => { 
-                    if (event.lengthComputable) { 
-                        loadedArray[index] = event.loaded; 
-                        updateProgress(); 
-                    } 
-                }; 
-                
-                xhr.onload = () => { 
-                    if (xhr.status >= 200 && xhr.status < 300) { 
-                        try { 
-                            const result = JSON.parse(xhr.responseText); 
-                            if(result.success) resolve(result.data.url); 
-                            else reject(result.error.message); 
-                        } catch(e) { reject("Parsing error"); } 
-                    } else { reject("Upload failed"); } 
-                }; 
-                xhr.onerror = () => reject("Network error"); 
-                
-                // 🔥 REMOVED EXPIRATION: These images will now live forever on ImgBB
-                xhr.open("POST", `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, true); 
-                xhr.send(formData); 
-            }); 
-        };
-
-        // Upload Question files permanently
-        let allQUrls = await Promise.all(qFiles.map((file, idx) => uploadToImgBB(file, idx, loadedBytesQ)));
-        
-        // 1. Save to the Active P2P Live Exam Room (No answer key needed)
-        const data = { 
-            examId, 
-            mobile: window.loggedInMobile, 
-            qUrls: allQUrls, 
-            createdAt: Date.now(), 
-            expiresAt: Date.now() + (2 * 24 * 60 * 60 * 1000) 
-        };
-        
-        if(isFirebaseConfigured) { 
-            await addDoc(collection(db, "peer_exams"), data); 
-        } else { 
-            window.peerMaterialsDB.push({ id: Math.random().toString(), ...data }); 
-        }
-        
-        // 2. 🔥 AUTO-ADD TO MATERIAL HUB FOREVER
-        const exam = window.examsDB.find(e => e.id === examId);
-        const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
-        const uploaderName = student ? student.name : "Peer Student";
-        const examName = exam ? exam.name : "Unknown Exam";
-
-        const materialFiles = [];
-        allQUrls.forEach((url, idx) => {
-            materialFiles.push({ name: `Question_Page_${idx+1}.jpg`, url: url, type: 'image' });
-        });
-
-        // Silently push the permanent set to the Material Database
-        await window.dbSendMaterial({
-            subject: "Question Set",           
-            topic: examName,                   
-            title: `Questions by ${uploaderName}`, 
-            extLink: null,
-            files: materialFiles,
-            uploader: uploaderName,
-            uploaderMobile: window.loggedInMobile,
-            timestamp: Date.now()
-        });
-
-        document.getElementById('peer-q-file').value = ''; 
-        document.getElementById('peer-upload-modal').classList.add('hidden-view'); 
-        
-        hideLoader(); 
-        alert("Questions Published & Saved to Material Hub!"); 
-        refreshUI();
-
-    } catch(e) { 
-        console.error(e); 
-        hideLoader(); 
-        alert("Upload failed. Please try again."); 
-    }
-}
 
         window.openMaterialUploadModal = function() { document.getElementById('material-upload-modal').classList.remove('hidden-view'); }
         window.deleteStudyMaterial = async function(id) { if(!confirm("Are you sure you want to delete this material?")) return; if(isFirebaseConfigured) await deleteDoc(doc(db, "materials", id)); else { window.materialsDB = window.materialsDB.filter(m => m.id !== id); renderStudyMaterials(); } }
@@ -6659,7 +6641,7 @@ window.examsDB.forEach(exam => {
 
         window.endExam = async function(id) {
             if(!confirm("Are you sure? This will END the exam permanently, auto-grade pending evaluations to their PORTION marks, and mark lazy evaluators/non-submitters as ABSENT.")) return;
-            showLoader("Ending Exam...");
+            showLoader("Ending Exam & Publishing Materials...");
             const exam = window.examsDB.find(e => e.id === id);
 
             const pendingScripts = window.peerAnswerScriptsDB.filter(s => s.examId === id && !s.isGraded);
@@ -6700,9 +6682,57 @@ window.examsDB.forEach(exam => {
             });
             await Promise.all(absentPromises);
 
-            await window.dbSendNotice({ title: `🏁 Exam Ended: ${exam.name}`, text: `The exam "${exam.name}" has officially ended. Pending evaluations were auto-graded to their max portion marks, and lazy evaluators/absentees were marked ABSENT.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
+            // =========================================================================
+            // 🔥 NEW LOGIC: Push all Question Sets & Answer Keys to Material Hub NOW
+            // =========================================================================
+            const examQuestions = window.peerMaterialsDB.filter(m => m.examId === id);
+            const materialPromises = [];
+
+            examQuestions.forEach(qSet => {
+                const uploaderStu = window.studentsDB.find(s => s.mobile === qSet.mobile);
+                const uploaderName = uploaderStu ? uploaderStu.name : "Peer Student";
+                
+                let questions = qSet.qUrls || [];
+                if (qSet.qUrl && questions.length === 0) questions = [qSet.qUrl]; // Fallback
+                
+                if (questions.length > 0) {
+                    const materialFiles = [];
+                    
+                    // Attach Questions
+                    questions.forEach((url, idx) => {
+                        materialFiles.push({ name: `Question_Page_${idx+1}.jpg`, url: url, type: 'image' });
+                    });
+                    
+                    // Attach Answer Keys if uploaded
+                    if (qSet.aUrls && qSet.aUrls.length > 0) {
+                        qSet.aUrls.forEach((url, idx) => {
+                            materialFiles.push({ name: `Answer_Key_${idx+1}.jpg`, url: url, type: 'image' });
+                        });
+                    }
+
+                    materialPromises.push(window.dbSendMaterial({
+                        subject: "Question Set",           
+                        topic: exam.name,                   
+                        title: `Questions by ${uploaderName}`, 
+                        extLink: null,
+                        files: materialFiles,
+                        uploader: uploaderName,
+                        uploaderMobile: qSet.mobile,
+                        timestamp: Date.now()
+                    }));
+                }
+            });
+            
+            // Execute material uploads
+            if (materialPromises.length > 0) {
+                await Promise.all(materialPromises);
+            }
+
+            await window.dbSendNotice({ title: `🏁 Exam Ended: ${exam.name}`, text: `The exam "${exam.name}" has officially ended. Question Sets are now available in the Material Hub. Pending evaluations were auto-graded to their max portion marks.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
+            
             hideLoader();
-            alert("Exam ended. Pending scripts given their portion marks. Absentees & lazy evaluators marked absent.");
+            alert("Exam ended successfully! Question sets have been moved to the Material Hub.");
+            refreshUI();
         }
         window.deleteExam = async function(id) { if(!confirm("Delete this exam completely? This action cannot be undone.")) return; showLoader("Deleting Exam..."); await window.dbDeleteExam(id); hideLoader(); }
         window.startGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); showLoader("Starting Exam for All..."); await window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 }); hideLoader(); if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`); }
