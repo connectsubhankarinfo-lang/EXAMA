@@ -708,17 +708,19 @@
         </div>
 
         <!-- 3. ADMIN DASHBOARD -->
-        <div id="admin-view" class="hidden-view h-full flex flex-col fade-in relative z-0">
-            <div class="bg-gray-900/95 backdrop-blur-xl text-white pt-8 sm:pt-10 md:-mt-8 lg:-mt-10 md:pt-[4.5rem] lg:pt-[5rem] pb-4 sm:pb-5 px-4 sm:px-6 flex justify-between items-center shadow-2xl shadow-gray-900/20 relative z-10 border-b border-gray-800 rounded-b-2xl sm:rounded-b-3xl">
-                <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
-                    <div class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-gray-800 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-black/30 overflow-hidden border border-gray-700">
-                        <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" class="w-full h-full object-cover">
-                    </div>
-                    <div class="min-w-0">
-                        <h2 class="text-[0px] sm:text-xl font-black leading-tight tracking-tight break-words">Control Center</h2>
-                        <p class="text-[0px] sm:text-[10px] text-gray-400 font-bold tracking-[0.15em] sm:tracking-[0.2em] uppercase mt-0.5 break-words">Exama</p>
-                    </div>
-                </div>
+        <!-- ADMIN VIEW HEADER -->
+<div id="admin-view" class="hidden-view h-full flex flex-col fade-in relative z-0">
+    <div class="bg-gray-900/95 backdrop-blur-xl text-white pt-8 sm:pt-10 md:-mt-8 lg:-mt-10 md:pt-[4.5rem] lg:pt-[5rem] pb-4 sm:pb-5 px-4 sm:px-6 flex justify-between items-center shadow-2xl shadow-gray-900/20 relative z-10 border-b border-gray-800 rounded-b-2xl sm:rounded-b-3xl">
+        <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
+            <div class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-gray-800 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-black/30 overflow-hidden border border-gray-700">
+                <!-- UPDATED RAW GITHUB IMAGE LINK -->
+                <img src="https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/icon-512.png" class="w-full h-full object-cover">
+            </div>
+            <div class="min-w-0">
+                <h2 class="text-[0px] sm:text-xl font-black leading-tight tracking-tight break-words">Control Center</h2>
+                <p class="text-[0px] sm:text-[10px] text-gray-400 font-bold tracking-[0.15em] sm:tracking-[0.2em] uppercase mt-0.5 break-words">Exama</p>
+            </div>
+        </div>
                 <div class="flex gap-1.5 sm:gap-2 shrink-0">
                     <button onclick="window.location.hash='materials'" class="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-500/20 hover:bg-emerald-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-emerald-500/30" title="Material Hub">
                         <i class="fa-solid fa-folder-open text-emerald-400 text-[10px] sm:text-xs"></i>
@@ -3130,20 +3132,25 @@ window.openNovaFeedbackModal = function(scriptId) {
             } 
         }
         
+       window.noticeLimit = 5; // Tracks how many notices to display
+
         window.renderNotices = function() {
             const list = document.getElementById('notice-list'); 
             if (!list) return;
             list.innerHTML = '';
             const myMobile = window.loggedInMobile;
             
-            // Filter notices so students only see what is assigned to them
+            // Filter visible notices based on permissions
             const visibleNotices = window.noticesDB.filter(n => {
                 if (window.currentRole === 'admin') return true;
                 if (!n.assignedTo || n.assignedTo.includes('All')) return true;
                 return n.assignedTo.includes(myMobile);
             });
 
-            visibleNotices.forEach(n => {
+            // Slice the array to respect the 5-item limit
+            const noticesToRender = visibleNotices.slice(0, window.noticeLimit);
+
+            noticesToRender.forEach(n => {
                 const delBtn = window.currentRole === 'admin' ? `<button onclick="deleteNotice('${n.id}')" class="text-red-400 hover:text-red-600 ml-2 sm:ml-3 transition-colors shrink-0" title="Delete"><i class="fa-solid fa-trash text-xs sm:text-sm"></i></button>` : '';
                 let borderColor = 'border-amber-200'; let bgCard = 'bg-white'; let iconColor = 'text-amber-500'; let badgeBg = 'bg-amber-100 text-amber-700';
                 
@@ -3169,6 +3176,20 @@ window.openNovaFeedbackModal = function(scriptId) {
                     ${imageHtml}
                 </div>`;
             });
+
+            // Append "Load More" button if there are more notices to show
+            if (window.noticeLimit < visibleNotices.length) {
+                list.innerHTML += `
+                <div class="flex justify-center mt-3 pb-6">
+                    <button onclick="window.noticeLimit += 5; renderNotices();" class="px-6 py-2.5 bg-white border border-amber-200 text-amber-600 rounded-xl font-bold text-xs shadow-sm hover:bg-amber-50 active:scale-95 transition-all">
+                        <i class="fa-solid fa-chevron-down mr-1.5"></i> See Older Notices
+                    </button>
+                </div>`;
+            }
+
+            if (visibleNotices.length === 0) {
+                list.innerHTML = `<div class="text-center text-gray-500 font-medium py-8 text-xs sm:text-sm bg-white rounded-[1rem] shadow-sm border border-gray-100 px-4">No notices available.</div>`;
+            }
         }
         
         window.submitNotice = async function() {
