@@ -6108,8 +6108,8 @@ function getFitnessLeaderboard() {
         window.onload = async function() {
             showLoader("Let's Crack !t"); 
             
-            // 1. Start fetching data in the background, but DO NOT 'await' it here.
-            fetchInitialData(); 
+            // 1. Fully wait for database and services to fetch before proceeding
+            await fetchInitialData(); 
             initGoogleDriveAPI();
             
             const savedRole = localStorage.getItem('exama_role'); 
@@ -6117,23 +6117,18 @@ function getFitnessLeaderboard() {
             const savedPass = localStorage.getItem('exama_pass'); 
             const savedName = localStorage.getItem('exama_name') || 'Student'; 
             
-            // 2. If user has active session, wait just long enough for studentsDB to load, then login
             if (savedRole && savedMob && savedPass) {
-                // Wait up to 2.5 seconds for Firebase to sync students
-                let retries = 0;
-                while (window.studentsDB.length === 0 && retries < 25) {
-                    await new Promise(r => setTimeout(r, 100));
-                    retries++;
-                }
-
                 let isValid = false;
                 if (savedRole === 'admin' && savedMob === '9475757821' && savedPass === 'Subhankar@0513') { 
                     isValid = true; 
                 } else if (savedRole === 'student') {
                     const stu = window.studentsDB.find(s => s.mobile === savedMob && s.password === savedPass);
-                    if (stu) { isValid = true; localStorage.setItem('exama_name', stu.name); } 
-                    else if (window.studentsDB.length === 0 && !isFirebaseConfigured) { 
-                        isValid = true; window.studentsDB.push({ mobile: savedMob, password: savedPass, name: savedName }); 
+                    if (stu) { 
+                        isValid = true; 
+                        localStorage.setItem('exama_name', stu.name); 
+                    } else if (window.studentsDB.length === 0) { 
+                        isValid = true; 
+                        window.studentsDB.push({ mobile: savedMob, password: savedPass, name: savedName }); 
                     }
                 }
                 
@@ -6146,7 +6141,6 @@ function getFitnessLeaderboard() {
                 }
             }
             
-            // 3. If no session, show login immediately (data will finish loading in the background)
             hideLoader(); 
             window.location.hash = 'login'; 
             handleHashChange();
