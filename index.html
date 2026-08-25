@@ -1476,9 +1476,18 @@
                             <span id="watch-uploader" class="text-sm sm:text-base font-black text-gray-900 leading-tight">EXAMA Faculty</span>
                         </div>
                     </div>
-                    <button id="btn-mark-watched" onclick="toggleVideoWatched()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2.5 rounded-xl flex items-center justify-center transition-all active:scale-90 text-xs sm:text-sm font-black tracking-wide border border-gray-200 shadow-sm shrink-0">
-                        <i id="icon-watched" class="fa-solid fa-eye mr-2"></i> <span id="text-watched">Mark Completed</span>
-                    </button>
+                    <div class="flex items-center gap-2">
+    <!-- NEW: DOWNLOAD BUTTON -->
+    <button id="btn-download-video" onclick="toggleVideoDownload()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2.5 rounded-xl flex items-center justify-center transition-all active:scale-90 text-xs sm:text-sm font-black border border-indigo-200 shadow-sm shrink-0">
+        <i id="icon-download" class="fa-solid fa-cloud-arrow-down mr-1.5"></i>
+        <span id="text-download">Download</span>
+    </button>
+
+    <!-- EXISTING: MARK COMPLETED BUTTON -->
+    <button id="btn-mark-watched" onclick="toggleVideoWatched()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2.5 rounded-xl flex items-center justify-center transition-all active:scale-90 text-xs sm:text-sm font-black tracking-wide border border-gray-200 shadow-sm shrink-0">
+        <i id="icon-watched" class="fa-solid fa-eye mr-1.5"></i> <span id="text-watched">Mark Completed</span>
+    </button>
+</div>
                 </div>
             </div>
         </div>
@@ -2040,6 +2049,181 @@ window.addVideoRow = function() {
     }, 50);
 };
 
+
+// ==========================================
+// OFFLINE DOWNLOAD ENGINE (BACKGROUND STREAMING)
+// ==========================================
+
+window.checkIsOffline = async function(key) {
+    try { return !!(await localforage.getItem(key)); } catch(e) { return false; }
+};
+
+// --- 1. LECTURE VIDEO DOWNLOAD ---
+window.toggleVideoDownload = async function() {
+    if (!window.currentWatchVideoId) return;
+    const vidId = window.currentWatchVideoId;
+    const vid = window.videosDB.find(v => v.id === vidId);
+    if (!vid) return;
+
+    if (vid.videoType === 'youtube') return alert("YouTube videos cannot be downloaded in-app. Only Drive/MP4 lectures can be saved offline.");
+
+    const key = `exama_video_${vidId}`;
+    const isSaved = await window.checkIsOffline(key);
+
+    // If already saved, ask to delete
+    if (isSaved) {
+        if (confirm("Remove this lecture from offline storage to free up space?")) {
+            await localforage.removeItem(key);
+            window.updateDownloadBtnUI(false);
+            window.showToast("Removed", "Video removed from device.", "info");
+        }
+        return;
+    }
+
+    const btn = document.getElementById('btn-download-video');
+    btn.disabled = true;
+    
+    // Notify user it's happening in the background!
+    window.showToast("Download Started 🚀", "You can continue watching while the lecture saves.", "info");
+
+    try {
+        let downloadUrl = vid.sourceUrl;
+        const match = vid.sourceUrl.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+        if (match) downloadUrl = `https://exama-video-proxy.connect-subhankar-info.workers.dev/?id=${match[1]}&ext=.mp4`;
+
+        const res = await fetch(downloadUrl);
+        if (!res.ok) throw new Error("Download failed");
+
+        // Use Streams to calculate percentage in the background
+        const contentLength = res.headers.get('content-length');
+        let blob;
+
+        if (contentLength && res.body) {
+            const total = parseInt(contentLength, 10);
+            let loaded = 0;
+            const reader = res.body.getReader();
+            const chunks = [];
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                loaded += value.length;
+                
+                const percent = Math.round((loaded / total) * 100);
+                
+                // Update Button UI with Progress!
+                if (btn) {
+                    btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1.5 text-indigo-500"></i> <span class="text-indigo-700">Downloading ${percent}%</span>`;
+                }
+            }
+            blob = new Blob(chunks, { type: 'video/mp4' });
+        } else {
+            // Fallback if no content-length is provided by proxy
+            btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1.5 text-indigo-500"></i> <span class="text-indigo-700">Downloading...</span>`;
+            blob = await res.blob();
+        }
+
+        await localforage.setItem(key, blob);
+        
+        window.updateDownloadBtnUI(true);
+        window.showToast("Saved! 📥", `"${vid.title}" is now available offline.`, "info");
+    } catch(e) {
+        console.error(e);
+        alert("Failed to download video. Check your connection.");
+        window.updateDownloadBtnUI(false);
+    }
+    
+    btn.disabled = false;
+};
+
+window.updateDownloadBtnUI = function(isSaved) {
+    const btn = document.getElementById('btn-download-video');
+    if (!btn) return;
+    if (isSaved) {
+        btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-500 mr-1.5"></i> <span class="text-emerald-700">Saved</span>`;
+        btn.classList.add('bg-emerald-50', 'border-emerald-200');
+    } else {
+        btn.innerHTML = `<i id="icon-download" class="fa-solid fa-cloud-arrow-down mr-1.5"></i> <span id="text-download">Download</span>`;
+        btn.classList.remove('bg-emerald-50', 'border-emerald-200');
+    }
+};
+
+// --- 2. MATERIAL DOWNLOAD LOGIC ---
+window.downloadMaterialFile = async function(url, fileName, type, btnElement) {
+    let uniqueKey = url;
+    const driveMatch = url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+    if (driveMatch && driveMatch[1]) uniqueKey = driveMatch[1]; 
+    else uniqueKey = btoa(encodeURIComponent(url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+    
+    const key = type === 'pdf' ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
+    
+    if (await window.checkIsOffline(key)) {
+        if (confirm("Remove this file from offline storage?")) {
+            await localforage.removeItem(key);
+            btnElement.innerHTML = `<i class="fa-solid fa-cloud-arrow-down text-gray-400"></i>`;
+            btnElement.classList.remove('bg-emerald-100', 'border-emerald-200');
+        }
+        return;
+    }
+
+    // Expand the tiny button slightly to fit the percentage text
+    btnElement.disabled = true;
+    btnElement.classList.remove('w-8', 'sm:w-10'); 
+    btnElement.classList.add('px-2', 'w-auto'); 
+
+    try {
+        let fetchUrl = url;
+        if (type === 'pdf' && driveMatch) {
+            const driveDownloadUrl = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+            fetchUrl = `https://pdf-subhankar.connect-subhankar-info.workers.dev/?url=${encodeURIComponent(driveDownloadUrl)}`;
+        }
+
+        const res = await fetch(fetchUrl);
+        const contentLength = res.headers.get('content-length');
+        let dataToSave;
+
+        if (contentLength && res.body) {
+            const total = parseInt(contentLength, 10);
+            let loaded = 0;
+            const reader = res.body.getReader();
+            const chunks = [];
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                loaded += value.length;
+                
+                const percent = Math.round((loaded / total) * 100);
+                // Update tiny button with progress
+                btnElement.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-indigo-500"></i> <span class="text-[9px] font-bold text-indigo-600 ml-1">${percent}%</span>`;
+            }
+            
+            const blobParts = new Blob(chunks);
+            dataToSave = type === 'pdf' ? await blobParts.arrayBuffer() : blobParts;
+        } else {
+            btnElement.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-indigo-500"></i>`;
+            dataToSave = type === 'pdf' ? await res.arrayBuffer() : await res.blob();
+        }
+        
+        await localforage.setItem(key, dataToSave);
+        
+        // Restore standard button size & display success
+        btnElement.classList.add('w-8', 'sm:w-10'); 
+        btnElement.classList.remove('px-2', 'w-auto');
+        btnElement.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`;
+        btnElement.classList.add('bg-emerald-100', 'border-emerald-200');
+        window.showToast("Saved!", `${fileName.substring(0, 15)}... ready for offline.`, "info");
+        
+    } catch(e) {
+        btnElement.classList.add('w-8', 'sm:w-10'); 
+        btnElement.classList.remove('px-2', 'w-auto');
+        btnElement.innerHTML = `<i class="fa-solid fa-cloud-arrow-down text-gray-400"></i>`;
+        alert("Failed to download file.");
+    }
+    btnElement.disabled = false;
+};
 // ==========================================
 // NOVA AI SCRIPT EVALUATION ENGINE
 // ==========================================
@@ -3670,7 +3854,7 @@ window.deleteVideo = async function(id) {
 // ==========================================
 // NATIVE IFRAME PLAYER CONTROLLER
 // ==========================================
-window.playVideo = function(id) {
+window.playVideo = async function(id) {
     const vid = window.videosDB.find(v => v.id === id);
     if(!vid) return;
 
@@ -3678,6 +3862,10 @@ window.playVideo = function(id) {
     const isWatched = (vid.watchedBy || []).includes(window.loggedInMobile);
     window.updateWatchedButtonUI(isWatched);
     
+    // Check if downloaded offline and update UI
+    const isDownloaded = await window.checkIsOffline(`exama_video_${id}`);
+    window.updateDownloadBtnUI(isDownloaded);
+
     document.getElementById('watch-header-title').innerText = vid.topic || "Now Playing";
     document.getElementById('watch-title').innerText = vid.title;
     document.getElementById('watch-subject').innerText = vid.subject;
@@ -3685,114 +3873,52 @@ window.playVideo = function(id) {
     document.getElementById('watch-uploader').innerText = vid.uploader || 'Faculty';
 
     const container = document.getElementById('native-player-container');
-    
-    // Safely destroy previous player to free memory
-    if (window.vjsPlayer) {
-        window.vjsPlayer.dispose();
-        window.vjsPlayer = null;
-    }
-
-    // Inject fresh Video.js tag
+    if (window.vjsPlayer) { window.vjsPlayer.dispose(); window.vjsPlayer = null; }
     container.innerHTML = `<video id="exama-video-js" class="video-js vjs-default-skin w-full h-full absolute inset-0" controls preload="auto" playsinline></video>`;
 
-    // 🔥 THE ULTIMATE VIDEO.JS FEATURE CONFIGURATION
     const vjsOptions = {
-        autoplay: true,
-        fluid: false,
-        responsive: true, // Auto-adjusts UI for mobile/desktop
-        playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], // Speed control
-        userActions: {
-            hotkeys: true // Enables YouTube-style keyboard shortcuts
-        },
+        autoplay: true, fluid: false, responsive: true,
+        playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+        userActions: { hotkeys: true },
         controlBar: {
-            playToggle: true,
-            volumePanel: { inline: false }, // Pops volume up vertically instead of taking horizontal space
-            currentTimeDisplay: true,       // Shows 01:23
-            timeDivider: true,              // Shows /
-            durationDisplay: true,          // Shows 10:00
-            progressControl: true,          // Seek bar
-            liveDisplay: true,
-            remainingTimeDisplay: false,    // Turned off to keep it clean (currentTime/duration is better)
-            customControlSpacer: true,
-            playbackRateMenuButton: true,
-            chaptersButton: true,
-            pictureInPictureToggle: true,   // 📺 Enables floating mini-player (PiP)
-            fullscreenToggle: true
+            playToggle: true, volumePanel: { inline: false }, currentTimeDisplay: true,
+            timeDivider: true, durationDisplay: true, progressControl: true, liveDisplay: true,
+            playbackRateMenuButton: true, pictureInPictureToggle: true, fullscreenToggle: true
         }
     };
 
-    if (vid.videoType === 'youtube') {
-        // Initialize YouTube
-        window.vjsPlayer = videojs('exama-video-js', {
-            ...vjsOptions,
-            techOrder: ["youtube"],
-            sources: [{ type: "video/youtube", src: vid.sourceUrl }]
-        });
+    // 🔥 OFFLINE PLAYBACK LOGIC 🔥
+    if (isDownloaded) {
+        const localBlob = await localforage.getItem(`exama_video_${id}`);
+        const blobUrl = URL.createObjectURL(localBlob);
+        window.vjsPlayer = videojs('exama-video-js', { ...vjsOptions, sources: [{ type: "video/mp4", src: blobUrl }] });
+        window.showToast("Offline Mode ⚡", "Playing lecture from device storage.", "info");
+    } 
+    else if (vid.videoType === 'youtube') {
+        window.vjsPlayer = videojs('exama-video-js', { ...vjsOptions, techOrder: ["youtube"], sources: [{ type: "video/youtube", src: vid.sourceUrl }] });
     } else {
-        // Extract Google Drive ID safely
-        let dId = "";
-        const match = vid.sourceUrl.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
-        if (match) dId = match[1];
-
-        // Ensure this is your actual worker URL!
+        let dId = ""; const match = vid.sourceUrl.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/); if (match) dId = match[1];
         const proxyUrl = `https://exama-video-proxy.connect-subhankar-info.workers.dev/?id=${dId}&ext=.mp4`;
-
-        // Initialize Google Drive MP4
-        window.vjsPlayer = videojs('exama-video-js', {
-            ...vjsOptions,
-            sources: [{ type: "video/mp4", src: proxyUrl }]
-        });
-
-        // 🛡️ SMART FALLBACK SYSTEM
+        window.vjsPlayer = videojs('exama-video-js', { ...vjsOptions, sources: [{ type: "video/mp4", src: proxyUrl }] });
+        
         window.vjsPlayer.on('error', function() {
-            console.warn("Video.js Stream Failed! Auto-switching to Native Google Drive iframe...");
-            
-            if (window.vjsPlayer) {
-                window.vjsPlayer.dispose();
-                window.vjsPlayer = null;
-            }
-            
+            if (window.vjsPlayer) { window.vjsPlayer.dispose(); window.vjsPlayer = null; }
             const fallbackContainer = document.getElementById('native-player-container');
-            if(fallbackContainer) {
-                fallbackContainer.innerHTML = `
-                <iframe src="https://drive.google.com/file/d/${dId}/preview" class="w-full h-full border-0 relative z-10" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>
-                `;
-            }
+            if(fallbackContainer) fallbackContainer.innerHTML = `<iframe src="https://drive.google.com/file/d/${dId}/preview" class="w-full h-full border-0 relative z-10" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
         });
     }
 
-// 🛡️ HIJACK NATIVE VIDEO.JS FULLSCREEN ENGINE TO PREVENT APP CRASHES
     window.vjsPlayer.ready(function() {
-        this.el().focus = function() {}; // Prevent auto-scroll on load
-        
-        const player = this;
-        
-        // Completely detach Video.js's native fullscreen behavior
-        const fsToggle = player.controlBar.getChild('fullscreenToggle');
+        this.el().focus = function() {};
+        const fsToggle = this.controlBar.getChild('fullscreenToggle');
         if (fsToggle) {
-            // Remove standard video.js click behaviors
-            fsToggle.off('click');
-            fsToggle.off('tap');
-            
-            // Force it to use our custom CSS/Hybrid Fullscreen ONLY
-            const customFsHandler = function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                window.toggleVideoFullscreen();
-            };
-            fsToggle.on('click', customFsHandler);
-            fsToggle.on('tap', customFsHandler);
+            fsToggle.off('click'); fsToggle.off('tap');
+            const customFsHandler = function(e) { e.preventDefault(); e.stopPropagation(); window.toggleVideoFullscreen(); };
+            fsToggle.on('click', customFsHandler); fsToggle.on('tap', customFsHandler);
         }
-        
-        // Catch double clicks on the video area to toggle custom fullscreen
-        player.tech_.off('dblclick');
-        player.on('dblclick', function(e) {
-            e.preventDefault();
-            window.toggleVideoFullscreen();
-        });
+        this.tech_.off('dblclick');
+        this.on('dblclick', function(e) { e.preventDefault(); window.toggleVideoFullscreen(); });
     });
-
- 
 
     window.renderUpNext(vid);
     window.location.hash = 'watch-video';
@@ -4966,22 +5092,42 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                     if(mat.extLink) { 
                         filesHtml += `<button onclick="window.openCustomPDFViewer('${mat.extLink}', '${mat.title.replace(/'/g,"\\'")}')" class="px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white text-[10px] sm:text-xs font-black tracking-wide rounded-lg sm:rounded-xl shadow-md shadow-indigo-500/30 flex items-center gap-1 sm:gap-1.5 active:scale-95 transition-all truncate max-w-full"><i class="fa-solid fa-book-open"></i> <span class="truncate">Read</span></button>`; 
                     }
-                    mat.files.forEach(f => { 
-            const icon = f.type === 'pdf' ? '<i class="fa-solid fa-file-pdf text-rose-500 mr-1 sm:mr-1.5"></i>' : '<i class="fa-solid fa-file-image text-blue-500 mr-1 sm:mr-1.5"></i>'; 
-            const action = f.type === 'pdf' ? `window.openCustomPDFViewer('${f.url}', '${f.name.replace(/'/g,"\\'")}')` : `window.openFullScreenImage('${f.url}')`;
-            
-            // --- NEW: Add the AI Solve button if it's a Question Set Image ---
-            let solveBtn = '';
-            if (f.type === 'image' && mat.subject === 'Question Set') {
-                solveBtn = `<button onclick="window.solveQuestionWithNOVA('${f.url}')" class="px-3 py-1.5 sm:py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-[10px] sm:text-xs font-black rounded-lg sm:rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition-all shrink-0"><i class="fa-solid fa-robot text-blue-200"></i>NOVA ANALYSIS</button>`;
-            }
+                   mat.files.forEach(f => { 
+    const icon = f.type === 'pdf' ? '<i class="fa-solid fa-file-pdf text-rose-500 mr-1 sm:mr-1.5"></i>' : '<i class="fa-solid fa-file-image text-blue-500 mr-1 sm:mr-1.5"></i>'; 
+    const action = f.type === 'pdf' ? `window.openCustomPDFViewer('${f.url}', '${f.name.replace(/'/g,"\\'")}')` : `window.openFullScreenImage('${f.url}')`;
+    
+    let solveBtn = '';
+    if (f.type === 'image' && mat.subject === 'Question Set') {
+        solveBtn = `<button onclick="window.solveQuestionWithNOVA('${f.url}')" class="px-3 py-1.5 sm:py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-[10px] sm:text-xs font-black rounded-lg sm:rounded-xl shadow-md flex items-center gap-1.5 active:scale-95 transition-all shrink-0"><i class="fa-solid fa-robot text-blue-200"></i>NOVA ANALYSIS</button>`;
+    }
 
-            // Wrap both buttons in a flex container
-            filesHtml += `<div class="flex gap-2 w-full max-w-full">
-                <button onclick="${action}" class="flex-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-gray-50 text-gray-700 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl border border-gray-200 shadow-sm flex items-center gap-1.5 active:scale-95 transition-all truncate overflow-hidden">${icon} <span class="truncate">${f.name}</span></button>
-                ${solveBtn}
-            </div>`; 
-        });
+    // NEW: Offline Download Button for Materials
+    let uniqueKey = f.url;
+    const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+    if (match) uniqueKey = match[1]; else uniqueKey = btoa(encodeURIComponent(f.url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+    const storageKey = f.type === 'pdf' ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
+    
+    // We render a placeholder ID and let a background script update its color if it's already downloaded
+    const btnId = `dl-btn-${storageKey}`;
+    
+    window.checkIsOffline(storageKey).then(isSaved => {
+        const btn = document.getElementById(btnId);
+        if(btn && isSaved) {
+            btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`;
+            btn.classList.add('bg-emerald-100', 'border-emerald-200');
+        }
+    });
+
+    filesHtml += `<div class="flex gap-2 w-full max-w-full">
+        <button onclick="${action}" class="flex-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-gray-50 text-gray-700 text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl border border-gray-200 shadow-sm flex items-center gap-1.5 active:scale-95 transition-all truncate overflow-hidden">${icon} <span class="truncate">${f.name}</span></button>
+        
+        <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g,"\\'")}', '${f.type}', this)" class="w-8 sm:w-10 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-400 border border-gray-200 rounded-lg sm:rounded-xl shadow-sm transition-all active:scale-90 shrink-0">
+            <i class="fa-solid fa-cloud-arrow-down"></i>
+        </button>
+
+        ${solveBtn}
+    </div>`; 
+});
                     const delBtn = window.currentRole === 'admin' ? `<button onclick="deleteStudyMaterial('${mat.id}')" class="text-red-400 hover:text-red-600 p-1.5 sm:p-2"><i class="fa-solid fa-trash text-sm"></i></button>` : '';
                     itemsHtml += `<div class="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow group flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4"><div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 hidden sm:flex"><i class="fa-solid fa-clipboard-list"></i></div><div class="flex-1 space-y-1.5 sm:space-y-2 w-full"><div class="flex justify-between items-start"><div><h5 class="font-bold text-gray-900 text-xs sm:text-sm leading-tight group-hover:text-blue-600 transition-colors break-words">${mat.title}</h5><p class="text-[9px] sm:text-[10px] text-gray-400 font-medium mt-0.5 break-words">Posted by ${mat.uploader} • ${new Date(mat.timestamp).toLocaleDateString('en-GB')}</p></div>${delBtn}</div><div class="flex flex-wrap gap-1.5 sm:gap-2 pt-1">${filesHtml}</div></div></div>`;
                 });
@@ -8029,6 +8175,22 @@ window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnEleme
     }
 };
    
+ 
+    // Check if the browser/WebView supports Service Workers
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then((registration) => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch((error) => {
+                    console.log('ServiceWorker registration failed: ', error);
+                });
+        });
+    }
+
+  
+  
     </script>
 </body>
 </html>
