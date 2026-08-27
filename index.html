@@ -5434,15 +5434,24 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                     statusEl.innerText = `Uploading to Drive... ${percentComplete}%`; 
                 } 
             };
-            
             xhr.onload = async function() {
-                // If token expired on Google's side (HTTP 401), clear saved storage and request fresh token
-                if (xhr.status === 401) {
+                // 🔥 NEW: Smart Error Recovery for Permissions & Expirations
+                if (xhr.status === 401 || xhr.status === 403) {
+                    // Delete the broken or expired token from the browser
                     localStorage.removeItem('exama_gdrive_token');
                     localStorage.removeItem('exama_gdrive_token_exp');
                     window.gdriveAccessToken = null;
-                    statusEl.innerText = "Session expired. Reconnecting...";
-                    window.uploadDirectToDrive();
+                    
+                    if (xhr.status === 403) {
+                        statusEl.innerText = "Permission Denied! You MUST check the box to allow Drive access. Click 'Direct Drive Upload' to try again.";
+                        alert("Google blocked the upload.\n\nWhen the Google login screen appears, you MUST tick the checkbox that allows Exama to access your Google Drive.");
+                    } else {
+                        statusEl.innerText = "Session expired. Click 'Direct Drive Upload' to reconnect.";
+                    }
+                    
+                    statusEl.classList.remove('text-blue-600', 'text-green-600');
+                    statusEl.classList.add('text-red-600');
+                    document.getElementById('gdrive-file-input').value = '';
                     return;
                 }
 
@@ -5469,7 +5478,8 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                         statusEl.classList.add('text-red-600'); 
                     } 
                 } else { 
-                    statusEl.innerText = "Drive Upload Failed. Check folder permissions."; 
+                    // Catch-all for other errors (like wrong Folder ID)
+                    statusEl.innerText = `Error ${xhr.status}: Check if Folder ID is correct.`; 
                     statusEl.classList.remove('text-blue-600', 'text-green-600'); 
                     statusEl.classList.add('text-red-600'); 
                 }
