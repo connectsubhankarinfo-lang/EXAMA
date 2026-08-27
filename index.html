@@ -4974,7 +4974,7 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
             }
         }
         window.openPeerUpload = function(examId) { document.getElementById('peer-upload-exam-id').value = examId; document.getElementById('peer-upload-modal').classList.remove('hidden-view'); }
-     window.submitPeerImages = async function() {
+  window.submitPeerImages = async function() {
     const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
     const examId = document.getElementById('peer-upload-exam-id').value;
     
@@ -5021,7 +5021,7 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                 }; 
                 xhr.onerror = () => reject("Network error"); 
                 
-                // 🔥 REMOVED EXPIRATION: These images will now live forever on ImgBB
+                // 🔥 Images still live permanently on ImgBB, but wait for Admin to publish
                 xhr.open("POST", `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, true); 
                 xhr.send(formData); 
             }); 
@@ -5045,34 +5045,13 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
             window.peerMaterialsDB.push({ id: Math.random().toString(), ...data }); 
         }
         
-        // 2. 🔥 AUTO-ADD TO MATERIAL HUB FOREVER
-        const exam = window.examsDB.find(e => e.id === examId);
-        const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
-        const uploaderName = student ? student.name : "Peer Student";
-        const examName = exam ? exam.name : "Unknown Exam";
-
-        const materialFiles = [];
-        allQUrls.forEach((url, idx) => {
-            materialFiles.push({ name: `Question_Page_${idx+1}.jpg`, url: url, type: 'image' });
-        });
-
-        // Silently push the permanent set to the Material Database
-        await window.dbSendMaterial({
-            subject: "Question Set",           
-            topic: examName,                   
-            title: `Questions by ${uploaderName}`, 
-            extLink: null,
-            files: materialFiles,
-            uploader: uploaderName,
-            uploaderMobile: window.loggedInMobile,
-            timestamp: Date.now()
-        });
-
+        // Removed Material Hub Auto-add: it will now wait for endExam!
+        
         document.getElementById('peer-q-file').value = ''; 
         document.getElementById('peer-upload-modal').classList.add('hidden-view'); 
         
         hideLoader(); 
-        alert("Questions Published & Saved to Material Hub!"); 
+        alert("Questions Published to Live Exam successfully!"); 
         refreshUI();
 
     } catch(e) { 
@@ -6670,53 +6649,97 @@ window.examsDB.forEach(exam => {
             refreshUI();
         }
 
-        window.endExam = async function(id) {
-            if(!confirm("Are you sure? This will END the exam permanently, auto-grade pending evaluations to their PORTION marks, and mark lazy evaluators/non-submitters as ABSENT.")) return;
-            showLoader("Ending Exam...");
-            const exam = window.examsDB.find(e => e.id === id);
+       window.endExam = async function(id) {
+    if(!confirm("Are you sure? This will END the exam permanently, auto-grade pending evaluations, mark lazy evaluators as ABSENT, and publish all question sets to the Material Hub.")) return;
+    showLoader("Ending Exam & Archiving Papers...");
+    const exam = window.examsDB.find(e => e.id === id);
 
-            const pendingScripts = window.peerAnswerScriptsDB.filter(s => s.examId === id && !s.isGraded);
-            const lazyEvaluators = new Set();
-            const scriptPromises = [];
+    const pendingScripts = window.peerAnswerScriptsDB.filter(s => s.examId === id && !s.isGraded);
+    const lazyEvaluators = new Set();
+    const scriptPromises = [];
 
-            pendingScripts.forEach(script => {
-                lazyEvaluators.add(script.targetPeerMobile); 
-                const fallbackOpponents = [...new Set(window.peerAnswerScriptsDB.filter(s => s.examId === id).map(s => s.targetPeerMobile))].length || 1;
-                const maxMarksForThisSet = script.assignedMaxMarks || parseFloat((exam.totalMarks / fallbackOpponents).toFixed(1));
+    pendingScripts.forEach(script => {
+        lazyEvaluators.add(script.targetPeerMobile); 
+        const fallbackOpponents = [...new Set(window.peerAnswerScriptsDB.filter(s => s.examId === id).map(s => s.targetPeerMobile))].length || 1;
+        const maxMarksForThisSet = script.assignedMaxMarks || parseFloat((exam.totalMarks / fallbackOpponents).toFixed(1));
 
-                const payload = { isGraded: true, marksAwarded: maxMarksForThisSet, maxMarks: maxMarksForThisSet, evaluatorTime: Date.now() };
+        const payload = { isGraded: true, marksAwarded: maxMarksForThisSet, maxMarks: maxMarksForThisSet, evaluatorTime: Date.now() };
 
-                if (isFirebaseConfigured) {
-                    scriptPromises.push(updateDoc(doc(db, "peer_answer_scripts", script.id), payload));
-                } else {
-                    Object.assign(script, payload);
-                }
-            });
-            await Promise.all(scriptPromises);
-
-            await window.dbUpdateExam(id, { isEnded: true, globalStartTime: null, isPaused: false });
-
-            const absentPromises = [];
-            window.studentsDB.forEach(stu => {
-                const isAssigned = !exam.assignedTo || exam.assignedTo.includes('All') || exam.assignedTo.includes(stu.mobile);
-                if (!isAssigned) return;
-
-                const hasResult = window.resultsDB.some(r => r.examId === id && r.mobile === stu.mobile);
-                const hasScripts = window.peerAnswerScriptsDB.some(s => s.examId === id && s.solverMobile === stu.mobile);
-                const isLazyEvaluator = lazyEvaluators.has(stu.mobile);
-
-                if ((!hasScripts && !hasResult) || isLazyEvaluator) {
-                    if (!hasResult || isLazyEvaluator) {
-                        absentPromises.push(window.dbSubmitResult({ examId: id, mobile: stu.mobile, obtained: 0, total: exam.totalMarks, percentage: 0, status: 'ABSENT', timeTaken: 0, timeSaved: 0 }));
-                    }
-                }
-            });
-            await Promise.all(absentPromises);
-
-            await window.dbSendNotice({ title: `🏁 Exam Ended: ${exam.name}`, text: `The exam "${exam.name}" has officially ended. Pending evaluations were auto-graded to their max portion marks, and lazy evaluators/absentees were marked ABSENT.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
-            hideLoader();
-            alert("Exam ended. Pending scripts given their portion marks. Absentees & lazy evaluators marked absent.");
+        if (isFirebaseConfigured) {
+            scriptPromises.push(updateDoc(doc(db, "peer_answer_scripts", script.id), payload));
+        } else {
+            Object.assign(script, payload);
         }
+    });
+    await Promise.all(scriptPromises);
+
+    await window.dbUpdateExam(id, { isEnded: true, globalStartTime: null, isPaused: false });
+
+    const absentPromises = [];
+    window.studentsDB.forEach(stu => {
+        const isAssigned = !exam.assignedTo || exam.assignedTo.includes('All') || exam.assignedTo.includes(stu.mobile);
+        if (!isAssigned) return;
+
+        const hasResult = window.resultsDB.some(r => r.examId === id && r.mobile === stu.mobile);
+        const hasScripts = window.peerAnswerScriptsDB.some(s => s.examId === id && s.solverMobile === stu.mobile);
+        const isLazyEvaluator = lazyEvaluators.has(stu.mobile);
+
+        if ((!hasScripts && !hasResult) || isLazyEvaluator) {
+            if (!hasResult || isLazyEvaluator) {
+                absentPromises.push(window.dbSubmitResult({ examId: id, mobile: stu.mobile, obtained: 0, total: exam.totalMarks, percentage: 0, status: 'ABSENT', timeTaken: 0, timeSaved: 0 }));
+            }
+        }
+    });
+    await Promise.all(absentPromises);
+
+    // =================================================================
+    // 🔥 NEW: BATCH PUBLISH QUESTIONS TO MATERIAL HUB
+    // =================================================================
+    const examQuestions = window.peerMaterialsDB.filter(m => m.examId === id);
+    
+    for (const qSet of examQuestions) {
+        const student = window.studentsDB.find(s => s.mobile === qSet.mobile);
+        const uploaderName = student ? student.name : "Peer Student";
+        const examName = exam ? exam.name : "Unknown Exam";
+
+        let qUrls = qSet.qUrls || [];
+        if (qSet.qUrl && qUrls.length === 0) qUrls = [qSet.qUrl];
+
+        if (qUrls.length > 0) {
+            const materialFiles = qUrls.map((url, idx) => ({
+                name: `Question_Page_${idx + 1}.jpg`,
+                url: url,
+                type: 'image'
+            }));
+
+            // Optional: Basic deduplication check so clicking end twice doesn't double-post
+            const alreadyPublished = window.materialsDB.some(m => 
+                m.topic === examName && 
+                m.uploaderMobile === qSet.mobile && 
+                m.subject === "Question Set"
+            );
+
+            if (!alreadyPublished) {
+                await window.dbSendMaterial({
+                    subject: "Question Set",           
+                    topic: examName,                   
+                    title: `Questions by ${uploaderName}`, 
+                    extLink: null,
+                    files: materialFiles,
+                    uploader: uploaderName,
+                    uploaderMobile: qSet.mobile,
+                    timestamp: Date.now()
+                });
+            }
+        }
+    }
+
+    await window.dbSendNotice({ title: `🏁 Exam Ended: ${exam.name}`, text: `The exam "${exam.name}" has officially ended. Pending evaluations were auto-graded to their max portion marks, and lazy evaluators/absentees were marked ABSENT. Question papers are now available in the Material Hub.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
+    
+    hideLoader();
+    alert("Exam ended. Question papers successfully published to the Material Hub!");
+    refreshUI();
+}
         window.deleteExam = async function(id) { if(!confirm("Delete this exam completely? This action cannot be undone.")) return; showLoader("Deleting Exam..."); await window.dbDeleteExam(id); hideLoader(); }
         window.startGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); showLoader("Starting Exam for All..."); await window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 }); hideLoader(); if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`); }
         window.pauseGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); if(!ex) return; showLoader("Pausing Exam..."); const additionalElapsed = Date.now() - ex.globalStartTime; await window.dbUpdateExam(id, { isPaused: true, pausedElapsed: (ex.pausedElapsed || 0) + additionalElapsed }); hideLoader(); }
