@@ -2022,6 +2022,37 @@ window.uiLimits = {
                 refreshUI();
             }, 150); // Waits 150ms for all database calls to finish before rendering the screen once
         };
+
+       // ==========================================
+// 🔥 SMART EXAM AUTO-VERSIONING
+// ==========================================
+window.autoVersionExamName = function(requestedName) {
+    let baseName = requestedName.trim();
+    let highestVersion = 0;
+    let exactFound = false;
+
+    // Scan the database for exams with this name
+    window.examsDB.forEach(exam => {
+        if (exam.name === baseName) {
+            exactFound = true;
+            if (highestVersion < 1) highestVersion = 1;
+        } else if (exam.name.startsWith(baseName + " #")) {
+            // Extract the number after the "#"
+            let numPart = exam.name.split(" #")[1];
+            let num = parseInt(numPart);
+            if (!isNaN(num) && num > highestVersion) {
+                highestVersion = num;
+            }
+        }
+    });
+
+    // If it's the first time, keep the original name. Otherwise, add #2, #3, etc.
+    if (!exactFound && highestVersion === 0) {
+        return baseName; 
+    } else {
+        return `${baseName} #${highestVersion + 1}`; 
+    }
+};
 // ==========================================
 // PW-STYLE E-LEARNING NATIVE ENGINE (GRID FOLDERS)
 // ==========================================
@@ -6750,6 +6781,7 @@ window.examsDB.forEach(exam => {
         window.submitExam = async function() {
             showLoader("Creating Exam...");
             const examName = document.getElementById('new-exam-name').value; 
+           const finalExamName = window.autoVersionExamName(examName);
             const examDate = window.formatDateDDMMYYYY(new Date(document.getElementById('new-exam-date').value));
             const duration = document.getElementById('new-exam-duration').value; 
             const totalMarks = document.getElementById('new-exam-total').value;
