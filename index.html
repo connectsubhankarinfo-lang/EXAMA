@@ -5341,10 +5341,68 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
         }
 
         window.tokenClient = null; window.gdriveAccessToken = null;
-        function initGoogleDriveAPI() { if(window.google && google.accounts) { window.tokenClient = google.accounts.oauth2.initTokenClient({ client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', scope: 'https://www.googleapis.com/auth/drive.file', callback: (tokenResponse) => { if (tokenResponse && tokenResponse.access_token) { window.gdriveAccessToken = tokenResponse.access_token; document.getElementById('gdrive-file-input').click(); } } }); } else { setTimeout(initGoogleDriveAPI, 500); } } 
+       // ==========================================
+        // 🔑 ONE-TIME GOOGLE DRIVE PERSISTENT AUTH
+        // ==========================================
+        window.tokenClient = null; 
+        window.gdriveAccessToken = null;
+
+        function initGoogleDriveAPI() { 
+            // 1. Check if we already have a valid saved token in storage
+            const savedToken = localStorage.getItem('exama_gdrive_token');
+            const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
+            
+            if (savedToken && Date.now() < tokenExp) {
+                window.gdriveAccessToken = savedToken;
+            }
+
+            if (window.google && google.accounts) { 
+                window.tokenClient = google.accounts.oauth2.initTokenClient({ 
+                    client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', 
+                    scope: 'https://www.googleapis.com/auth/drive.file', 
+                    callback: (tokenResponse) => { 
+                        if (tokenResponse && tokenResponse.access_token) { 
+                            window.gdriveAccessToken = tokenResponse.access_token; 
+                            
+                            // Save token to localStorage for 1 hour
+                            const expiresInMs = (tokenResponse.expires_in || 3500) * 1000;
+                            localStorage.setItem('exama_gdrive_token', tokenResponse.access_token);
+                            localStorage.setItem('exama_gdrive_token_exp', (Date.now() + expiresInMs).toString());
+                            
+                            document.getElementById('gdrive-file-input').click(); 
+                        } 
+                    } 
+                }); 
+            } else { 
+                setTimeout(initGoogleDriveAPI, 500); 
+            } 
+        } 
         initGoogleDriveAPI();
-        window.uploadDirectToDrive = function() { if (!window.gdriveAccessToken) { if(!window.tokenClient) return alert("Google API is still loading or Client ID is missing."); window.tokenClient.requestAccessToken({prompt: 'consent'}); } else { document.getElementById('gdrive-file-input').click(); } }
-        document.getElementById('gdrive-file-input').addEventListener('change', function(e) { if (this.files.length > 0) { window.executeDriveUpload(); } });
+
+        window.uploadDirectToDrive = function() { 
+            // Check if existing token is still valid
+            const savedToken = localStorage.getItem('exama_gdrive_token');
+            const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
+
+            if (savedToken && Date.now() < tokenExp) {
+                window.gdriveAccessToken = savedToken;
+                document.getElementById('gdrive-file-input').click();
+                return;
+            }
+
+            // If token expired or missing, request without forcing the consent screen
+            if (!window.tokenClient) return alert("Google API is still initializing. Please wait 2 seconds.");
+            
+            // 🚀 Removed { prompt: 'consent' } so it doesn't prompt every time!
+            window.tokenClient.requestAccessToken({ prompt: '' }); 
+        };
+
+        document.getElementById('gdrive-file-input').addEventListener('change', function(e) { 
+            if (this.files.length > 0) { 
+                window.executeDriveUpload(); 
+            } 
+        });
+
         window.executeDriveUpload = function() {
             const file = document.getElementById('gdrive-file-input').files[0]; 
             if (!file) return;
@@ -5354,12 +5412,8 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
             statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); 
             statusEl.classList.add('text-blue-600');
 
-            // ==========================================
-            // PASTE YOUR GOOGLE DRIVE FOLDER ID BELOW
-            // ==========================================
             const DEFAULT_FOLDER_ID = "Ngxpjs1j7AkbCgDLZ3Ua0C4mkaCGV"; 
 
-            // Add the 'parents' array to push it directly to your specific folder
             const metadata = { 
                 'name': file.name, 
                 'mimeType': file.type,
@@ -5382,6 +5436,16 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
             };
             
             xhr.onload = async function() {
+                // If token expired on Google's side (HTTP 401), clear saved storage and request fresh token
+                if (xhr.status === 401) {
+                    localStorage.removeItem('exama_gdrive_token');
+                    localStorage.removeItem('exama_gdrive_token_exp');
+                    window.gdriveAccessToken = null;
+                    statusEl.innerText = "Session expired. Reconnecting...";
+                    window.uploadDirectToDrive();
+                    return;
+                }
+
                 if (xhr.status >= 200 && xhr.status < 300) { 
                     try { 
                         const data = JSON.parse(xhr.responseText); 
@@ -5393,7 +5457,7 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                                 body: JSON.stringify({ role: 'reader', type: 'anyone' }) 
                             }); 
                             document.getElementById('mat-ext-link').value = data.webViewLink; 
-                            statusEl.innerText = "Uploaded & made Public! Link auto-filled."; 
+                            statusEl.innerText = "Uploaded & Made Public! Link auto-filled."; 
                             statusEl.classList.remove('text-blue-600', 'text-red-600'); 
                             statusEl.classList.add('text-green-600'); 
                         } else { 
@@ -5405,14 +5469,14 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                         statusEl.classList.add('text-red-600'); 
                     } 
                 } else { 
-                    statusEl.innerText = "Drive Upload Failed. Check permissions."; 
+                    statusEl.innerText = "Drive Upload Failed. Check folder permissions."; 
                     statusEl.classList.remove('text-blue-600', 'text-green-600'); 
                     statusEl.classList.add('text-red-600'); 
                 }
                 document.getElementById('gdrive-file-input').value = '';
             };
             xhr.send(form);
-        }
+        };
 
         window.submitFitnessAbsent = async function() { showLoader("Marking Absent..."); await window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance: 0, time: 0, pace: 'ABSENT', cals: 0, isAbsent: true, date: window.formatDateDDMMYYYY(), timestamp: Date.now() }); hideLoader(); }
         window.submitFitnessLog = async function() {
