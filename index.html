@@ -786,8 +786,14 @@
             </div>
 
             <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 pb-24 sm:pb-28 space-y-6 sm:space-y-8">
-                <div>
-                    <h3 class="font-bold text-gray-900 mb-3 sm:mb-4 px-1 sm:px-2 tracking-tight text-base sm:text-lg break-words">Exam Management</h3>
+               <div>
+                    <div class="flex justify-between items-center mb-3 sm:mb-4 px-1 sm:px-2">
+                        <h3 class="font-bold text-gray-900 tracking-tight text-base sm:text-lg break-words">Exam Management</h3>
+                        <div class="relative max-w-[150px] sm:max-w-[200px]">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xs"></i>
+                            <input type="text" id="admin-exam-search" oninput="window.filterAdminExams(this.value)" placeholder="Search exams..." class="w-full pl-8 pr-3 py-1.5 sm:py-2 bg-white border border-gray-200 rounded-xl text-[10px] sm:text-xs font-bold text-gray-700 outline-none focus:border-indigo-300 shadow-sm">
+                        </div>
+                    </div>
                     <div id="admin-exams-list" class="space-y-4 sm:space-y-6"></div>
                 </div>
                 <div>
@@ -6782,18 +6788,49 @@ window.examsDB.forEach(exam => {
             window.updateChart('studentChart', chartInstance, chartLabels, chartData, chartStatuses, inst => chartInstance = inst);
         }
 
-        function renderAdminDashboard() {
+       window.adminExamSearchQuery = '';
+        window.filterAdminExams = function(query) {
+            window.adminExamSearchQuery = query.toLowerCase();
+            window.renderAdminDashboard(); // Re-render instantly
+        };
+
+        window.openLogMarksForExam = function(examId) {
+            window.openBottomSheet();
+            // Wait a split second for bottom sheet to populate, then set the exam
+            setTimeout(() => {
+                const selectExam = document.getElementById('select-exam');
+                if(selectExam) {
+                    selectExam.value = examId;
+                }
+            }, 50);
+        };
+
+        window.renderAdminDashboard = function() {
             const examList = document.getElementById('admin-exams-list');
             const stuList = document.getElementById('admin-students-directory');
-            examList.innerHTML = ''; stuList.innerHTML = '';
+            if (examList) examList.innerHTML = ''; 
+            if (stuList) stuList.innerHTML = '';
 
             const todayStr = window.formatDateDDMMYYYY();
             let todayExams = []; let upcomingExams = []; let doneExams = [];
 
             const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
             const todayDate = new Date(); todayDate.setHours(0,0,0,0);
+            const searchQuery = window.adminExamSearchQuery || '';
 
             window.examsDB.forEach(exam => {
+                // NEW: Real-time Search Filter Logic
+                if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    const nameMatch = exam.name ? exam.name.toLowerCase().includes(q) : false;
+    const infoMatch = exam.info ? exam.info.toLowerCase().includes(q) : false;
+    const dateMatch = exam.date ? exam.date.toLowerCase().includes(q) : false;
+    const typeMatch = exam.examType ? exam.examType.toLowerCase().includes(q) : false;
+
+    // Skip if none of the fields match the search query
+    if (!nameMatch && !infoMatch && !dateMatch && !typeMatch) return;
+}
+
                 const eDate = parseDDMM(exam.date);
                 if (exam.isEnded || eDate < todayDate) { doneExams.push(exam); } 
                 else if (exam.date === todayStr) { todayExams.push(exam); } 
@@ -6818,7 +6855,8 @@ window.examsDB.forEach(exam => {
                 else if (exam.globalStartTime && !exam.isPaused) { timerControls = `<button onclick="window.pauseGlobalExam('${exam.id}')" class="bg-amber-100 hover:bg-amber-200 text-amber-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all shrink-0"><i class="fa-solid fa-pause mr-1"></i>Pause</button><button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all ml-1.5 sm:ml-2 shrink-0"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`; } 
                 else if (exam.isPaused) { timerControls = `<button onclick="window.resumeGlobalExam('${exam.id}')" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all shrink-0"><i class="fa-solid fa-play mr-1"></i>Resume</button><button onclick="window.endExam('${exam.id}')" class="bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 sm:px-3 py-1 rounded-md sm:rounded-lg text-[9px] sm:text-[10px] font-bold shadow-sm transition-all ml-1.5 sm:ml-2 shrink-0"><i class="fa-solid fa-flag-checkered mr-1"></i>End</button>`; }
 
-                return `<div class="glass-card p-3 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] flex flex-col gap-2 sm:gap-3 group hover:-translate-y-1 transition-all duration-300"><div class="flex justify-between items-start gap-2"><div class="min-w-0 pr-2 w-full"><h4 class="font-bold text-gray-900 text-xs sm:text-[15px] tracking-tight mb-0.5 sm:mb-1 break-words leading-tight flex items-center">${exam.name}${pinIcon}${proctorIcon}</h4><p class="text-[8px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest break-words leading-tight"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • ${exam.examType === 'testbook' ? 'Testbook' : (exam.examType === 'offline' ? 'Offline' : 'Online')} • ${exam.duration}m</p></div><div class="shrink-0">${statusBadge}</div></div><div class="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-2 sm:gap-2 pt-2 sm:pt-3 border-t border-gray-200/60 mt-0.5 sm:mt-1"><div class="flex flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto">${timerControls}</div><div class="flex gap-1.5 sm:gap-2 justify-end w-full sm:w-auto"><button onclick="window.restartExam('${exam.id}')" class="px-2 sm:px-3 h-7 sm:h-8 rounded-md sm:rounded-lg bg-gray-100 text-gray-600 border border-gray-200 flex items-center justify-center active:scale-90 transition-all shadow-sm text-[8px] sm:text-[9px] font-bold shrink-0" title="Reset Exam Data"><i class="fa-solid fa-rotate-right mr-1"></i> Reset</button><button onclick="window.openEditExam('${exam.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white text-gray-700 border border-gray-200 flex items-center justify-center active:scale-90 transition-all hover:text-indigo-600 hover:border-indigo-200 shadow-sm shrink-0" title="Edit Exam"><i class="fa-solid fa-pen text-[9px] sm:text-[10px]"></i></button><button onclick="window.deleteExam('${exam.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-red-50 text-red-500 border border-red-100 flex items-center justify-center active:scale-90 transition-all hover:bg-red-500 hover:text-white shadow-sm shrink-0" title="Delete Exam"><i class="fa-solid fa-trash text-[9px] sm:text-[10px]"></i></button></div></div></div>`;
+                // NEW: Injected the Marks Button right before Reset
+                return `<div class="glass-card p-3 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] flex flex-col gap-2 sm:gap-3 group hover:-translate-y-1 transition-all duration-300"><div class="flex justify-between items-start gap-2"><div class="min-w-0 pr-2 w-full"><h4 class="font-bold text-gray-900 text-xs sm:text-[15px] tracking-tight mb-0.5 sm:mb-1 break-words leading-tight flex items-center">${exam.name}${pinIcon}${proctorIcon}</h4><p class="text-[8px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest break-words leading-tight"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • ${exam.examType === 'testbook' ? 'Testbook' : (exam.examType === 'offline' ? 'Offline' : 'Online')} • ${exam.duration}m</p></div><div class="shrink-0">${statusBadge}</div></div><div class="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-2 sm:gap-2 pt-2 sm:pt-3 border-t border-gray-200/60 mt-0.5 sm:mt-1"><div class="flex flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto">${timerControls}</div><div class="flex gap-1.5 sm:gap-2 justify-end w-full sm:w-auto"><button onclick="window.openLogMarksForExam('${exam.id}')" class="px-2 sm:px-3 h-7 sm:h-8 rounded-md sm:rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center active:scale-90 transition-all shadow-sm text-[8px] sm:text-[9px] font-bold shrink-0" title="Log Marks"><i class="fa-solid fa-square-poll-vertical mr-1"></i> Marks</button><button onclick="window.restartExam('${exam.id}')" class="px-2 sm:px-3 h-7 sm:h-8 rounded-md sm:rounded-lg bg-gray-100 text-gray-600 border border-gray-200 flex items-center justify-center active:scale-90 transition-all shadow-sm text-[8px] sm:text-[9px] font-bold shrink-0" title="Reset Exam Data"><i class="fa-solid fa-rotate-right mr-1"></i> Reset</button><button onclick="window.openEditExam('${exam.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white text-gray-700 border border-gray-200 flex items-center justify-center active:scale-90 transition-all hover:text-indigo-600 hover:border-indigo-200 shadow-sm shrink-0" title="Edit Exam"><i class="fa-solid fa-pen text-[9px] sm:text-[10px]"></i></button><button onclick="window.deleteExam('${exam.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-red-50 text-red-500 border border-red-100 flex items-center justify-center active:scale-90 transition-all hover:bg-red-500 hover:text-white shadow-sm shrink-0" title="Delete Exam"><i class="fa-solid fa-trash text-[9px] sm:text-[10px]"></i></button></div></div></div>`;
             };
 
             const buildSection = (title, icon, textColor, borderColor, exams) => {
@@ -6832,7 +6870,7 @@ window.examsDB.forEach(exam => {
             finalHtml += buildSection("Completed / Past Exams", "fa-solid fa-check-double", "text-purple-600", "border-purple-200", doneExams);
 
             if (!finalHtml) finalHtml = `<div class="text-[10px] sm:text-xs text-gray-500 font-medium italic p-4 sm:p-6 text-center border border-dashed border-gray-300 rounded-xl sm:rounded-2xl w-full break-words">No exams available. Create one using the floating + button!</div>`;
-            examList.innerHTML = finalHtml;
+            if (examList) examList.innerHTML = finalHtml;
 
             // Admin Student Directory
             window.studentsDB.forEach(stu => {
