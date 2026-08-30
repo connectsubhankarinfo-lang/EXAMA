@@ -244,7 +244,7 @@
                    <!-- Add this exactly before the download button inside #pdf-modal-header -->
 <button onclick="window.generatePdfQuiz()" class="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg flex items-center gap-1.5 transition-all active:scale-90 shadow-sm border border-indigo-200 mr-2" title="Generate 20Q Quiz from this page">
     <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i>
-    <span class="text-[10px] font-black uppercase tracking-widest">Auto Quiz</span>
+    <span class="text-[10px] font-black uppercase tracking-widest">Quiz</span>
 </button>
                     <button onclick="window.downloadCustomPdf()" class="w-7 h-7 sm:w-8 sm:h-8 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center transition-all active:scale-90 shadow-sm border border-emerald-200" title="Download Document">
                         <i class="fa-solid fa-download text-xs sm:text-sm"></i>
@@ -6517,7 +6517,7 @@ function getFitnessLeaderboard() {
         </div>`;
     }
 
-    return `<div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] relative overflow-hidden hover:-translate-y-1 transition-all duration-300 gap-2"><div class="absolute left-0 top-0 bottom-0 w-1.5 sm:w-2 bg-gradient-to-b from-${c}-400 to-${c}-600"></div><div class="flex justify-between items-start ml-2 sm:ml-3 min-w-0 pr-2"><div><h4 class="font-bold text-gray-900 text-sm sm:text-[15px] break-words leading-tight">${exam.name}</h4><p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-1 sm:mt-1.5 break-words leading-tight"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • ${exam.examType === 'testbook' ? 'Testbook' : (exam.examType === 'offline' ? 'Offline' : (exam.examType === 'anytime' ? 'Anytime' : 'Online'))}</p></div><div class="text-right shrink-0"><div class="font-black text-xl sm:text-2xl text-gray-900 leading-none break-words">${r.obtained}<span class="text-[10px] sm:text-xs text-gray-400 font-bold">/${r.total}</span></div><div class="text-[8px] sm:text-[10px] font-black text-${c}-700 bg-${c}-100/80 px-1.5 sm:px-2 py-1 sm:py-1.5 rounded-md sm:rounded-lg border border-${c}-200 inline-block mt-1.5 sm:mt-2 tracking-wider shadow-sm whitespace-nowrap">${isAbsent ? 'ABSENT' : r.status} (${r.percentage.toFixed(0)}%)</div></div></div>${breakdownHtml}</div>`;
+    return `<div class="glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] relative overflow-hidden hover:-translate-y-1 transition-all duration-300 gap-2"><div class="absolute left-0 top-0 bottom-0 w-1.5 sm:w-2 bg-gradient-to-b from-${c}-400 to-${c}-600"></div><div class="flex justify-between items-start ml-2 sm:ml-3 min-w-0 pr-2"><div><h4 class="font-bold text-gray-900 text-sm sm:text-[15px] break-words leading-tight">${exam.name}</h4><p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-1 sm:mt-1.5 break-words leading-tight"><i class="fa-regular fa-calendar mr-1"></i>${exam.date} • ${exam.examType === 'testbook' ? 'Testbook' : (exam.examType === 'offline' ? 'Offline' : (exam.examType === 'quiz' ? 'Quiz' : (exam.examType === 'anytime' ? 'Anytime' : 'Online')))}</p></div><div class="text-right shrink-0"><div class="font-black text-xl sm:text-2xl text-gray-900 leading-none break-words">${r.obtained}<span class="text-[10px] sm:text-xs text-gray-400 font-bold">/${r.total}</span></div><div class="text-[8px] sm:text-[10px] font-black text-${c}-700 bg-${c}-100/80 px-1.5 sm:px-2 py-1 sm:py-1.5 rounded-md sm:rounded-lg border border-${c}-200 inline-block mt-1.5 sm:mt-2 tracking-wider shadow-sm whitespace-nowrap">${isAbsent ? 'ABSENT' : r.status} (${r.percentage.toFixed(0)}%)</div></div></div>${breakdownHtml}</div>`;
 }
         // --- 4. HOME DASHBOARD UPDATER ---
         function renderStudentDashboard() {
@@ -7340,36 +7340,157 @@ window.submitResult = async function(isAbsent = false) {
 window.activeQuizData = [];
 window.activeQuizTitle = "";
 window.quizSubmitted = false;
-
-// 1. PDF TRIGGER
+// 1. PDF TRIGGER: Converts PDF pages to images and lets Gemini decide the topic name
 window.generatePdfQuiz = async function() {
-    if(!window.pdfDoc) return;
-    window.showLoader("NOVA is reading the PDF and generating a 20-question quiz. This takes about 10-15 seconds...");
+    if(!window.pdfDoc) {
+        alert("No PDF loaded.");
+        return;
+    }
+    window.showLoader("NOVA is analyzing the document content, determining the topic, and building a 20Q quiz...");
     
     try {
-        const page = await window.pdfDoc.getPage(window.pdfPageNum);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(' ');
+        const totalPages = window.pdfDoc.numPages;
+        let base64Images = [];
+        const pagesToProcess = Math.min(totalPages, 5); 
 
-        if (!pageText || pageText.trim() === '') {
-            throw new Error("Could not extract text from this PDF. It might be a scanned image.");
+        for (let i = 1; i <= pagesToProcess; i++) {
+            const page = await window.pdfDoc.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            base64Images.push(dataUrl.split(',')[1]);
         }
 
-        const prompt = `Read the following educational text:\n\n"${pageText.substring(0, 15000)}"\n\nGenerate exactly 20 multiple-choice questions based on this text. Keep the questions focused. Keep options concise. Keep the explanation to EXACTLY ONE short sentence.\n\nReturn strictly in this JSON array format with no markdown blocks:\n[{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]`;
+        // Updated prompt instructing Gemini to analyze and title the topic
+        const prompt = `Analyze these pages from the document. First, intelligently determine the core educational topic, chapter, or concept name based on the content. Then, generate exactly 20 multiple-choice questions based on these concepts. Keep options concise and explanations to EXACTLY ONE short sentence.
 
-        // Grab the actual Topic Name from the Reader Header
-        const topicName = document.getElementById('pdf-viewer-title').innerText || "Document";
+Return strictly in this JSON object format with no markdown blocks:
+{
+  "topicName": "The specific topic or chapter name identified from the text",
+  "questions": [
+    {
+      "question": "...",
+      "options": ["A", "B", "C", "D"],
+      "correctIndex": 0,
+      "explanation": "..."
+    }
+  ]
+}`;
 
-        await window.fetchQuizFromGemini(prompt, `${topicName} Quiz`);
+        await window.fetchMultiImageQuizFromGemini(prompt, base64Images);
+
     } catch(e) {
-        // Handled silently
+        console.error("PDF Quiz Error:", e);
+        alert(`Failed to process PDF: ${e.message}`);
     }
     window.hideLoader();
 };
 
-// 2. IMAGE TRIGGER
-window.generateImageQuiz = async function(imgUrl, title) {
-    window.showLoader("NOVA is analyzing the image and generating a 20-question quiz. This takes about 10-15 seconds...");
+// MULTI-IMAGE QUIZ PARSER (Extracts dynamic topic name & questions)
+window.fetchMultiImageQuizFromGemini = async function(promptText, base64Images = []) {
+    const parts = [{ text: promptText }];
+    base64Images.forEach(b64 => {
+        parts.push({ inlineData: { data: b64, mimeType: "image/jpeg" } });
+    });
+
+    const payload = {
+        action: "auto_quiz",
+        contents: [{ role: "user", parts: parts }],
+        generationConfig: { temperature: 0.2 } 
+    };
+
+    const apiRes = await fetch(window.WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+
+    if (!apiRes.ok) throw new Error(`Server Error: ${apiRes.status}`);
+
+    const data = await apiRes.json();
+    if (data.error) throw new Error(data.error.message);
+
+    let rawText = data.candidates[0].content.parts[0].text;
+    
+    // EXTRACT JSON OBJECT INSTEAD OF ARRAY
+    const firstBrace = rawText.indexOf('{');
+    let lastBrace = rawText.lastIndexOf('}');
+    
+    if (firstBrace === -1) {
+        throw new Error("AI did not return a valid quiz format.");
+    }
+
+    if (lastBrace === -1 || lastBrace < firstBrace) {
+        rawText = rawText + '}]}'; 
+        lastBrace = rawText.lastIndexOf('}');
+    }
+
+    const cleanJsonString = rawText.substring(firstBrace, lastBrace + 1);
+    const parsedObj = JSON.parse(cleanJsonString);
+    
+    window.activeQuizData = parsedObj.questions;
+    window.activeQuizTitle = `${parsedObj.topicName || "Generated"} Quiz`;
+    window.renderQuizModal();
+};
+// MULTI-IMAGE QUIZ APIS & PARSER
+window.fetchMultiImageQuizFromGemini = async function(promptText, title, base64Images = []) {
+    const parts = [{ text: promptText }];
+    
+    // Attach every rendered page image into the payload
+    base64Images.forEach(b64 => {
+        parts.push({ inlineData: { data: b64, mimeType: "image/jpeg" } });
+    });
+
+    const payload = {
+        action: "auto_quiz",
+        contents: [{ role: "user", parts: parts }],
+        generationConfig: { 
+            temperature: 0.2 
+        } 
+    };
+
+    const apiRes = await fetch(window.WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+
+    if (!apiRes.ok) throw new Error(`Server Error: ${apiRes.status}`);
+
+    const data = await apiRes.json();
+    if (data.error) throw new Error(data.error.message);
+
+    let rawText = data.candidates[0].content.parts[0].text;
+    
+    // BULLETPROOF JSON EXTRACTION
+    const firstBracket = rawText.indexOf('[');
+    let lastBracket = rawText.lastIndexOf(']');
+    
+    if (firstBracket === -1) {
+        throw new Error("AI did not return a valid quiz format.");
+    }
+
+    if (lastBracket === -1 || lastBracket < firstBracket) {
+        rawText = rawText + '}]'; 
+        lastBracket = rawText.lastIndexOf(']');
+    }
+
+    const cleanJsonString = rawText.substring(firstBracket, lastBracket + 1);
+    
+    window.activeQuizData = JSON.parse(cleanJsonString);
+    window.activeQuizTitle = title;
+    window.renderQuizModal();
+};
+// 2. IMAGE TRIGGER: Lets Gemini read the image and decide the topic name
+window.generateImageQuiz = async function(imgUrl, fallbackTitle) {
+    window.showLoader("NOVA is analyzing the image content, determining the topic, and building a 20Q quiz...");
     
     try {
         const res = await fetch(imgUrl);
@@ -7380,13 +7501,72 @@ window.generateImageQuiz = async function(imgUrl, title) {
             reader.readAsDataURL(blob);
         });
 
-        const prompt = `Analyze the educational content, formulas, or concepts in this image. Generate exactly 20 multiple-choice questions based on these concepts. Keep the explanation to EXACTLY ONE short sentence.\n\nReturn strictly in this JSON array format with no markdown blocks:\n[{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]`;
+        const prompt = `Analyze the educational content, formulas, or concepts in this image. First, intelligently determine the core topic or chapter name. Then, generate exactly 20 multiple-choice questions based on these concepts. Keep the explanation to EXACTLY ONE short sentence.
 
-        await window.fetchQuizFromGemini(prompt, `Image Quiz: ${title.substring(0, 15)}`, b64);
+Return strictly in this JSON object format with no markdown blocks:
+{
+  "topicName": "The specific topic or concept name identified from the image",
+  "questions": [
+    {
+      "question": "...",
+      "options": ["A", "B", "C", "D"],
+      "correctIndex": 0,
+      "explanation": "..."
+    }
+  ]
+}`;
+
+        await window.fetchQuizFromGemini(prompt, b64);
     } catch(e) {
-        // Handled silently to hide loader
+        console.error("Image Quiz Error:", e);
     }
     window.hideLoader();
+};
+
+// SINGLE IMAGE QUIZ PARSER
+window.fetchQuizFromGemini = async function(promptText, base64Image = null) {
+    const parts = [{ text: promptText }];
+    if (base64Image) {
+        parts.push({ inlineData: { data: base64Image, mimeType: "image/jpeg" } });
+    }
+
+    const payload = {
+        action: "auto_quiz",
+        contents: [{ role: "user", parts: parts }],
+        generationConfig: { temperature: 0.2 } 
+    };
+
+    const apiRes = await fetch(window.WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+
+    if (!apiRes.ok) throw new Error(`Server Error: ${apiRes.status}`);
+
+    const data = await apiRes.json();
+    if (data.error) throw new Error(data.error.message);
+
+    let rawText = data.candidates[0].content.parts[0].text;
+    
+    const firstBrace = rawText.indexOf('{');
+    let lastBrace = rawText.lastIndexOf('}');
+    
+    if (firstBrace === -1) {
+        throw new Error("AI did not return a valid quiz format.");
+    }
+
+    if (lastBrace === -1 || lastBrace < firstBrace) {
+        rawText = rawText + '}]}'; 
+        lastBrace = rawText.lastIndexOf('}');
+    }
+
+    const cleanJsonString = rawText.substring(firstBrace, lastBrace + 1);
+    const parsedObj = JSON.parse(cleanJsonString);
+    
+    window.activeQuizData = parsedObj.questions;
+    window.activeQuizTitle = `${parsedObj.topicName || "Generated"} Quiz`;
+    window.renderQuizModal();
 };
 
 // 3. BULLETPROOF GEMINI API CALLER & PARSER
@@ -7397,12 +7577,11 @@ window.fetchQuizFromGemini = async function(promptText, title, base64Image = nul
     }
 
     const payload = {
-        action: "auto_quiz", // <-- This triggers the strict JSON mode in your proxy
+        action: "auto_quiz",
         contents: [{ role: "user", parts: parts }],
         generationConfig: { 
-            temperature: 0.2 // Now correctly forwarded by the proxy
+            temperature: 0.2 
         } 
-    
     };
 
     try {
@@ -7417,22 +7596,25 @@ window.fetchQuizFromGemini = async function(promptText, title, base64Image = nul
         const data = await apiRes.json();
         if (data.error) throw new Error(data.error.message);
 
-        // 1. Extract the raw text from Gemini
         let rawText = data.candidates[0].content.parts[0].text;
         
-        // 2. BULLETPROOF JSON EXTRACTION: 
-        // Gemini often adds "Here is your JSON:" before the array. 
-        // This cuts out everything except the actual array between [ and ].
+        // BULLETPROOF JSON EXTRACTION
         const firstBracket = rawText.indexOf('[');
-        const lastBracket = rawText.lastIndexOf(']');
+        let lastBracket = rawText.lastIndexOf(']');
         
-        if (firstBracket === -1 || lastBracket === -1) {
+        if (firstBracket === -1) {
             throw new Error("AI did not return a valid quiz format.");
+        }
+
+        // AUTO-HEAL: If Gemini cut off the last bracket because 20 questions was too long, fix it automatically
+        if (lastBracket === -1 || lastBracket < firstBracket) {
+            rawText = rawText + '}]'; // Try to cap off the broken JSON safely
+            lastBracket = rawText.lastIndexOf(']');
         }
 
         const cleanJsonString = rawText.substring(firstBracket, lastBracket + 1);
         
-        // 3. Parse and Load
+        // Parse and Load
         window.activeQuizData = JSON.parse(cleanJsonString);
         window.activeQuizTitle = title;
         window.renderQuizModal();
@@ -7552,18 +7734,17 @@ window.submitAutoQuiz = async function() {
         const percentage = (score / maxScore) * 100;
         
         // Create an Exam profile dynamically for this specific quiz
-        let newExamId = 'e_ai_' + Date.now();
         const examPayload = {
             id: newExamId,
             name: window.activeQuizTitle,
             info: "NOVA Auto-Generated Quiz",
             date: window.formatDateDDMMYYYY(),
             totalMarks: maxScore,
-            passPercentage: 40,
-            duration: maxScore, // 1 min per question
-            examType: 'anytime',
+            passPercentage: 80,
+            duration: maxScore,
+            examType: 'quiz', // <-- Changed from 'anytime' to 'quiz'
             assignedTo: [window.loggedInMobile],
-            isEnded: true, // Marked as ended so it doesn't show in pending
+            isEnded: true,
             timestamp: Date.now()
         };
 
