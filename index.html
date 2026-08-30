@@ -5391,13 +5391,13 @@ if (f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLower
         }
 
         window.tokenClient = null; window.gdriveAccessToken = null;
-       // ==========================================
+     // ==========================================
         // 🔑 ONE-TIME GOOGLE DRIVE PERSISTENT AUTH
         // ==========================================
         window.tokenClient = null; 
         window.gdriveAccessToken = null;
 
-        function initGoogleDriveAPI() { 
+        window.initGoogleDriveAPI = function() { 
             // 1. Check if we already have a valid saved token in storage
             const savedToken = localStorage.getItem('exama_gdrive_token');
             const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
@@ -5406,7 +5406,8 @@ if (f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLower
                 window.gdriveAccessToken = savedToken;
             }
 
-            if (window.google && google.accounts) { 
+            // FIX: Explicitly check for .oauth2 to prevent silent crashes!
+            if (window.google && window.google.accounts && window.google.accounts.oauth2) { 
                 window.tokenClient = google.accounts.oauth2.initTokenClient({ 
                     client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', 
                     scope: 'https://www.googleapis.com/auth/drive.file', 
@@ -5424,10 +5425,11 @@ if (f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLower
                     } 
                 }); 
             } else { 
-                setTimeout(initGoogleDriveAPI, 500); 
+                // Keep trying until the oauth2 module is fully loaded
+                setTimeout(window.initGoogleDriveAPI, 500); 
             } 
-        } 
-        initGoogleDriveAPI();
+        };
+        window.initGoogleDriveAPI();
 
         window.uploadDirectToDrive = function() { 
             // Check if existing token is still valid
@@ -5440,10 +5442,14 @@ if (f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLower
                 return;
             }
 
-            // If token expired or missing, request without forcing the consent screen
-            if (!window.tokenClient) return alert("Google API is still initializing. Please wait 2 seconds.");
+            // FIX: Self-healing check if the tokenClient got stuck
+            if (!window.tokenClient) {
+                window.initGoogleDriveAPI();
+                alert("Google Services are waking up... Please click the button again in a moment.");
+                return;
+            }
             
-            // 🚀 Removed { prompt: 'consent' } so it doesn't prompt every time!
+            // Trigger the Google Popup
             window.tokenClient.requestAccessToken({ prompt: '' }); 
         };
 
