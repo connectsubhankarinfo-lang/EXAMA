@@ -2410,10 +2410,10 @@ window.uiLimits = {
             }
         };
 
-        window.downloadAppUpdate = async function() {
+       window.downloadAppUpdate = function() {
             if (!window.latestUpdateUrl) return;
 
-            // Switch from Prompt to Progress Stage
+            // 1. Switch to the Progress Stage UI
             document.getElementById('updater-stage-initial').classList.add('hidden');
             document.getElementById('updater-stage-progress').classList.remove('hidden');
 
@@ -2421,74 +2421,55 @@ window.uiLimits = {
             const progressPercent = document.getElementById('updater-progress-percent');
             const downloadedBytesEl = document.getElementById('updater-downloaded-bytes');
             const totalBytesEl = document.getElementById('updater-total-bytes');
-            const versionString = document.getElementById('update-new-version').innerText || "latest";
 
-            try {
-                const res = await fetch(window.latestUpdateUrl);
-                if (!res.ok) throw new Error("Network stream unavailable");
+            // Reset UI text
+            if (progressBar) progressBar.style.width = `0%`;
+            if (progressPercent) progressPercent.innerText = `0%`;
+            if (downloadedBytesEl) downloadedBytesEl.innerText = `Connecting...`;
+            if (totalBytesEl) totalBytesEl.innerText = `Android OS`;
 
-                const contentLength = res.headers.get('content-length');
-                if (!contentLength) throw new Error("No length header provided");
+            // 2. TRIGGER THE OS DOWNLOAD IMMEDIATELY (100% Crash-Proof)
+            // By passing the URL to an anchor tag without target="_blank", 
+            // Android's native download manager takes over the heavy lifting.
+            const a = document.createElement('a');
+            a.href = window.latestUpdateUrl;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
 
-                const total = parseInt(contentLength, 10);
-                const totalMB = (total / (1024 * 1024)).toFixed(1);
-                if (totalBytesEl) totalBytesEl.innerText = `${totalMB} MB`;
+            // 3. AESTHETIC PROGRESS ANIMATION
+            // Simulates a fast, smooth loading bar before showing the install guide
+            let progress = 0;
+            const animationDuration = 3500; // 3.5 seconds
+            const intervalTime = 50;
+            const steps = animationDuration / intervalTime;
+            const increment = 100 / steps;
 
-                let loaded = 0;
-                const reader = res.body.getReader();
-                const chunks = [];
+            const progressInterval = setInterval(() => {
+                progress += increment;
+                
+                // Add a slight random jitter to make the loading bar feel "alive" and network-like
+                const jitter = Math.random() * 3; 
+                let displayProgress = Math.min(100, Math.round(progress + jitter));
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
+                if (progressBar) progressBar.style.width = `${displayProgress}%`;
+                if (progressPercent) progressPercent.innerText = `${displayProgress}%`;
+                
+                // Update text based on progress
+                if (displayProgress > 20 && downloadedBytesEl) downloadedBytesEl.innerText = `Fetching via Secure Connection...`;
+                if (displayProgress > 60 && downloadedBytesEl) downloadedBytesEl.innerText = `Downloading in Background...`;
 
-                    chunks.push(value);
-                    loaded += value.length;
-
-                    const percent = Math.round((loaded / total) * 100);
-                    const loadedMB = (loaded / (1024 * 1024)).toFixed(1);
-
-                    // Update UI smoothly
-                    if (progressBar) progressBar.style.width = `${percent}%`;
-                    if (progressPercent) progressPercent.innerText = `${percent}%`;
-                    if (downloadedBytesEl) downloadedBytesEl.innerText = `${loadedMB} MB`;
+                // 4. TRANSITION TO INSTALL GUIDE
+                if (progress >= 100) {
+                    clearInterval(progressInterval);
+                    
+                    setTimeout(() => {
+                        // Hide progress bar, show the beautiful step-by-step guide
+                        document.getElementById('updater-stage-progress').classList.add('hidden');
+                        document.getElementById('updater-stage-install').classList.remove('hidden');
+                    }, 400); // Slight delay so user registers 100%
                 }
-
-                // File fully assembled in memory
-                const blob = new Blob(chunks, { type: 'application/vnd.android.package-archive' });
-                const blobUrl = URL.createObjectURL(blob);
-
-                // Hand file to browser download system
-                const a = document.createElement('a');
-                a.href = blobUrl;
-                a.download = `EXAMA_Update_${versionString}.apk`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(blobUrl);
-
-                // Smoothly switch from Progress to Step-by-Step Install Guide
-                setTimeout(() => {
-                    document.getElementById('updater-stage-progress').classList.add('hidden');
-                    document.getElementById('updater-stage-install').classList.remove('hidden');
-                }, 400);
-
-            } catch (e) {
-                console.warn("Direct stream blocked. Falling back to background download.", e);
-
-                // Fallback: trigger background download
-                const a = document.createElement('a');
-                a.href = window.latestUpdateUrl;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-
-                // Still transition to install guide so user is instructed!
-                setTimeout(() => {
-                    document.getElementById('updater-stage-progress').classList.add('hidden');
-                    document.getElementById('updater-stage-install').classList.remove('hidden');
-                }, 1200);
-            }
+            }, intervalTime);
         };
 
         window.closeUpdaterModal = function() {
