@@ -2380,19 +2380,23 @@ window.uiLimits = {
         window.checkForAppUpdates = async function() {
             try {
                 // 1. Detect if inside Median App and extract installed version
-                const uaMatch = navigator.userAgent.match(/EXAMA_APP\/(v[0-9\.]+)/);
+                const uaMatch = navigator.userAgent.match(/EXAMA_APP\/(v?[0-9\.]+)/i);
                 if (!uaMatch) return; // Exit if running in standard web browser
                 
-                const installedApkVersion = uaMatch[1];
+                // Clean up the installed version (remove spaces, make lowercase, remove 'v' if it exists)
+                let installedApkVersion = uaMatch[1].toLowerCase().trim().replace(/^v/, '');
 
-                // 2. Fetch latest release from GitHub
-                const response = await fetch(`https://api.github.com/repos/${window.GITHUB_OWNER}/${window.GITHUB_REPO}/releases/latest`);
+                // 2. Fetch latest release from GitHub (Added cache-buster to prevent phone caching old data)
+                const cacheBuster = new Date().getTime();
+                const response = await fetch(`https://api.github.com/repos/${window.GITHUB_OWNER}/${window.GITHUB_REPO}/releases/latest?nocache=${cacheBuster}`);
                 if (!response.ok) return;
                 
                 const data = await response.json();
-                const githubLatestVersion = data.tag_name;
+                
+                // Clean up the GitHub version (remove spaces, make lowercase, remove 'v' if it exists)
+                let githubLatestVersion = data.tag_name ? data.tag_name.toLowerCase().trim().replace(/^v/, '') : null;
 
-                // 3. Compare versions
+                // 3. Compare versions safely
                 if (githubLatestVersion && githubLatestVersion !== installedApkVersion) {
                     const apkAsset = data.assets.find(asset => asset.name.endsWith('.apk'));
                     window.latestUpdateUrl = apkAsset ? apkAsset.browser_download_url : data.html_url;
@@ -2402,7 +2406,8 @@ window.uiLimits = {
                     document.getElementById('updater-stage-progress').classList.add('hidden');
                     document.getElementById('updater-stage-install').classList.add('hidden');
 
-                    document.getElementById('update-new-version').innerText = githubLatestVersion;
+                    // Display the version properly (adding the 'v' back for aesthetics)
+                    document.getElementById('update-new-version').innerText = "v" + githubLatestVersion;
                     document.getElementById('app-updater-modal').classList.remove('hidden-view');
                 }
             } catch (err) {
