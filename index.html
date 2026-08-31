@@ -2324,41 +2324,97 @@ window.uiLimits = {
             }
         };
 
-       window.downloadAppUpdate = function() {
+     window.downloadAppUpdate = async function() {
             if (!window.latestUpdateUrl) return;
             
             const btn = document.getElementById('btn-download-update');
-            
-            // 1. Show the loading graphics on the button
-            btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-lg"></i> Starting Download...`;
-            
-            // 2. Trigger the download silently in the background
-            const a = document.createElement('a');
-            a.href = window.latestUpdateUrl;
-            // No target="_blank", so it stays in the app without blank pages!
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            
-            // 3. After 1.5 seconds, hide the screen and show the instruction message
-            setTimeout(() => {
-                // Hide the update modal
-                document.getElementById('app-updater-modal').classList.add('hidden-view');
-                
-                // Show a beautiful toast notification to the user
-                if (typeof window.showToast === 'function') {
-                    window.showToast(
-                        "Download Started 🚀", 
-                        "Check your phone's Notification panel or Downloads folder, tap the .apk file, and install the update!", 
-                        "info"
-                    );
-                } else {
-                    alert("Download started! Check your downloads folder and install the latest EXAMA app.");
+            const originalClasses = btn.className; // Save original Tailwind classes for reset
+            const versionString = document.getElementById('update-new-version').innerText || "latest";
+
+            try {
+                // 1. Setup Button for Live Progress UI
+                btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-lg"></i> Connecting...`;
+                btn.classList.remove('bg-gradient-to-r', 'from-indigo-600', 'to-blue-600'); // Remove static gradient
+                btn.style.color = '#ffffff';
+                btn.style.textShadow = '0px 1px 2px rgba(0,0,0,0.4)'; // Ensure text is readable over the progress bar
+
+                // 2. Start Fetch Stream
+                const res = await fetch(window.latestUpdateUrl);
+                if (!res.ok) throw new Error("Network block");
+
+                const contentLength = res.headers.get('content-length');
+                if (!contentLength) throw new Error("No content-length tracking available");
+
+                const total = parseInt(contentLength, 10);
+                let loaded = 0;
+                const reader = res.body.getReader();
+                const chunks = [];
+
+                // 3. Read Data and Update Percentage
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    chunks.push(value);
+                    loaded += value.length;
+                    
+                    const percent = Math.round((loaded / total) * 100);
+
+                    // Turn the button into a dynamic loading bar!
+                    btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-down animate-bounce text-lg"></i> Downloading... ${percent}%`;
+                    btn.style.background = `linear-gradient(90deg, #4f46e5 ${percent}%, #c7d2fe ${percent}%)`;
                 }
+
+                // 4. File completely downloaded into memory, now save to device
+                btn.innerHTML = `<i class="fa-solid fa-circle-check text-lg"></i> Saving File...`;
+                btn.style.background = '#10b981'; // Turn button green
+
+                const blob = new Blob(chunks, { type: 'application/vnd.android.package-archive' });
+                const blobUrl = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = `EXAMA_Update_${versionString}.apk`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(blobUrl);
+
+                // 5. Cleanup & Notify
+                setTimeout(() => {
+                    document.getElementById('app-updater-modal').classList.add('hidden-view');
+                    if (typeof window.showToast === 'function') {
+                        window.showToast("Download Complete 🎉", "Check your Notifications or Downloads folder, tap the .apk file, and install!", "info");
+                    }
+                    
+                    // Reset button back to original state
+                    btn.className = originalClasses;
+                    btn.style = '';
+                    btn.innerHTML = `<i class="fa-brands fa-android text-lg"></i> Download Update`;
+                }, 2000);
+
+            } catch (e) {
+                console.warn("Live tracking blocked by device. Falling back to native OS download.", e);
                 
-                // Reset the button back to normal
-                btn.innerHTML = `<i class="fa-brands fa-android text-lg"></i> Download Update`;
-            }, 1500);
+                // FALLBACK: If streaming fails (CORS, memory limit, etc), use the native background download
+                btn.className = originalClasses;
+                btn.style = '';
+                btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-lg"></i> Starting Download...`;
+
+                const a = document.createElement('a');
+                a.href = window.latestUpdateUrl;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                setTimeout(() => {
+                    document.getElementById('app-updater-modal').classList.add('hidden-view');
+                    if (typeof window.showToast === 'function') {
+                        window.showToast("Download Started 🚀", "Check your phone's notification panel, tap the .apk file, and install the update!", "info");
+                    }
+                    btn.innerHTML = `<i class="fa-brands fa-android text-lg"></i> Download Update`;
+                }, 1500);
+            }
         };
       
         // ==========================================
