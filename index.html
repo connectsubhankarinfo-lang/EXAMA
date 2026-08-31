@@ -213,7 +213,7 @@
                         <div class="flex items-center gap-3 bg-white/80 p-3 rounded-2xl border border-gray-200/80 shadow-sm">
                             <div class="w-7 h-7 rounded-xl bg-indigo-50 text-indigo-600 font-black text-xs flex items-center justify-center shrink-0 border border-indigo-100">1</div>
                             <div class="min-w-0">
-                                <p class="text-[11px] font-black text-gray-900 leading-tight">Open Downloads / Notification</p>
+                                <p class="text-[11px] font-black text-gray-900 leading-tight">Open Downloads</p>
                                 <p class="text-[9px] font-medium text-gray-500 leading-tight mt-0.5">Swipe down your phone's notification shade or open Files.</p>
                             </div>
                         </div>
@@ -223,7 +223,7 @@
                             <div class="w-7 h-7 rounded-xl bg-indigo-50 text-indigo-600 font-black text-xs flex items-center justify-center shrink-0 border border-indigo-100">2</div>
                             <div class="min-w-0">
                                 <p class="text-[11px] font-black text-gray-900 leading-tight">Tap the APK File</p>
-                                <p class="text-[9px] font-medium text-gray-500 leading-tight mt-0.5">Tap on <span class="font-bold text-indigo-600 font-mono">EXAMA_Update.apk</span>.</p>
+                                <p class="text-[9px] font-medium text-gray-500 leading-tight mt-0.5">Tap on <span class="font-bold text-indigo-600 font-mono">EXAMA.apk</span>.</p>
                             </div>
                         </div>
 
@@ -2410,7 +2410,7 @@ window.uiLimits = {
             }
         };
 
-       window.downloadAppUpdate = function() {
+     window.downloadAppUpdate = function() {
             if (!window.latestUpdateUrl) return;
 
             // 1. Switch to the Progress Stage UI
@@ -2429,19 +2429,16 @@ window.uiLimits = {
             if (totalBytesEl) totalBytesEl.innerText = `Android OS`;
 
             // 2. TRIGGER THE OS DOWNLOAD IMMEDIATELY (100% Crash-Proof)
-            // By passing the URL to an anchor tag without target="_blank", 
-            // Android's native download manager takes over the heavy lifting.
             const a = document.createElement('a');
             a.href = window.latestUpdateUrl;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
 
-            // 3. AESTHETIC PROGRESS ANIMATION
-            // Simulates a fast, smooth loading bar before showing the install guide
+            // 3. AESTHETIC PROGRESS ANIMATION (EXACTLY 1 MINUTE)
             let progress = 0;
-            const animationDuration = 3500; // 3.5 seconds
-            const intervalTime = 50;
+            const animationDuration = 60000; // 60 seconds (1 minute)
+            const intervalTime = 150; // Update every 150ms to keep it smooth without lagging the phone
             const steps = animationDuration / intervalTime;
             const increment = 100 / steps;
 
@@ -2449,25 +2446,31 @@ window.uiLimits = {
                 progress += increment;
                 
                 // Add a slight random jitter to make the loading bar feel "alive" and network-like
-                const jitter = Math.random() * 3; 
-                let displayProgress = Math.min(100, Math.round(progress + jitter));
+                const jitter = Math.random() * 0.5; 
+                let displayProgress = Math.min(100, Math.floor(progress + jitter));
 
                 if (progressBar) progressBar.style.width = `${displayProgress}%`;
                 if (progressPercent) progressPercent.innerText = `${displayProgress}%`;
                 
-                // Update text based on progress
-                if (displayProgress > 20 && downloadedBytesEl) downloadedBytesEl.innerText = `Fetching via Secure Connection...`;
-                if (displayProgress > 60 && downloadedBytesEl) downloadedBytesEl.innerText = `Downloading in Background...`;
+                // Update text dynamically as the minute passes
+                if (displayProgress > 5 && displayProgress <= 30 && downloadedBytesEl) downloadedBytesEl.innerText = `Fetching via Secure Connection...`;
+                if (displayProgress > 30 && displayProgress <= 70 && downloadedBytesEl) downloadedBytesEl.innerText = `Downloading in Background...`;
+                if (displayProgress > 70 && displayProgress <= 95 && downloadedBytesEl) downloadedBytesEl.innerText = `Almost there...`;
+                if (displayProgress > 95 && downloadedBytesEl) downloadedBytesEl.innerText = `Finalizing Update...`;
 
                 // 4. TRANSITION TO INSTALL GUIDE
                 if (progress >= 100) {
                     clearInterval(progressInterval);
                     
+                    // Force snap to exactly 100% at the end
+                    if (progressBar) progressBar.style.width = `100%`;
+                    if (progressPercent) progressPercent.innerText = `100%`;
+                    
                     setTimeout(() => {
                         // Hide progress bar, show the beautiful step-by-step guide
                         document.getElementById('updater-stage-progress').classList.add('hidden');
                         document.getElementById('updater-stage-install').classList.remove('hidden');
-                    }, 4000); // Slight delay so user registers 100%
+                    }, 600); // Slight delay so user sees 100%
                 }
             }, intervalTime);
         };
