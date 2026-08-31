@@ -131,6 +131,26 @@
             <h3 class="text-indigo-600 font-black text-2xl sm:text-3xl tracking-tight mb-2 animate-pulse break-words text-center px-4">Let's Crack It!</h3>
             <p class="text-[10px] sm:text-xs text-gray-500 font-bold uppercase tracking-[0.2em] break-words text-center px-2" id="loader-text">Loading Exama...</p>
         </div>
+        
+        <!-- APP UPDATER MODAL -->
+        <div id="app-updater-modal" class="hidden-view absolute inset-0 z-[999] flex items-center justify-center p-4 sm:p-6 backdrop-blur-xl bg-gray-900/90 fade-in">
+            <div class="glass-card p-6 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-sm text-center border-indigo-500/30 border relative bg-white overflow-hidden">
+                <div class="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center text-4xl mx-auto mb-4 shadow-inner border border-indigo-100 animate-bounce">
+                    <i class="fa-solid fa-cloud-arrow-down"></i>
+                </div>
+                <h3 class="text-2xl font-black text-gray-900 mb-2 tracking-tight">Update Available!</h3>
+                <p class="text-sm text-gray-500 font-medium mb-2">Version <span id="update-new-version" class="text-indigo-600 font-black px-1"></span> is ready.</p>
+                <p class="text-xs text-gray-400 mb-6 px-2 leading-relaxed">Download the latest version to get new features, better performance, and bug fixes.</p>
+                
+                <button onclick="window.downloadAppUpdate()" id="btn-download-update" class="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-black py-4 rounded-xl shadow-[0_10px_20px_rgba(79,70,229,0.3)] active:scale-95 transition-all text-sm sm:text-base flex justify-center items-center gap-2">
+                    <i class="fa-brands fa-android text-lg"></i> Download Update
+                </button>
+                
+                <button onclick="document.getElementById('app-updater-modal').classList.add('hidden-view')" class="mt-5 text-[10px] sm:text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors uppercase tracking-widest">
+                    Maybe Later
+                </button>
+            </div>
+        </div>
 
         <!-- OVERTIME PROMPT MODAL -->
         <div id="session-overtime-modal" class="hidden-view absolute inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/80 fade-in">
@@ -2254,6 +2274,67 @@ window.uiLimits = {
             }, 150); // Waits 150ms for all database calls to finish before rendering the screen once
         };
         
+      
+      // ==========================================
+        // GITHUB APP UPDATER ENGINE
+        // ==========================================
+        window.CURRENT_APP_VERSION = "v1.0.0"; // IMPORTANT: Update this number in your code every time you release a new app version!
+        window.GITHUB_OWNER = "connectsubhankarinfo-lang"; // Your GitHub Username
+        window.GITHUB_REPO = "EXAMA"; // Your GitHub Repository Name
+        window.latestUpdateUrl = "";
+
+        window.checkForAppUpdates = async function() {
+            try {
+                // Fetch the latest release data from GitHub API
+                const response = await fetch(`https://api.github.com/repos/${window.GITHUB_OWNER}/${window.GITHUB_REPO}/releases/latest`);
+                if (!response.ok) return; // Silent fail if no releases exist yet
+                
+                const data = await response.json();
+                const latestVersion = data.tag_name; // e.g., "v1.0.1"
+                
+                // Compare versions (Simple string check: if it doesn't match, there's an update)
+                if (latestVersion && latestVersion !== window.CURRENT_APP_VERSION) {
+                    
+                    // Look for an attached .apk file in the GitHub Release
+                    const apkAsset = data.assets.find(asset => asset.name.endsWith('.apk'));
+                    
+                    if (apkAsset) {
+                        window.latestUpdateUrl = apkAsset.browser_download_url; // Direct file download
+                    } else {
+                        // Fallback: If you forgot to attach the APK, it links to the GitHub release page
+                        window.latestUpdateUrl = data.html_url; 
+                    }
+                    
+                    // Update UI and show modal
+                    document.getElementById('update-new-version').innerText = latestVersion;
+                    document.getElementById('app-updater-modal').classList.remove('hidden-view');
+                }
+            } catch (err) {
+                console.error("App update check failed:", err);
+            }
+        };
+
+        window.downloadAppUpdate = function() {
+            if (!window.latestUpdateUrl) return;
+            
+            const btn = document.getElementById('btn-download-update');
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-lg"></i> Downloading...`;
+            
+            // Trigger the native browser download
+            const a = document.createElement('a');
+            a.href = window.latestUpdateUrl;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            // Close the modal after 3 seconds
+            setTimeout(() => {
+                document.getElementById('app-updater-modal').classList.add('hidden-view');
+                btn.innerHTML = `<i class="fa-brands fa-android text-lg"></i> Download Update`;
+            }, 3000);
+        };
+      
         // ==========================================
 // QUIZ TIMER ENGINE
 // ==========================================
@@ -6582,20 +6663,48 @@ function getFitnessLeaderboard() {
             html2pdf().set(opt).from(html).save().then(() => { clearTimeout(safeTimeout); hideLoader(); }).catch(err => { console.error(err); clearTimeout(safeTimeout); hideLoader(); alert("Failed to generate PDF. Check browser console."); });
         }
 
-        window.onload = async function() {
-            showLoader("Let's Crack !t"); await fetchInitialData(); initGoogleDriveAPI();
-            const savedRole = localStorage.getItem('exama_role'); const savedMob = localStorage.getItem('exama_mob'); const savedPass = localStorage.getItem('exama_pass'); const savedName = localStorage.getItem('exama_name') || 'Student'; 
+       window.onload = async function() {
+            showLoader("Let's Crack !t"); 
+            await fetchInitialData(); 
+            initGoogleDriveAPI();
+            
+            // 🔥 Check for App Updates in the background (Runs 3 seconds after the app opens)
+            setTimeout(window.checkForAppUpdates, 3000);
+
+            const savedRole = localStorage.getItem('exama_role'); 
+            const savedMob = localStorage.getItem('exama_mob'); 
+            const savedPass = localStorage.getItem('exama_pass'); 
+            const savedName = localStorage.getItem('exama_name') || 'Student'; 
+            
             if (savedRole && savedMob && savedPass) {
                 let isValid = false;
-                if (savedRole === 'admin' && savedMob === '9475757821' && savedPass === 'Subhankar@0513') { isValid = true; } 
+                if (savedRole === 'admin' && savedMob === '9475757821' && savedPass === 'Subhankar@0513') { 
+                    isValid = true; 
+                } 
                 else if (savedRole === 'student') {
                     const stu = window.studentsDB.find(s => s.mobile === savedMob && s.password === savedPass);
-                    if (stu) { isValid = true; localStorage.setItem('exama_name', stu.name); } 
-                    else if (window.studentsDB.length === 0) { isValid = true; window.studentsDB.push({ mobile: savedMob, password: savedPass, name: savedName }); }
+                    if (stu) { 
+                        isValid = true; 
+                        localStorage.setItem('exama_name', stu.name); 
+                    } 
+                    else if (window.studentsDB.length === 0) { 
+                        isValid = true; 
+                        window.studentsDB.push({ mobile: savedMob, password: savedPass, name: savedName }); 
+                    }
                 }
-                if (isValid) { window.currentRole = savedRole; window.loggedInMobile = savedMob; executeLoginUI(savedRole, savedMob); hideLoader(); return; }
+                
+                if (isValid) { 
+                    window.currentRole = savedRole; 
+                    window.loggedInMobile = savedMob; 
+                    executeLoginUI(savedRole, savedMob); 
+                    hideLoader(); 
+                    return; 
+                }
             }
-            hideLoader(); window.location.hash = 'login'; handleHashChange();
+            
+            hideLoader(); 
+            window.location.hash = 'login'; 
+            handleHashChange();
         };
 
         document.getElementById('login-form').addEventListener('submit', async function(e) {
