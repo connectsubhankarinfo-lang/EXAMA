@@ -2276,34 +2276,24 @@ window.uiLimits = {
         
       
       // ==========================================
-        // GITHUB NATIVE APP UPDATER ENGINE
+        // GITHUB APP UPDATER ENGINE
         // ==========================================
+        window.CURRENT_APP_VERSION = "v1.0.0"; // IMPORTANT: Update this number in your code every time you release a new app version!
         window.GITHUB_OWNER = "connectsubhankarinfo-lang"; // Your GitHub Username
         window.GITHUB_REPO = "EXAMA"; // Your GitHub Repository Name
         window.latestUpdateUrl = "";
 
         window.checkForAppUpdates = async function() {
             try {
-                // 1. DETECT THE NATIVE APP & ITS VERSION
-                // We scan the device's User Agent for the custom string we put in Median.co
-                const uaMatch = navigator.userAgent.match(/EXAMA_APP\/(v[0-9\.]+)/);
-                
-                // If this is missing, the user is just browsing on Chrome/Safari.
-                // We silently exit so we don't prompt website users to download an APK!
-                if (!uaMatch) return; 
-                
-                const installedApkVersion = uaMatch[1]; // This will equal "v1.0.0" from the phone
-
-                // 2. CHECK GITHUB FOR LATEST VERSION
+                // Fetch the latest release data from GitHub API
                 const response = await fetch(`https://api.github.com/repos/${window.GITHUB_OWNER}/${window.GITHUB_REPO}/releases/latest`);
-                if (!response.ok) return; 
+                if (!response.ok) return; // Silent fail if no releases exist yet
                 
                 const data = await response.json();
-                const githubLatestVersion = data.tag_name; // e.g., "v1.0.1"
+                const latestVersion = data.tag_name; // e.g., "v1.0.1"
                 
-                // 3. COMPARE AND PROMPT
-                // If GitHub has a newer version than the APK installed on the phone, trigger the popup!
-                if (githubLatestVersion && githubLatestVersion !== installedApkVersion) {
+                // Compare versions (Simple string check: if it doesn't match, there's an update)
+                if (latestVersion && latestVersion !== window.CURRENT_APP_VERSION) {
                     
                     // Look for an attached .apk file in the GitHub Release
                     const apkAsset = data.assets.find(asset => asset.name.endsWith('.apk'));
@@ -2316,7 +2306,7 @@ window.uiLimits = {
                     }
                     
                     // Update UI and show modal
-                    document.getElementById('update-new-version').innerText = githubLatestVersion;
+                    document.getElementById('update-new-version').innerText = latestVersion;
                     document.getElementById('app-updater-modal').classList.remove('hidden-view');
                 }
             } catch (err) {
@@ -2324,25 +2314,19 @@ window.uiLimits = {
             }
         };
 
-      window.downloadAppUpdate = function() {
+        window.downloadAppUpdate = function() {
             if (!window.latestUpdateUrl) return;
             
             const btn = document.getElementById('btn-download-update');
-            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-lg"></i> Opening Browser...`;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-lg"></i> Downloading...`;
             
-            // Check if user is inside the Median App
-            if (navigator.userAgent.includes('EXAMA_APP')) {
-                // MEDIAN JS BRIDGE: Forces the URL to open in external Chrome/Safari
-                window.location.href = 'median://open/external?url=' + encodeURIComponent(window.latestUpdateUrl);
-            } else {
-                // Fallback: If they are just using the normal website, open in a new tab
-                const a = document.createElement('a');
-                a.href = window.latestUpdateUrl;
-                a.target = '_blank';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            }
+            // Trigger the native browser download
+            const a = document.createElement('a');
+            a.href = window.latestUpdateUrl;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
             
             // Close the modal after 3 seconds
             setTimeout(() => {
