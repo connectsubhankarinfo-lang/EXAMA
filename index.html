@@ -2415,48 +2415,69 @@ window.uiLimits = {
             }
         };
 
-    window.downloadAppUpdate = function() {
+     window.downloadAppUpdate = function() {
             if (!window.latestUpdateUrl) return;
 
-            const btn = document.getElementById('btn-start-update');
-            const originalText = btn.innerHTML;
+            // 1. Switch to the Progress Stage UI
+            document.getElementById('updater-stage-initial').classList.add('hidden');
+            document.getElementById('updater-stage-progress').classList.remove('hidden');
 
-            // 1. Change button to a spinning download animation
-            btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-lg"></i><span>Downloading in Background...</span>`;
-            btn.disabled = true; // Prevent double clicks
-            btn.classList.add('opacity-90');
+            const progressBar = document.getElementById('updater-progress-bar');
+            const progressPercent = document.getElementById('updater-progress-percent');
+            const downloadedBytesEl = document.getElementById('updater-downloaded-bytes');
+            const totalBytesEl = document.getElementById('updater-total-bytes');
 
-            // 2. TRIGGER THE NATIVE OS DOWNLOAD (100% Crash-Proof)
+            // Reset UI text
+            if (progressBar) progressBar.style.width = `0%`;
+            if (progressPercent) progressPercent.innerText = `0%`;
+            if (downloadedBytesEl) downloadedBytesEl.innerText = `Connecting...`;
+            if (totalBytesEl) totalBytesEl.innerText = `Android OS`;
+
+            // 2. TRIGGER THE OS DOWNLOAD IMMEDIATELY (100% Crash-Proof)
             const a = document.createElement('a');
             a.href = window.latestUpdateUrl;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
 
-            // 3. Wait 3 seconds to let Android catch the download, then update UI
-            setTimeout(() => {
+            // 3. AESTHETIC PROGRESS ANIMATION (EXACTLY 1 MINUTE)
+            let progress = 0;
+            const animationDuration = 60000; // 60 seconds (1 minute)
+            const intervalTime = 150; // Update every 150ms to keep it smooth without lagging the phone
+            const steps = animationDuration / intervalTime;
+            const increment = 100 / steps;
+
+            const progressInterval = setInterval(() => {
+                progress += increment;
                 
-                // Show the Toast Notification
-                if (typeof window.showToast === 'function') {
-                    window.showToast(
-                        "Download Started 🚀", 
-                        "Check your phone's notification panel to track the download. Once finished, tap it to install!", 
-                        "info"
-                    );
+                // Add a slight random jitter to make the loading bar feel "alive" and network-like
+                const jitter = Math.random() * 0.5; 
+                let displayProgress = Math.min(100, Math.floor(progress + jitter));
+
+                if (progressBar) progressBar.style.width = `${displayProgress}%`;
+                if (progressPercent) progressPercent.innerText = `${displayProgress}%`;
+                
+                // Update text dynamically as the minute passes
+                if (displayProgress > 5 && displayProgress <= 30 && downloadedBytesEl) downloadedBytesEl.innerText = `Fetching via Secure Connection...`;
+                if (displayProgress > 30 && displayProgress <= 70 && downloadedBytesEl) downloadedBytesEl.innerText = `Downloading in Background...`;
+                if (displayProgress > 70 && displayProgress <= 95 && downloadedBytesEl) downloadedBytesEl.innerText = `Almost there...`;
+                if (displayProgress > 95 && downloadedBytesEl) downloadedBytesEl.innerText = `Finalizing Update...`;
+
+                // 4. TRANSITION TO INSTALL GUIDE
+                if (progress >= 100) {
+                    clearInterval(progressInterval);
+                    
+                    // Force snap to exactly 100% at the end
+                    if (progressBar) progressBar.style.width = `100%`;
+                    if (progressPercent) progressPercent.innerText = `100%`;
+                    
+                    setTimeout(() => {
+                        // Hide progress bar, show the beautiful step-by-step guide
+                        document.getElementById('updater-stage-progress').classList.add('hidden');
+                        document.getElementById('updater-stage-install').classList.remove('hidden');
+                    }, 600); // Slight delay so user sees 100%
                 }
-
-                // Hide the spinning button/initial screen
-                document.getElementById('updater-stage-initial').classList.add('hidden');
-                
-                // Show the beautiful step-by-step install guide
-                document.getElementById('updater-stage-install').classList.remove('hidden');
-                
-                // Reset the button in the background just in case
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-                btn.classList.remove('opacity-90');
-
-            }, 3000); // 3 seconds of downloading animation
+            }, intervalTime);
         };
 
         window.closeUpdaterModal = function() {
