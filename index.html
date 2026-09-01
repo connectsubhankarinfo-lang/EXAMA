@@ -2117,9 +2117,9 @@
                         12 × 8
                     </h1>
                     
-                    <!-- Native Numeric Input Field (Works on all devices) -->
+                   <!-- Native Numeric Input Field (Dynamically hides keyboard on mobile) -->
                     <div class="w-full max-w-[280px]">
-                        <input type="tel" pattern="[0-9]*" inputmode="numeric" id="math-answer-input" oninput="window.checkNativeMathAnswer(this.value)" class="w-full bg-white border-2 border-slate-200 text-center text-4xl sm:text-5xl font-black text-indigo-600 rounded-3xl py-4 sm:py-5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all shadow-sm placeholder-slate-300" placeholder="Tap..." autocomplete="off">
+                        <input type="tel" id="math-answer-input" oninput="window.checkNativeMathAnswer(this.value)" class="w-full bg-white border-2 border-slate-200 text-center text-4xl sm:text-5xl font-black text-indigo-600 rounded-3xl py-4 sm:py-5 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all shadow-sm placeholder-slate-300" placeholder="?" autocomplete="off">
                     </div>
 
                     <!-- Skip Button -->
@@ -10688,13 +10688,25 @@ window.startMathWorkout = function() {
     const inputEl = document.getElementById('math-answer-input');
     inputEl.value = "";
     
+    // 🔥 SMART KEYBOARD HIDER 🔥
+    // If mobile, force input mode 'none' and readonly to kill the native keyboard
+    if (window.innerWidth < 768) {
+        inputEl.setAttribute('inputmode', 'none');
+        inputEl.setAttribute('readonly', 'readonly');
+        inputEl.blur(); 
+    } else {
+        inputEl.setAttribute('inputmode', 'numeric');
+        inputEl.removeAttribute('readonly');
+    }
+    
     // Start Game
     window.generateNextMathQuestion();
     
-    // Auto-Focus the native input field to trigger the mobile keyboard
+    // Auto-Focus the native input field ONLY on Tablet/Desktop
     setTimeout(() => {
-        inputEl.focus();
-        inputEl.click();
+        if (window.innerWidth >= 768) {
+            inputEl.focus();
+        }
     }, 300);
     
     if (window.mathState.timer) clearInterval(window.mathState.timer);
@@ -10712,10 +10724,6 @@ window.startMathWorkout = function() {
             window.endMathWorkout();
         }
     }, 1000);
-};
-
-window.getRandomInt = function(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
 window.generateNextMathQuestion = function() {
@@ -10782,7 +10790,6 @@ window.generateNextMathQuestion = function() {
             break;
 
         case 'perc':
-            // Generate answer first to ensure integers, then calculate what the prompt should be
             const percs = [10, 20, 25, 50, 75];
             a = percs[window.getRandomInt(0, percs.length - 1)]; 
             if(diff === 'easy') { answer = window.getRandomInt(2, 20); }
@@ -10796,9 +10803,12 @@ window.generateNextMathQuestion = function() {
     window.mathState.correctAnswer = answer;
     document.getElementById('math-question-display').innerText = displayStr;
     
-    // Clear input field for next question, but keep keyboard open
-    document.getElementById('math-answer-input').value = "";
-    document.getElementById('math-answer-input').focus();
+    // Clear input field for next question, but keep keyboard open ONLY on tablets
+    const inputEl = document.getElementById('math-answer-input');
+    inputEl.value = "";
+    if (window.innerWidth >= 768) {
+        inputEl.focus(); 
+    }
 };
 
 window.checkNativeMathAnswer = function(val) {
