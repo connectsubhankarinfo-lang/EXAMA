@@ -874,7 +874,7 @@
                         <h3 class="font-black text-gray-900 mb-2.5 px-1 flex items-center gap-1.5 tracking-tight text-[13px] sm:text-sm uppercase"><i class="fa-solid fa-bolt text-amber-500"></i> Task & Track </h3>
                         <div class="grid grid-cols-2 gap-2 sm:gap-3">
                             <!-- NEW: Math Workout Hero Card -->
-                            <div onclick="window.location.hash='weekly-targets'" class="col-span-2 glass-card p-4 rounded-2xl flex items-center justify-between cursor-pointer active:scale-95 transition-all shadow-sm border-teal-200-300 bg-white relative overflow-hidden group">
+                            <div onclick="window.location.hash='weekly-targets'" class="col-span-2 glass-card p-4 rounded-2xl flex items-center justify-between cursor-pointer active:scale-95 transition-all shadow-sm border-teal-200-300 bg-gradient-to-tl from-teal-50 to-teal-50 relative overflow-hidden group">
                                 <div class="absolute right-0 top-0 w-32 h-full bg-gradient-to-l from-teal-50 to-transparent"></div>
                                 <div class="flex items-center gap-3 relative z-10">
                                     <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 text-white flex items-center justify-center shadow-lg"><i class="fa-solid fa-list-check text-sm"></i></div>
@@ -5556,7 +5556,7 @@ window.handleOvertimeChoice = function(choice) {
         case 'notices': if(window.currentRole === 'admin') document.getElementById('add-notice-btn')?.classList.remove('hidden'); else document.getElementById('add-notice-btn')?.classList.add('hidden'); document.getElementById('notice-board-view')?.classList.remove('hidden-view'); renderNotices(); break;
         case 'session-timer': document.getElementById('session-timer-view')?.classList.remove('hidden-view'); renderSessionTimer(); break;
         case 'materials': if (window.currentRole === 'admin') { document.getElementById('btn-upload-material')?.classList.remove('hidden'); } else { document.getElementById('btn-upload-material')?.classList.add('hidden'); } document.getElementById('materials-view')?.classList.remove('hidden-view'); renderStudyMaterials(); break;
-        case 'fitness':      document.getElementById('fitness-view')?.classList.remove('hidden-view');      renderFitnessMonitor();break; // Render whatever we have right now     window.enforceFitnessAbsence(); // Instantly check if any past dates are over and mark absent     break;
+        case 'fitness':      document.getElementById('fitness-view')?.classList.remove('hidden-view');      renderFitnessMonitor();      window.enforceFitnessAbsence();      break;
         case 'weekly-targets': document.getElementById('weekly-targets-view')?.classList.remove('hidden-view'); if (window.currentRole === 'admin') { document.getElementById('admin-target-form')?.classList.remove('hidden'); } else { document.getElementById('admin-target-form')?.classList.add('hidden'); } renderWeeklyTargets(); break;
         case 'exam-analysis': generateExamAnalysis(); document.getElementById('exam-analysis-view')?.classList.remove('hidden-view'); break;
         case 'target-calc': window.renderTargetCalc(); document.getElementById('target-calc-view')?.classList.remove('hidden-view'); break;
@@ -7181,12 +7181,16 @@ function getFitnessLeaderboard() {
         });
 
  function executeLoginUI(role, mob) {
-            
+    window.updatePresence(); requestNotificationPermission(); 
+    if(window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { try { if(OneSignal.User){ await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch(e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
+    checkUnreadNotices(); updateChatUnreadCount(); refreshUI(); startTimerEngine();
+    
+    // 🚀 NEW: Check for missed fitness days 2.5 seconds after login!
+    if (role === 'student') {
+        setTimeout(() => window.enforceFitnessAbsence(), 2500); 
+    }
 
-            window.updatePresence(); requestNotificationPermission(); 
-            if(window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { try { if(OneSignal.User){ await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch(e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
-            checkUnreadNotices(); updateChatUnreadCount(); refreshUI(); startTimerEngine();
-            if(window.location.hash.replace('#','') !== role && !['chat','notices','leaderboard','target-calc','exam-analysis','materials','fitness','active-exam'].includes(window.location.hash.replace('#',''))) { window.location.hash = role; } else { handleHashChange(); }
+    if(window.location.hash.replace('#','') !== role && !['chat','notices','leaderboard','target-calc','exam-analysis','materials','fitness','active-exam'].includes(window.location.hash.replace('#',''))) { window.location.hash = role; } else { handleHashChange(); }
             if(role === 'student') { 
                 const curStu = window.studentsDB.find(s => s.mobile === mob);
                 document.getElementById('student-greeting').innerText = getGreeting(); 
@@ -10932,7 +10936,7 @@ window.enforceFitnessAbsence = async function() {
 
     // Only force a UI re-render if we actually injected new absent records
     if (needsRefresh) {
-        window.renderFitnessMonitor();
+        renderFitnessMonitor();
     }
 };
     </script>
