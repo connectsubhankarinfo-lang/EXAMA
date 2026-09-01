@@ -5556,7 +5556,7 @@ window.handleOvertimeChoice = function(choice) {
         case 'notices': if(window.currentRole === 'admin') document.getElementById('add-notice-btn')?.classList.remove('hidden'); else document.getElementById('add-notice-btn')?.classList.add('hidden'); document.getElementById('notice-board-view')?.classList.remove('hidden-view'); renderNotices(); break;
         case 'session-timer': document.getElementById('session-timer-view')?.classList.remove('hidden-view'); renderSessionTimer(); break;
         case 'materials': if (window.currentRole === 'admin') { document.getElementById('btn-upload-material')?.classList.remove('hidden'); } else { document.getElementById('btn-upload-material')?.classList.add('hidden'); } document.getElementById('materials-view')?.classList.remove('hidden-view'); renderStudyMaterials(); break;
-        case 'fitness': document.getElementById('fitness-view')?.classList.remove('hidden-view'); renderFitnessMonitor(); break;
+        case 'fitness':      document.getElementById('fitness-view')?.classList.remove('hidden-view');      renderFitnessMonitor(); // Render whatever we have right now     window.enforceFitnessAbsence(); // Instantly check if any past dates are over and mark absent     break;
         case 'weekly-targets': document.getElementById('weekly-targets-view')?.classList.remove('hidden-view'); if (window.currentRole === 'admin') { document.getElementById('admin-target-form')?.classList.remove('hidden'); } else { document.getElementById('admin-target-form')?.classList.add('hidden'); } renderWeeklyTargets(); break;
         case 'exam-analysis': generateExamAnalysis(); document.getElementById('exam-analysis-view')?.classList.remove('hidden-view'); break;
         case 'target-calc': window.renderTargetCalc(); document.getElementById('target-calc-view')?.classList.remove('hidden-view'); break;
@@ -10884,7 +10884,57 @@ window.endMathWorkout = function() {
     document.getElementById('math-result-screen').classList.remove('hidden');
     document.getElementById('math-final-score').innerText = window.mathState.score;
 };
-  
+
+
+   // ==========================================
+// FITNESS: "IF DATE OVER, MARK ABSENT" ENGINE
+// ==========================================
+window.enforceFitnessAbsence = async function() {
+    if (window.currentRole !== 'student' || !window.loggedInMobile) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Strictly midnight today
+    let needsRefresh = false;
+
+    // Check the past 7 days (1 day ago to 7 days ago)
+    for (let i = 1; i <= 7; i++) {
+        let pastDate = new Date(today);
+        pastDate.setDate(today.getDate() - i);
+        let dateStr = window.formatDateDDMMYYYY(pastDate);
+
+        // Did they log ANYTHING (run or absent) on this past date?
+        const hasLog = window.fitnessDB.some(l => l.mobile === window.loggedInMobile && l.date === dateStr);
+
+        // If the date is over and they didn't update it, mark ABSENT
+        if (!hasLog) {
+            let pastTimestamp = pastDate.getTime() + (23 * 60 * 60 * 1000); // Set time to 11:00 PM of that missed day
+
+            const absentPayload = {
+                mobile: window.loggedInMobile,
+                distance: 0,
+                time: 0,
+                pace: 'ABSENT',
+                cals: 0,
+                isAbsent: true,
+                date: dateStr,
+                timestamp: pastTimestamp
+            };
+
+            // Push to database
+            if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.db) {
+                await addDoc(collection(db, "fitness_logs"), absentPayload);
+            } else {
+                window.fitnessDB.push({ id: Math.random().toString(), ...absentPayload });
+            }
+            needsRefresh = true;
+        }
+    }
+
+    // Only force a UI re-render if we actually injected new absent records
+    if (needsRefresh) {
+        window.renderFitnessMonitor();
+    }
+};
     </script>
 </body>
 </html>
