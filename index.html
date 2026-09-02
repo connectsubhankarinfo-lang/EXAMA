@@ -9304,29 +9304,32 @@ window.submitAutoQuiz = async function() {
     if(window.quizSubmitted) return;
     window.stopQuizTimer();
     
+    const exam = window.examsDB.find(e => e.id === window.activeExamIdForQuiz);
+    
     let score = 0;
     const maxScore = window.activeQuizData.length;
     let autoQuizQuestions = []; 
 
-    // 1. Calculate Score (No DOM manipulation here!)
+    // 1. Calculate Score & Sanitize Data (No DOM manipulation here!)
     window.activeQuizData.forEach((q, qIndex) => {
-        const state = window.quizState[qIndex];
+        const state = window.quizState[qIndex] || { selectedIndex: -1 };
         const userSelectedIndex = state.selectedIndex;
         const isCorrect = userSelectedIndex === q.correctIndex;
         
         if (isCorrect) score++;
 
-        const studentWrote = userSelectedIndex !== -1 ? q.options[userSelectedIndex] : "Skipped (No answer selected)";
-        const correctAns = q.options[q.correctIndex];
+        // Safely extract options to prevent 'undefined' Firebase crashes
+        const studentWrote = (userSelectedIndex !== -1 && q.options) ? String(q.options[userSelectedIndex]) : "Skipped";
+        const correctAns = q.options ? String(q.options[q.correctIndex]) : "Unknown";
 
         autoQuizQuestions.push({
-            questionNumber: `Q${qIndex + 1}: ${q.question}`,
+            questionNumber: `Q${qIndex + 1}: ${q.question || "Question"}`,
             status: userSelectedIndex === -1 ? "Skipped" : (isCorrect ? "Correct" : "Incorrect"),
             marksGiven: isCorrect ? 1 : 0,
             maxMarks: 1,
             studentWrote: studentWrote,
             whyItIsWrong: isCorrect ? "Excellent! You got this right." : (userSelectedIndex === -1 ? `You did not answer this. The correct answer is: ${correctAns}` : `The correct answer is: ${correctAns}`),
-            correctSolution: q.explanation
+            correctSolution: q.explanation || "No explanation provided."
         });
     });
 
@@ -9359,35 +9362,21 @@ window.submitAutoQuiz = async function() {
     window.renderCurrentQuestion();
     window.renderQuizPalette();
 
-    // 4. Save logic to Firebase/LocalDB
+    // 4. Save logic to Firebase
     window.showLoader("Saving test scorecard securely...");
     try {
-        const percentage = (score / maxScore) * 100;
-        let examIdToSave;
-
-        if (window.activeExamIdForQuiz) {
-            examIdToSave = window.activeExamIdForQuiz; 
-        } else {
-            examIdToSave = 'e_ai_' + Date.now(); 
-            const examPayload = {
-                id: examIdToSave,
-                name: window.activeQuizTitle,
-                info: "NOVA Auto-Generated Assessment",
-                date: window.formatDateDDMMYYYY(),
-                totalMarks: maxScore,
-                passPercentage: 40,
-                duration: maxScore,
-                examType: 'Quiz',
-                assignedTo: [window.loggedInMobile],
-                isEnded: true,
-                timestamp: Date.now()
-            };
-            if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.db) {
-                await setDoc(doc(db, "exams", examIdToSave), examPayload);
-            } else {
-                window.examsDB.push(examPayload);
-            }
-        }
+        const percentage = maxScore > 0 ? (score / maxScore) * 100 : 0;
+        const passPerc = exam ? (exam.passPercentage || 40) : 40;
+        
+        // Grab duration from the Admin Exam settings, default to 30 mins
+        const durationMins = exam ? (exam.duration || 30) : 30;
+        
+        // Fix Negative Time Calculation
+        let timeTakenMins = Math.ceil(((durationMins * 60) - window.quizTimeRemaining) / 60);
+        if (timeTakenMins <= 0) timeTakenMins = 1;
+        
+        let timeSavedMins = Math.floor(window.quizTimeRemaining / 60);
+        if (timeSavedMins < 0) timeSavedMins = 0;
 
         const autoQuizFeedback = {
             overallAnalysis: `You scored ${score} out of ${maxScore} on this test (${window.activeQuizTitle}). Please review the solution walkthroughs in the Question Breakdown.`,
@@ -9395,28 +9384,26 @@ window.submitAutoQuiz = async function() {
         };
 
         const resultPayload = {
-            examId: examIdToSave,
+            examId: window.activeExamIdForQuiz,
             mobile: window.loggedInMobile,
             obtained: score,
             total: maxScore,
             percentage: parseFloat(percentage.toFixed(1)),
-            status: percentage >= 40 ? 'PASS' : 'FAIL',
-            timeTaken: window.quizTimeRemaining <= 0 ? maxScore : Math.ceil(((maxScore*60) - window.quizTimeRemaining) / 60) || 1, 
-            timeSaved: window.quizTimeRemaining > 0 ? Math.floor(window.quizTimeRemaining / 60) : 0,
+            status: percentage >= passPerc ? 'PASS' : 'FAIL',
+            timeTaken: timeTakenMins, 
+            timeSaved: timeSavedMins,
             timestamp: Date.now(),
             aiFeedback: autoQuizFeedback
         };
 
-        if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.db) {
-            await addDoc(collection(db, "results"), resultPayload);
-        } else {
-            window.resultsDB.push({ id: 'r_' + Date.now(), ...resultPayload });
-        }
+        // Pass to the global submission handler so it safely writes/overwrites in Firebase
+        await window.dbSubmitResult(resultPayload);
         
         window.activeExamIdForQuiz = null; 
         window.refreshUI(); 
     } catch (e) {
         console.error("Failed to save result", e);
+        alert("Error saving result: " + e.message);
     }
     
     window.hideLoader();
