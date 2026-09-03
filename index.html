@@ -246,6 +246,32 @@
 
             </div>
         </div>
+        
+        <!-- RED PEN ANNOTATION MODAL -->
+<div id="red-pen-modal" class="hidden-view absolute inset-0 z-[300] bg-gray-900 flex flex-col slide-up touch-none">
+    <div class="bg-gray-950 px-4 py-3 flex justify-between items-center shadow-lg shrink-0">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center"><i class="fa-solid fa-pen"></i></div>
+            <div>
+                <h3 class="text-white font-black text-sm leading-tight">Red Pen Editor</h3>
+                <span class="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Mark mistakes</span>
+            </div>
+        </div>
+        <button onclick="document.getElementById('red-pen-modal').classList.add('hidden-view')" class="text-white bg-white/20 w-8 h-8 rounded-full flex items-center justify-center active:scale-90"><i class="fa-solid fa-xmark text-sm"></i></button>
+    </div>
+    
+    <div class="flex-1 relative w-full overflow-hidden flex justify-center items-center bg-gray-900" id="canvas-container">
+        <!-- The background image -->
+        <img id="red-pen-bg-img" crossorigin="anonymous" class="absolute max-w-full max-h-full object-contain pointer-events-none" src="">
+        <!-- The drawing canvas -->
+        <canvas id="red-pen-canvas" class="absolute cursor-crosshair touch-none"></canvas>
+    </div>
+    
+    <div class="bg-gray-950 p-4 shrink-0 flex items-center justify-between gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+        <button onclick="clearRedPenCanvas()" class="px-4 py-3 bg-gray-800 text-white rounded-xl font-bold text-xs active:scale-95 transition-all"><i class="fa-solid fa-trash mr-1"></i> Clear</button>
+        <button onclick="saveRedPenAnnotation()" class="flex-1 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-xl font-black py-3 active:scale-95 transition-all shadow-lg shadow-red-600/30">Save Annotation <i class="fa-solid fa-check ml-1"></i></button>
+    </div>
+</div>
 
         <!-- OVERTIME PROMPT MODAL -->
         <div id="session-overtime-modal" class="hidden-view absolute inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md bg-gray-900/80 fade-in">
@@ -336,8 +362,7 @@
                 <iframe id="fullscreen-pdf-src" src="" class="w-full h-full rounded-2xl hidden border-0 bg-white"></iframe>
             </div>
             <div class="absolute bottom-6 sm:bottom-10 flex gap-4 sm:gap-6 z-20" id="img-zoom-controls">
-                <button onclick="window.zoomImg(-1)" class="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 backdrop-blur rounded-full text-white font-black text-xl sm:text-2xl active:scale-90 shadow-lg">-</button>
-                <button onclick="window.zoomImg(1)" class="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 backdrop-blur rounded-full text-white font-black text-xl sm:text-2xl active:scale-90 shadow-lg">+</button>
+                
             </div>
         </div>
 
@@ -2942,7 +2967,7 @@
             });
         }
 
-        window.studentsDB = []; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;window.videosDB = []; window.activeVideoCategory = 'All';
+        window.studentsDB = []; window.peerAudioDrafts = {};window.annotatedImagesDraft = {};window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;window.videosDB = []; window.activeVideoCategory = 'All';
         
         // NEW: Global variables for AI Evaluation Memory
         window.tempAiFeedback = {}; 
@@ -3011,6 +3036,129 @@ window.uiLimits = {
                 }
             });
         };
+        
+        // --- RED PEN CANVAS ENGINE ---
+let rpCanvas, rpCtx, rpIsDrawing = false;
+window.currentAnnotationData = { scriptId: null, index: null };
+
+window.openRedPenEditor = function(imgSrc, scriptId, imgIndex) {
+    window.currentAnnotationData = { scriptId, index: imgIndex };
+    const modal = document.getElementById('red-pen-modal');
+    const bgImg = document.getElementById('red-pen-bg-img');
+    rpCanvas = document.getElementById('red-pen-canvas');
+    rpCtx = rpCanvas.getContext('2d');
+    
+    modal.classList.remove('hidden-view');
+    window.showLoader("Loading Canvas...");
+    
+    bgImg.onload = function() {
+        // Match canvas size perfectly to the scaled image
+        rpCanvas.width = bgImg.width;
+        rpCanvas.height = bgImg.height;
+        rpCanvas.style.width = bgImg.width + 'px';
+        rpCanvas.style.height = bgImg.height + 'px';
+        
+        // Setup Pen Settings
+        rpCtx.strokeStyle = '#ef4444'; // Red Pen
+        rpCtx.lineWidth = 3;
+        rpCtx.lineCap = 'round';
+        rpCtx.lineJoin = 'round';
+        window.hideLoader();
+    };
+    bgImg.src = imgSrc;
+};
+
+// Drawing Events
+function startPosition(e) {
+    rpIsDrawing = true;
+    draw(e);
+}
+function endPosition() {
+    rpIsDrawing = false;
+    rpCtx.beginPath();
+}
+function draw(e) {
+    if (!rpIsDrawing) return;
+    e.preventDefault(); // Prevent scrolling while drawing
+    const rect = rpCanvas.getBoundingClientRect();
+    let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    // Calculate exact scale
+    const scaleX = rpCanvas.width / rect.width;
+    const scaleY = rpCanvas.height / rect.height;
+    
+    rpCtx.lineTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
+    rpCtx.stroke();
+    rpCtx.beginPath();
+    rpCtx.moveTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
+}
+
+// Attach listeners after DOM loads
+setTimeout(() => {
+    const c = document.getElementById('red-pen-canvas');
+    if(c){
+        c.addEventListener('mousedown', startPosition);
+        c.addEventListener('mouseup', endPosition);
+        c.addEventListener('mousemove', draw);
+        c.addEventListener('touchstart', startPosition, {passive: false});
+        c.addEventListener('touchend', endPosition);
+        c.addEventListener('touchmove', draw, {passive: false});
+    }
+}, 1000);
+
+window.clearRedPenCanvas = function() {
+    rpCtx.clearRect(0, 0, rpCanvas.width, rpCanvas.height);
+};
+
+window.saveRedPenAnnotation = async function() {
+    window.showLoader("Saving Annotation...");
+    const bgImg = document.getElementById('red-pen-bg-img');
+    
+    // Create a temporary canvas to merge the original image + the red drawings
+    const mergedCanvas = document.createElement('canvas');
+    mergedCanvas.width = bgImg.naturalWidth;
+    mergedCanvas.height = bgImg.naturalHeight;
+    const mCtx = mergedCanvas.getContext('2d');
+    
+    // Draw original image
+    mCtx.drawImage(bgImg, 0, 0, mergedCanvas.width, mergedCanvas.height);
+    // Draw red pen scaled up to original image resolution
+    mCtx.drawImage(rpCanvas, 0, 0, mergedCanvas.width, mergedCanvas.height);
+    
+    // Get Base64
+    const base64Image = mergedCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    
+    try {
+        // Upload to ImgBB
+        const formData = new FormData();
+        formData.append("image", base64Image);
+        const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
+        
+        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
+        const data = await res.json();
+        
+        if(data.success) {
+            const newUrl = data.data.url;
+            const sId = window.currentAnnotationData.scriptId;
+            const index = window.currentAnnotationData.index;
+            
+            // Save to draft memory
+            if(!window.annotatedImagesDraft[sId]) window.annotatedImagesDraft[sId] = {};
+            window.annotatedImagesDraft[sId][index] = newUrl;
+            
+            // Update Thumbnail in UI visually so they know it worked
+            document.getElementById(`eval-img-${sId}-${index}`).src = newUrl;
+            document.getElementById(`eval-img-${sId}-${index}`).classList.add('border-red-500', 'border-2');
+            
+            document.getElementById('red-pen-modal').classList.add('hidden-view');
+            window.showToast("Saved!", "Annotation attached successfully.", "info");
+        }
+    } catch(e) {
+        alert("Failed to upload annotation. Check connection.");
+    }
+    window.hideLoader();
+};
         
       // ==========================================
 // ADMIN EXAM RESULTS POPUP ENGINE
@@ -3935,6 +4083,61 @@ window.openNovaFeedbackModal = function(scriptId) {
             window.markChatAsRead(); 
             cancelChatReply();
         }
+        
+        // --- PEER EVALUATION AUDIO ENGINE ---
+window.evalMediaRecorder = null;
+window.evalAudioChunks = [];
+
+window.togglePeerAudioRecord = async function(scriptId) {
+    const micBtn = document.getElementById(`eval-mic-btn-${scriptId}`);
+    const audioPreview = document.getElementById(`eval-audio-preview-${scriptId}`);
+    const audioPlayer = document.getElementById(`eval-audio-player-${scriptId}`);
+
+    if (window.evalMediaRecorder && window.evalMediaRecorder.state === "recording") {
+        // STOP RECORDING
+        window.evalMediaRecorder.stop();
+        micBtn.innerHTML = '<i class="fa-solid fa-microphone"></i>';
+        micBtn.classList.remove('bg-red-500', 'animate-pulse', 'text-white');
+        micBtn.classList.add('bg-gray-100', 'text-gray-600');
+    } else {
+        // START RECORDING
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            window.evalMediaRecorder = new MediaRecorder(stream);
+            window.evalAudioChunks = [];
+
+            window.evalMediaRecorder.ondataavailable = e => { if (e.data.size > 0) window.evalAudioChunks.push(e.data); };
+            
+            window.evalMediaRecorder.onstop = () => {
+                const audioBlob = new Blob(window.evalAudioChunks, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = function() {
+                    // Save to our draft memory
+                    window.peerAudioDrafts[scriptId] = reader.result;
+                    // Show the player
+                    audioPlayer.src = URL.createObjectURL(audioBlob);
+                    audioPreview.classList.remove('hidden');
+                    micBtn.classList.add('hidden'); // Hide mic once recorded
+                };
+            };
+
+            window.evalMediaRecorder.start();
+            micBtn.innerHTML = '<i class="fa-solid fa-stop"></i>';
+            micBtn.classList.remove('bg-gray-100', 'text-gray-600');
+            micBtn.classList.add('bg-red-500', 'text-white', 'animate-pulse');
+        } catch (err) {
+            alert("Microphone access denied. Please allow mic permissions.");
+        }
+    }
+};
+
+window.deletePeerAudio = function(scriptId) {
+    delete window.peerAudioDrafts[scriptId];
+    document.getElementById(`eval-audio-preview-${scriptId}`).classList.add('hidden');
+    document.getElementById(`eval-audio-player-${scriptId}`).src = "";
+    document.getElementById(`eval-mic-btn-${scriptId}`).classList.remove('hidden');
+};
 
         // --- NEW CHAT PAGINATION ENGINE ---
         window.olderChatDB = [];
@@ -6094,15 +6297,135 @@ window.handleOvertimeChoice = function(choice) {
         window.showLoader = function(message) { const loaderText = document.getElementById('loader-text'); if (loaderText && message) { loaderText.innerText = message; } document.getElementById('global-loader').classList.remove('hidden-view'); };
         window.hideLoader = function() { document.getElementById('global-loader').classList.add('hidden-view'); };
         
-        window.currentImgScale = 1;
-        window.openFullScreenImage = function(src) {
-            const img = document.getElementById('fullscreen-img-src'); const pdf = document.getElementById('fullscreen-pdf-src'); const controls = document.getElementById('img-zoom-controls');
-            if (src.toLowerCase().endsWith('.pdf') || src.includes('pdf')) { img.classList.add('hidden'); pdf.classList.remove('hidden'); pdf.src = src; controls.classList.add('hidden'); } 
-            else { pdf.classList.add('hidden'); img.classList.remove('hidden'); img.src = src; controls.classList.remove('hidden'); window.currentImgScale = 1; img.style.transform = `scale(1)`; }
-            document.getElementById('fullscreen-image-modal').classList.remove('hidden-view');
+      // ==========================================
+// 📱 PINCH-TO-ZOOM & PAN GESTURE ENGINE
+// ==========================================
+window.currentImgScale = 1;
+let imgTranslateX = 0;
+let imgTranslateY = 0;
+let isDraggingImg = false;
+let startDragX = 0;
+let startDragY = 0;
+let initialPinchDistance = 0;
+let initialPinchScale = 1;
+
+window.openFullScreenImage = function(src) {
+    const modal = document.getElementById('fullscreen-image-modal');
+    const img = document.getElementById('fullscreen-img-src'); 
+    const pdf = document.getElementById('fullscreen-pdf-src'); 
+    const controls = document.getElementById('img-zoom-controls');
+    
+    // 🔥 FIX: Force the full-screen viewer to appear above ALL other modals
+    modal.style.zIndex = '9999';
+
+    if (src.toLowerCase().endsWith('.pdf') || src.includes('pdf')) { 
+        img.classList.add('hidden'); 
+        pdf.classList.remove('hidden'); 
+        pdf.src = src; 
+        controls.classList.add('hidden'); 
+    } else { 
+        pdf.classList.add('hidden'); 
+        img.classList.remove('hidden'); 
+        img.src = src; 
+        controls.classList.remove('hidden'); 
+        
+        // Reset Zoom & Pan
+        window.currentImgScale = 1; 
+        if (typeof imgTranslateX !== 'undefined') {
+            imgTranslateX = 0;
+            imgTranslateY = 0;
         }
-        window.zoomImg = function(dir) { if(dir === 1) window.currentImgScale = Math.min(4, window.currentImgScale + 0.5); else window.currentImgScale = Math.max(1, window.currentImgScale - 0.5); document.getElementById('fullscreen-img-src').style.transform = `scale(${window.currentImgScale})`; }
-        window.closeFullScreenImage = function() { document.getElementById('fullscreen-image-modal').classList.add('hidden-view'); document.getElementById('fullscreen-img-src').src = ''; document.getElementById('fullscreen-pdf-src').src = ''; }
+        if (typeof updateImageTransform === 'function') {
+            updateImageTransform(img);
+        } else {
+            img.style.transform = `scale(1)`;
+        }
+    }
+    modal.classList.remove('hidden-view');
+};
+
+window.zoomImg = function(dir) { 
+    const img = document.getElementById('fullscreen-img-src');
+    if(dir === 1) window.currentImgScale = Math.min(5, window.currentImgScale + 0.5); 
+    else window.currentImgScale = Math.max(1, window.currentImgScale - 0.5); 
+    
+    // Auto-center if zoomed all the way out
+    if(window.currentImgScale === 1) { imgTranslateX = 0; imgTranslateY = 0; }
+    updateImageTransform(img);
+};
+
+window.closeFullScreenImage = function() { 
+    document.getElementById('fullscreen-image-modal').classList.add('hidden-view'); 
+    document.getElementById('fullscreen-img-src').src = ''; 
+    document.getElementById('fullscreen-pdf-src').src = ''; 
+};
+
+function updateImageTransform(imgEl) {
+    if (!imgEl) return;
+    imgEl.style.transform = `translate(${imgTranslateX}px, ${imgTranslateY}px) scale(${window.currentImgScale})`;
+}
+
+// Attach Touch Listeners for Pinch & Pan
+setTimeout(() => {
+    const zoomContainer = document.getElementById('img-zoom-container');
+    const imgEl = document.getElementById('fullscreen-img-src');
+
+    if (zoomContainer && imgEl) {
+        zoomContainer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                // Two fingers: Start Pinch Zoom
+                isDraggingImg = false;
+                initialPinchDistance = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                initialPinchScale = window.currentImgScale;
+                imgEl.classList.remove('transition-transform', 'duration-300'); // Remove animation for instant finger tracking
+            } else if (e.touches.length === 1 && window.currentImgScale > 1) {
+                // One finger: Start Drag/Pan (only if zoomed in)
+                isDraggingImg = true;
+                startDragX = e.touches[0].pageX - imgTranslateX;
+                startDragY = e.touches[0].pageY - imgTranslateY;
+                imgEl.classList.remove('transition-transform', 'duration-300');
+            }
+        }, { passive: false });
+
+        zoomContainer.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                // Handle Pinching
+                const currentDistance = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                const scaleChange = currentDistance / initialPinchDistance;
+                window.currentImgScale = Math.min(Math.max(1, initialPinchScale * scaleChange), 5); // Max 5x Zoom
+                
+                // Recenter if completely zoomed out
+                if (window.currentImgScale === 1) {
+                    imgTranslateX = 0; imgTranslateY = 0;
+                }
+                
+                updateImageTransform(imgEl);
+                e.preventDefault(); // Stop screen from scrolling natively
+            } else if (e.touches.length === 1 && isDraggingImg && window.currentImgScale > 1) {
+                // Handle Dragging
+                imgTranslateX = e.touches[0].pageX - startDragX;
+                imgTranslateY = e.touches[0].pageY - startDragY;
+                
+                updateImageTransform(imgEl);
+                e.preventDefault(); // Stop screen from scrolling natively
+            }
+        }, { passive: false });
+
+        zoomContainer.addEventListener('touchend', (e) => {
+            // Re-enable smooth animations when fingers leave the screen
+            imgEl.classList.add('transition-transform', 'duration-300');
+            if (e.touches.length < 2) {
+                isDraggingImg = false;
+            }
+        });
+    }
+}, 1000); // Give the DOM a second to load
         
         function getGreeting() { const hr = new Date().getHours(); if(hr < 12) return "Good Morning,"; if(hr < 18) return "Good Afternoon,"; return "Good Evening,"; }
         function playChime() { try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(587.33, ctx.currentTime); osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.1, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4); osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.4); } catch(e){} }
@@ -6399,8 +6722,217 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                 document.getElementById('form-upload-material').reset(); document.getElementById('material-upload-modal').classList.add('hidden-view'); hideLoader(); alert("Material Published Successfully!"); renderStudyMaterials();
             } catch(e) { console.error(e); hideLoader(); alert("Failed to upload material."); }
         }
+// ==========================================
+// ✌️ PINCH-TO-ZOOM FOR PDF & EVALUATION ROOM
+// ==========================================
 
+setTimeout(() => {
+    
+    // ------------------------------------------
+    // 1. NATIVE PDF VIEWER: PINCH-TO-ZOOM
+    // ------------------------------------------
+    const pdfWrapper = document.getElementById('pdf-scroll-wrapper');
+    const pdfContent = document.getElementById('pdf-iframe-wrapper');
+    
+    let pdfStartDist = 0;
+    let pdfTempScale = 1;
+    
+    if (pdfWrapper && pdfContent) {
+        pdfWrapper.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                // Measure initial distance between two fingers
+                pdfStartDist = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+            }
+        }, { passive: false });
 
+        pdfWrapper.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault(); // Stop native scrolling
+                const currentDist = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                
+                // Calculate temporary CSS zoom
+                pdfTempScale = currentDist / pdfStartDist;
+                pdfContent.style.transformOrigin = 'top center';
+                pdfContent.style.transform = `scale(${pdfTempScale})`;
+            }
+        }, { passive: false });
+
+        pdfWrapper.addEventListener('touchend', (e) => {
+            if (e.touches.length < 2 && pdfStartDist > 0 && pdfTempScale !== 1) {
+                // When fingers leave, lock in the new scale
+                window.currentPdfScale = Math.min(Math.max(0.4, window.currentPdfScale * pdfTempScale), 4.0);
+                
+                // Reset CSS transform and trigger a high-quality PDF.js render!
+                pdfContent.style.transform = 'scale(1)';
+                pdfTempScale = 1;
+                pdfStartDist = 0;
+                
+                if (window.pdfPageNum) window.queueRenderPage(window.pdfPageNum);
+            }
+        });
+    }
+
+    // ------------------------------------------
+    // 2. RED PEN EDITOR: 2-FINGER ZOOM & PAN
+    // ------------------------------------------
+    const rpContainer = document.getElementById('canvas-container');
+    const rpImg = document.getElementById('red-pen-bg-img');
+    const rpCanvas = document.getElementById('red-pen-canvas');
+
+    let rpScale = 1;
+    let rpTranslateX = 0;
+    let rpTranslateY = 0;
+    
+    let rpStartDist = 0;
+    let rpStartScale = 1;
+    let rpDragStartX = 0;
+    let rpDragStartY = 0;
+
+    function updateRpTransform() {
+        const transform = `translate(${rpTranslateX}px, ${rpTranslateY}px) scale(${rpScale})`;
+        if (rpImg) rpImg.style.transform = transform;
+        if (rpCanvas) rpCanvas.style.transform = transform;
+    }
+
+    // Safely reset transform when opening a new paper
+    const originalOpenRedPen = window.openRedPenEditor;
+    window.openRedPenEditor = function(imgSrc, scriptId, imgIndex) {
+        rpScale = 1; rpTranslateX = 0; rpTranslateY = 0;
+        updateRpTransform();
+        if(originalOpenRedPen) originalOpenRedPen(imgSrc, scriptId, imgIndex);
+    };
+
+    if (rpContainer && rpImg && rpCanvas) {
+        
+        rpContainer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                // Disable drawing, enable zooming/panning
+                window.rpIsDrawing = false; 
+                
+                rpStartDist = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                rpStartScale = rpScale;
+
+                // Find center point between two fingers to pan
+                rpDragStartX = ((e.touches[0].pageX + e.touches[1].pageX) / 2) - rpTranslateX;
+                rpDragStartY = ((e.touches[0].pageY + e.touches[1].pageY) / 2) - rpTranslateY;
+            }
+        }, { passive: false });
+
+        rpContainer.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault(); // Stop native scrolling
+                window.rpIsDrawing = false; // Ensure drawing doesn't trigger
+                
+                const currentDist = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                
+                // Max Zoom is 5x, Min Zoom is 1x
+                rpScale = Math.min(Math.max(1, rpStartScale * (currentDist / rpStartDist)), 5);
+
+                const currentCenterX = (e.touches[0].pageX + e.touches[1].pageX) / 2;
+                const currentCenterY = (e.touches[0].pageY + e.touches[1].pageY) / 2;
+
+                rpTranslateX = currentCenterX - rpDragStartX;
+                rpTranslateY = currentCenterY - rpDragStartY;
+
+                // Auto-center perfectly if fully zoomed out
+                if (rpScale === 1) { 
+                    rpTranslateX = 0; 
+                    rpTranslateY = 0; 
+                }
+                updateRpTransform();
+            }
+        }, { passive: false });
+        
+        // Failsafe: Prevent single-finger drawing if they accidentally lift one finger slightly before the other
+        rpContainer.addEventListener('touchend', (e) => {
+            if (e.touches.length > 0) {
+                window.rpIsDrawing = false;
+            }
+        });
+    }
+
+}, 1500); // Small delay to ensure the HTML elements are fully loaded first
+// ==========================================
+// 🎛️ AUTO-HIDE PDF TOOLBAR ENGINE
+// ==========================================
+let pdfToolbarTimeout = null;
+
+window.showPdfToolbar = function() {
+    const controls = document.getElementById('pdf-pagination-controls');
+    if (controls && !controls.classList.contains('hidden')) {
+        controls.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+        controls.style.opacity = '1';
+        controls.style.transform = 'translate(-50%, 0)';
+        controls.style.pointerEvents = 'auto';
+    }
+};
+
+window.hidePdfToolbar = function() {
+    const controls = document.getElementById('pdf-pagination-controls');
+    if (controls && !controls.classList.contains('hidden')) {
+        controls.style.opacity = '0';
+        controls.style.transform = 'translate(-50%, 25px)'; // Smoothly slides down
+        controls.style.pointerEvents = 'none'; // Prevents invisible accidental clicks
+    }
+};
+
+window.resetPdfToolbarTimer = function() {
+    const modal = document.getElementById('custom-pdf-viewer-modal');
+    
+    // Only run if the PDF viewer is actually open
+    if (modal && !modal.classList.contains('hidden-view')) {
+        window.showPdfToolbar();
+        
+        if (pdfToolbarTimeout) clearTimeout(pdfToolbarTimeout);
+        
+        // Set timer to hide after 5 seconds (5000 milliseconds)
+        pdfToolbarTimeout = setTimeout(() => {
+            window.hidePdfToolbar();
+        }, 2000);
+    }
+};
+
+// 1. Attach interaction listeners to the PDF Viewer to wake up the toolbar
+setTimeout(() => {
+    const pdfScrollWrapper = document.getElementById('pdf-scroll-wrapper');
+    if (pdfScrollWrapper) {
+        // Wake up on any touch, scroll, or mouse movement
+        ['touchstart', 'touchmove', 'scroll', 'click', 'mousemove'].forEach(evt => {
+            pdfScrollWrapper.addEventListener(evt, window.resetPdfToolbarTimer, { passive: true });
+        });
+    }
+}, 1500);
+
+// 2. Safely override the PDF open function to trigger the timer when a PDF first loads
+const originalOpenPdfLoader = window.openCustomPDFViewer;
+window.openCustomPDFViewer = async function(url, title) {
+    
+    // Reset styles so it doesn't stay hidden from a previous reading session
+    const controls = document.getElementById('pdf-pagination-controls');
+    if (controls) {
+        controls.style.opacity = '1';
+        controls.style.transform = 'translate(-50%, 0)';
+        controls.style.pointerEvents = 'auto';
+    }
+    
+    // Open the PDF as normal
+    if (originalOpenPdfLoader) await originalOpenPdfLoader(url, title);
+    
+    // Start the 5-second idle timer once the PDF is open
+    window.resetPdfToolbarTimer();
+};
   // ==========================================
         // PW-STYLE MATERIAL HUB ENGINE (3-TIER FOLDERS)
         // ==========================================
@@ -6547,114 +7079,149 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
         }
 
         // 3.3 RENDER: NOTES & ATTACHMENTS (Detailed Action View)
-        function renderMHFiles(materials, container) {
-            let html = '<div class="space-y-3 sm:space-y-4">';
+       window.renderMHFiles = function(materials, container) {
+    let html = '<div class="space-y-4">';
 
-            materials.forEach(mat => {
-                const isAdmin = window.currentRole === 'admin';
-                const delBtn = isAdmin ? `<button onclick="deleteStudyMaterial('${mat.id}')" class="text-red-400 hover:text-red-600 p-1.5 transition-colors" title="Delete Material"><i class="fa-solid fa-trash text-xs"></i></button>` : '';
+    materials.forEach(mat => {
+        const isAdmin = window.currentRole === 'admin';
+        const delBtn = isAdmin ? `<button onclick="deleteStudyMaterial('${mat.id}')" class="text-gray-400 hover:text-red-500 transition-colors p-1" title="Delete"><i class="fa-solid fa-trash text-sm"></i></button>` : '';
 
-                let filesHtml = '';
+        let filesHtml = '';
 
-                // External Google Drive / Classroom Link Button
-                if (mat.extLink) {
+        // 1. External Links
+        if (mat.extLink) {
+            filesHtml += `
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-indigo-300 transition-colors gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-file-pdf"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs sm:text-sm font-bold text-gray-900 truncate">${mat.title}</p>
+                        <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-0.5"></p>
+                    </div>
+                </div>
+                <button onclick="window.openCustomPDFViewer('${mat.extLink}', '${mat.title.replace(/'/g,"\\'")}')" class="px-4 py-2 bg-indigo-600 text-white text-[10px] sm:text-xs font-black rounded-lg shadow-sm hover:bg-indigo-700 active:scale-95 transition-all shrink-0">
+                    Read
+                </button>
+            </div>`;
+        }
+
+        // 2. File Attachments
+        if (mat.files && mat.files.length > 0) {
+            mat.files.forEach((f, idx) => {
+                const isPdf = f.type === 'pdf';
+                const isQuestionSet = f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLowerCase().includes('question'));
+                
+                const readAction = isPdf 
+                    ? `window.openCustomPDFViewer('${f.url}', '${f.name.replace(/'/g,"\\'")}')` 
+                    : `window.openFullScreenImage('${f.url}')`;
+
+                let uniqueKey = f.url;
+                const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+                if (match) uniqueKey = match[1]; 
+                else uniqueKey = btoa(encodeURIComponent(f.url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+                
+                const storageKey = isPdf ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
+                const btnId = `dl-btn-${storageKey}`;
+
+                window.checkIsOffline(storageKey).then(isSaved => {
+                    const btn = document.getElementById(btnId);
+                    if (btn && isSaved) {
+                        btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`;
+                        btn.classList.add('bg-emerald-50', 'border-emerald-200');
+                    }
+                });
+
+                if (isQuestionSet) {
+                    // 🔥 NEAT & CLEAN UI ONLY FOR QUESTION SETS
                     filesHtml += `
-                    <div class="flex items-center gap-2 bg-indigo-50/60 p-2.5 rounded-xl border border-indigo-100">
-                        <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                            <i class="fa-solid fa-book-open text-xs"></i>
+                    <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 bg-white rounded-2xl border border-indigo-100 shadow-sm relative group hover:border-indigo-300 transition-colors">
+                        <!-- Image Preview -->
+                        <div class="w-full sm:w-32 h-32 sm:h-24 shrink-0 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 cursor-pointer relative" onclick="${readAction}">
+                            <img src="${f.url}" class="w-full h-full object-cover">
+                            <div class="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div class="bg-white/90 w-8 h-8 rounded-full flex items-center justify-center text-gray-900 shadow-sm"><i class="fa-solid fa-expand text-xs"></i></div>
+                            </div>
                         </div>
-                        <div class="flex-1 min-w-0">
-                            <p class="text-[11px] sm:text-xs font-black text-indigo-950 truncate leading-tight">${mat.title}</p>
-                            <p class="text-[8px] sm:text-[9px] text-indigo-500 font-bold uppercase tracking-wider">Document Reader</p>
-                        </div>
-                        <button onclick="window.openCustomPDFViewer('${mat.extLink}', '${mat.title.replace(/'/g,"\\'")}')" class="px-3.5 py-1.5 bg-indigo-600 text-white text-[10px] sm:text-xs font-black rounded-lg shadow-sm hover:bg-indigo-700 active:scale-95 transition-all shrink-0">
-                            Read
-                        </button>
-                    </div>`;
-                }
-
-                // File attachments (PDFs & Images)
-                if (mat.files && mat.files.length > 0) {
-                    mat.files.forEach(f => {
-                        const isPdf = f.type === 'pdf';
-                        const fileIcon = isPdf ? 'fa-file-pdf text-red-500' : 'fa-file-image text-blue-500';
-                        const readAction = isPdf 
-                            ? `window.openCustomPDFViewer('${f.url}', '${f.name.replace(/'/g,"\\'")}')` 
-                            : `window.openFullScreenImage('${f.url}')`;
-
-                        // Offline Storage key
-                        let uniqueKey = f.url;
-                        const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
-                        if (match) uniqueKey = match[1]; 
-                        else uniqueKey = btoa(encodeURIComponent(f.url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
                         
-                        const storageKey = isPdf ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
-                        const btnId = `dl-btn-${storageKey}`;
-
-                        // Check offline state
-                        window.checkIsOffline(storageKey).then(isSaved => {
-                            const btn = document.getElementById(btnId);
-                            if (btn && isSaved) {
-                                btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`;
-                                btn.classList.add('bg-emerald-50', 'border-emerald-200');
-                            }
-                        });
-
-                        // NOVA AI Solver Button (for Question Papers)
-                       let novaSolveBtn = '';
-if (f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLowerCase().includes('question'))) {
-    novaSolveBtn = `
-    <button onclick="window.solveQuestionWithNOVA('${f.url}')" class="px-2.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[9px] sm:text-[10px] font-black rounded-lg shadow-sm flex items-center gap-1 active:scale-95 transition-all shrink-0" title="Solve with NOVA">
-        <i class="fa-solid fa-robot text-blue-200"></i> Solve
-    </button>
-    <button onclick="window.generateImageQuiz('${f.url}', '${mat.topic.replace(/'/g,"\\'")}')" class="px-2.5 py-1.5 bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white text-[9px] sm:text-[10px] font-black rounded-lg shadow-sm flex items-center gap-1 active:scale-95 transition-all shrink-0" title="Generate 20Q Quiz">
-        <i class="fa-solid fa-bolt text-amber-300"></i>Quiz
-    </button>`;
-                        }
-                        
-
-                        filesHtml += `
-                        <div class="flex items-center justify-between gap-2 p-2 bg-gray-50/80 hover:bg-gray-100/80 rounded-xl border border-gray-200/80 transition-colors">
-                            <div class="flex items-center gap-2 min-w-0 cursor-pointer flex-1" onclick="${readAction}">
-                                <i class="fa-solid ${fileIcon} text-base shrink-0"></i>
-                                <span class="text-[11px] sm:text-xs font-bold text-gray-800 truncate leading-tight">${f.name}</span>
+                        <!-- Info & Actions -->
+                        <div class="flex flex-col flex-1 justify-between min-w-0">
+                            <div class="flex justify-between items-start mb-2">
+                                <div class="min-w-0 pr-2 cursor-pointer" onclick="${readAction}">
+                                    <h5 class="font-bold text-gray-900 text-xs sm:text-sm truncate">${f.name || `Question Page ${idx+1}`}</h5>
+                                    <span class="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-0.5 block flex items-center gap-1"><i class="fa-solid fa-file-circle-question"></i> Question Paper</span>
+                                </div>
+                                <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g,"\\'")}', '${f.type}', this)" class="w-8 h-8 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-500 border border-gray-200 rounded-lg transition-colors shrink-0" title="Download">
+                                    <i class="fa-solid fa-cloud-arrow-down text-[10px] sm:text-xs"></i>
+                                </button>
                             </div>
                             
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g,"\\'")}', '${f.type}', this)" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-indigo-50 text-gray-500 border border-gray-200 rounded-lg shadow-sm transition-all active:scale-90 shrink-0" title="Download for Offline Use">
-                                    <i class="fa-solid fa-cloud-arrow-down text-xs"></i>
+                            <!-- AI Tool Buttons -->
+                            <div class="flex items-center gap-2 mt-auto pt-2 border-t border-gray-100/80">
+                                <button onclick="window.solveQuestionWithNOVA('${f.url}')" class="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2 sm:py-2.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5" title="Solve with NOVA">
+                                    <i class="fa-solid fa-robot text-indigo-500"></i> Nova Analysis
                                 </button>
-                                
-                                <button onclick="${readAction}" class="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] sm:text-xs font-black rounded-lg border border-indigo-200 transition-all active:scale-95 shrink-0">
-                                    ${isPdf ? 'Read' : 'View'}
+                                <button onclick="window.generateImageQuiz('${f.url}', '${mat.topic.replace(/'/g,"\\'")}')" class="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 py-2 sm:py-2.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5" title="Generate 20Q Quiz">
+                                    <i class="fa-solid fa-bolt text-amber-500"></i>Quiz
                                 </button>
-
-                                ${novaSolveBtn}
                             </div>
-                        </div>`;
-                    });
-                }
-
-                html += `
-                <div class="bg-white p-3.5 sm:p-4 rounded-[1.25rem] sm:rounded-[1.5rem] border border-gray-200 shadow-sm space-y-2.5">
-                    <div class="flex justify-between items-start border-b border-gray-100 pb-2">
-                        <div class="min-w-0 pr-2">
-                            <h4 class="font-black text-gray-900 text-xs sm:text-sm leading-tight break-words">${mat.title}</h4>
-                            <p class="text-[8px] sm:text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">
-                                Posted by ${mat.uploader || 'Faculty'} • ${new Date(mat.timestamp).toLocaleDateString('en-GB')}
-                            </p>
                         </div>
-                        ${delBtn}
-                    </div>
-                    <div class="space-y-1.5">
-                        ${filesHtml}
-                    </div>
-                </div>`;
+                    </div>`;
+                } else {
+                    // 📁 NORMAL FILES (PDFs & Regular Images) - Clean and Simple List Row
+                    const fileIcon = isPdf ? 'fa-file-pdf text-red-500' : 'fa-file-image text-blue-500';
+                    const iconBg = isPdf ? 'bg-red-50' : 'bg-blue-50';
+                    
+                    filesHtml += `
+                    <div class="flex items-center justify-between gap-3 p-2.5 sm:p-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+                        <div class="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onclick="${readAction}">
+                            <div class="w-10 h-10 rounded-lg ${iconBg} flex items-center justify-center shrink-0">
+                                <i class="fa-solid ${fileIcon} text-lg"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h5 class="font-bold text-gray-800 text-xs sm:text-sm truncate leading-tight">${f.name}</h5>
+                                <span class="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5 block">${isPdf ? 'PDF Document' : 'Image File'}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g,"\\'")}', '${f.type}', this)" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-gray-100 text-gray-500 border border-gray-200 rounded-lg transition-colors shadow-sm" title="Download">
+                                <i class="fa-solid fa-cloud-arrow-down text-xs"></i>
+                            </button>
+                            <button onclick="${readAction}" class="px-3 py-1.5 sm:px-4 sm:py-2 bg-gray-900 text-white hover:bg-black text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors shadow-sm">
+                                ${isPdf ? 'Read' : 'View'}
+                            </button>
+                        </div>
+                    </div>`;
+                }
             });
-
-            html += '</div>';
-            container.innerHTML = html;
         }
+
+        const dateStr = new Date(mat.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+        // Container Card
+        html += `
+        <div class="bg-white p-4 sm:p-5 rounded-[1.25rem] sm:rounded-[1.5rem] border border-gray-200 shadow-sm flex flex-col gap-3">
+            <div class="flex justify-between items-start border-b border-gray-100 pb-3 mb-1">
+                <div class="min-w-0 pr-2">
+                    <h4 class="font-black text-gray-900 text-sm sm:text-base leading-tight break-words">${mat.title}</h4>
+                    <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
+                        <i class="fa-regular fa-user"></i> ${mat.uploader || 'Faculty'} 
+                        <span class="text-gray-300 mx-1">|</span> 
+                        <i class="fa-regular fa-calendar"></i> ${dateStr}
+                    </p>
+                </div>
+                ${delBtn}
+            </div>
+            <div class="space-y-2.5">
+                ${filesHtml}
+            </div>
+        </div>`;
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+};
 
         window.tokenClient = null; window.gdriveAccessToken = null;
      // ==========================================
@@ -7800,7 +8367,7 @@ function getFitnessLeaderboard() {
             </h5>
             <div class="space-y-3">`;
             
-        r.scriptsData.forEach(script => {
+       r.scriptsData.forEach(script => {
             const peerName = window.studentsDB.find(s=>s.mobile===script.targetPeerMobile)?.name || 'Peer';
             const dp = window.getStudentAvatar(script.targetPeerMobile, peerName);
             
@@ -7811,24 +8378,76 @@ function getFitnessLeaderboard() {
             let aiButtonHtml = '';
             if (script.aiFeedback) {
                 window.scriptFeedbacks[script.id] = script.aiFeedback;
-                // FIX: Force NOVA modal z-index to 200 so it appears above the Review modal (z-[150])
-                aiButtonHtml = `<button onclick="document.getElementById('nova-feedback-modal').style.zIndex='200'; window.openNovaFeedbackModal('${script.id}')" class="text-[9px] font-black uppercase tracking-widest text-white bg-indigo-600 px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-1.5 shrink-0"><i class="fa-solid fa-sparkles text-amber-300"></i>NOVA Analysis</button>`;
+                aiButtonHtml = `<button onclick="document.getElementById('nova-feedback-modal').style.zIndex='200'; window.openNovaFeedbackModal('${script.id}')" class="text-[9px] font-black uppercase tracking-widest text-white bg-indigo-600 px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-1.5 shrink-0"><i class="fa-solid fa-sparkles text-amber-300"></i> AI Check</button>`;
             }
 
+            // 🎙️ STEP 7A: VOICE NOTE UI
+            let audioPlayerHtml = '';
+            if (script.evalAudioBase64) {
+                audioPlayerHtml = `
+                <div class="mt-3 bg-blue-50/50 p-2.5 rounded-xl border border-blue-100 flex items-center gap-3 shadow-sm">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 shadow-inner">
+                        <i class="fa-solid fa-headphones"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <span class="block text-[9px] font-black text-blue-500 uppercase tracking-widest mb-1.5 ml-1">Evaluator's Voice Note</span>
+                        <audio controls src="${script.evalAudioBase64}" class="h-8 w-full outline-none"></audio>
+                    </div>
+                </div>`;
+            }
+
+            // 🖍️ STEP 7B: RED PEN ANNOTATED IMAGES UI
+            let imgsHtml = '';
+            // It automatically prefers the marked images over the originals!
+            const imagesToDisplay = script.annotatedImgUrls || script.imgUrls || [];
+            
+            if (imagesToDisplay.length > 0) {
+                imgsHtml = `<div class="mt-3 grid grid-cols-2 gap-2.5">`;
+                imagesToDisplay.forEach((url, i) => {
+                    // Check if the evaluator actually marked this specific image
+                    const isAnnotated = script.annotatedImgUrls && script.imgUrls && script.annotatedImgUrls[i] !== script.imgUrls[i];
+                    
+                    const badgeHtml = isAnnotated 
+                        ? `<span class="absolute top-1.5 left-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm uppercase tracking-widest"><i class="fa-solid fa-pen-nib mr-0.5"></i> Marked</span>` 
+                        : '';
+                    
+                    imgsHtml += `
+                    <div class="relative w-full h-24 sm:h-32 group/img">
+                        <img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-full object-cover rounded-xl border ${isAnnotated ? 'border-red-300' : 'border-gray-200'} shadow-sm cursor-pointer hover:opacity-90 transition-opacity">
+                        ${badgeHtml}
+                        <span class="absolute bottom-1.5 right-1.5 bg-black/70 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm">Pg ${i+1}</span>
+                    </div>`;
+                });
+                imgsHtml += `</div>`;
+            }
+
+            // 📦 ASSEMBLE THE CARD
             breakdownHtml += `
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-gray-100 hover:border-indigo-200 transition-colors">
-                <div class="flex items-center gap-3 min-w-0">
-                    <img src="${dp}" class="w-10 h-10 rounded-full object-cover shadow-sm border border-gray-200 shrink-0">
-                    <div class="min-w-0">
-                        <span class="block text-xs font-black text-gray-900 truncate">${peerName}</span>
-                        <span class="block text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">Assigned Reviewer</span>
+            <div class="flex flex-col bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-gray-100 hover:border-indigo-200 transition-colors">
+                
+                <!-- Evaluator Header -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <img src="${dp}" class="w-10 h-10 rounded-full object-cover shadow-sm border border-gray-200 shrink-0">
+                        <div class="min-w-0">
+                            <span class="block text-xs font-black text-gray-900 truncate">${peerName}</span>
+                            <span class="block text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">Assigned Reviewer</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
+                        ${aiButtonHtml}
+                        ${statusBadge}
                     </div>
                 </div>
-                <div class="flex items-center gap-2.5 shrink-0">
-                    ${aiButtonHtml}
-                    ${statusBadge}
-                </div>
+
+                <!-- Attached Media -->
+                ${audioPlayerHtml}
+                ${imgsHtml}
+                
             </div>`;
+    
+            
+            
         });
         breakdownHtml += `</div></div>`;
     } 
@@ -8195,7 +8814,7 @@ let actionHtml = '';
                     <span class="px-2.5 py-1 rounded-md text-[8px] sm:text-[9px] font-black uppercase tracking-widest ${isToday ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-blue-50 text-blue-600 border border-blue-100'} shadow-sm flex items-center gap-1.5">
                         ${isToday ? '<span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span> Today' : '<i class="fa-regular fa-calendar"></i> ' + exam.date}
                     </span>
-                    ${anytimeBadge}
+                   
                 </div>
                 ${timerStatusHTML}
             </div>
@@ -10961,7 +11580,7 @@ window.openPeerEvaluationRoom = function(examId) {
     const evalList = document.getElementById('peer-eval-list');
     const exam = window.examsDB.find(e => e.id === examId);
     
-    // 🚀 NEW: Memory Tracker. Remembers what is already on screen!
+    // 🚀 Memory Tracker. Remembers what is already on screen!
     window.renderedScriptIds = new Set();
     
     // Reset list HTML immediately upon opening
@@ -10997,7 +11616,7 @@ window.openPeerEvaluationRoom = function(examId) {
             evalList.innerHTML = '';
         }
 
-        // 🚀 ADVANCED REFRESH: Only append NEW scripts. Never overwrite active typing!
+        // 🚀 Only append NEW scripts. Never overwrite active typing!
         scriptsToGrade.forEach(script => {
             if (!window.renderedScriptIds.has(script.id) && !document.getElementById(`script-card-${script.id}`)) {
                 
@@ -11009,40 +11628,67 @@ window.openPeerEvaluationRoom = function(examId) {
                 const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== script.solverMobile).map(m => m.mobile))].length;
                 const maxMarksForThisSet = totalOpponents > 0 ? parseFloat((exam.totalMarks / totalOpponents).toFixed(1)) : exam.totalMarks;
                 
+                // 🖍️ BUILD THE RED PEN IMAGES
                 let imgsHtml = '';
                 script.imgUrls.forEach((url, i) => {
-                    imgsHtml += `<div class="relative w-full h-40"><img src="${url}" onclick="window.openFullScreenImage(this.src)" class="w-full h-full object-cover rounded-lg border border-gray-300 shadow-sm cursor-pointer hover:opacity-90 transition-opacity"><span class="absolute top-2 right-2 bg-black/80 text-white text-[9px] font-black px-2 py-1 rounded shadow-md uppercase">Pg ${i+1}</span></div>`;
+                    // Check if we already annotated it during this session
+                    const displayUrl = (window.annotatedImagesDraft && window.annotatedImagesDraft[script.id] && window.annotatedImagesDraft[script.id][i]) 
+                        ? window.annotatedImagesDraft[script.id][i] 
+                        : url;
+                    
+                    imgsHtml += `
+                    <div class="relative w-full h-40 group/img">
+                        <img id="eval-img-${script.id}-${i}" src="${displayUrl}" onclick="window.openRedPenEditor(this.src, '${script.id}', ${i})" class="w-full h-full object-cover rounded-lg border border-gray-300 shadow-sm cursor-pointer hover:opacity-80 transition-opacity">
+                        <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover/img:opacity-100 pointer-events-none transition-opacity">
+                            <div class="bg-red-600/90 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg"><i class="fa-solid fa-pen mr-1"></i> Mark Paper</div>
+                        </div>
+                        <span class="absolute top-2 right-2 bg-black/80 text-white text-[9px] font-black px-2 py-1 rounded shadow-md uppercase pointer-events-none">Pg ${i+1}</span>
+                    </div>`;
                 });
                 
-                // We build the card into a string...
+                // 🎙️ BUILD THE CONTROLS (Audio + Input + Submit)
+                const controlsHtml = `
+                <div class="flex flex-col gap-3 ml-2 w-full pr-2">
+                    
+                    <!-- Audio Player Preview (Hidden by default) -->
+                    <div id="eval-audio-preview-${script.id}" class="hidden flex items-center justify-between bg-blue-50 border border-blue-200 p-2 rounded-xl w-full">
+                        <audio id="eval-audio-player-${script.id}" controls class="h-8 outline-none max-w-[200px]"></audio>
+                        <button onclick="deletePeerAudio('${script.id}')" class="w-8 h-8 rounded-lg bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200 shadow-sm"><i class="fa-solid fa-trash text-xs"></i></button>
+                    </div>
+
+                    <div class="flex gap-2 items-center w-full">
+                        <div class="relative flex-1">
+                            <input type="number" id="marks-${script.id}" placeholder="Max: ${maxMarksForThisSet}" class="w-full px-3 py-3 bg-gray-50 rounded-xl border border-gray-200 font-black text-gray-900 outline-none text-sm focus:border-indigo-400 focus:bg-white transition-all shadow-inner">
+                        </div>
+                        
+                        <!-- Voice Note Mic Button -->
+                        <button id="eval-mic-btn-${script.id}" onclick="togglePeerAudioRecord('${script.id}')" class="w-11 h-11 bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-500 rounded-xl flex items-center justify-center shadow-sm active:scale-95 transition-all shrink-0" title="Record Voice Note">
+                            <i class="fa-solid fa-microphone text-lg"></i>
+                        </button>
+
+                        <!-- Auto Grade Button -->
+                        <button onclick="autoGradeScript('${script.id}', this)" class="w-11 h-11 bg-gradient-to-br from-indigo-500 to-blue-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition-all shrink-0" title="Auto Grade via NOVA">
+                            <i class="fa-solid fa-robot text-lg animate-pulse"></i>
+                        </button>
+                        
+                        <button onclick="submitPeerMarks('${script.id}', '${script.solverMobile}', '${examId}', this)" class="bg-gray-900 hover:bg-black text-white font-black px-5 py-3 rounded-xl active:scale-95 shadow-md text-sm shrink-0 transition-all">Submit</button>
+                    </div>
+                </div>`;
+
+                // 📦 ASSEMBLE THE FINAL CARD
                 const cardHtml = `
                 <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-lg border border-indigo-100 mb-5 relative overflow-hidden slide-up" id="script-card-${script.id}">
                     <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
                     <div class="flex justify-between items-center mb-3 ml-2">
                         <span class="text-xs font-black text-indigo-800 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-100 uppercase tracking-widest"><i class="fa-solid fa-user-pen mr-1"></i> Solved by ${solverName}</span>
                     </div>
-                    <div class="grid grid-cols-2 gap-3 mb-4 max-h-60 overflow-y-auto p-3 bg-gray-50 rounded-xl border border-gray-200 ml-2">
+                    <div class="grid grid-cols-2 gap-3 mb-4 max-h-60 overflow-y-auto p-3 bg-gray-50 rounded-xl border border-gray-200 ml-2 shadow-inner">
                         ${imgsHtml}
                     </div>
-                    
-                    <div id="feedback-box-${script.id}" class="hidden mb-3 ml-2 pr-2">
-                        <textarea id="feedback-input-${script.id}" placeholder="Instructor/AI Feedback..." class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-800 outline-none focus:border-indigo-300" rows="2"></textarea>
-                    </div>
-
-                    <div class="flex gap-2 sm:gap-3 items-center ml-2">
-                        <div class="relative flex-1">
-                            <input type="number" id="marks-${script.id}" placeholder="Max Marks: ${maxMarksForThisSet}" class="w-full px-3 py-3 bg-indigo-50/50 rounded-xl border border-indigo-200 font-black text-indigo-900 outline-none text-sm">
-                        </div>
-                        
-                        <button onclick="autoGradeScript('${script.id}', this)" class="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition-all shrink-0" title="Auto Grade via NOVA">
-                            <i class="fa-solid fa-robot text-lg animate-pulse"></i>
-                        </button>
-                        
-                        <button onclick="submitPeerMarks('${script.id}', '${script.solverMobile}', '${examId}', this)" class="bg-gradient-to-r from-emerald-500 to-green-600 text-white font-black px-4 py-3 rounded-xl active:scale-95 shadow-md text-sm shrink-0">Submit</button>
-                    </div>
+                    ${controlsHtml}
                 </div>`;
                 
-                // 🚀 SMART INJECTION: insertAdjacentHTML adds new items to the bottom WITHOUT resetting the inputs above!
+                // 🚀 SMART INJECTION
                 evalList.insertAdjacentHTML('beforeend', cardHtml);
             }
         });
@@ -11209,11 +11855,14 @@ Respond strictly in JSON using this format:
 };
 window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnElement) {
     const marksInput = document.getElementById(`marks-${scriptId}`);
-    const obtained = parseFloat(marksInput.value);
+    if (!marksInput) return alert("Marks input not found!");
     
+    const obtained = parseFloat(marksInput.value);
     const exam = window.examsDB.find(e => e.id === examId);
-    const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== solverMobile).map(m => m.mobile))].length;
-    const maxMarksForThisSet = totalOpponents > 0 ? parseFloat((exam.totalMarks / totalOpponents).toFixed(1)) : exam.totalMarks;
+    if (!exam) return alert("Exam not found!");
+    
+    const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId && m.mobile !== solverMobile).map(m => m.mobile))].length || 1;
+    const maxMarksForThisSet = parseFloat((exam.totalMarks / totalOpponents).toFixed(1));
     
     if(isNaN(obtained)) return alert("Please enter valid marks.");
     if(obtained < 0 || obtained > maxMarksForThisSet) return alert(`Marks must be between 0 and ${maxMarksForThisSet}`);
@@ -11222,39 +11871,74 @@ window.submitPeerMarks = async function(scriptId, solverMobile, examId, btnEleme
         btnElement.disabled = true;
         btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
     }
-    showLoader("Saving Evaluation...");
+    window.showLoader("Saving Evaluation...");
 
     try {
-        // Grab the deep analysis object if generated
-        const aiAnalysisData = window.tempAiFeedback[scriptId] || null;
+        const script = window.peerAnswerScriptsDB.find(x => x.id === scriptId);
+        
+        // 1. Process Red Pen Annotations
+        let finalImages = [];
+        if (script && script.imgUrls) {
+            script.imgUrls.forEach((url, i) => {
+                if (window.annotatedImagesDraft && window.annotatedImagesDraft[scriptId] && window.annotatedImagesDraft[scriptId][i]) {
+                    finalImages.push(String(window.annotatedImagesDraft[scriptId][i]));
+                } else {
+                    finalImages.push(String(url));
+                }
+            });
+        }
 
-        const payload = { 
+        // 2. Build the Payload
+        const finalPayload = { 
             isGraded: true, 
-            marksAwarded: obtained, 
-            maxMarks: maxMarksForThisSet, 
+            marksAwarded: Number(obtained), 
+            maxMarks: Number(maxMarksForThisSet), 
             evaluatorTime: Date.now(),
-            aiFeedback: aiAnalysisData // Saved permanently
+            annotatedImgUrls: finalImages
         };
 
+        const audioData = (window.peerAudioDrafts && window.peerAudioDrafts[scriptId]) ? String(window.peerAudioDrafts[scriptId]) : null;
+        const aiAnalysisData = (window.tempAiFeedback && window.tempAiFeedback[scriptId]) ? JSON.parse(JSON.stringify(window.tempAiFeedback[scriptId])) : null;
+        
+        if (audioData) finalPayload.evalAudioBase64 = audioData;
+        if (aiAnalysisData) finalPayload.aiFeedback = aiAnalysisData;
+
+        // 3. 🔥 THE FIX: Removed 'window.db' check. Directly use 'db' from the module scope.
         if (isFirebaseConfigured) {
-            await updateDoc(doc(db, "peer_answer_scripts", scriptId), payload);
+            await updateDoc(doc(db, "peer_answer_scripts", scriptId), finalPayload);
         } else {
-            const script = window.peerAnswerScriptsDB.find(x => x.id === scriptId);
-            if (script) Object.assign(script, payload);
+            if (script) Object.assign(script, finalPayload);
         }
         
-        document.getElementById(`script-card-${scriptId}`).innerHTML = `
+        // 4. Clear Drafts to free up memory
+        if (window.peerAudioDrafts) delete window.peerAudioDrafts[scriptId];
+        if (window.annotatedImagesDraft) delete window.annotatedImagesDraft[scriptId];
+        if (window.tempAiFeedback) delete window.tempAiFeedback[scriptId];
+        
+        // 5. Success UI Update
+        const cardEl = document.getElementById(`script-card-${scriptId}`);
+        if (cardEl) {
+            cardEl.innerHTML = `
             <div class="p-5 text-center bg-emerald-50 rounded-2xl border border-emerald-200">
-                <div class="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg"><i class="fa-solid fa-check"></i></div>
-                <h4 class="text-emerald-900 font-black text-sm">Graded (${obtained} / ${maxMarksForThisSet})</h4>
-                <p class="text-[10px] text-emerald-700 font-bold mt-1">Evaluation & deep mistake analysis saved.</p>
+                <div class="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-2 text-lg shadow-inner"><i class="fa-solid fa-check"></i></div>
+                <h4 class="text-emerald-900 font-black text-sm">Graded Successfully</h4>
+                <p class="text-[10px] text-emerald-600 font-bold mt-1">Marks securely saved to database.</p>
             </div>`;
+        }
             
-        hideLoader();
+        window.hideLoader();
+        
+        // Force the UI background to sync immediately 
+        window.refreshUI(); 
+        
     } catch(err) {
-        console.error(err); 
-        hideLoader(); 
-        alert("Failed to submit marks.");
+        console.error("Submission error:", err); 
+        window.hideLoader(); 
+        alert("Firebase rejected the save: " + err.message);
+        if(btnElement) {
+            btnElement.disabled = false;
+            btnElement.innerHTML = `Submit`;
+        }
     }
 };
    
