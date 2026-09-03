@@ -7692,7 +7692,199 @@ function getFitnessLeaderboard() {
             return rankIndex === -1 ? '-' : (rankIndex + 1);
         }
 
-     function buildRecordHTML(r, exam, rank) {
+ window.openExamReviewModal = function(examId, rank) {
+    // 1. Fetch Result & Exam Data
+    const allResults = window.getComputedResults().filter(res => res.examId === examId && !res.isVirtual);
+    const r = allResults.find(res => res.mobile === window.loggedInMobile);
+    const exam = window.examsDB.find(e => e.id === examId);
+    if (!r || !exam) return;
+
+    const isAbsent = r.status === 'ABSENT'; 
+    let c = 'rose';
+    let statusText = 'Failed';
+    if (r.status === 'PASS') { c = 'emerald'; statusText = 'Passed'; }
+    else if (r.status === 'EVALUATING') { c = 'amber'; statusText = 'Pending Eval'; }
+    if (isAbsent) { c = 'gray'; statusText = 'Absent'; }
+
+    // 2. Calculate Analytics
+    const totalParticipants = allResults.length || 1;
+    const timeTaken = r.timeTaken || (exam.duration - (r.timeSaved || 0));
+    const timePerc = Math.min(100, Math.round((timeTaken / exam.duration) * 100));
+
+    // 3. Build Evaluation Section (Peer/AI Breakdowns)
+    let breakdownHtml = '';
+    
+    if (r.scriptsData && r.scriptsData.length > 0) {
+        breakdownHtml = `<div class="mt-4">
+            <h5 class="text-[11px] font-black text-gray-800 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-users-viewfinder text-indigo-500"></i> Evaluator Remarks
+            </h5>
+            <div class="space-y-3">`;
+            
+        r.scriptsData.forEach(script => {
+            const peerName = window.studentsDB.find(s=>s.mobile===script.targetPeerMobile)?.name || 'Peer';
+            const dp = window.getStudentAvatar(script.targetPeerMobile, peerName);
+            
+            const statusBadge = script.isGraded 
+                ? `<div class="text-[12px] font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200 shadow-sm">${script.marksAwarded} <span class="text-[9px] text-emerald-500">/ ${script.maxMarks}</span></div>` 
+                : `<div class="text-[10px] font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-lg border border-amber-200"><i class="fa-solid fa-spinner fa-spin mr-1.5"></i>Pending</div>`;
+            
+            let aiButtonHtml = '';
+            if (script.aiFeedback) {
+                window.scriptFeedbacks[script.id] = script.aiFeedback;
+                // FIX: Force NOVA modal z-index to 200 so it appears above the Review modal (z-[150])
+                aiButtonHtml = `<button onclick="document.getElementById('nova-feedback-modal').style.zIndex='200'; window.openNovaFeedbackModal('${script.id}')" class="text-[9px] font-black uppercase tracking-widest text-white bg-indigo-600 px-3 py-1.5 rounded-lg shadow-md hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-1.5 shrink-0"><i class="fa-solid fa-sparkles text-amber-300"></i>NOVA Analysis</button>`;
+            }
+
+            breakdownHtml += `
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-gray-100 hover:border-indigo-200 transition-colors">
+                <div class="flex items-center gap-3 min-w-0">
+                    <img src="${dp}" class="w-10 h-10 rounded-full object-cover shadow-sm border border-gray-200 shrink-0">
+                    <div class="min-w-0">
+                        <span class="block text-xs font-black text-gray-900 truncate">${peerName}</span>
+                        <span class="block text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5">Assigned Reviewer</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2.5 shrink-0">
+                    ${aiButtonHtml}
+                    ${statusBadge}
+                </div>
+            </div>`;
+        });
+        breakdownHtml += `</div></div>`;
+    } 
+    else if (r.aiFeedback) {
+        window.scriptFeedbacks[r.id] = r.aiFeedback;
+        // FIX: Force NOVA modal z-index to 200
+        breakdownHtml = `
+        <div class="mt-4 bg-indigo-50/50 p-4 sm:p-5 rounded-2xl border border-indigo-100 shadow-inner">
+            <h5 class="text-[11px] font-black text-indigo-900 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-microchip text-indigo-500"></i> System Evaluation
+            </h5>
+            <div class="flex flex-col justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-indigo-50">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white shadow-md shrink-0">
+                        <i class="fa-solid fa-robot text-lg"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <span class="block text-sm font-black text-indigo-950 truncate">NOVA AI Engine</span>
+                        <span class="block text-[10px] text-indigo-500 font-bold uppercase tracking-widest mt-0.5">Auto-Graded Mock Test</span>
+                    </div>
+                </div>
+                <button onclick="document.getElementById('nova-feedback-modal').style.zIndex='200'; window.openNovaFeedbackModal('${r.id}')" class="w-full text-xs font-black uppercase tracking-widest text-white bg-indigo-600 px-4 py-3.5 rounded-xl shadow-md hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-chart-line text-indigo-200"></i> View Detailed Analysis
+                </button>
+            </div>
+        </div>`;
+    } else {
+        breakdownHtml = '<div class="text-center text-gray-400 text-xs font-bold border-2 border-dashed border-gray-200 rounded-2xl p-6 mt-4">Manual evaluation. No detailed breakdown available.</div>';
+    }
+
+    // 4. Build & Show The Dynamic Modal HTML
+    let modal = document.getElementById('exam-review-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'exam-review-modal';
+        modal.className = 'hidden-view absolute inset-0 z-[150] flex flex-col justify-end sm:justify-center items-center sm:p-6 bg-gray-900/80 backdrop-blur-md fade-in';
+        document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+    <div class="bg-[#f8fafc] w-full sm:max-w-lg rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden slide-up border border-white/20">
+        
+        <!-- Premium Testbook Header -->
+        <div class="bg-gradient-to-r from-gray-900 to-slate-800 px-5 pt-8 pb-12 relative shrink-0">
+            <button onclick="document.getElementById('exam-review-modal').classList.add('hidden-view')" class="absolute top-4 right-4 w-8 h-8 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center transition-all z-20 backdrop-blur-md">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+            <div class="relative z-10">
+                <div class="flex items-center gap-2 text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-2">
+                    <i class="fa-solid fa-chart-simple"></i> Performance Report
+                </div>
+                <h2 class="text-xl sm:text-2xl font-black text-white leading-tight mb-2 pr-6">${exam.name}</h2>
+                <p class="text-xs text-gray-400 font-medium"><i class="fa-regular fa-calendar mr-1"></i> Attempted on ${exam.date}</p>
+            </div>
+        </div>
+
+        <!-- Overlapping Main Stats Card -->
+        <div class="flex-1 overflow-y-auto no-scrollbar px-4 sm:px-6 pb-8 -mt-6 relative z-20">
+            
+            <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 mb-5">
+                <div class="flex justify-between items-center mb-6">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Score Achieved</span>
+                        <div class="flex items-baseline gap-1">
+                            <span class="text-3xl sm:text-4xl font-black text-gray-900 tracking-tighter">${r.obtained}</span>
+                            <span class="text-sm font-bold text-gray-400">/ ${r.total}</span>
+                        </div>
+                    </div>
+                    <!-- Status Badge -->
+                    <div class="bg-${c}-50 border border-${c}-200 text-${c}-700 px-4 py-2 rounded-xl flex flex-col items-center justify-center shadow-sm min-w-[80px]">
+                        <i class="fa-solid ${isAbsent ? 'fa-user-xmark' : (r.status === 'PASS' ? 'fa-trophy' : 'fa-circle-exclamation')} text-lg mb-1"></i>
+                        <span class="text-[10px] font-black uppercase tracking-widest">${statusText}</span>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="w-full">
+                    <div class="flex justify-between text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5">
+                        <span>Accuracy</span>
+                        <span class="text-${c}-600">${r.percentage.toFixed(1)}%</span>
+                    </div>
+                    <div class="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                        <div class="h-full bg-${c}-500 rounded-full" style="width: ${r.percentage}%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deep Metrics Grid -->
+            <h5 class="text-[11px] font-black text-gray-800 uppercase tracking-widest mb-3 pl-1">Key Analytics</h5>
+            <div class="grid grid-cols-2 gap-3 mb-5">
+                <!-- Rank -->
+                <div class="bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center text-lg shrink-0"><i class="fa-solid fa-ranking-star"></i></div>
+                    <div>
+                        <span class="block text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Class Rank</span>
+                        <span class="block text-sm sm:text-base font-black text-gray-900 leading-tight">#${rank} <span class="text-[10px] font-bold text-gray-400">/ ${totalParticipants}</span></span>
+                    </div>
+                </div>
+                <!-- Percentage (Replaced Percentile) -->
+                <div class="bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-500 flex items-center justify-center text-lg shrink-0"><i class="fa-solid fa-percent"></i></div>
+                    <div>
+                        <span class="block text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Percentage</span>
+                        <span class="block text-sm sm:text-base font-black text-gray-900 leading-tight">${r.percentage.toFixed(1)}%</span>
+                    </div>
+                </div>
+                <!-- Time Taken -->
+                <div class="bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center text-lg shrink-0"><i class="fa-solid fa-stopwatch"></i></div>
+                    <div class="w-full">
+                        <span class="flex justify-between text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Time <span class="text-blue-600">${timeTaken}m</span></span>
+                        <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-blue-400" style="width: ${timePerc}%"></div></div>
+                    </div>
+                </div>
+                <!-- Time Saved -->
+                <div class="bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center text-lg shrink-0"><i class="fa-solid fa-bolt"></i></div>
+                    <div>
+                        <span class="block text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Time Saved</span>
+                        <span class="block text-sm sm:text-base font-black text-gray-900 leading-tight">${r.timeSaved > 0 ? r.timeSaved + ' mins' : '--'}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Breakdown Section -->
+            ${breakdownHtml}
+            
+        </div>
+    </div>`;
+
+    modal.classList.remove('hidden-view');
+};
+
+
+function buildRecordHTML(r, exam, rank) {
     if(!exam) return ''; 
     const isAbsent = r.status === 'ABSENT'; 
     
@@ -7700,103 +7892,60 @@ function getFitnessLeaderboard() {
     let c = 'rose';
     if (r.status === 'PASS') c = 'emerald';
     else if (r.status === 'EVALUATING') c = 'amber';
-    
-    let breakdownHtml = '';
-    
-    // --- 1. PEER EVALUATION SCRIPTS UI ---
-    if (r.scriptsData && r.scriptsData.length > 0) {
-        breakdownHtml = `<div class="mt-4 pt-3 border-t border-gray-100 ml-2 sm:ml-3 space-y-2 relative z-10">`;
-        r.scriptsData.forEach(script => {
-            const peerName = window.studentsDB.find(s=>s.mobile===script.targetPeerMobile)?.name || 'Peer';
-            const dp = window.getStudentAvatar(script.targetPeerMobile, peerName);
-            const statusTxt = script.isGraded 
-                ? `<span class="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shadow-sm">${script.marksAwarded}/${script.maxMarks}</span>` 
-                : `<span class="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 shadow-sm"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Pending</span>`;
-            
-            let aiButtonHtml = '';
-            if (script.aiFeedback) {
-                window.scriptFeedbacks[script.id] = script.aiFeedback;
-                aiButtonHtml = `<button onclick="window.openNovaFeedbackModal('${script.id}')" class="text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 border border-indigo-100 px-2.5 py-1.5 rounded-lg shadow-sm hover:bg-indigo-100 active:scale-95 transition-all shrink-0 flex items-center gap-1.5"><i class="fa-solid fa-sparkles text-amber-500"></i>Analysis</button>`;
-            }
-
-            breakdownHtml += `
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2.5 rounded-xl bg-gray-50 border border-gray-100 hover:border-gray-200 hover:bg-white transition-all shadow-sm">
-                <div class="flex items-center gap-2 min-w-0 pr-2">
-                    <img src="${dp}" class="w-6 h-6 rounded-full object-cover shadow-sm shrink-0 border border-white">
-                    <div class="min-w-0">
-                        <span class="text-[9px] font-bold text-gray-500 truncate leading-tight block">Evaluator: <span class="text-gray-800">${peerName}</span></span>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                    ${aiButtonHtml}
-                    <div class="text-[10px] font-black">${statusTxt}</div>
-                </div>
-            </div>`;
-        });
-        breakdownHtml += `</div>`;
-    } 
-    // --- 2. NOVA AUTO-QUIZ UI ---
-    else if (r.aiFeedback) {
-        window.scriptFeedbacks[r.id] = r.aiFeedback;
-        breakdownHtml = `
-        <div class="mt-4 pt-3 border-t border-gray-100 ml-2 sm:ml-3 relative z-10">
-            <button onclick="window.openNovaFeedbackModal('${r.id}')" class="w-full bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/60 text-indigo-700 text-[10px] sm:text-xs font-black py-2.5 rounded-xl shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 uppercase tracking-widest">
-                <i class="fa-solid fa-sparkles text-indigo-500"></i> Review Answers
-            </button>
-        </div>`;
-    }
 
     return `
-    <div class="bg-white p-4 sm:p-5 rounded-[1.25rem] sm:rounded-[1.5rem] border border-gray-200 shadow-sm hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)] hover:border-${c}-300 transition-all duration-300 relative overflow-hidden group w-full mb-3 sm:mb-4">
+    <div class="bg-white p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[1.75rem] border border-gray-200 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)] hover:border-${c}-300 transition-all duration-300 relative overflow-hidden group w-full mb-3 sm:mb-4 flex flex-col gap-3">
         
-        <!-- Professional Left Accent Line -->
-        <div class="absolute left-0 top-0 bottom-0 w-1.5 bg-${c}-500"></div>
+        <!-- Subtle Ambient Background Glow -->
+        <div class="absolute -top-12 -right-12 w-32 h-32 bg-${c}-400/10 rounded-full blur-2xl transition-transform group-hover:scale-150 pointer-events-none z-0"></div>
 
-        <div class="flex justify-between items-start ml-2 sm:ml-3 min-w-0 gap-3 relative z-10">
+        <div class="flex justify-between items-start gap-3 relative z-10">
             <!-- Left Information Section -->
-            <div class="min-w-0 flex-1">
-                <!-- Title -->
-                <h4 class="font-black text-gray-900 text-[14px] sm:text-[16px] leading-tight truncate group-hover:text-${c}-600 transition-colors">${exam.name}</h4>
-                
-                <!-- Meta Info (Date, Time, Type) -->
-                <p class="text-[9px] sm:text-[10px] text-gray-500 font-medium mt-1.5 flex items-center gap-1.5 sm:gap-2 break-words leading-tight">
-                    <span class="flex items-center gap-1"><i class="fa-regular fa-calendar"></i> ${exam.date}</span>
-                    <span class="text-gray-300">•</span>
-                    <span class="flex items-center gap-1"><i class="fa-regular fa-clock"></i> ${exam.duration}m</span>
-                    <span class="text-gray-300">•</span>
-                    <span class="font-bold text-gray-700">${window.getExamTypeBadge(exam.examType)}</span>
-                </p>
-
-                <!-- Professional Data Badges -->
-                <div class="flex flex-wrap items-center gap-2 mt-3">
-                    <span class="px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-black uppercase tracking-widest bg-${c}-50 text-${c}-700 border border-${c}-200 shadow-sm flex items-center gap-1.5">
-                        <span class="w-1.5 h-1.5 rounded-full bg-${c}-500 ${r.status === 'EVALUATING' ? 'animate-pulse' : ''}"></span>
-                        ${isAbsent ? 'ABSENT' : r.status}
-                    </span>
-                    
-                    <span class="px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 shadow-sm flex items-center gap-1.5">
-                        <i class="fa-solid fa-trophy text-amber-500"></i> Rank #${rank}
-                    </span>
-
-                    ${!isAbsent && r.timeSaved > 0 ? `
-                    <span class="px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm flex items-center gap-1.5">
-                        <i class="fa-solid fa-stopwatch text-emerald-500"></i> Saved ${r.timeSaved}m
-                    </span>` : ''}
+            <div class="min-w-0 flex-1 pr-2">
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                 
+                   
                 </div>
+                
+                <h4 class="font-black text-gray-900 text-[15px] sm:text-[17px] leading-tight break-words group-hover:text-${c}-600 transition-colors">${exam.name}</h4>
+                
+                <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1.5 sm:mt-2 flex items-center gap-1.5">
+                    <i class="fa-regular fa-calendar text-gray-400"></i> ${exam.date}    ❂    ${window.getExamTypeBadge(exam.examType)}
+                </p>
+                
             </div>
 
-            <!-- Right Score Area -->
-            <div class="shrink-0 text-right flex flex-col justify-center mt-0.5">
-                <div class="inline-flex items-baseline justify-end">
-                    <span class="font-black text-[22px] sm:text-[26px] text-gray-900 leading-none">${r.obtained}</span>
-                    <span class="font-bold text-[11px] sm:text-[13px] text-gray-400 ml-0.5">/${r.total}</span>
+            <!-- Right Score Fractional Box Section -->
+            <div class="shrink-0 flex flex-col items-end">
+                <div class="bg-white border border-${c}-200 rounded-xl p-2 min-w-[55px] sm:min-w-[65px] text-center shadow-sm flex flex-col items-center justify-center relative overflow-hidden group-hover:bg-${c}-50 transition-colors">
+                    <div class="absolute inset-0 bg-${c}-500/5"></div>
+                    <div class="text-[15px] sm:text-[18px] font-black text-${c}-700 leading-none relative z-10">${r.obtained}</div>
+                    <div class="w-full h-px bg-${c}-200 my-1.5 relative z-10"></div>
+                    <div class="text-[9px] sm:text-[10px] font-bold text-gray-400 leading-none relative z-10">${r.total}</div>
                 </div>
-                <div class="text-[10px] sm:text-[11px] font-black text-${c}-600 mt-1 uppercase tracking-widest">${r.percentage.toFixed(0)}%</div>
             </div>
         </div>
 
-        <!-- Embedded Details (AI Feedback / Peer Evaluation) -->
-        ${breakdownHtml}
+        <div class="flex flex-wrap items-center justify-between gap-2 relative z-10 pt-3 border-t border-gray-100">
+            <!-- Tags Row (Rank, Duration) -->
+            <div class="flex flex-wrap gap-2">
+                <span class="text-[8px] sm:text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md bg-${c}-50 text-${c}-700 border border-${c}-200 shadow-sm flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-${c}-500 ${r.status === 'EVALUATING' ? 'animate-pulse' : ''}"></span>
+                        ${isAbsent ? 'ABSENT' : r.status}
+                    </span>
+                <span class="bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-black tracking-widest uppercase flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-trophy text-amber-500"></i> Rank #${rank}
+                </span>
+               
+                
+                
+            </div>
+            
+            <!-- Review Button -->
+            <button onclick="window.openExamReviewModal('${exam.id}', ${rank})" class="px-4 py-2 bg-gradient-to-r from-gray-900 to-gray-800 hover:from-indigo-600 hover:to-blue-600 text-white rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all flex items-center gap-1.5 shrink-0 ml-auto">
+                Review <i class="fa-solid fa-arrow-right"></i>
+            </button>
+        </div>
     </div>`;
 }
         // --- 4. HOME DASHBOARD UPDATER ---
