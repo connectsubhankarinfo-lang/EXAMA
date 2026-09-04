@@ -4162,74 +4162,20 @@ window.closeExamResults = function() {
             }
         };
 
-     window.downloadAppUpdate = function() {
-            if (!window.latestUpdateUrl) return;
+    window.downloadAppUpdate = function() {
+    if (!window.latestUpdateUrl) return;
 
-            // 1. Switch to the Progress Stage UI
-            document.getElementById('updater-stage-initial').classList.add('hidden');
-            document.getElementById('updater-stage-progress').classList.remove('hidden');
+    // 1. Immediately trigger the download in the device's browser
+    const a = document.createElement('a');
+    a.href = window.latestUpdateUrl;
+    a.target = '_blank'; // Ensures it opens properly on mobile browsers
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 
-            const progressBar = document.getElementById('updater-progress-bar');
-            const progressPercent = document.getElementById('updater-progress-percent');
-            const downloadedBytesEl = document.getElementById('updater-downloaded-bytes');
-            const totalBytesEl = document.getElementById('updater-total-bytes');
-
-            // Reset UI text
-            if (progressBar) progressBar.style.width = `0%`;
-            if (progressPercent) progressPercent.innerText = `0%`;
-            if (downloadedBytesEl) downloadedBytesEl.innerText = `Connecting...`;
-            if (totalBytesEl) totalBytesEl.innerText = `Android OS`;
-
-            // 2. TRIGGER THE OS DOWNLOAD IMMEDIATELY (100% Crash-Proof)
-            const a = document.createElement('a');
-            a.href = window.latestUpdateUrl;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-
-            // 3. AESTHETIC PROGRESS ANIMATION (EXACTLY 1 MINUTE)
-            let progress = 0;
-            const animationDuration = 60000; // 60 seconds (1 minute)
-            const intervalTime = 150; // Update every 150ms to keep it smooth without lagging the phone
-            const steps = animationDuration / intervalTime;
-            const increment = 100 / steps;
-
-            const progressInterval = setInterval(() => {
-                progress += increment;
-                
-                // Add a slight random jitter to make the loading bar feel "alive" and network-like
-                const jitter = Math.random() * 0.5; 
-                let displayProgress = Math.min(100, Math.floor(progress + jitter));
-
-                if (progressBar) progressBar.style.width = `${displayProgress}%`;
-                if (progressPercent) progressPercent.innerText = `${displayProgress}%`;
-                
-                // Update text dynamically as the minute passes
-                if (displayProgress > 5 && displayProgress <= 30 && downloadedBytesEl) downloadedBytesEl.innerText = `Fetching via Secure Connection...`;
-                if (displayProgress > 30 && displayProgress <= 70 && downloadedBytesEl) downloadedBytesEl.innerText = `Downloading in Background...`;
-                if (displayProgress > 70 && displayProgress <= 95 && downloadedBytesEl) downloadedBytesEl.innerText = `Almost there...`;
-                if (displayProgress > 95 && downloadedBytesEl) downloadedBytesEl.innerText = `Finalizing Update...`;
-
-                // 4. TRANSITION TO INSTALL GUIDE
-                if (progress >= 100) {
-                    clearInterval(progressInterval);
-                    
-                    // Force snap to exactly 100% at the end
-                    if (progressBar) progressBar.style.width = `100%`;
-                    if (progressPercent) progressPercent.innerText = `100%`;
-                    
-                    setTimeout(() => {
-                        // Hide progress bar, show the beautiful step-by-step guide
-                        document.getElementById('updater-stage-progress').classList.add('hidden');
-                        document.getElementById('updater-stage-install').classList.remove('hidden');
-                    }, 600); // Slight delay so user sees 100%
-                }
-            }, intervalTime);
-        };
-
-        window.closeUpdaterModal = function() {
-            document.getElementById('app-updater-modal').classList.add('hidden-view');
-        };
+    // 2. Simply close the modal after clicking
+    window.closeUpdaterModal();
+};
         // ==========================================
 // QUIZ TIMER ENGINE
 // ==========================================
@@ -9464,17 +9410,23 @@ window.startTelegramAdminOTP = async function(mobile, adminData) {
 
 window.verifyAdminOTP = function() {
     const code = document.getElementById('admin-otp-input').value.trim();
-    // ... [existing validation code] ...
+    
+    // 1. Validate the OTP
+    if (!code || code.length !== 6) return window.showCustomAlert("Invalid Code", "Please enter the 6-digit OTP.", "warning");
+    if (Date.now() > window.adminOTPExpiresAt) return window.showCustomAlert("Expired", "This OTP has expired. Please try again.", "error");
+    if (parseInt(code, 10) !== window.adminGeneratedOTP) return window.showCustomAlert("Access Denied", "Incorrect OTP.", "error");
 
-    // OTP Verified! Complete Admin Login
+    // 2. OTP Verified! Complete Admin Login
     document.getElementById('admin-otp-modal').classList.add('hidden-view');
     document.getElementById('admin-otp-input').value = '';
     window.adminGeneratedOTP = null;
 
     const mob = window.pendingAdminMobile;
-    const pass = document.getElementById('password').value; // ADD THIS: Grab the password typed in the form
+    
+    // 3. FIXED: Grab the password from the ADMIN password input, not the student one
+    const pass = document.getElementById('admin-password').value; 
 
-    // ADDED: Save password so window.onload can verify it on refresh
+    // Save to local storage to keep admin logged in on refresh
     localStorage.setItem('exama_role', 'admin'); 
     localStorage.setItem('exama_mob', mob); 
     localStorage.setItem('exama_pass', pass); 
