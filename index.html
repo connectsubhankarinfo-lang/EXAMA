@@ -6030,46 +6030,59 @@ function getSubjectIcon(sub) {
     return { icon: 'fa-graduation-cap', color: 'text-indigo-500', bg: 'bg-indigo-50' }; 
 }
 
-// 4. MAIN RENDER ENGINE
+// 4. MAIN RENDER ENGINE (With Skeleton Loading)
 window.renderVideoFeed = function() {
     const container = document.getElementById('vh-dynamic-container');
     const titleEl = document.getElementById('vh-header-title');
     const subEl = document.getElementById('vh-header-subtitle');
     if (!container) return;
 
-    let vids = (window.videosDB || []).filter(v => v.title && v.subject); 
-    // Sorts by the new custom order first, falling back to time uploaded
-    vids.sort((a, b) => (a.sortIndex ?? a.timestamp) - (b.sortIndex ?? b.timestamp));;
-
-    if (vids.length === 0) {
-        container.innerHTML = `<div class="text-center py-10"><div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3"><i class="fa-solid fa-box-open text-gray-400 text-2xl"></i></div><p class="text-sm text-gray-500 font-bold">No batches assigned yet.</p></div>`;
-        return;
+    // 1. INJECT SKELETON IMMEDIATELY BASED ON CURRENT VIEW
+    if (window.vhState.view === 'lectures') {
+        // Use the list-style 'video' skeleton for the actual lectures
+        container.innerHTML = window.getSkeletonHTML('video', 5);
+    } else {
+        // Use the grid-style 'card' skeleton for Subjects and Folders
+        container.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">${window.getSkeletonHTML('card', 6)}</div>`;
     }
 
-    if (window.currentVideoSearch) {
-        vids = vids.filter(v => {
-            const titleStr = v.title ? String(v.title).toLowerCase() : "";
-            const topicStr = v.topic ? String(v.topic).toLowerCase() : "";
-            const searchStr = String(window.currentVideoSearch).toLowerCase();
-            return titleStr.includes(searchStr) || topicStr.includes(searchStr);
-        });
-    }
+    // 2. DELAY THE ACTUAL RENDERING BY 300ms TO SHOW THE SKELETON EFFECT
+    setTimeout(() => {
+        let vids = (window.videosDB || []).filter(v => v.title && v.subject); 
+        // Sorts by the new custom order first, falling back to time uploaded
+        vids.sort((a, b) => (a.sortIndex ?? a.timestamp) - (b.sortIndex ?? b.timestamp));
 
-    if (window.vhState.view === 'subjects') {
-        titleEl.innerText = "My Classes";
-        subEl.innerText = "Select a Subject";
-        renderVHSubjects(vids, container);
-    } 
-    else if (window.vhState.view === 'topics') {
-        titleEl.innerText = window.vhState.subject || "Subject";
-        subEl.innerText = "Select a Chapter";
-        renderVHTopics(vids.filter(v => v.subject === window.vhState.subject), container);
-    } 
-    else if (window.vhState.view === 'lectures') {
-        titleEl.innerText = window.vhState.topic || "Topic";
-        subEl.innerText = "Chapter Lectures";
-        renderVHLectures(vids.filter(v => v.subject === window.vhState.subject && v.topic === window.vhState.topic), container);
-    }
+        if (vids.length === 0) {
+            container.innerHTML = `<div class="text-center py-10"><div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3"><i class="fa-solid fa-box-open text-gray-400 text-2xl"></i></div><p class="text-sm text-gray-500 font-bold">No batches assigned yet.</p></div>`;
+            return;
+        }
+
+        if (window.currentVideoSearch) {
+            vids = vids.filter(v => {
+                const titleStr = v.title ? String(v.title).toLowerCase() : "";
+                const topicStr = v.topic ? String(v.topic).toLowerCase() : "";
+                const searchStr = String(window.currentVideoSearch).toLowerCase();
+                return titleStr.includes(searchStr) || topicStr.includes(searchStr);
+            });
+        }
+
+        // Route to the correct renderer
+        if (window.vhState.view === 'subjects') {
+            titleEl.innerText = "My Classes";
+            subEl.innerText = "Select a Subject";
+            renderVHSubjects(vids, container);
+        } 
+        else if (window.vhState.view === 'topics') {
+            titleEl.innerText = window.vhState.subject || "Subject";
+            subEl.innerText = "Select a Chapter";
+            renderVHTopics(vids.filter(v => v.subject === window.vhState.subject), container);
+        } 
+        else if (window.vhState.view === 'lectures') {
+            titleEl.innerText = window.vhState.topic || "Topic";
+            subEl.innerText = "Chapter Lectures";
+            renderVHLectures(vids.filter(v => v.subject === window.vhState.subject && v.topic === window.vhState.topic), container);
+        }
+    }, 300); // 300ms delay for the shimmer animation
 };
 
 // 4.1 RENDER: SUBJECTS (GRID)
