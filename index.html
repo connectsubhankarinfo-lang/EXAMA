@@ -8121,66 +8121,28 @@ window.initGoogleDriveAPI = function() {
 };
 window.initGoogleDriveAPI();
 
-window.uploadDirectToDrive = async function() { 
-    if (typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured) {
-        return alert("Firebase is required to sync uploads from the browser.");
+window.uploadDirectToDrive = function() { 
+    // 1. Check if we already have a valid token
+    const savedToken = localStorage.getItem('exama_gdrive_token');
+    const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
+
+    if (savedToken && Date.now() < tokenExp) {
+        window.gdriveAccessToken = savedToken;
+        document.getElementById('gdrive-file-input').click();
+        return;
     }
 
-    const sessionId = "upload_" + Date.now();
-    window.showLoader("Opening Browser... Please select and upload the file there.");
-
-    try {
-        // 1. Create a temporary bridge ticket in Firestore (we use 'notices' to avoid permission issues)
-        await setDoc(doc(db, "notices", sessionId), { 
-            type: 'temp_upload',
-            status: 'pending',
-            timestamp: Date.now() 
-        });
-
-        // 2. Open the phone's default external browser (Chrome/Safari)
-        const browserUrl = `https://connectsubhankarinfo-lang.github.io/EXAMA/?drive_upload=${sessionId}`;
-        
-        const a = document.createElement('a');
-        a.href = browserUrl;
-        a.target = '_blank';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        // 3. Wait quietly in the app for the browser to finish uploading
-        const unsub = onSnapshot(doc(db, "notices", sessionId), async (docSnap) => {
-            if (docSnap.exists()) {
-                const data = docSnap.data();
-                
-                // When the browser marks it as 'success', it passes the link back!
-                if (data.status === 'success') {
-                    unsub(); // Stop listening
-                    window.hideLoader();
-                    
-                    // Magically paste the Google Drive link into the App's form!
-                    document.getElementById('mat-ext-link').value = data.link;
-                    
-                    // Clean up the temporary ticket
-                    await deleteDoc(doc(db, "notices", sessionId));
-                    
-                    window.showToast("Upload Synced! 🚀", "Google Drive link received successfully from the browser.", "success");
-                }
-            }
-        });
-    } catch (err) {
-        window.hideLoader();
-        alert("Failed to connect to the sync server.");
-    }
-};
-
-// Global helper for the browser to trigger the success flag
-window.dbUpdateTempUpload = async function(sessionId, link) {
-    if(isFirebaseConfigured) {
-        await updateDoc(doc(db, "notices", sessionId), {
-            status: 'success',
-            link: link
-        });
-    }
+    // 2. Prepare the Google Login URL
+    const clientId = '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com';
+    const redirectUri = 'https://connectsubhankarinfo-lang.github.io/EXAMA/'; 
+    const scope = encodeURIComponent('https://www.googleapis.com/auth/drive.file');
+    
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=token&scope=${scope}&prompt=consent`;
+    
+    window.showLoader("Redirecting to Google...");
+    
+    // 3. Redirect the whole WebView instead of using a blocked popup
+    window.location.replace(authUrl);
 };
 
         window.executeDriveUpload = function() {
@@ -9143,108 +9105,6 @@ function getFitnessLeaderboard() {
         }
 
   window.onload = async function() {
-      // 🔥 NEW: BROWSER HANDOFF UI CATCHER
-    const urlParams = new URLSearchParams(window.location.search);
-    const uploadSessionId = urlParams.get('drive_upload');
-
-    if (uploadSessionId) {
-        // We are in the external browser! Replace the app UI with a simple Uploader Screen
-        document.body.innerHTML = `
-            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100dvh; background:#f8fafc; font-family:'Inter', sans-serif; text-align:center; padding: 24px;">
-                <div style="width:70px; height:70px; background:#4f46e5; color:white; border-radius:20px; display:flex; align-items:center; justify-content:center; font-size:35px; margin-bottom:20px; box-shadow:0 10px 25px rgba(79,70,229,0.4);">
-                    <i class="fa-brands fa-google-drive"></i>
-                </div>
-                <h2 style="font-size:24px; font-weight:900; color:#0f172a; margin-bottom:8px;">Secure Drive Upload</h2>
-                <p style="font-size:13px; font-weight:600; color:#64748b; margin-bottom:30px; line-height:1.5;">Select your file and connect Google. The link will magically sync back to your Exama App.</p>
-                
-                <input type="file" id="handoff-file" style="margin-bottom: 24px; width:100%; max-width:300px; font-size:12px; padding:12px; background:white; border:2px dashed #cbd5e1; border-radius:12px;">
-                
-                <button id="handoff-btn" style="background:linear-gradient(to right, #4f46e5, #06b6d4); color:white; border:none; padding:16px 32px; border-radius:16px; font-weight:900; font-size:14px; box-shadow:0 10px 25px rgba(79,70,229,0.4); cursor:pointer;">Upload to Google Drive</button>
-                
-                <p id="handoff-status" style="margin-top:24px; font-size:13px; font-weight:bold; color:#4f46e5;"></p>
-            </div>
-        `;
-        
-        document.getElementById('handoff-btn').onclick = function() {
-            const file = document.getElementById('handoff-file').files[0];
-            if (!file) return alert("Please select a file first.");
-            
-            const statusEl = document.getElementById('handoff-status');
-            statusEl.innerText = "Awaiting Google Login...";
-            
-            const tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com',
-                scope: 'https://www.googleapis.com/auth/drive.file',
-                callback: (tokenResponse) => {
-                    if (tokenResponse && tokenResponse.access_token) {
-                        executeBrowserUpload(tokenResponse.access_token, file);
-                    } else {
-                        statusEl.innerText = "Login failed or cancelled.";
-                        statusEl.style.color = "red";
-                    }
-                }
-            });
-            tokenClient.requestAccessToken({ prompt: 'consent' });
-        };
-
-        async function executeBrowserUpload(token, file) {
-            const statusEl = document.getElementById('handoff-status');
-            statusEl.style.color = "#4f46e5";
-            statusEl.innerText = "Uploading to Drive... 0%";
-            
-            const metadata = { 'name': file.name, 'mimeType': file.type, 'parents': ["1fQj_36Mcy7i0ECIhVIKTT9-L72050-i6"] };
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-            form.append('file', file);
-            
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
-            xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-            
-            xhr.upload.onprogress = e => {
-                if (e.lengthComputable) {
-                    statusEl.innerText = `Uploading... ${Math.round((e.loaded / e.total) * 100)}%`;
-                }
-            };
-            
-            xhr.onload = async function() {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    const data = JSON.parse(xhr.responseText);
-                    statusEl.innerText = "Securing file permissions...";
-                    
-                    try {
-                        // Make file public to students
-                        await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
-                            method: 'POST',
-                            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ role: 'reader', type: 'anyone' })
-                        });
-                        
-                        statusEl.innerText = "Syncing to Exama App...";
-                        
-                        // Send the link back to the App via Firebase
-                        await window.dbUpdateTempUpload(uploadSessionId, data.webViewLink);
-                        
-                        statusEl.style.color = "#10b981"; // Emerald Green
-                        statusEl.innerHTML = "<i class='fa-solid fa-circle-check'></i> Upload Complete! You can close this browser and return to the Exama App.";
-                        
-                        document.getElementById('handoff-btn').style.display = "none";
-                        document.getElementById('handoff-file').style.display = "none";
-                    } catch(err) {
-                        statusEl.style.color = "red";
-                        statusEl.innerText = "Error setting permissions: " + err.message;
-                    }
-                } else {
-                    statusEl.style.color = "red";
-                    statusEl.innerText = "Upload failed: " + xhr.responseText;
-                }
-            };
-            xhr.send(form);
-        }
-        
-        return; // STOP execution of the rest of the app so the login screen doesn't show!
-    }
-    // END OF BROWSER HANDOFF CATCHER 🔥
       // 🔥 NEW: CATCH GOOGLE DRIVE REDIRECT TOKEN
     const urlHash = window.location.hash;
     if (urlHash.includes('access_token=')) {
