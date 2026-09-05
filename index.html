@@ -1331,7 +1331,7 @@
                         <div class="relative w-full sm:w-[180px] shrink-0">
                             <i class="fa-solid fa-filter absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
                             <select id="admin-exam-filter" onchange="window.filterAdminExamsByType(this.value)" class="w-full pl-11 pr-8 py-3 sm:py-3.5 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 transition-all shadow-sm cursor-pointer appearance-none">
-                                <option value="All" selected>All Exam Types</option>
+                                <option value="All" selected>All Exams</option>
                                 <option value="online">Scheduled</option>
                                 <option value="anytime">Anytime</option>
                                 <option value="testbook">Testbook</option>
@@ -4678,12 +4678,39 @@ window.openNovaFeedbackModal = function(scriptId) {
         // @ MENTION ENGINE
         // ==========================================
         window.mentionStartIndex = -1;
-        
-        document.getElementById('chat-input').addEventListener('input', function() {
-            toggleSendButton();
-            handleMentionInput(this);
-        });
+    const chatInput = document.getElementById('chat-input');
 
+// 1. Handle sending the message via Enter key (PC keyboard)
+chatInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault(); // Prevent new line
+        
+        // Only send if there is text
+        if (this.value.trim().length > 0) {
+            sendChatMessage(); // This function already clears the input
+            
+            // Reset the height back to 1 line after sending
+            this.style.height = 'auto'; 
+        }
+    }
+});
+
+// 2. Handle auto-expand, show send button, and mentions as the user types
+chatInput.addEventListener('input', function() {
+    // A. Auto-expand height (WhatsApp style)
+    this.style.height = 'auto'; 
+    this.style.height = this.scrollHeight + 'px';
+    
+    // B. Show the Send button & Hide the Mic if there is text
+    if (typeof toggleSendButton === 'function') {
+        toggleSendButton();
+    }
+    
+    // C. Trigger the @mention dropdown logic
+    if (typeof handleMentionInput === 'function') {
+        handleMentionInput(this);
+    }
+});
         window.handleMentionInput = function(textarea) {
             const cursorPosition = textarea.selectionStart;
             const textBeforeCursor = textarea.value.substring(0, cursorPosition);
@@ -4766,11 +4793,20 @@ window.openNovaFeedbackModal = function(scriptId) {
         }
 
         window.sendChatMessage = async function() {
-            const input = document.getElementById('chat-input'); const text = input.value.trim(); if(!text) return; input.value = ''; toggleSendButton();
-            const senderName = window.currentRole === 'student' ? window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name : 'EXAMA';
-            await window.dbSendChat({ text, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-            sendOneSignalPush(`New Message from ${senderName}`, text); window.markChatAsRead(); cancelChatReply();
-        }
+    const input = document.getElementById('chat-input'); 
+    const text = input.value.trim(); 
+    if(!text) return; 
+    
+    input.value = ''; 
+    input.style.height = 'auto'; // <-- Reset height here
+    toggleSendButton();
+    
+    const senderName = window.currentRole === 'student' ? window.studentsDB.find(s=>s.mobile===window.loggedInMobile).name : 'EXAMA';
+    await window.dbSendChat({ text, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
+    sendOneSignalPush(`New Message from ${senderName}`, text); 
+    window.markChatAsRead(); 
+    cancelChatReply();
+}
 
         window.sharePerformance = async function() {
             if (window.currentRole === 'admin') return; 
