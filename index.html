@@ -8105,73 +8105,49 @@ window.openCustomPDFViewer = async function(url, title) {
 };
 
         window.tokenClient = null; window.gdriveAccessToken = null;
-     // ==========================================
-        // 🔑 ONE-TIME GOOGLE DRIVE PERSISTENT AUTH
-        // ==========================================
-        window.tokenClient = null; 
-        window.gdriveAccessToken = null;
+    // ==========================================
+// 🔑 GOOGLE DRIVE: REDIRECT FLOW (WEBVIEW SAFE)
+// ==========================================
+window.gdriveAccessToken = null;
 
-        window.initGoogleDriveAPI = function() { 
-            // 1. Check if we already have a valid saved token in storage
-            const savedToken = localStorage.getItem('exama_gdrive_token');
-            const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
-            
-            if (savedToken && Date.now() < tokenExp) {
-                window.gdriveAccessToken = savedToken;
-            }
+window.initGoogleDriveAPI = function() { 
+    // Just check if we already have a valid saved token in storage
+    const savedToken = localStorage.getItem('exama_gdrive_token');
+    const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
+    
+    if (savedToken && Date.now() < tokenExp) {
+        window.gdriveAccessToken = savedToken;
+    }
+};
+window.initGoogleDriveAPI();
 
-            // FIX: Explicitly check for .oauth2 to prevent silent crashes!
-            if (window.google && window.google.accounts && window.google.accounts.oauth2) { 
-                window.tokenClient = google.accounts.oauth2.initTokenClient({ 
-                    client_id: '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com', 
-                    scope: 'https://www.googleapis.com/auth/drive.file', 
-                    callback: (tokenResponse) => { 
-                        if (tokenResponse && tokenResponse.access_token) { 
-                            window.gdriveAccessToken = tokenResponse.access_token; 
-                            
-                            // Save token to localStorage for 1 hour
-                            const expiresInMs = (tokenResponse.expires_in || 3500) * 1000;
-                            localStorage.setItem('exama_gdrive_token', tokenResponse.access_token);
-                            localStorage.setItem('exama_gdrive_token_exp', (Date.now() + expiresInMs).toString());
-                            
-                            document.getElementById('gdrive-file-input').click(); 
-                        } 
-                    } 
-                }); 
-            } else { 
-                // Keep trying until the oauth2 module is fully loaded
-                setTimeout(window.initGoogleDriveAPI, 500); 
-            } 
-        };
-        window.initGoogleDriveAPI();
+window.uploadDirectToDrive = function() { 
+    // 1. Check if existing token is still valid
+    const savedToken = localStorage.getItem('exama_gdrive_token');
+    const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
 
-        window.uploadDirectToDrive = function() { 
-            // Check if existing token is still valid
-            const savedToken = localStorage.getItem('exama_gdrive_token');
-            const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
+    if (savedToken && Date.now() < tokenExp) {
+        window.gdriveAccessToken = savedToken;
+        document.getElementById('gdrive-file-input').click();
+        return;
+    }
 
-            if (savedToken && Date.now() < tokenExp) {
-                window.gdriveAccessToken = savedToken;
-                document.getElementById('gdrive-file-input').click();
-                return;
-            }
-
-            // FIX: Self-healing check if the tokenClient got stuck
-            if (!window.tokenClient) {
-                window.initGoogleDriveAPI();
-                alert("Google Services are waking up... Please click the button again in a moment.");
-                return;
-            }
-            
-            // Trigger the Google Popup
-            window.tokenClient.requestAccessToken({ prompt: '' }); 
-        };
-
-        document.getElementById('gdrive-file-input').addEventListener('change', function(e) { 
-            if (this.files.length > 0) { 
-                window.executeDriveUpload(); 
-            } 
-        });
+    // 2. Token is missing or expired. Redirect the WHOLE page to Google Auth.
+    // This bypasses the WebView popup blocker!
+    const clientId = '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com';
+    
+    // Get current URL without any hash fragments
+    const redirectUri = window.location.origin + window.location.pathname; 
+    const scope = encodeURIComponent('https://www.googleapis.com/auth/drive.file');
+    
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=token&scope=${scope}&prompt=consent`;
+    
+    // Set a flag so the app knows it's returning from a Drive login
+    localStorage.setItem('exama_gdrive_auth_pending', 'true');
+    
+    window.showLoader("Redirecting to Google Secure Login...");
+    window.location.href = authUrl; // Leave the app and go to Google
+};
 
         window.executeDriveUpload = function() {
             const file = document.getElementById('gdrive-file-input').files[0]; 
@@ -9133,6 +9109,32 @@ function getFitnessLeaderboard() {
         }
 
   window.onload = async function() {
+      // 🔥 NEW: CATCH GOOGLE DRIVE REDIRECT TOKEN
+    const urlHash = window.location.hash;
+    if (urlHash.includes('access_token=')) {
+        // Extract the token from the Google URL
+        const params = new URLSearchParams(urlHash.replace('#', '?'));
+        const token = params.get('access_token');
+        const expiresIn = params.get('expires_in') || 3500;
+
+        if (token) {
+            localStorage.setItem('exama_gdrive_token', token);
+            localStorage.setItem('exama_gdrive_token_exp', (Date.now() + (expiresIn * 1000)).toString());
+            window.gdriveAccessToken = token;
+        }
+
+        // Clean the URL so the app's router doesn't get confused
+        history.replaceState(null, null, window.location.pathname);
+        
+        // Re-open the materials view and upload modal automatically
+        localStorage.removeItem('exama_gdrive_auth_pending');
+        window.location.hash = 'materials';
+        setTimeout(() => {
+            document.getElementById('material-upload-modal').classList.remove('hidden-view');
+            window.showToast("Google Connected", "You can now upload directly to Drive.", "success");
+        }, 1500);
+    }
+    // END OF NEW CODE 🔥
     // 1. Grab the saved credentials from the device memory first
     const savedRole = localStorage.getItem('exama_role');
     const savedMob = localStorage.getItem('exama_mob');
