@@ -8122,7 +8122,7 @@ window.initGoogleDriveAPI = function() {
 window.initGoogleDriveAPI();
 
 window.uploadDirectToDrive = function() { 
-    // 1. Check if existing token is still valid
+    // 1. Check if we already have a valid token
     const savedToken = localStorage.getItem('exama_gdrive_token');
     const tokenExp = parseInt(localStorage.getItem('exama_gdrive_token_exp') || '0', 10);
 
@@ -8132,21 +8132,58 @@ window.uploadDirectToDrive = function() {
         return;
     }
 
-    // 2. Token is missing or expired. Redirect the WHOLE page to Google Auth.
-    // This bypasses the WebView popup blocker!
+    // 2. Prepare the Google Login URL
     const clientId = '139257596466-hqf1toks106v6lcduf2k6eimun52ls3k.apps.googleusercontent.com';
-    
-    // Get current URL without any hash fragments
-    const redirectUri = window.location.origin + window.location.pathname; 
+    const redirectUri = 'https://connectsubhankarinfo-lang.github.io/EXAMA/'; 
     const scope = encodeURIComponent('https://www.googleapis.com/auth/drive.file');
     
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=token&scope=${scope}&prompt=consent`;
     
-    // Set a flag so the app knows it's returning from a Drive login
-    localStorage.setItem('exama_gdrive_auth_pending', 'true');
+    window.showLoader("Opening Google Login...");
     
-    window.showLoader("Redirecting to Google Secure Login...");
-    window.location.href = authUrl; // Leave the app and go to Google
+    // 3. Open an In-App Popup instead of redirecting the whole app
+    const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
+    
+    // 4. Continuously check the popup to see if it returned with the token
+    const checkToken = setInterval(() => {
+        try {
+            // This will throw a cross-origin error while on Google.com, 
+            // but will succeed the moment it redirects back to your Github domain!
+            const popupUrl = authWindow.location.href;
+            
+            if (popupUrl && popupUrl.includes('access_token=')) {
+                // We caught the token!
+                const params = new URLSearchParams(authWindow.location.hash.replace('#', '?'));
+                const token = params.get('access_token');
+                const expiresIn = params.get('expires_in') || 3500;
+
+                if (token) {
+                    localStorage.setItem('exama_gdrive_token', token);
+                    localStorage.setItem('exama_gdrive_token_exp', (Date.now() + (expiresIn * 1000)).toString());
+                    window.gdriveAccessToken = token;
+                }
+
+                // Close the popup and clean up
+                authWindow.close();
+                clearInterval(checkToken);
+                window.hideLoader();
+                window.showToast("Google Connected", "You can now upload directly to Drive.", "success");
+                
+                // Automatically open the file picker so the user doesn't have to click again!
+                setTimeout(() => {
+                    document.getElementById('gdrive-file-input').click();
+                }, 500);
+            }
+        } catch (e) {
+            // Ignore cross-origin errors while waiting for Google to finish
+        }
+        
+        // Stop loading if the user manually hits the X to close the popup
+        if (authWindow.closed) {
+            clearInterval(checkToken);
+            window.hideLoader();
+        }
+    }, 1000); // Checks every 1 second
 };
 
         window.executeDriveUpload = function() {
