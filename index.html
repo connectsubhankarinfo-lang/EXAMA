@@ -2241,14 +2241,14 @@
                                 <button type="button" onclick="uploadDirectToDrive()" class="flex-1 min-w-[140px] bg-white border border-gray-300 text-gray-700 font-bold py-1.5 sm:py-2 px-2 sm:px-3 rounded-lg sm:rounded-xl hover:bg-gray-50 flex items-center justify-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] shadow-sm transition">
                                     <i class="fa-brands fa-google-drive text-blue-500 text-sm sm:text-lg"></i> Direct Drive Upload
                                 </button>
-                              <input type="file" id="gdrive-file-input" accept="application/pdf,image/*" class="hidden" onchange="window.executeDriveUpload()">
+                           <input type="file" id="gdrive-file-input" accept=".pdf,.jpg,.jpeg,.png" class="hidden" onchange="window.executeDriveUpload()">
                             </div>
                             <p id="gdrive-upload-status" class="text-[9px] sm:text-[10px] text-green-600 font-bold mt-1 ml-1 hidden break-words"></p>
                         </div>
                     </div>
                     <div class="bg-white/60 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-white/50">
                         <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 sm:mb-2 break-words leading-tight">Upload Files (Select multiple)</label>
-                        <input type="file" id="mat-files" accept="image/*,application/pdf" multiple class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1.5 sm:file:py-2 file:px-3 sm:file:px-4 file:rounded-lg sm:file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                        <input type="file" id="mat-files" accept=".pdf, .jpg, .jpeg, .png" multiple class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1.5 sm:file:py-2 file:px-3 sm:file:px-4 file:rounded-lg sm:file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
                     </div>
                     <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-xl sm:rounded-2xl active:scale-95 transition-all shadow-lg mt-1 sm:mt-2">Publish Material</button>
                 </form>
@@ -2285,7 +2285,7 @@
             </div>
             <div class="bg-white/60 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-white/50">
                 <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5 sm:mb-2 break-words leading-tight">Replace Files? (Leave empty to keep current)</label>
-                <input type="file" id="edit-mat-files" accept="image/*,application/pdf" multiple class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1.5 sm:file:py-2 file:px-3 sm:file:px-4 file:rounded-lg sm:file:rounded-xl file:border-0 file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
+                <input type="file" id="edit-mat-files" accept=".pdf, .jpg, .jpeg, .png" multiple class="w-full text-[10px] sm:text-xs font-medium text-gray-700 file:mr-2 sm:file:mr-4 file:py-1.5 sm:file:py-2 file:px-3 sm:file:px-4 file:rounded-lg sm:file:rounded-xl file:border-0 file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer">
             </div>
             <button type="submit" class="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-xl sm:rounded-2xl active:scale-95 transition-all shadow-lg mt-1 sm:mt-2">Save Changes</button>
         </form>
@@ -8166,9 +8166,10 @@ window.openCustomPDFViewer = async function(url, title) {
                 const isPdf = f.type === 'pdf';
                 const isQuestionSet = f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLowerCase().includes('question'));
                 
+               // 🔥 MODIFIED: If it is an image, trigger the Native Image Opener (_blank)
                 const readAction = isPdf 
                     ? `window.openCustomPDFViewer('${f.url}', '${f.name.replace(/'/g,"\\'")}')` 
-                    : `window.openFullScreenImage('${f.url}')`;
+                    : `window.open('${f.url}', '_blank')`;
 
                 let uniqueKey = f.url;
                 const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
@@ -8322,14 +8323,23 @@ window.uploadDirectToDrive = function() {
     window.location.replace(authUrl);
 };
 
-        window.executeDriveUpload = function() {
-            const file = document.getElementById('gdrive-file-input').files[0]; 
-            if (!file) return;
+      window.executeDriveUpload = function() { 
+    const fileInput = document.getElementById('gdrive-file-input');
+    const file = fileInput.files[0]; 
+    if (!file) return;
 
-            const statusEl = document.getElementById('gdrive-upload-status'); 
-            statusEl.innerText = "Preparing upload..."; 
-            statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); 
-            statusEl.classList.add('text-blue-600');
+    // 🔥 SAFETY CHECK: Validate file type manually
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
+        alert("Please select a valid PDF file or Image.");
+        fileInput.value = '';
+        return;
+    }
+
+    const statusEl = document.getElementById('gdrive-upload-status'); 
+    statusEl.innerText = "Preparing upload..."; 
+    statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); 
+    statusEl.classList.add('text-blue-600');
 
             const DEFAULT_FOLDER_ID = "1fQj_36Mcy7i0ECIhVIKTT9-L72050-i6"; 
 
