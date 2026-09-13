@@ -1335,9 +1335,11 @@
             </div>
         </div>
                 <div class="flex gap-1.5 sm:gap-2 shrink-0">
-                    <button onclick="window.location.hash='materials'" class="w-8 h-8 sm:w-9 sm:h-9 bg-emerald-500/20 hover:bg-emerald-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-emerald-500/30" title="Material Hub">
-                        <i class="fa-solid fa-folder-open text-emerald-400 text-[10px] sm:text-xs"></i>
-                    </button>
+                   <button onclick="window.location.hash='materials'" class="relative w-8 h-8 sm:w-9 sm:h-9 bg-emerald-500/20 hover:bg-emerald-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-emerald-500/30" title="Material Hub">
+    <i class="fa-solid fa-folder-open text-emerald-400 text-[10px] sm:text-xs"></i>
+    <!-- NEW: Unapproved Notification Badge -->
+    <span id="admin-material-badge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-[7px] sm:text-[8px] font-black px-1.5 py-0.5 rounded-full border border-gray-900 shadow-sm animate-pulse">0</span>
+</button>
                     <button onclick="window.location.hash='weekly-targets'" class="w-8 h-8 sm:w-9 sm:h-9 bg-teal-500/20 hover:bg-teal-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-teal-500/30" title="Weekly Targets">
                         <i class="fa-solid fa-list-check text-teal-400 text-[10px] sm:text-xs"></i>
                         <button onclick="window.location.hash='syllabus'" class="w-8 h-8 sm:w-9 sm:h-9 bg-blue-500/20 hover:bg-blue-500/30 rounded-full flex items-center justify-center active:scale-90 transition-all border border-blue-500/30" title="Syllabus Tracker">
@@ -7516,9 +7518,19 @@ onSnapshot(collection(db, "student_syllabus_progress"), (snapshot) => { window.s
                 
                 onSnapshot(collection(db, "peer_answer_scripts"), (snapshot) => { window.peerAnswerScriptsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); });
                 
-                // LIMIT MATERIALS TO LATEST 100
-                onSnapshot(query(collection(db, "materials"), orderBy("timestamp", "desc"), limit(100)), (snapshot) => { window.materialsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('materials-view').classList.contains('hidden-view')) renderStudyMaterials(); });
-                
+              // LIMIT MATERIALS TO LATEST 100
+onSnapshot(query(collection(db, "materials"), orderBy("timestamp", "desc"), limit(100)), (snapshot) => { 
+    window.materialsDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); 
+    
+    if(!document.getElementById('materials-view').classList.contains('hidden-view')) {
+        renderStudyMaterials(); 
+    }
+    
+    // 🔥 NEW: Update the badge in real-time instantly when the database changes
+    if(typeof window.updateAdminMaterialBadge === 'function') {
+        window.updateAdminMaterialBadge();
+    }
+});
                 // LIMIT FITNESS LOGS TO LATEST 200
                 onSnapshot(query(collection(db, "fitness_logs"), orderBy("timestamp", "desc"), limit(200)), (snapshot) => { window.fitnessDB = snapshot.docs.map(d => ({id: d.id, ...d.data()})); if(!document.getElementById('fitness-view').classList.contains('hidden-view')) renderFitnessMonitor(); });
                 
@@ -10043,7 +10055,7 @@ window.logout = async function() {
             window.location.hash = 'login'; document.getElementById('login-form').reset();
         }
 
-     window.refreshUI = function() {
+   window.refreshUI = function() {
     if(!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
     if(!window.currentRole) return;
     if(window.currentRole === 'student') renderStudentDashboard();
@@ -10052,15 +10064,33 @@ window.logout = async function() {
     if(!document.getElementById('leaderboard-view')?.classList.contains('hidden-view')) window.renderLeaderboard();
     if(!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) renderChat();
     
-    // REMOVED: renderStudyMaterials() so it stops auto-refreshing and blinking!
-    
     if(!document.getElementById('fitness-view')?.classList.contains('hidden-view')) renderFitnessMonitor();
     
-    // FIX: Tell the app to redraw the Sessions view when the button is clicked!
     if(!document.getElementById('session-timer-view')?.classList.contains('hidden-view')) window.renderSessionTimer();
     
     updateChatUnreadCount();
+    
+    // 🔥 NEW: Trigger Admin Material Badge Update
+    if(typeof window.updateAdminMaterialBadge === 'function') window.updateAdminMaterialBadge();
+    
     if(!document.getElementById('weekly-targets-view')?.classList.contains('hidden-view')) window.renderWeeklyTargets();
+};
+
+// 🔥 NEW: Function to count unapproved materials and show the badge
+window.updateAdminMaterialBadge = function() {
+    if (window.currentRole !== 'admin') return;
+    const badge = document.getElementById('admin-material-badge');
+    if (!badge) return;
+    
+    // Count how many materials are strictly marked as 'isApproved: false'
+    const pendingCount = (window.materialsDB || []).filter(m => m.isApproved === false).length;
+    
+    if (pendingCount > 0) {
+        badge.innerText = pendingCount;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
 };
         
         // Also attach it as a standard function so other internal scripts can use it
