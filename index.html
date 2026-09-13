@@ -2344,10 +2344,28 @@
                 <label class="block text-[9px] sm:text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 sm:ml-2 mb-1 break-words leading-tight">Material Title</label>
                 <input type="text" id="edit-mat-title" required class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-transparent outline-none font-bold text-gray-900 text-xs sm:text-sm">
             </div>
-            <div class="glass-card p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border-indigo-200 bg-indigo-50/50">
-                <label class="block text-[9px] sm:text-[10px] font-black text-indigo-500 uppercase tracking-widest ml-1 mb-1.5 sm:mb-2 break-words leading-tight"><i class="fa-solid fa-link mr-1"></i>Drive / Classroom Link</label>
-                <input type="url" id="edit-mat-ext-link" class="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-white rounded-lg sm:rounded-xl outline-none font-semibold text-gray-900 text-[10px] sm:text-xs shadow-sm border border-indigo-100">
-            </div>
+          <div class="glass-card p-3 sm:p-4 rounded-xl sm:rounded-2xl border-indigo-200 bg-indigo-50/50 shadow-inner">
+    <label class="block text-[10px] sm:text-xs font-black text-indigo-600 uppercase tracking-widest text-center mb-3"><i class="fa-solid fa-cloud-arrow-up mr-1.5"></i>Upload Replacement File</label>
+    
+    <div class="flex flex-col items-center gap-2">
+        <!-- HIDDEN INPUT: Stores the new link (or keeps the old one) silently -->
+        <input type="hidden" id="edit-mat-ext-link">
+        
+        <!-- Premium Upload Button -->
+        <button type="button" id="btn-edit-gdrive-upload" onclick="uploadEditDirectToDrive()" class="w-full bg-white border border-indigo-200 text-indigo-700 font-gray-400 py-3 sm:py-3.5 px-4 rounded-xl hover:bg-indigo-100 active:scale-95 flex items-center justify-center gap-2 text-sm shadow-sm transition-all">
+            <i class="fa fa-upload text-gary-400 text-lg"></i> SELECT & REPLACE FILE
+        </button>
+        <input type="file" id="edit-gdrive-file-input" class="hidden" onchange="window.executeEditDriveUpload()">
+        
+        <!-- Animated Progress Bar (Hidden by default) -->
+        <div id="edit-gdrive-progress-container" class="hidden w-full h-2 bg-gray-200 rounded-full mt-1 overflow-hidden shadow-inner">
+            <div id="edit-gdrive-progress-bar" class="h-full bg-blue-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+
+        <!-- Live Upload Progress Text -->
+        <p id="edit-gdrive-upload-status" class="text-[10px] sm:text-xs font-bold mt-1 text-center hidden break-words"></p>
+    </div>
+</div>
             
             <button type="submit" class="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-sm sm:text-base font-bold py-3 sm:py-4 rounded-xl sm:rounded-2xl active:scale-95 transition-all shadow-lg mt-1 sm:mt-2">Save Changes</button>
         </form>
@@ -2381,7 +2399,149 @@
         </div>
     </div>
 </div>
+// ==========================================
+// 🔑 SILENT GOOGLE DRIVE UPLOAD (EDIT MODAL)
+// ==========================================
 
+window.uploadEditDirectToDrive = function() { 
+    document.getElementById('edit-gdrive-file-input').click();
+};
+
+window.executeEditDriveUpload = function() { 
+    const fileInput = document.getElementById('edit-gdrive-file-input');
+    if (!fileInput || !fileInput.files.length) return;
+    
+    const file = fileInput.files[0]; 
+
+    // Validate file type
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
+        alert("Please select a valid PDF file or Image.");
+        fileInput.value = '';
+        return;
+    }
+
+    const statusEl = document.getElementById('edit-gdrive-upload-status'); 
+    const progressContainer = document.getElementById('edit-gdrive-progress-container');
+    const progressBar = document.getElementById('edit-gdrive-progress-bar');
+    const uploadBtn = document.getElementById('btn-edit-gdrive-upload');
+
+    // UPDATE BUTTON TO SHOW FILE NAME & SPINNER
+    let shortName = file.name;
+    if (shortName.length > 22) shortName = shortName.substring(0, 20) + '...';
+    
+    if (uploadBtn) {
+        uploadBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-blue-500 text-lg"></i> ${shortName}`;
+        uploadBtn.className = "w-full bg-blue-50 border border-blue-300 text-blue-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-inner transition-all";
+    }
+
+    // Reset UI
+    if (statusEl) {
+        statusEl.innerText = "Reading file..."; 
+        statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); 
+        statusEl.classList.add('text-blue-600');
+    }
+    if (progressContainer) progressContainer.classList.remove('hidden');
+    if (progressBar) {
+        progressBar.style.width = '0%';
+        progressBar.classList.remove('bg-emerald-500'); 
+        progressBar.classList.add('bg-blue-500'); 
+    }
+
+    const reader = new FileReader();
+    reader.onload = function() {
+        const base64Data = reader.result.split(',')[1];
+        if (statusEl) statusEl.innerText = "Connecting to Google... 0%";
+
+        // 🔥 URL IS ALREADY CONFIGURED FROM PREVIOUS FIX 🔥
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywFB600lkjFr-FJTU04mW1xyHv2JKP0WaPPH6heh3Qau-6THS4BvmYQoP6xKvvow/exec";
+        
+        const payloadData = {
+            fileName: file.name,
+            mimeType: file.type,
+            base64: base64Data
+        };
+
+        const encodedPayload = "payload=" + encodeURIComponent(JSON.stringify(payloadData));
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", SCRIPT_URL, true);
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded"); 
+
+        xhr.upload.onprogress = function(event) {
+            if (event.lengthComputable) {
+                const percentComplete = Math.round((event.loaded / event.total) * 100);
+                if (progressBar) progressBar.style.width = percentComplete + '%';
+                if (statusEl) {
+                    if (percentComplete < 100) {
+                        statusEl.innerText = `Uploading... ${percentComplete}%`;
+                    } else {
+                        statusEl.innerText = "Google is saving the file... please wait.";
+                        if (progressBar) {
+                            progressBar.classList.remove('bg-blue-500');
+                            progressBar.classList.add('bg-emerald-500'); 
+                        }
+                    }
+                }
+            }
+        };
+
+        xhr.onload = function() {
+            try {
+                const result = JSON.parse(xhr.responseText);
+                if (result.success) {
+                    const linkInput = document.getElementById('edit-mat-ext-link');
+                    if (linkInput) linkInput.value = result.viewUrl; 
+                    
+                    if (statusEl) {
+                        statusEl.innerText = "Upload Complete!"; 
+                        statusEl.classList.remove('text-blue-600'); 
+                        statusEl.classList.add('text-green-600');
+                    }
+
+                    if (uploadBtn) {
+                        uploadBtn.innerHTML = `<i class="fa-solid fa-check-circle text-emerald-600 text-lg"></i> Upload Complete!`;
+                        uploadBtn.className = "w-full bg-emerald-50 border border-emerald-300 text-emerald-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition-all";
+                    }
+                    
+                    if (progressContainer) setTimeout(() => progressContainer.classList.add('hidden'), 2000);
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                if (statusEl) {
+                    statusEl.innerText = "Upload Error: " + error.message; 
+                    statusEl.classList.remove('text-blue-600', 'text-green-600'); 
+                    statusEl.classList.add('text-red-600'); 
+                }
+                if (progressContainer) progressContainer.classList.add('hidden');
+                
+                if (uploadBtn) {
+                    uploadBtn.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-red-500 text-lg"></i> Try Again`;
+                    uploadBtn.className = "w-full bg-red-50 border border-red-300 text-red-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition-all active:scale-95";
+                }
+            }
+            if (fileInput) fileInput.value = '';
+        };
+
+        xhr.onerror = function() {
+            if (statusEl) {
+                statusEl.innerText = "Network Error. Please try again."; 
+                statusEl.classList.remove('text-blue-600', 'text-green-600'); 
+                statusEl.classList.add('text-red-600'); 
+            }
+            if (progressContainer) progressContainer.classList.add('hidden');
+            if (uploadBtn) {
+                uploadBtn.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-red-500 text-lg"></i> Try Again`;
+                uploadBtn.className = "w-full bg-red-50 border border-red-300 text-red-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition-all active:scale-95";
+            }
+            if (fileInput) fileInput.value = '';
+        };
+
+        xhr.send(encodedPayload);
+    };
+    reader.readAsDataURL(file);
+};
  <!-- ========================================== -->
 <!-- BULK: ADMIN VIDEO UPLOAD MODAL -->
 <!-- ========================================== -->
