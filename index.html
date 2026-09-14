@@ -3678,6 +3678,85 @@ if (isFirebaseConfigured) {
             const index = Math.abs(hash) % colors.length;
             return colors[index];
         };
+
+        // 📱 WhatsApp-Style Long-Press & Slide-to-Reply Engine
+        let chatPressTimer = null;
+        let swipeStartX = 0;
+        let swipeCurrentX = 0;
+        let activeSwipeMsgId = null;
+
+        window.handleBubbleTouchStart = function(e, msgId) {
+            swipeStartX = e.touches[0].clientX;
+            activeSwipeMsgId = msgId;
+
+            // Start Long-Press timer (500ms)
+            if (chatPressTimer) clearTimeout(chatPressTimer);
+            chatPressTimer = setTimeout(() => {
+                window.toggleChatMenu(msgId);
+                if (navigator.vibrate) navigator.vibrate(40);
+                activeSwipeMsgId = null; // Cancel swipe if long-press triggers
+            }, 500);
+        };
+
+        window.handleBubbleTouchMove = function(e, msgId) {
+            if (activeSwipeMsgId !== msgId) return;
+            swipeCurrentX = e.touches[0].clientX;
+            const diff = swipeCurrentX - swipeStartX;
+
+            // If user starts swiping right, cancel the long-press
+            if (Math.abs(diff) > 10 && chatPressTimer) {
+                clearTimeout(chatPressTimer);
+                chatPressTimer = null;
+            }
+
+            // Smoothly slide the message bubble to the right (Max 80px)
+            if (diff > 0 && diff < 100) {
+                const bubbleRow = document.getElementById(`bubble-inner-${msgId}`);
+                if (bubbleRow) {
+                    bubbleRow.style.transition = 'none';
+                    bubbleRow.style.transform = `translateX(${diff}px)`;
+                }
+            }
+        };
+
+        window.handleBubbleTouchEnd = function(e, msgId, name, text) {
+            if (chatPressTimer) {
+                clearTimeout(chatPressTimer);
+                chatPressTimer = null;
+            }
+
+            if (activeSwipeMsgId !== msgId) return;
+            const diff = swipeCurrentX - swipeStartX;
+            const bubbleRow = document.getElementById(`bubble-inner-${msgId}`);
+
+            // Snap back animation
+            if (bubbleRow) {
+                bubbleRow.style.transition = 'transform 0.2s ease';
+                bubbleRow.style.transform = 'translateX(0px)';
+            }
+
+            // If swiped right past 50px threshold, trigger reply!
+            if (diff > 50) {
+                window.replyToMessage(msgId, name, text);
+                if (navigator.vibrate) navigator.vibrate(50);
+            }
+
+            activeSwipeMsgId = null;
+        };
+
+        window.handleBubbleMouseDown = function(msgId) {
+            if (chatPressTimer) clearTimeout(chatPressTimer);
+            chatPressTimer = setTimeout(() => {
+                window.toggleChatMenu(msgId);
+            }, 500);
+        };
+
+        window.handleBubbleMouseUp = function() {
+            if (chatPressTimer) {
+                clearTimeout(chatPressTimer);
+                chatPressTimer = null;
+            }
+        };
         // ==========================================
 // 🚀 UNIFIED GOOGLE DRIVE UPLOADER
 // ==========================================
@@ -5913,13 +5992,19 @@ wrapper.innerHTML = `
     
     <div class="relative flex flex-col items-${isMe ? 'end' : 'start'} min-w-0 group/bubble">
         
-        <div class="relative flex items-start group/bubble min-w-0">
+        <div id="bubble-inner-${msg.id}" class="relative flex items-start group/bubble min-w-0 touch-pan-y" 
+             ontouchstart="window.handleBubbleTouchStart(event, '${msg.id}')" 
+             ontouchmove="window.handleBubbleTouchMove(event, '${msg.id}')" 
+             ontouchend="window.handleBubbleTouchEnd(event, '${msg.id}', '${msg.name.replace(/'/g,"\\'")}', '${(msg.text || 'Media').replace(/'/g,"\\'")}')"
+             onmousedown="window.handleBubbleMouseDown('${msg.id}')" 
+             onmouseup="window.handleBubbleMouseUp()" 
+             onmouseleave="window.handleBubbleMouseUp()">
+             
             <!-- WhatsApp Style Tail -->
             ${!isMe ? leftTail : ''}
             
             <!-- Chat Bubble Base -->
-            <div class="${bubbleBg} ${bubbleShape} shadow-[0_1px_1px_rgba(11,20,26,0.15)] p-1.5 sm:p-2 px-2.5 relative cursor-pointer hover:shadow-md transition-shadow min-w-[90px] max-w-full z-10" onclick="toggleChatMenu('${msg.id}')">
-                
+            <div class="${bubbleBg} ${bubbleShape} shadow-[0_1px_1px_rgba(11,20,26,0.15)] p-1.5 sm:p-2 px-2.5 relative cursor-pointer hover:shadow-md transition-shadow min-w-[90px] max-w-full z-10">
                 ${senderNameHtml}
                 ${replyHtml}
                 ${imgHtml}
