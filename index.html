@@ -3679,84 +3679,108 @@ if (isFirebaseConfigured) {
             return colors[index];
         };
 
-        // 📱 WhatsApp-Style Long-Press & Slide-to-Reply Engine
-        let chatPressTimer = null;
-        let swipeStartX = 0;
-        let swipeCurrentX = 0;
-        let activeSwipeMsgId = null;
+       // 📱 WhatsApp-Style Long-Press & Slide-to-Reply Engine
+let chatPressTimer = null;
+let swipeStartX = 0;
+let swipeCurrentX = 0;
+let activeSwipeMsgId = null;
+let isSwiping = false;
 
-        window.handleBubbleTouchStart = function(e, msgId) {
-            swipeStartX = e.touches[0].clientX;
-            activeSwipeMsgId = msgId;
+window.handleBubbleTouchStart = function(e, msgId) {
+    swipeStartX = e.touches ? e.touches[0].clientX : e.clientX;
+    activeSwipeMsgId = msgId;
+    isSwiping = false;
 
-            // Start Long-Press timer (500ms)
-            if (chatPressTimer) clearTimeout(chatPressTimer);
-            chatPressTimer = setTimeout(() => {
-                window.toggleChatMenu(msgId);
-                if (navigator.vibrate) navigator.vibrate(40);
-                activeSwipeMsgId = null; // Cancel swipe if long-press triggers
-            }, 1000);
-        };
+    const bubbleRow = document.getElementById(`bubble-inner-${msgId}`);
+    if (bubbleRow) bubbleRow.style.transition = 'none'; // Disable transition for instant drag
 
-        window.handleBubbleTouchMove = function(e, msgId) {
-            if (activeSwipeMsgId !== msgId) return;
-            swipeCurrentX = e.touches[0].clientX;
-            const diff = swipeCurrentX - swipeStartX;
+    // Start Long-Press timer (500ms for faster native feel)
+    if (chatPressTimer) clearTimeout(chatPressTimer);
+    chatPressTimer = setTimeout(() => {
+        if (!isSwiping) {
+            window.showChatMenu(msgId);
+            if (navigator.vibrate) navigator.vibrate(40);
+            activeSwipeMsgId = null; // Cancel swipe
+        }
+    }, 500); 
+};
 
-            // If user starts swiping right, cancel the long-press
-            if (Math.abs(diff) > 10 && chatPressTimer) {
-                clearTimeout(chatPressTimer);
-                chatPressTimer = null;
+window.handleBubbleTouchMove = function(e, msgId) {
+    if (activeSwipeMsgId !== msgId) return;
+    swipeCurrentX = e.touches ? e.touches[0].clientX : e.clientX;
+    const diff = swipeCurrentX - swipeStartX;
+
+    // Detect intentional swipe vs accidental tap
+    if (Math.abs(diff) > 10) {
+        isSwiping = true;
+        if (chatPressTimer) {
+            clearTimeout(chatPressTimer);
+            chatPressTimer = null;
+        }
+    }
+
+    // Smoothly slide the message bubble to the RIGHT with friction (Max 100px)
+    if (isSwiping && diff > 0 && diff < 100) {
+        const bubbleRow = document.getElementById(`bubble-inner-${msgId}`);
+        const replyIcon = document.getElementById(`reply-icon-bg-${msgId}`);
+
+        if (bubbleRow) {
+            const moveX = diff * 0.6; // 0.6 adds rubber-band friction
+            bubbleRow.style.transform = `translateX(${moveX}px)`;
+
+            // Reveal reply icon smoothly behind the bubble
+            if (replyIcon) {
+                replyIcon.style.opacity = Math.min(1, moveX / 40);
+                replyIcon.style.transform = `scale(${Math.min(1, moveX / 40)})`;
             }
+        }
+    }
+};
 
-            // Smoothly slide the message bubble to the right (Max 80px)
-            if (diff > 0 && diff < 100) {
-                const bubbleRow = document.getElementById(`bubble-inner-${msgId}`);
-                if (bubbleRow) {
-                    bubbleRow.style.transition = 'none';
-                    bubbleRow.style.transform = `translateX(${diff}px)`;
-                }
-            }
-        };
+window.handleBubbleTouchEnd = function(e, msgId, name, text) {
+    if (chatPressTimer) {
+        clearTimeout(chatPressTimer);
+        chatPressTimer = null;
+    }
 
-        window.handleBubbleTouchEnd = function(e, msgId, name, text) {
-            if (chatPressTimer) {
-                clearTimeout(chatPressTimer);
-                chatPressTimer = null;
-            }
+    if (activeSwipeMsgId !== msgId) return;
+    const diff = swipeCurrentX - swipeStartX;
 
-            if (activeSwipeMsgId !== msgId) return;
-            const diff = swipeCurrentX - swipeStartX;
-            const bubbleRow = document.getElementById(`bubble-inner-${msgId}`);
+    const bubbleRow = document.getElementById(`bubble-inner-${msgId}`);
+    const replyIcon = document.getElementById(`reply-icon-bg-${msgId}`);
 
-            // Snap back animation
-            if (bubbleRow) {
-                bubbleRow.style.transition = 'transform 0.2s ease';
-                bubbleRow.style.transform = 'translateX(0px)';
-            }
+    // Snap back animation
+    if (bubbleRow) {
+        bubbleRow.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+        bubbleRow.style.transform = 'translateX(0px)';
+    }
+    
+    // Hide reply icon
+    if (replyIcon) {
+        replyIcon.style.transition = 'opacity 0.3s, transform 0.3s';
+        replyIcon.style.opacity = '0';
+        replyIcon.style.transform = 'scale(0)';
+    }
 
-            // If swiped right past 50px threshold, trigger reply!
-            if (diff > 50) {
-                window.replyToMessage(msgId, name, text);
-                if (navigator.vibrate) navigator.vibrate(50);
-            }
+    // Trigger Reply if swiped far enough past the threshold (60px)
+    if (isSwiping && diff > 60) {
+        window.replyToMessage(msgId, name, text);
+        if (navigator.vibrate) navigator.vibrate(50); // Haptic pop!
+    }
 
-            activeSwipeMsgId = null;
-        };
+    activeSwipeMsgId = null;
+    isSwiping = false;
+    swipeCurrentX = 0;
+    swipeStartX = 0;
+};
 
-        window.handleBubbleMouseDown = function(msgId) {
-            if (chatPressTimer) clearTimeout(chatPressTimer);
-            chatPressTimer = setTimeout(() => {
-                window.toggleChatMenu(msgId);
-            }, 1000); // 2000ms = 2 full seconds
-        };
-
-        window.handleBubbleMouseUp = function() {
-            if (chatPressTimer) {
-                clearTimeout(chatPressTimer);
-                chatPressTimer = null;
-            }
-        };
+// Map Desktop Mouse Events to the Touch Engine
+window.handleBubbleMouseDown = window.handleBubbleTouchStart;
+window.handleBubbleMouseUp = function(e, msgId, name, text) {
+    if (isSwiping) window.handleBubbleTouchEnd(e, msgId, name, text);
+    else if (chatPressTimer) { clearTimeout(chatPressTimer); chatPressTimer = null; }
+};
+window.handleBubbleMouseLeave = window.handleBubbleMouseUp;
         // ==========================================
 // 🚀 UNIFIED GOOGLE DRIVE UPLOADER
 // ==========================================
@@ -5176,10 +5200,36 @@ window.openNovaFeedbackModal = function(scriptId) {
     if (!(await window.showCustomConfirm("Delete Message", "Delete this message for everyone?", "Delete", "Cancel", "danger"))) return;
     if(isFirebaseConfigured) { await deleteDoc(doc(db, "chat", id)); } else { window.chatDB = window.chatDB.filter(c => c.id !== id); renderChat(); } 
 };
-        window.toggleChatMenu = function(id) { const actions = document.getElementById(`chat-actions-${id}`); const dot = document.getElementById(`chat-dot-${id}`); if(actions.classList.contains('hidden')) { document.querySelectorAll('[id^="chat-actions-"]').forEach(el => el.classList.add('hidden')); document.querySelectorAll('[id^="chat-dot-"]').forEach(el => el.classList.remove('hidden')); actions.classList.remove('hidden'); dot.classList.add('hidden'); } else { actions.classList.add('hidden'); dot.classList.remove('hidden'); } }
+       window.showChatMenu = function(id) {
+    // Remove existing backdrops & hide other menus
+    document.querySelectorAll('.chat-menu-backdrop').forEach(el => el.remove());
+    document.querySelectorAll('[id^="chat-actions-"]').forEach(el => {
+        el.classList.add('hidden', 'opacity-0', 'scale-90');
+    });
+
+    const actions = document.getElementById(`chat-actions-${id}`);
+    if (!actions) return;
+
+    // Create invisible backdrop to detect outside clicks
+    const backdrop = document.createElement('div');
+    backdrop.className = 'chat-menu-backdrop fixed inset-0 z-[9998]';
+    backdrop.onclick = () => {
+        actions.classList.add('opacity-0', 'scale-90');
+        setTimeout(() => actions.classList.add('hidden'), 200);
+        backdrop.remove();
+    };
+    document.body.appendChild(backdrop);
+
+    // Show menu with pop animation
+    actions.classList.remove('hidden');
+    setTimeout(() => {
+        actions.classList.remove('opacity-0', 'scale-90');
+        actions.classList.add('opacity-100', 'scale-100');
+    }, 10);
+};
         window.replyToMessage = function(id, name, text) { window.replyingTo = { id, name, text: text.substring(0, 40) }; document.getElementById('chat-reply-banner').classList.remove('hidden'); document.getElementById('reply-name').innerText = name; document.getElementById('reply-text').innerText = window.replyingTo.text; toggleChatMenu(id); document.getElementById('chat-input').focus(); }
         window.cancelChatReply = function() { window.replyingTo = null; document.getElementById('chat-reply-banner').classList.add('hidden'); }
-        
+    
         // Audio Recording
        let mediaRecorder; let audioChunks = []; let audioBlob = null; let recordingTimerInterval = null; let recordingSeconds = 0;
 
@@ -5286,21 +5336,28 @@ window.openNovaFeedbackModal = function(scriptId) {
         // @ MENTION ENGINE
         // ==========================================
         window.mentionStartIndex = -1;
-    const chatInput = document.getElementById('chat-input');
+const chatInput = document.getElementById('chat-input');
 
-// 1. Handle sending the message via Enter key (PC keyboard)
+// 1. Handle sending the message via Enter key intelligently
 chatInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault(); // Prevent new line
-        
-        // Only send if there is text
-        if (this.value.trim().length > 0) {
-            sendChatMessage(); // This function already clears the input
+    // Detect if the device is a mobile phone (width < 768px matches your Tailwind 'md' breakpoint)
+    const isMobile = window.innerWidth < 768;
+
+    // If Desktop/Tablet: Enter sends the message (Shift+Enter makes a new line)
+    if (!isMobile) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault(); // Prevent the default new line
             
-            // Reset the height back to 1 line after sending
-            this.style.height = 'auto'; 
+            // Only send if there is text
+            if (this.value.trim().length > 0) {
+                sendChatMessage(); // Function automatically clears the input
+                this.style.height = 'auto'; // Reset text box height
+            }
         }
     }
+    // If Mobile: We do absolutely nothing! 
+    // The native virtual keyboard's "Enter/Return" button will naturally drop to the next line.
+    // Mobile users will just tap the green "Send" icon when they are done typing.
 });
 
 // 2. Handle auto-expand, show send button, and mentions as the user types
@@ -5975,43 +6032,51 @@ const tailColor = isMe ? 'text-[#d9fdd3]' : 'text-white';
 const senderColor = !isMe ? window.getSenderColor(msg.mobile) : '';
 const senderNameHtml = !isMe ? `<div class="text-[11px] sm:text-[12.5px] font-black mb-1 flex items-center break-words leading-tight" style="color: ${senderColor};">${msg.name} ${adminBadge}</div>` : '';
 
+// Define WhatsApp-style tails
+const leftTail = `<svg viewBox="0 0 8 13" width="8" height="13" class="absolute top-0 -left-[7px] text-white"><path fill="currentColor" d="M5.188 0H0v11.193l6.467-8.625C7.526 1.156 6.958 0 5.188 0z"></path></svg>`;
+const rightTail = `<svg viewBox="0 0 8 13" width="8" height="13" class="absolute top-0 -right-[7px] text-[#d9fdd3]"><path fill="currentColor" d="M2.812 0H8v11.193L1.533 2.568C.474 1.156 1.042 0 2.812 0z"></path></svg>`;
 const actionsHtml = `
-<div id="chat-actions-${msg.id}" class="hidden flex flex-col items-center gap-1.5 bg-white rounded-xl px-3 py-2 shadow-[0_15px_40px_rgba(0,0,0,0.35)] border border-gray-100 text-xs font-bold absolute -top-12 ${isMe ? 'right-0' : 'left-0'} z-[9999] text-gray-700 transition-all">
-    <button onclick="replyToMessage('${msg.id}', '${msg.name.replace(/'/g,"\\'")}', '${(msg.text || 'Media').replace(/'/g,"\\'")}')" class="hover:text-indigo-600 flex items-center gap-1.5 whitespace-nowrap">
+<div id="chat-actions-${msg.id}" class="hidden flex flex-col items-start gap-0.5 bg-white/95 backdrop-blur-md rounded-xl px-2 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.2)] border border-gray-100 text-xs font-bold absolute -top-14 ${isMe ? 'right-4' : 'left-4'} z-[9999] text-gray-700 transition-all duration-200 opacity-0 scale-90 origin-bottom">
+    <button onclick="replyToMessage('${msg.id}', '${msg.name.replace(/'/g,"\\'")}', '${(msg.text || 'Media').replace(/'/g,"\\'")}')" class="hover:bg-indigo-50 hover:text-indigo-600 rounded-lg flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors">
         <i class="fa-solid fa-reply"></i> Reply
     </button>
     ${canDelete ? `
-    <div class="w-full h-px bg-gray-100"></div>
-    <button onclick="deleteChatMessage('${msg.id}')" class="text-red-600 hover:text-red-700 flex items-center gap-1.5 whitespace-nowrap">
+    <div class="w-full h-px bg-gray-100 my-0.5"></div>
+    <button onclick="deleteChatMessage('${msg.id}')" class="text-red-500 hover:bg-red-50 hover:text-red-600 rounded-lg flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors">
         <i class="fa-solid fa-trash"></i> Delete
     </button>` : ''}
 </div>`;
-// 🚀 WHATSAPP TOP-CORNER TAILS
-const rightTail = `<svg viewBox="0 0 8 13" class="absolute -right-[7px] top-0 w-[8px] h-[13px] ${tailColor} z-10 drop-shadow-[0_1px_1px_rgba(11,20,26,0.1)]"><path fill="currentColor" d="M5.188 1H0v11.193l6.467-8.625C7.526 2.156 6.958 1 5.188 1z"></path></svg>`;
-const leftTail = `<svg viewBox="0 0 8 13" class="absolute -left-[7px] top-0 w-[8px] h-[13px] ${tailColor} z-10 drop-shadow-[0_1px_1px_rgba(11,20,26,0.1)]"><path fill="currentColor" d="M2.812 1H8v11.193L1.533 3.568C.474 2.156 1.042 1 2.812 1z"></path></svg>`;
-wrapper = document.createElement('div'); 
-wrapper.id = msgElementId;
-wrapper.className = `flex w-full group ${isMe ? 'justify-end' : 'justify-start'} mb-1.5 shrink-0`;
+
+    wrapper = document.createElement('div');
+    wrapper.id = msgElementId;
+    wrapper.className = `flex w-full group ${isMe ? 'justify-end' : 'justify-start'} mb-1.5 shrink-0`;
+
 
 wrapper.innerHTML = `
 <div class="flex items-start gap-1.5 sm:gap-2 max-w-[90%] sm:max-w-[85%] relative ${isMe ? 'flex-row-reverse' : ''}">
-    
-    <!-- Profile Picture (Top Aligned like WhatsApp Groups) -->
+
     ${!isMe ? `<img src="${msgDp}" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover shadow-sm shrink-0 border border-gray-200 cursor-pointer z-10" title="${msg.name}">` : ''}
-    
-    <div class="relative flex flex-col items-${isMe ? 'end' : 'start'} min-w-0 group/bubble">
-        
-        <div id="bubble-inner-${msg.id}" class="relative flex items-start group/bubble min-w-0 touch-pan-y" 
-             ontouchstart="window.handleBubbleTouchStart(event, '${msg.id}')" 
-             ontouchmove="window.handleBubbleTouchMove(event, '${msg.id}')" 
+
+    <!-- RELATIVE WRAPPER TO HOLD THE ICON AND THE SWIPABLE BUBBLE -->
+    <div class="relative flex items-center min-w-0 w-full group/bubble">
+
+        <!-- THE REVEALED REPLY ICON -->
+        <div id="reply-icon-bg-${msg.id}" class="absolute left-[-35px] w-7 h-7 bg-black/10 rounded-full flex items-center justify-center opacity-0 scale-0 z-0">
+            <i class="fa-solid fa-reply text-gray-700 text-[10px]"></i>
+        </div>
+
+        <!-- THE SWIPABLE INNER BUBBLE -->
+        <div id="bubble-inner-${msg.id}" class="relative flex items-start group/bubble min-w-0 touch-pan-y w-full"
+             ontouchstart="window.handleBubbleTouchStart(event, '${msg.id}')"
+             ontouchmove="window.handleBubbleTouchMove(event, '${msg.id}')"
              ontouchend="window.handleBubbleTouchEnd(event, '${msg.id}', '${msg.name.replace(/'/g,"\\'")}', '${(msg.text || 'Media').replace(/'/g,"\\'")}')"
-             onmousedown="window.handleBubbleMouseDown('${msg.id}')" 
-             onmouseup="window.handleBubbleMouseUp()" 
-             onmouseleave="window.handleBubbleMouseUp()">
-             
+             onmousedown="window.handleBubbleMouseDown(event, '${msg.id}')"
+             onmouseup="window.handleBubbleMouseUp(event, '${msg.id}', '${msg.name.replace(/'/g,"\\'")}', '${(msg.text || 'Media').replace(/'/g,"\\'")}')"
+             onmouseleave="window.handleBubbleMouseLeave(event, '${msg.id}')">
+
             <!-- WhatsApp Style Tail -->
             ${!isMe ? leftTail : ''}
-            
+
             <!-- Chat Bubble Base -->
             <div class="${bubbleBg} ${bubbleShape} shadow-[0_1px_1px_rgba(11,20,26,0.15)] p-1.5 sm:p-2 px-2.5 relative cursor-pointer hover:shadow-md transition-shadow min-w-[90px] max-w-full z-10">
                 ${senderNameHtml}
@@ -6019,33 +6084,29 @@ wrapper.innerHTML = `
                 ${imgHtml}
                 ${docHtml}
                 ${audioHtml}
-                
-              <!-- Message Text with Phantom Spacing Hack -->
+
                 ${textContent ? `
                 <div class="relative w-full text-left min-w-0 ${textColor} pt-0.5 pb-1">
                     ${textContent.replace('</div>', '<span class="inline-block w-[75px] sm:w-[90px] h-3"></span></div>')}
                 </div>` : `
-                <!-- Media Spacing Hack (Creates a clean 20px strip for time/ticks on images/docs) -->
                 <div class="h-5 sm:h-6 w-full"></div>
                 `}
-                
-                <!-- Floating Time & Read Ticks (Locked to bottom right) -->
+
                 <div class="absolute bottom-1 right-2 flex items-center justify-end gap-1 select-none z-20">
                     <span class="text-[9.5px] font-semibold ${timeColor} leading-none">${timeStr}</span>
                     <span id="ticks-${msg.id}" class="flex items-center leading-none">${ticksHTML}</span>
                 </div>
             </div>
-            
+
             <!-- WhatsApp Style Tail -->
             ${isMe ? rightTail : ''}
             
             ${actionsHtml}
         </div>
     </div>
-    
+
     ${isMe ? `<img src="${msgDp}" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover shadow-sm shrink-0 border border-[#d9fdd3] cursor-pointer z-10">` : ''}
 </div>`;
-
 list.appendChild(wrapper);
                 } else {
                     if (isMe) {
