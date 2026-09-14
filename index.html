@@ -14710,90 +14710,58 @@ window.endMathWorkout = function() {
 };
 
 
-   // ==========================================
-// FITNESS: "IF DATE OVER, MARK ABSENT" ENGINE
-// ==========================================
-window.enforceFitnessAbsence = async function() {
-    if (window.currentRole !== 'student' || !window.loggedInMobile) return;
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Strictly midnight today
-    let needsRefresh = false;
-
-    // Check the past 7 days (1 day ago to 7 days ago)
-    for (let i = 1; i <= 7; i++) {
-        let pastDate = new Date(today);
-        pastDate.setDate(today.getDate() - i);
-        let dateStr = window.formatDateDDMMYYYY(pastDate);
-
-        // Did they log ANYTHING (run or absent) on this past date?
-        const hasLog = window.fitnessDB.some(l => l.mobile === window.loggedInMobile && l.date === dateStr);
-
-        // If the date is over and they didn't update it, mark ABSENT
-        if (!hasLog) {
-            let pastTimestamp = pastDate.getTime() + (23 * 60 * 60 * 1000); // Set time to 11:00 PM of that missed day
-
-            const absentPayload = {
-                mobile: window.loggedInMobile,
-                distance: 0,
-                time: 0,
-                pace: 'ABSENT',
-                cals: 0,
-                isAbsent: true,
-                date: dateStr,
-                timestamp: pastTimestamp
-            };
-
-            // Push to database
-            if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.db) {
-                await addDoc(collection(db, "fitness_logs"), absentPayload);
-            } else {
-                window.fitnessDB.push({ id: Math.random().toString(), ...absentPayload });
-            }
-            needsRefresh = true;
-        }
-    }
-
-    // Only force a UI re-render if we actually injected new absent records
-    if (needsRefresh) {
-        renderFitnessMonitor();
-    }
-};
-// ==========================================
-// 📥 FULL-SCREEN IMAGE DOWNLOADER
+ // ==========================================
+// 📥 FORCED FULL-SCREEN IMAGE DOWNLOADER
 // ==========================================
 window.downloadFullScreenImage = async function() {
     const imgEl = document.getElementById('fullscreen-img-src');
     if (!imgEl || !imgEl.src) return;
 
-    const imageUrl = imgEl.src;
+    let imageUrl = imgEl.src;
     
-    // Optional: Show a quick toast notification
     if(typeof window.showToast === 'function') {
-        window.showToast("Downloading", "Saving image to your device...", "info");
+        window.showToast("Downloading...", "Saving directly to your device.", "info");
     }
 
     try {
-        // Fetch the image as a Blob to force a direct download (prevents opening in new tab)
-        const response = await fetch(imageUrl);
+        // 🔥 Bypasses CORS by routing Google Drive images through your proxy
+        if (imageUrl.includes('drive.google.com')) {
+            imageUrl = `https://pdf-subhankar.connect-subhankar-info.workers.dev/?url=${encodeURIComponent(imageUrl)}`;
+        }
+
+        // Fetch image as a Blob to force a native system download
+        const response = await fetch(imageUrl, { mode: 'cors' });
+        if (!response.ok) throw new Error("Download blocked by browser.");
+        
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
         
-        // Create a temporary link to trigger the download
+        // Create an invisible anchor tag to trigger the system save dialog
         const a = document.createElement('a');
+        a.style.display = 'none';
         a.href = blobUrl;
-        a.download = `EXAMA_Image_${Date.now()}.jpg`; // Unique file name
+        a.download = `EXAMA_Photo_${Date.now()}.jpg`;
+        
         document.body.appendChild(a);
         a.click();
         
-        // Clean up
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(blobUrl);
+        // Clean up memory
+        setTimeout(() => {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(blobUrl);
+            if(typeof window.showToast === 'function') window.showToast("Saved!", "Check your gallery/downloads folder.", "success");
+        }, 1000);
         
     } catch (e) {
-        console.error("Download failed, using fallback:", e);
-        // Fallback: If CORS blocks the fetch, open the image in a new tab so they can long-press to save
-        window.open(imageUrl, '_blank');
+        console.error("Direct download failed, using fallback:", e);
+        // Fallback for strict browsers: Force a download attribute on a new tab
+        const a = document.createElement('a');
+        a.href = imageUrl;
+        a.download = `EXAMA_Photo_${Date.now()}.jpg`;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
     }
 };
 
