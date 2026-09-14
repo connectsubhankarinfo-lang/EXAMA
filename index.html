@@ -673,7 +673,7 @@
             </div>
         </div>
 
-        <<!-- FULL SCREEN IMAGE MODAL -->
+        <!-- FULL SCREEN IMAGE MODAL -->
         <div id="fullscreen-image-modal" class="hidden-view absolute inset-0 z-[110] bg-black/95 flex flex-col items-center justify-center transition-opacity fade-in">
             
             <!-- NEW DOWNLOAD BUTTON (Top Left Corner) -->
@@ -3519,6 +3519,48 @@ if (isFirebaseConfigured) {
 }
 
         window.studentsDB = []; window.peerAudioDrafts = {};window.annotatedImagesDraft = {};window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null;window.videosDB = []; window.activeVideoCategory = 'All';
+        // ==========================================
+// 🚀 UNIFIED GOOGLE DRIVE UPLOADER
+// ==========================================
+window.EXAMA_DRIVE_API = "https://script.google.com/macros/s/AKfycbx-SUVz6yrJnWkakPrGxbHx7iUER3PfCv4QjNcmQJKc3dy7SW0DZx0LhKh0csoyy-v_Jg/exec"; // <--- PASTE IT HERE!
+
+window.uploadFileToDrive = async function(file, folderType, isDocument = false) {
+    let base64Data = "";
+    
+    if (isDocument) {
+        // Handle PDFs and standard documents directly
+        base64Data = await new Promise((res) => {
+            const reader = new FileReader();
+            reader.onloadend = () => res(reader.result.split(',')[1]);
+            reader.readAsDataURL(file);
+        });
+    } else {
+        // Compress images before upload to save space and speed up loading
+        const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
+        base64Data = await new Promise((res) => {
+            const reader = new FileReader();
+            reader.onloadend = () => res(reader.result.split(',')[1]);
+            reader.readAsDataURL(compressedFile);
+        });
+    }
+
+    const payload = {
+        fileName: file.name,
+        mimeType: file.type,
+        base64: base64Data,
+        folderType: folderType 
+    };
+
+    const res = await fetch(window.EXAMA_DRIVE_API, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (data.success) return data.url;
+    throw new Error(data.error);
+};
         
        // Toggle the attachment menu (Crash-Proof)
 window.toggleChatAttachMenu = function() {
@@ -3544,85 +3586,20 @@ window.uploadChatAttachment = async function(event, type) {
     const percEl = document.getElementById('chat-upload-perc');
     const barEl = document.getElementById('chat-upload-bar');
     
-    // 100% Safe Checks: Won't crash even if HTML is missing
-    if (banner && banner.classList) banner.classList.remove('hidden');
-    if (textEl) textEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Processing ${files.length} file(s)...`;
-    if (barEl) barEl.style.width = '10%';
-    if (percEl) percEl.innerText = '10%';
+    if (banner) banner.classList.remove('hidden');
+    if (textEl) textEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Uploading to Drive...`;
+    if (barEl) barEl.style.width = '20%';
+    if (percEl) percEl.innerText = '20%';
 
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwiwWkKotWcBO1YFrMqNPp1eMK6MVTluWbarWdaJvyDKYVleFE6s8wi4NHMssUpj1AHJg/exec"; 
-    
     try {
         let uploadedUrls = [];
+        const isDoc = type === 'document';
+        const folderCode = isDoc ? 'chat_doc' : 'chat_img';
         
         for (let i = 0; i < files.length; i++) {
-            let file = files[i];
-            let base64Data = "";
-            
-            if (textEl) textEl.innerHTML = `<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Sending ${i+1}/${files.length} to Discus`;
-
-            if (type === 'image') {
-                const compressed = await window.compressImage(file, 1200, 1200, 0.85);
-                base64Data = await new Promise((res) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => res(reader.result.split(',')[1]);
-                    reader.readAsDataURL(compressed);
-                });
-            } else {
-                base64Data = await new Promise((res) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => res(reader.result.split(',')[1]);
-                    reader.readAsDataURL(file);
-                });
-            }
-
-            const payloadData = {
-                module: "chat",
-                type: type, 
-                fileName: file.name,
-                mimeType: file.type,
-                base64: base64Data
-            };
-
-            const encodedPayload = "payload=" + encodeURIComponent(JSON.stringify(payloadData));
-            
-            let simulatedProgress = 10;
-            let progressInterval = setInterval(() => {
-                if (simulatedProgress < 90) {
-                    simulatedProgress += Math.floor(Math.random() * 8) + 2;
-                    if (simulatedProgress > 90) simulatedProgress = 90;
-                    if (barEl) barEl.style.width = simulatedProgress + '%';
-                    if (percEl) percEl.innerText = simulatedProgress + '%';
-                }
-            }, 400);
-
-            const response = await fetch(SCRIPT_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: encodedPayload
-            });
-
-            clearInterval(progressInterval);
-            
-            if (!response.ok) throw new Error("Google Drive connection failed.");
-            const result = await response.json();
-            
-            if (result.success) {
-                let finalUrl = result.viewUrl;
-                
-                // 🔥 THE MAGIC FIX FOR GOOGLE DRIVE IMAGES 🔥
-                if (type === 'image') {
-                    const match = finalUrl.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
-                    if (match && match[1]) {
-                        // Bypasses Drive's security block by pulling the raw thumbnail pixels!
-                        finalUrl = `https://drive.google.com/thumbnail?id=${match[1]}&sz=w1200`;
-                    }
-                }
-                
-                uploadedUrls.push({ url: finalUrl, name: file.name });
-            } else {
-                throw new Error(result.error);
-            }
+            if (textEl) textEl.innerHTML = `<i class="fa-solid fa-cloud-arrow-up mr-1"></i> Sending ${i+1}/${files.length}`;
+            const fileUrl = await window.uploadFileToDrive(files[i], folderCode, isDoc);
+            uploadedUrls.push({ url: fileUrl, name: files[i].name });
         }
 
         if (barEl) barEl.style.width = '100%';
@@ -3639,27 +3616,24 @@ window.uploadChatAttachment = async function(event, type) {
             replyTo: window.replyingTo ? window.replyingTo : null 
         };
         
-        if (type === 'image') {
-            chatPayload.imgUrls = uploadedUrls.map(u => u.url);
-        } else {
-            chatPayload.docUrls = uploadedUrls;
-        }
+        if (type === 'image') chatPayload.imgUrls = uploadedUrls.map(u => u.url);
+        else chatPayload.docUrls = uploadedUrls;
 
         await window.dbSendChat(chatPayload);
-        if (typeof sendOneSignalPush === 'function') sendOneSignalPush(`New ${type === 'image' ? 'Photo' : 'Document'} from ${senderName}`, "Tap to view in Discus."); 
+        if (typeof sendOneSignalPush === 'function') sendOneSignalPush(`New ${isDoc ? 'Document' : 'Photo'} from ${senderName}`, "Tap to view in Discus."); 
         if (typeof window.markChatAsRead === 'function') window.markChatAsRead(); 
         if (typeof window.cancelChatReply === 'function') window.cancelChatReply();
 
     } catch(e) {
         console.error(e);
         if (textEl) textEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-red-500 mr-1"></i> Failed`;
-        if (barEl && barEl.classList) barEl.classList.replace('from-blue-500', 'from-red-500');
+        if (barEl) barEl.classList.replace('from-blue-500', 'from-red-500');
         alert("Upload failed. Check connection.");
     }
 
     setTimeout(() => {
-        if (banner && banner.classList) banner.classList.add('hidden');
-        if (barEl && barEl.classList) barEl.classList.replace('from-red-500', 'from-blue-500');
+        if (banner) banner.classList.add('hidden');
+        if (barEl) barEl.classList.replace('from-red-500', 'from-blue-500');
     }, 2000);
     
     if (event.target) event.target.value = ''; 
@@ -3789,6 +3763,46 @@ window.showCustomConfirm = function(title, message, confirmText = 'Yes', cancelT
         document.getElementById('dialog-cancel-btn').onclick = () => closeModal(false);
         document.getElementById('dialog-confirm-btn').onclick = () => closeModal(true);
     });
+};
+
+const SCRIPT_URL = window.EXAMA_DRIVE_API;
+
+window.uploadFileToDrive = async function(file, folderType, isDocument = false) {
+    let base64Data = "";
+    
+    if (isDocument) {
+        // Handle PDFs directly
+        base64Data = await new Promise((res) => {
+            const reader = new FileReader();
+            reader.onloadend = () => res(reader.result.split(',')[1]);
+            reader.readAsDataURL(file);
+        });
+    } else {
+        // Compress images before upload
+        const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
+        base64Data = await new Promise((res) => {
+            const reader = new FileReader();
+            reader.onloadend = () => res(reader.result.split(',')[1]);
+            reader.readAsDataURL(compressedFile);
+        });
+    }
+
+    const payload = {
+        fileName: file.name,
+        mimeType: file.type,
+        base64: base64Data,
+        folderType: folderType 
+    };
+
+    const res = await fetch(window.EXAMA_DRIVE_API, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, // Fixes preflight
+        body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (data.success) return data.url;
+    throw new Error(data.error);
 };
 
 // ==========================================
@@ -4279,52 +4293,39 @@ window.clearRedPenCanvas = function() {
 };
 
 window.saveRedPenAnnotation = async function() {
-    window.showLoader("Saving Annotation...");
+    window.showLoader("Saving Annotation to Drive...");
     const bgImg = document.getElementById('red-pen-bg-img');
     
-    // Create a temporary canvas to merge the original image + the red drawings
     const mergedCanvas = document.createElement('canvas');
     mergedCanvas.width = bgImg.naturalWidth;
     mergedCanvas.height = bgImg.naturalHeight;
     const mCtx = mergedCanvas.getContext('2d');
     
-    // Draw original image
     mCtx.drawImage(bgImg, 0, 0, mergedCanvas.width, mergedCanvas.height);
-    // Draw red pen scaled up to original image resolution
     mCtx.drawImage(rpCanvas, 0, 0, mergedCanvas.width, mergedCanvas.height);
     
-    // Get Base64
-    const base64Image = mergedCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-    
-    try {
-        // Upload to ImgBB
-        const formData = new FormData();
-        formData.append("image", base64Image);
-        const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
-        
-        const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
-        const data = await res.json();
-        
-        if(data.success) {
-            const newUrl = data.data.url;
+    mergedCanvas.toBlob(async (blob) => {
+        const file = new File([blob], "Annotation.jpg", { type: "image/jpeg" });
+        try {
+            const newUrl = await window.uploadFileToDrive(file, 'annotation', false);
+            
             const sId = window.currentAnnotationData.scriptId;
             const index = window.currentAnnotationData.index;
             
-            // Save to draft memory
             if(!window.annotatedImagesDraft[sId]) window.annotatedImagesDraft[sId] = {};
             window.annotatedImagesDraft[sId][index] = newUrl;
             
-            // Update Thumbnail in UI visually so they know it worked
             document.getElementById(`eval-img-${sId}-${index}`).src = newUrl;
             document.getElementById(`eval-img-${sId}-${index}`).classList.add('border-red-500', 'border-2');
             
             document.getElementById('red-pen-modal').classList.add('hidden-view');
             window.showToast("Saved!", "Annotation attached successfully.", "info");
+        } catch(e) {
+            console.error(e);
+            alert("Failed to upload annotation to Drive.");
         }
-    } catch(e) {
-        alert("Failed to upload annotation. Check connection.");
-    }
-    window.hideLoader();
+        window.hideLoader();
+    }, 'image/jpeg', 0.85);
 };
         
       // ==========================================
@@ -5601,49 +5602,75 @@ if (!wrapper) {
                             </div>
                         </div>`;
                     } else if (msg.text) { 
-                        textContent = `<div class="whitespace-pre-wrap break-words font-medium text-[12px] sm:text-[14.2px] leading-[1.35] text-[#111b21] pb-[12px] sm:pb-[14px] pr-10 sm:pr-12 inline-block w-full">${msg.text}</div>`; 
-                    }
+    textContent = `<div class="whitespace-pre-wrap break-words font-medium text-[13px] sm:text-[14px] leading-snug inline-block w-full">${msg.text}</div>`; 
+}
 
-                    const msgDp = window.getStudentAvatar(msg.mobile, msg.name);
-                    const bubbleBg = isMe ? 'bg-[#d9fdd3]' : 'bg-white';
-                    const bubbleShape = isMe ? 'rounded-xl rounded-tr-none' : 'rounded-xl rounded-tl-none';
-                    const tailColor = isMe ? 'text-[#d9fdd3]' : 'text-white';
-                    const senderNameHtml = !isMe ? `<div class="text-[9px] sm:text-[11px] font-black text-indigo-500 mb-0.5 flex items-center break-words leading-tight">${msg.name} ${adminBadge}</div>` : '';
-                    
-                    const actionsHtml = `<div id="chat-actions-${msg.id}" class="hidden flex flex-col items-center gap-1.5 sm:gap-2 bg-white rounded-lg sm:rounded-xl px-1.5 sm:px-2 py-1.5 sm:py-2 shadow-lg border border-gray-200 text-[10px] sm:text-[12px] font-bold absolute top-0 ${isMe ? '-left-8 sm:-left-10' : '-right-8 sm:-right-10'} z-20 text-gray-700 transition-all"><button onclick="replyToMessage('${msg.id}', '${msg.name.replace(/'/g,"\\'")}', '${(msg.text || (msg.audioUrl ? 'Voice Note' : 'Media')).replace(/'/g,"\\'")}')" class="hover:text-indigo-600"><i class="fa-solid fa-reply"></i></button>${canDelete ? `<div class="w-2 sm:w-3 h-px bg-gray-300"></div><button onclick="deleteChatMessage('${msg.id}')" class="hover:text-red-600"><i class="fa-solid fa-trash"></i></button>` : ''}</div>`;
-                    
-                    wrapper = document.createElement('div'); 
-                    wrapper.id = msgElementId;
-                    wrapper.className = `flex w-full group ${isMe ? 'justify-end' : 'justify-start'} mb-2 sm:mb-3 shrink-0`;
-                    wrapper.innerHTML = `
-                    <div class="flex items-start gap-1 sm:gap-1.5 max-w-[95%] sm:max-w-[90%] relative">
-                        ${!isMe ? `<img src="${msgDp}" class="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shadow-sm shrink-0 border border-gray-200 mt-0.5 sm:mt-1 cursor-pointer">` : ''}
-                        
-                        <div class="relative flex flex-col items-${isMe ? 'end' : 'start'} min-w-0">
-                            <div class="relative flex items-start group/bubble min-w-0">
-                                ${!isMe ? `<svg viewBox="0 0 8 13" class="absolute -left-[5px] sm:-left-[7px] top-0 w-1.5 sm:w-2 h-2.5 sm:h-3 ${tailColor}"><path fill="currentColor" d="M1.533 3.568L8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z"></path></svg>` : ''}
-                                
-                                <div class="${bubbleBg} ${bubbleShape} px-2 sm:px-2.5 py-1 sm:py-1.5 shadow-sm min-w-[60px] sm:min-w-[80px] max-w-full cursor-pointer" onclick="toggleChatMenu('${msg.id}')">
-    ${senderNameHtml}
-    ${replyHtml}
-    ${imgHtml}
-    ${docHtml}
-    ${audioHtml}
-    <div class="relative w-full text-left min-w-0">
-                                        ${textContent}
-                                        <span class="text-[7px] sm:text-[9px] text-gray-500 whitespace-nowrap absolute bottom-0 right-0 flex items-center justify-end leading-none">${timeStr} <span id="ticks-${msg.id}">${ticksHTML}</span></span>
-                                    </div>
-                                </div>
-                                
-                                ${isMe ? `<svg viewBox="0 0 8 13" class="absolute -right-[5px] sm:-right-[7px] top-0 w-1.5 sm:w-2 h-2.5 sm:h-3 ${tailColor}"><path fill="currentColor" d="M6.467 3.568L0 12.193V1h5.188c1.77 0 2.338 1.156 1.279 2.568z"></path></svg>` : ''}
-                                ${actionsHtml}
-                            </div>
-                        </div>
-                        ${isMe ? `<img src="${msgDp}" class="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover shadow-sm shrink-0 border border-gray-200 mt-0.5 sm:mt-1 cursor-pointer">` : ''}
-                    </div>`;
-                    
-                    list.appendChild(wrapper);
+                   const msgDp = window.getStudentAvatar(msg.mobile, msg.name);
+// 🎨 WHATSAPP THEME COLORS & SHAPES
+const bubbleBg = isMe ? 'bg-[#d9fdd3]' : 'bg-white';
+const bubbleShape = isMe ? 'rounded-[12px] rounded-tr-none' : 'rounded-[12px] rounded-tl-none';
+const textColor = 'text-[#111b21]';
+const timeColor = 'text-[#667781]';
+const tailColor = isMe ? 'text-[#d9fdd3]' : 'text-white';
+const senderNameHtml = !isMe ? `<div class="text-[11px] sm:text-[12.5px] font-black text-[#128C7E] mb-1 flex items-center break-words leading-tight">${msg.name} ${adminBadge}</div>` : '';
 
+const actionsHtml = `<div id="chat-actions-${msg.id}" class="hidden flex flex-col items-center gap-1.5 sm:gap-2 bg-white rounded-lg sm:rounded-xl px-1.5 sm:px-2 py-1.5 sm:py-2 shadow-lg border border-gray-200 text-[10px] sm:text-[12px] font-bold absolute top-0 ${isMe ? '-left-8 sm:-left-10' : '-right-8 sm:-right-10'} z-20 text-gray-700 transition-all"><button onclick="replyToMessage('${msg.id}', '${msg.name.replace(/'/g,"\\'")}', '${(msg.text || (msg.audioUrl ? 'Voice Note' : 'Media')).replace(/'/g,"\\'")}')" class="hover:text-indigo-600"><i class="fa-solid fa-reply"></i></button>${canDelete ? `<div class="w-2 sm:w-3 h-px bg-gray-300"></div><button onclick="deleteChatMessage('${msg.id}')" class="hover:text-red-600"><i class="fa-solid fa-trash"></i></button>` : ''}</div>`;
+
+// 🚀 WHATSAPP TOP-CORNER TAILS
+const rightTail = `<svg viewBox="0 0 8 13" class="absolute -right-[7px] top-0 w-[8px] h-[13px] ${tailColor} z-10 drop-shadow-[0_1px_1px_rgba(11,20,26,0.1)]"><path fill="currentColor" d="M5.188 1H0v11.193l6.467-8.625C7.526 2.156 6.958 1 5.188 1z"></path></svg>`;
+const leftTail = `<svg viewBox="0 0 8 13" class="absolute -left-[7px] top-0 w-[8px] h-[13px] ${tailColor} z-10 drop-shadow-[0_1px_1px_rgba(11,20,26,0.1)]"><path fill="currentColor" d="M2.812 1H8v11.193L1.533 3.568C.474 2.156 1.042 1 2.812 1z"></path></svg>`;
+wrapper = document.createElement('div'); 
+wrapper.id = msgElementId;
+wrapper.className = `flex w-full group ${isMe ? 'justify-end' : 'justify-start'} mb-1.5 shrink-0`;
+
+wrapper.innerHTML = `
+<div class="flex items-start gap-1.5 sm:gap-2 max-w-[90%] sm:max-w-[85%] relative ${isMe ? 'flex-row-reverse' : ''}">
+    
+    <!-- Profile Picture (Top Aligned like WhatsApp Groups) -->
+    ${!isMe ? `<img src="${msgDp}" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover shadow-sm shrink-0 border border-gray-200 cursor-pointer z-10" title="${msg.name}">` : ''}
+    
+    <div class="relative flex flex-col items-${isMe ? 'end' : 'start'} min-w-0 group/bubble">
+        
+        <div class="relative flex items-start group/bubble min-w-0">
+            <!-- WhatsApp Style Tail -->
+            ${!isMe ? leftTail : ''}
+            
+            <!-- Chat Bubble Base -->
+            <div class="${bubbleBg} ${bubbleShape} shadow-[0_1px_1px_rgba(11,20,26,0.15)] p-1.5 sm:p-2 px-2.5 relative cursor-pointer hover:shadow-md transition-shadow min-w-[90px] max-w-full z-10" onclick="toggleChatMenu('${msg.id}')">
+                
+                ${senderNameHtml}
+                ${replyHtml}
+                ${imgHtml}
+                ${docHtml}
+                ${audioHtml}
+                
+               <!-- Message Text with Phantom Spacing Hack -->
+                ${textContent ? `
+                <div class="relative w-full text-left min-w-0 ${textColor} mt-1">
+                    ${textContent.replace('</div>', '<span class="inline-block w-[65px] sm:w-[80px] h-1"></span></div>')}
+                </div>` : `
+                <!-- Media Spacing Hack (Creates a clean strip for time/ticks when there is no text) -->
+                <div class="h-3.5 sm:h-4 w-full"></div>
+                `}
+                
+                <!-- Floating Time & Read Ticks (Locked to bottom right) -->
+                <div class="absolute bottom-1 right-2 flex items-center justify-end gap-1 select-none z-20">
+                    <span class="text-[9.5px] font-semibold ${timeColor} leading-none">${timeStr}</span>
+                    <span id="ticks-${msg.id}" class="flex items-center leading-none">${ticksHTML}</span>
+                </div>
+            </div>
+            
+            <!-- WhatsApp Style Tail -->
+            ${isMe ? rightTail : ''}
+            
+            ${actionsHtml}
+        </div>
+    </div>
+    
+    ${isMe ? `<img src="${msgDp}" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover shadow-sm shrink-0 border border-[#d9fdd3] cursor-pointer z-10">` : ''}
+</div>`;
+
+list.appendChild(wrapper);
                 } else {
                     if (isMe) {
                         const ticksEl = document.getElementById(`ticks-${msg.id}`);
@@ -8049,63 +8076,21 @@ setTimeout(() => {
             }
         }
         window.openPeerUpload = function(examId) { document.getElementById('peer-upload-exam-id').value = examId; document.getElementById('peer-upload-modal').classList.remove('hidden-view'); }
-  window.submitPeerImages = async function() {
-    const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
+ window.submitPeerImages = async function() {
     const examId = document.getElementById('peer-upload-exam-id').value;
-    
     const qFiles = Array.from(document.getElementById('peer-q-file').files);
 
     if(qFiles.length === 0) return alert("Please upload at least one question image.");
-    showLoader(`Uploading ${qFiles.length} Pages... 0%`); 
+    showLoader(`Uploading ${qFiles.length} Pages to Drive...`); 
 
     try {
-        let loadedBytesQ = new Array(qFiles.length).fill(0); 
-        const totalBytes = qFiles.reduce((acc, file) => acc + file.size, 0);
-
-        const updateProgress = () => { 
-            if (totalBytes === 0) return; 
-            let totalLoaded = loadedBytesQ.reduce((a, b) => a + b, 0); 
-            let percent = Math.round((totalLoaded / totalBytes) * 100); 
-            if(percent > 100) percent = 100; 
-            document.getElementById('loader-text').innerText = `Uploading Pages... ${percent}%`; 
+        let allQUrls = [];
+        for (let i = 0; i < qFiles.length; i++) {
+            document.getElementById('loader-text').innerText = `Uploading Page ${i+1}/${qFiles.length}...`;
+            const url = await window.uploadFileToDrive(qFiles[i], 'qa', false);
+            allQUrls.push(url);
         }
-
-        const uploadToImgBB = async (file, index, loadedArray) => {
-            const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
-
-            return new Promise((resolve, reject) => { 
-                const xhr = new XMLHttpRequest(); 
-                const formData = new FormData(); 
-                formData.append("image", compressedFile); 
-                
-                xhr.upload.onprogress = (event) => { 
-                    if (event.lengthComputable) { 
-                        loadedArray[index] = event.loaded; 
-                        updateProgress(); 
-                    } 
-                }; 
-                
-                xhr.onload = () => { 
-                    if (xhr.status >= 200 && xhr.status < 300) { 
-                        try { 
-                            const result = JSON.parse(xhr.responseText); 
-                            if(result.success) resolve(result.data.url); 
-                            else reject(result.error.message); 
-                        } catch(e) { reject("Parsing error"); } 
-                    } else { reject("Upload failed"); } 
-                }; 
-                xhr.onerror = () => reject("Network error"); 
-                
-                // 🔥 Images still live permanently on ImgBB, but wait for Admin to publish
-                xhr.open("POST", `https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, true); 
-                xhr.send(formData); 
-            }); 
-        };
-
-        // Upload Question files permanently
-        let allQUrls = await Promise.all(qFiles.map((file, idx) => uploadToImgBB(file, idx, loadedBytesQ)));
         
-        // 1. Save to the Active P2P Live Exam Room (No answer key needed)
         const data = { 
             examId, 
             mobile: window.loggedInMobile, 
@@ -8119,8 +8104,6 @@ setTimeout(() => {
         } else { 
             window.peerMaterialsDB.push({ id: Math.random().toString(), ...data }); 
         }
-        
-        // Removed Material Hub Auto-add: it will now wait for endExam!
         
         document.getElementById('peer-q-file').value = ''; 
         document.getElementById('peer-upload-modal').classList.add('hidden-view'); 
@@ -9067,12 +9050,13 @@ window.executeEditDriveUpload = function() {
         if (statusEl) statusEl.innerText = "Connecting to Google... 0%";
 
         // 🔥 URL IS ALREADY CONFIGURED FROM PREVIOUS FIX 🔥
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywFB600lkjFr-FJTU04mW1xyHv2JKP0WaPPH6heh3Qau-6THS4BvmYQoP6xKvvow/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxtwpq3ctld9qx6VOchc80nwznXkMbvFYNb_sZciTeawrl7Z-XrqM8O5VkV4OZZXk-xiA/exec";
         
-        const payloadData = {
+       const payloadData = {
             fileName: file.name,
             mimeType: file.type,
-            base64: base64Data
+            base64: base64Data,
+            folderType: 'material' // FORCE IT TO GO TO THE MATERIAL HUB FOLDER
         };
 
         const encodedPayload = "payload=" + encodeURIComponent(JSON.stringify(payloadData));
@@ -9210,12 +9194,14 @@ window.executeDriveUpload = function() {
         if (statusEl) statusEl.innerText = "Uploading... 0%";
 
         // 🔥 PASTE YOUR NEW APPS SCRIPT WEB APP URL HERE 🔥
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby0J58Byoi_UZzWAjEdqlfieyubkbkxVwL3JkHUWu8ufVawtSPAjez-IeUSvVi0PyDM/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxzuUd8cMmkrKwAXtUvC0mI0wdmYqp3ZS8Z8Lc8KB0WfsL1XdzWaEOaGEttsSgwmAn9SQ/exec";
         
         const payloadData = {
             fileName: file.name,
             mimeType: file.type,
-            base64: base64Data
+            base64: base64Data,
+            folderType: 'material' // FORCE IT TO GO TO THE MATERIAL HUB FOLDER
+        
         };
 
         // --- SMART PROGRESS ENGINE ---
@@ -9296,6 +9282,32 @@ window.executeDriveUpload = function() {
             await window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance, time, pace, cals, date: window.formatDateDDMMYYYY(), timestamp: Date.now() });
             document.getElementById('fit-dist').value = ''; document.getElementById('fit-time').value = ''; hideLoader();
         }
+        // Auto-Penalty for missed fitness days
+        window.enforceFitnessAbsence = async function() {
+            if (window.currentRole !== 'student' || !window.loggedInMobile) return;
+            
+            // Get yesterday's date
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = window.formatDateDDMMYYYY(yesterday);
+            
+            // Check if the student logged anything (Run or Absent) yesterday
+            const hasLogForYesterday = window.fitnessDB.some(l => l.mobile === window.loggedInMobile && l.date === yesterdayStr);
+            
+            // If they completely ignored the app yesterday, punish them with an automatic ABSENT mark
+            if (!hasLogForYesterday && typeof window.dbSendFitnessLog === 'function') {
+                await window.dbSendFitnessLog({ 
+                    mobile: window.loggedInMobile, 
+                    distance: 0, 
+                    time: 0, 
+                    pace: 'ABSENT', 
+                    cals: 0, 
+                    isAbsent: true, 
+                    date: yesterdayStr, 
+                    timestamp: yesterday.getTime() 
+                });
+            }
+        };
 
         window.renderFitnessMonitor = function() {
   const listEl = document.getElementById('fitness-log-list'); 
@@ -12079,81 +12091,77 @@ window.submitExam = async function() {
             }
         }
 
-        window.submitAllPeerAnswers = async function() {
-            const examId = window.activeExamId;
-            const exam = window.examsDB.find(e => e.id === examId);
-            const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
-            const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9"; 
-            
-            let hasFiles = false;
-            for (let peer of uniquePeers) {
-                if(document.getElementById(`ans-file-${peer.mobile}`)?.files.length > 0) hasFiles = true;
-            }
-            
-            if(!hasFiles && uniquePeers.length > 0) {
-                if(!confirm("You haven't attached any answer scripts. Submit anyway with 0 marks?")) return;
-            }
+       window.submitAllPeerAnswers = async function() {
+    const examId = window.activeExamId;
+    const exam = window.examsDB.find(e => e.id === examId);
+    const uniquePeers = [...new Map(window.currentExamPeers.map(item => [item.mobile, item])).values()];
+    
+    let hasFiles = false;
+    for (let peer of uniquePeers) {
+        if(document.getElementById(`ans-file-${peer.mobile}`)?.files.length > 0) hasFiles = true;
+    }
+    
+    if(!hasFiles && uniquePeers.length > 0) {
+        if(!confirm("You haven't attached any answer scripts. Submit anyway with 0 marks?")) return;
+    }
 
-            const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId).map(m => m.mobile))].length || 1;
-            const assignedMaxMarks = parseFloat((exam.totalMarks / totalOpponents).toFixed(1));
+    const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId).map(m => m.mobile))].length || 1;
+    const assignedMaxMarks = parseFloat((exam.totalMarks / totalOpponents).toFixed(1));
 
-            showLoader("Sending Answers to Peers...");
-            
-            try {
-                for (let peer of uniquePeers) {
-                    const fileInput = document.getElementById(`ans-file-${peer.mobile}`);
-                    if(fileInput && fileInput.files.length > 0) {
-                        const files = Array.from(fileInput.files);
-                        let urls = [];
-                        for(let file of files) {
-                            const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
-                            const formData = new FormData(); formData.append("image", compressedFile); 
-                            const res = await fetch(`https://api.imgbb.com/1/upload?expiration=172800&key=${IMGBB_API_KEY}`, { method: "POST", body: formData }); 
-                            const data = await res.json(); 
-                            if(data.success) urls.push(data.data.url);
-                        }
-                        
-                        const payload = { 
-                            examId: examId, 
-                            solverMobile: window.loggedInMobile, 
-                            targetPeerMobile: peer.mobile, 
-                            imgUrls: urls, 
-                            timestamp: Date.now(),
-                            attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
-                            isGraded: false,
-                            assignedMaxMarks: assignedMaxMarks 
-                        };
-                        
-                        if(isFirebaseConfigured) await addDoc(collection(db, "peer_answer_scripts"), payload); 
-                        else { 
-                            if(!window.peerAnswerScriptsDB) window.peerAnswerScriptsDB = []; 
-                            window.peerAnswerScriptsDB.push({id: Math.random().toString(), ...payload}); 
-                        }
-                    } else {
-                        // EMPTY SUBMISSION FIX
-                        const payload = {
-                            examId: examId,
-                            solverMobile: window.loggedInMobile,
-                            targetPeerMobile: peer.mobile,
-                            imgUrls: [],
-                            timestamp: Date.now(),
-                            attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
-                            isGraded: true, // Auto-graded to 0
-                            marksAwarded: 0,
-                            maxMarks: assignedMaxMarks,
-                            assignedMaxMarks: assignedMaxMarks
-                        };
-                        if(isFirebaseConfigured) await addDoc(collection(db, "peer_answer_scripts"), payload);
-                        else window.peerAnswerScriptsDB.push({id: Math.random().toString(), ...payload});
-                    }
+    showLoader("Sending Answers to Peers...");
+    
+    try {
+        for (let peer of uniquePeers) {
+            const fileInput = document.getElementById(`ans-file-${peer.mobile}`);
+            if(fileInput && fileInput.files.length > 0) {
+                const files = Array.from(fileInput.files);
+                let urls = [];
+                for(let file of files) {
+                    const url = await window.uploadFileToDrive(file, 'script', false);
+                    urls.push(url);
                 }
-                hideLoader();
-                document.getElementById('answer-upload-modal').classList.add('hidden-view');
-                window.openPeerEvaluationRoom(examId);
-            } catch(e) {
-                console.error(e); hideLoader(); alert("Error sending answers. Check your connection.");
+                
+                const payload = { 
+                    examId: examId, 
+                    solverMobile: window.loggedInMobile, 
+                    targetPeerMobile: peer.mobile, 
+                    imgUrls: urls, 
+                    timestamp: Date.now(),
+                    attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
+                    isGraded: false,
+                    assignedMaxMarks: assignedMaxMarks 
+                };
+                
+                if(isFirebaseConfigured) await addDoc(collection(db, "peer_answer_scripts"), payload); 
+                else { 
+                    if(!window.peerAnswerScriptsDB) window.peerAnswerScriptsDB = []; 
+                    window.peerAnswerScriptsDB.push({id: Math.random().toString(), ...payload}); 
+                }
+            } else {
+                // EMPTY SUBMISSION FIX
+                const payload = {
+                    examId: examId,
+                    solverMobile: window.loggedInMobile,
+                    targetPeerMobile: peer.mobile,
+                    imgUrls: [],
+                    timestamp: Date.now(),
+                    attemptStartTime: window.activeAttemptStartTime || (window.examsDB.find(e=>e.id===examId).globalStartTime),
+                    isGraded: true, 
+                    marksAwarded: 0,
+                    maxMarks: assignedMaxMarks,
+                    assignedMaxMarks: assignedMaxMarks
+                };
+                if(isFirebaseConfigured) await addDoc(collection(db, "peer_answer_scripts"), payload);
+                else window.peerAnswerScriptsDB.push({id: Math.random().toString(), ...payload});
             }
         }
+        hideLoader();
+        document.getElementById('answer-upload-modal').classList.add('hidden-view');
+        window.openPeerEvaluationRoom(examId);
+    } catch(e) {
+        console.error(e); hideLoader(); alert("Error sending answers. Check your connection.");
+    }
+}
 
         window.proceedToLogMarks = function() {
             document.getElementById('evaluation-modal').classList.add('hidden-view'); document.getElementById('admin-tabs').classList.add('hidden'); document.getElementById('field-student-dropdown').classList.add('hidden'); document.getElementById('select-student').required = false; 
@@ -13552,48 +13560,36 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
             return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Exama')}&background=4f46e5&color=fff&bold=true`;
         };
 
-       window.uploadStudentDP = async function(input) {
-            if (!input.files || input.files.length === 0) return;
-            const originalFile = input.files[0];
-            
-            showLoader("Optimizing & Uploading...");
-            
-            try {
-                const compressedFile = await window.compressImage(originalFile, 400, 400, 0.8);
-                
-                const formData = new FormData();
-                formData.append("image", compressedFile);
-                const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
-                
-                const res = await fetch(`https://api.imgbb.com/1/upload?expiration=15552000&key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
-                const data = await res.json();
-                
-                if(data.success) {
-                    const imageUrl = data.data.url;
-                    
-                    if (isFirebaseConfigured) {
-                        await updateDoc(doc(db, "students", window.loggedInMobile), { dpUrl: imageUrl });
-                    } else {
-                        const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
-                        if(stu) stu.dpUrl = imageUrl;
-                    }
-                    
-                    localStorage.setItem(`exama_dp_${window.loggedInMobile}`, imageUrl);
-                    
-                    const navDp = document.getElementById('student-nav-dp');
-                    if (navDp) navDp.src = imageUrl;
-                    
-                    refreshUI();
-                    showToast("Success", "Profile Picture updated lightning fast!", "info");
-                }
-            } catch(e) {
-                console.error(e);
-                alert("Failed to upload image. Please try again.");
-            }
-            
-            input.value = '';
-            hideLoader();
-        };
+    window.uploadStudentDP = async function(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    
+    showLoader("Optimizing & Uploading to Drive...");
+    
+    try {
+        const imageUrl = await window.uploadFileToDrive(file, 'dp', false);
+        
+        if (isFirebaseConfigured) {
+            await updateDoc(doc(db, "students", window.loggedInMobile), { dpUrl: imageUrl });
+        } else {
+            const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+            if(stu) stu.dpUrl = imageUrl;
+        }
+        
+        localStorage.setItem(`exama_dp_${window.loggedInMobile}`, imageUrl);
+        const navDp = document.getElementById('student-nav-dp');
+        if (navDp) navDp.src = imageUrl;
+        
+        refreshUI();
+        showToast("Success", "Profile Picture updated!", "success");
+    } catch(e) {
+        console.error(e);
+        alert("Failed to upload image. Please try again.");
+    }
+    
+    input.value = '';
+    hideLoader();
+};
 
 // ==========================================
 // NOVA AI GEMINI CHAT ENGINE
