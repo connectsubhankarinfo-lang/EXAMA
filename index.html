@@ -675,17 +675,36 @@ button:active {
     </div>
 </div>
         
-        <!-- RED PEN ANNOTATION MODAL -->
+       <!-- RED PEN ANNOTATION MODAL -->
 <div id="red-pen-modal" class="hidden-view absolute inset-0 z-[300] bg-gray-900 flex flex-col slide-up touch-none">
-    <div class="bg-gray-950 px-4 py-3 flex justify-between items-center shadow-lg shrink-0">
-        <div class="flex items-center gap-2">
-            <div class="w-8 h-8 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center"><i class="fa-solid fa-pen"></i></div>
-            <div>
-                <h3 class="text-white font-black text-sm leading-tight">Red Pen Editor</h3>
-                <span class="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Mark mistakes</span>
+    <div class="bg-gray-950 px-3 sm:px-4 py-3 flex justify-between items-center shadow-lg shrink-0 w-full overflow-x-auto no-scrollbar">
+        
+        <!-- Left: Title -->
+        <div class="flex items-center gap-2 shrink-0 pr-2">
+            <div class="w-8 h-8 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center shrink-0"><i class="fa-solid fa-pen"></i></div>
+            <div class="hidden sm:block">
+                <h3 class="text-white font-black text-sm leading-tight">Red Pen</h3>
+                <span class="text-[9px] text-gray-400 font-bold uppercase tracking-widest block mt-0.5">Mark mistakes</span>
             </div>
         </div>
-        <button onclick="document.getElementById('red-pen-modal').classList.add('hidden-view')" class="text-white bg-white/20 w-8 h-8 rounded-full flex items-center justify-center active:scale-90"><i class="fa-solid fa-xmark text-sm"></i></button>
+
+        <!-- Center/Right: Tools & Actions -->
+        <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+            <!-- Undo / Redo -->
+            <button onclick="window.undoRp()" class="text-gray-300 hover:text-white active:scale-90 transition-all w-8 h-8 flex items-center justify-center bg-gray-800 rounded-full shadow-sm" title="Undo"><i class="fa-solid fa-rotate-left text-xs"></i></button>
+            <button onclick="window.redoRp()" class="text-gray-300 hover:text-white active:scale-90 transition-all w-8 h-8 flex items-center justify-center bg-gray-800 rounded-full shadow-sm" title="Redo"><i class="fa-solid fa-rotate-right text-xs"></i></button>
+            
+            <div class="w-px h-5 bg-gray-700 mx-0.5 sm:mx-1"></div>
+            
+            <!-- Pen / Eraser Toggles -->
+            <button id="rp-tool-pen" onclick="window.setRpTool('pen')" class="text-red-500 bg-red-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-red-500 shadow-sm" title="Pen Mode"><i class="fa-solid fa-pen text-xs"></i></button>
+            <button id="rp-tool-eraser" onclick="window.setRpTool('eraser')" class="text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm" title="Eraser Mode"><i class="fa-solid fa-eraser text-xs"></i></button>
+            
+            <div class="w-px h-5 bg-gray-700 mx-0.5 sm:mx-1"></div>
+            
+            <!-- Close -->
+            <button onclick="document.getElementById('red-pen-modal').classList.add('hidden-view')" class="text-white bg-red-600 hover:bg-red-700 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all shadow-sm" title="Close"><i class="fa-solid fa-xmark text-sm"></i></button>
+        </div>
     </div>
     
     <div class="flex-1 relative w-full overflow-hidden flex justify-center items-center bg-gray-900" id="canvas-container">
@@ -4679,10 +4698,73 @@ window.handleMenuLogout = function() {
             });
         };
         
-        // --- RED PEN CANVAS ENGINE ---
+      // --- RED PEN CANVAS ENGINE ---
 let rpCanvas, rpCtx, rpIsDrawing = false;
 window.currentAnnotationData = { scriptId: null, index: null };
 
+// NEW STATE VARIABLES FOR UNDO/REDO & ERASER
+let rpHistory = [];
+let rpStep = -1;
+let rpCurrentTool = 'pen'; // 'pen' or 'eraser'
+
+// Save canvas snapshot to history array
+function saveRpState() {
+    rpStep++;
+    // If we drew something new after an undo, dump the future history
+    if (rpStep < rpHistory.length) {
+        rpHistory.length = rpStep;
+    }
+    rpHistory.push(rpCanvas.toDataURL());
+}
+
+window.undoRp = function() {
+    if (rpStep > 0) {
+        rpStep--;
+        let canvasPic = new Image();
+        canvasPic.src = rpHistory[rpStep];
+        canvasPic.onload = function () {
+            rpCtx.clearRect(0, 0, rpCanvas.width, rpCanvas.height);
+            rpCtx.drawImage(canvasPic, 0, 0);
+        }
+    }
+};
+
+window.redoRp = function() {
+    if (rpStep < rpHistory.length - 1) {
+        rpStep++;
+        let canvasPic = new Image();
+        canvasPic.src = rpHistory[rpStep];
+        canvasPic.onload = function () {
+            rpCtx.clearRect(0, 0, rpCanvas.width, rpCanvas.height);
+            rpCtx.drawImage(canvasPic, 0, 0);
+        }
+    }
+};
+
+window.setRpTool = function(tool) {
+    rpCurrentTool = tool;
+    const penBtn = document.getElementById('rp-tool-pen');
+    const eraseBtn = document.getElementById('rp-tool-eraser');
+
+    if (tool === 'pen') {
+        rpCtx.globalCompositeOperation = 'source-over'; // Normal drawing mode
+        rpCtx.strokeStyle = '#ef4444'; // Red Pen
+        rpCtx.lineWidth = 3;
+
+        // Visual Toggle State
+        penBtn.className = "text-red-500 bg-red-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-red-500 shadow-sm";
+        eraseBtn.className = "text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm";
+    } else {
+        rpCtx.globalCompositeOperation = 'destination-out'; // This turns strokes into an eraser
+        rpCtx.lineWidth = 25; // Much thicker line so erasing is easy
+
+        // Visual Toggle State
+        eraseBtn.className = "text-indigo-400 bg-indigo-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-indigo-400 shadow-sm";
+        penBtn.className = "text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm";
+    }
+};
+
+// Start Red Pen Editor
 window.openRedPenEditor = function(imgSrc, scriptId, imgIndex) {
     window.currentAnnotationData = { scriptId, index: imgIndex };
     const modal = document.getElementById('red-pen-modal');
@@ -4693,18 +4775,24 @@ window.openRedPenEditor = function(imgSrc, scriptId, imgIndex) {
     modal.classList.remove('hidden-view');
     window.showLoader("Loading Canvas...");
     
+    // Reset Data on new open
+    rpHistory = [];
+    rpStep = -1;
+
     bgImg.onload = function() {
-        // Match canvas size perfectly to the scaled image
         rpCanvas.width = bgImg.width;
         rpCanvas.height = bgImg.height;
         rpCanvas.style.width = bgImg.width + 'px';
         rpCanvas.style.height = bgImg.height + 'px';
         
-        // Setup Pen Settings
-        rpCtx.strokeStyle = '#ef4444'; // Red Pen
-        rpCtx.lineWidth = 3;
+        // Setup initial tool to Pen
+        window.setRpTool('pen');
         rpCtx.lineCap = 'round';
         rpCtx.lineJoin = 'round';
+        
+        // Save the blank canvas as the first history state
+        saveRpState();
+
         window.hideLoader();
     };
     bgImg.src = imgSrc;
@@ -4715,18 +4803,23 @@ function startPosition(e) {
     rpIsDrawing = true;
     draw(e);
 }
+
 function endPosition() {
+    if (!rpIsDrawing) return;
     rpIsDrawing = false;
     rpCtx.beginPath();
+    
+    // Crucial: Save the state every time the user lifts their finger/mouse
+    saveRpState(); 
 }
+
 function draw(e) {
     if (!rpIsDrawing) return;
-    e.preventDefault(); // Prevent scrolling while drawing
+    e.preventDefault(); 
     const rect = rpCanvas.getBoundingClientRect();
     let clientX = e.touches ? e.touches[0].clientX : e.clientX;
     let clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    // Calculate exact scale
     const scaleX = rpCanvas.width / rect.width;
     const scaleY = rpCanvas.height / rect.height;
     
@@ -4736,7 +4829,7 @@ function draw(e) {
     rpCtx.moveTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
 }
 
-// Attach listeners after DOM loads
+// Attach listeners safely
 setTimeout(() => {
     const c = document.getElementById('red-pen-canvas');
     if(c){
@@ -4751,42 +4844,8 @@ setTimeout(() => {
 
 window.clearRedPenCanvas = function() {
     rpCtx.clearRect(0, 0, rpCanvas.width, rpCanvas.height);
-};
-
-window.saveRedPenAnnotation = async function() {
-    window.showLoader("Saving Annotation to Drive...");
-    const bgImg = document.getElementById('red-pen-bg-img');
-    
-    const mergedCanvas = document.createElement('canvas');
-    mergedCanvas.width = bgImg.naturalWidth;
-    mergedCanvas.height = bgImg.naturalHeight;
-    const mCtx = mergedCanvas.getContext('2d');
-    
-    mCtx.drawImage(bgImg, 0, 0, mergedCanvas.width, mergedCanvas.height);
-    mCtx.drawImage(rpCanvas, 0, 0, mergedCanvas.width, mergedCanvas.height);
-    
-    mergedCanvas.toBlob(async (blob) => {
-        const file = new File([blob], "Annotation.jpg", { type: "image/jpeg" });
-        try {
-            const newUrl = await window.uploadFileToDrive(file, 'annotation', false);
-            
-            const sId = window.currentAnnotationData.scriptId;
-            const index = window.currentAnnotationData.index;
-            
-            if(!window.annotatedImagesDraft[sId]) window.annotatedImagesDraft[sId] = {};
-            window.annotatedImagesDraft[sId][index] = newUrl;
-            
-            document.getElementById(`eval-img-${sId}-${index}`).src = newUrl;
-            document.getElementById(`eval-img-${sId}-${index}`).classList.add('border-red-500', 'border-2');
-            
-            document.getElementById('red-pen-modal').classList.add('hidden-view');
-            window.showToast("Saved!", "Annotation attached successfully.", "info");
-        } catch(e) {
-            console.error(e);
-            alert("Failed to upload annotation to Drive.");
-        }
-        window.hideLoader();
-    }, 'image/jpeg', 0.85);
+    // Allow users to "Undo" the clear canvas action
+    saveRpState();
 };
         
       // ==========================================
