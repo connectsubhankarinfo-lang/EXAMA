@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <!-- SortableJS for Drag and Drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
@@ -128,6 +129,69 @@
     <div class="absolute -bottom-20 -right-20 w-64 h-64 bg-cyan-500/15 rounded-full blur-3xl animate-pulse pointer-events-none" style="animation-delay: 1.5s;"></div>
 
     <style>
+    /* --- NATIVE APP FEEL RESETS --- */
+* {
+    /* Removes the grey flash when tapping links/buttons on mobile */
+    -webkit-tap-highlight-color: transparent;
+    
+    /* Prevents the long-press magnifying glass / copy menu on UI elements */
+    -webkit-touch-callout: none;
+    
+    /* Prevents accidental text selection while swiping */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Re-enable text selection ONLY where the user actually needs to type or copy */
+input, textarea, [contenteditable="true"], .chat-bubble-mine, .chat-bubble-other {
+    user-select: auto;
+    -webkit-user-select: auto;
+}
+
+body, html {
+    /* Stops the entire app from bouncing when pulling down at the top of the screen */
+    overscroll-behavior-y: none; 
+    
+    /* Forces smooth scrolling physics */
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Hide scrollbars globally but keep functionality */
+::-webkit-scrollbar {
+    display: none;
+}
+/* Apple/Android Notch Padding */
+.glass-nav, #admin-view > div:first-child, #video-watch-view > div:first-child {
+    /* Uses the device's exact notch height, or defaults to 1.5rem if no notch */
+    padding-top: max(1.5rem, env(safe-area-inset-top)) !important;
+}
+
+#action-sheet, #student-view {
+    /* Keeps things above the iPhone swipe-up home bar */
+    padding-bottom: env(safe-area-inset-bottom);
+}
+    /* --- APPLE SPRING PHYSICS & SMOOTHNESS --- */
+:root {
+    --apple-ease: cubic-bezier(0.25, 1, 0.5, 1);
+    --apple-spring: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+.view-enter {
+    animation: viewScaleFade 0.45s var(--apple-ease) forwards;
+}
+
+@keyframes viewScaleFade {
+    0% { opacity: 0; transform: scale(0.97) translateY(15px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Upgrade buttons for springy touch feedback */
+button {
+    transition: transform 0.2s var(--apple-spring), background-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+button:active {
+    transform: scale(0.95) !important;
+}
         /* 1. EXAMA Logo Flash/Shimmer Animation */
         @keyframes shimmerLogo {
             0% { transform: translateX(-150%) skewX(-15deg); }
@@ -2397,7 +2461,7 @@
         <button type="button" id="btn-gdrive-upload" onclick="uploadDirectToDrive()" class="w-full bg-white border border-gray-300 text-gray-400 font-black py-3 sm:py-3.5 px-4 rounded-xl hover:bg-blue-50 active:scale-95 flex items-center justify-center gap-2 text-sm shadow-sm transition-all">
             <i class="fa fa-upload text-gray-400 text-lg"></i> SELECT & UPLOAD FILE
         </button>
-        <input type="file" id="gdrive-file-input" class="hidden" onchange="window.executeDriveUpload()">
+      <input type="file" id="gdrive-file-input" class="hidden" multiple accept="image/*,application/pdf" onchange="window.executeDriveUpload()">
 
         <!-- NEW: Animated Progress Bar (Hidden by default) -->
         <div id="gdrive-progress-container" class="hidden w-full h-2 bg-gray-200 rounded-full mt-1 overflow-hidden shadow-inner">
@@ -2466,7 +2530,7 @@
         <button type="button" id="btn-edit-gdrive-upload" onclick="uploadEditDirectToDrive()" class="w-full bg-white border border-gray-300 text-gray-400 font-black py-3 sm:py-3.5 px-4 rounded-xl hover:bg-blue-50 active:scale-95 flex items-center justify-center gap-2 text-sm shadow-sm transition-all">
             <i class="fa fa-upload text-gray-400 text-lg"></i> SELECT & REPLACE FILE
         </button>
-        <input type="file" id="edit-gdrive-file-input" class="hidden" onchange="window.executeEditDriveUpload()">
+        <input type="file" id="gdrive-file-input" class="hidden" multiple accept="image/*,application/pdf" onchange="window.executeDriveUpload()">
         
         <!-- Animated Progress Bar (Hidden by default) -->
         <div id="edit-gdrive-progress-container" class="hidden w-full h-2 bg-gray-200 rounded-full mt-1 overflow-hidden shadow-inner">
@@ -7973,62 +8037,127 @@ function renderSessionHistory() {
         }
         window.safeBack = safeBack;
 
-       function handleHashChange() {
+     window.handleHashChange = function() {
     const rawHash = window.location.hash.replace('#', ''); 
     const hash = rawHash || 'login';
     
+    // Auth security gate
     if(hash !== 'login' && !window.currentRole) { 
         window.location.hash = 'login'; 
         return; 
     }
     
-    // 1. UPDATED VIEWS ARRAY: Added 'video-hub-view' and 'video-watch-view'
-    // 1. UPDATED VIEWS ARRAY: Added 'syllabus-view' at the end
-  const views = [ 'login-view', 'student-view', 'admin-view', 'admin-profile-view', 'leaderboard-view', 'exam-analysis-view', 'community-chat-view', 'notice-board-view', 'target-calc-view', 'materials-view', 'active-exam-view', 'fitness-view', 'weekly-targets-view', 'session-timer-view', 'nova-chat-view', 'video-hub-view', 'video-watch-view', 'syllabus-view', 'math-workout-view', 'student-directory-view' ];
+    const views = [ 
+        'login-view', 'student-view', 'admin-view', 'admin-profile-view', 
+        'leaderboard-view', 'exam-analysis-view', 'community-chat-view', 
+        'notice-board-view', 'target-calc-view', 'materials-view', 
+        'active-exam-view', 'fitness-view', 'weekly-targets-view', 
+        'session-timer-view', 'nova-chat-view', 'video-hub-view', 
+        'video-watch-view', 'syllabus-view', 'math-workout-view', 
+        'student-directory-view' 
+    ];
     
-    // Hide all views first (Using ?. to prevent crashes)
+    // 1. Hide all views and reset the Apple animation class
     views.forEach(v => { 
         const el = document.getElementById(v); 
-        if(el) el?.classList.add('hidden-view'); 
+        if(el) {
+            el.classList.add('hidden-view'); 
+            el.classList.remove('view-enter'); // Reset animation state
+        }
     });
 
-    // Unhide the specific view based on the hash
+    // 2. Identify the target view ID
+    let targetViewId = hash + '-view';
+    if (hash === 'login') {
+        targetViewId = window.currentRole ? window.currentRole + '-view' : 'login-view';
+    }
+
+    // 3. Apply Apple-like Smooth Transition
+    const targetEl = document.getElementById(targetViewId);
+    if(targetEl) {
+        targetEl.classList.remove('hidden-view');
+        void targetEl.offsetWidth; // Force reflow to restart animation flawlessly
+        targetEl.classList.add('view-enter');
+    }
+
+    // 4. Run View-Specific Logic
     switch(hash) {
-        case 'login': if (window.currentRole) window.location.hash = window.currentRole; else document.getElementById('login-view')?.classList.remove('hidden-view'); break;
-        case 'student': if(window.currentRole === 'student') document.getElementById('student-view')?.classList.remove('hidden-view'); else window.location.hash = 'admin'; break;
-        case 'admin': if(window.currentRole === 'admin') document.getElementById('admin-view')?.classList.remove('hidden-view'); else window.location.hash = 'student'; break;
-        case 'student-directory': document.getElementById('student-directory-view')?.classList.remove('hidden-view'); window.renderStudentDirectory(); break;
-        case 'chat': document.getElementById('community-chat-view')?.classList.remove('hidden-view'); document.getElementById('chat-alert-banner')?.classList.add('hidden-view'); if(window.currentRole === 'student') document.getElementById('chat-share-btn')?.classList.remove('hidden'); else document.getElementById('chat-share-btn')?.classList.add('hidden'); window.markChatAsRead(); renderChat(); break;
-        case 'notices': if(window.currentRole === 'admin') document.getElementById('add-notice-btn')?.classList.remove('hidden'); else document.getElementById('add-notice-btn')?.classList.add('hidden'); document.getElementById('notice-board-view')?.classList.remove('hidden-view'); renderNotices(); break;
-        case 'session-timer': document.getElementById('session-timer-view')?.classList.remove('hidden-view'); renderSessionTimer(); break;
-        case 'materials': document.getElementById('btn-upload-material')?.classList.remove('hidden'); document.getElementById('materials-view')?.classList.remove('hidden-view'); renderStudyMaterials(); break;
-        case 'fitness':      document.getElementById('fitness-view')?.classList.remove('hidden-view');      renderFitnessMonitor();      window.enforceFitnessAbsence();      break;
-        case 'weekly-targets': document.getElementById('weekly-targets-view')?.classList.remove('hidden-view'); if (window.currentRole === 'admin') { document.getElementById('admin-target-form')?.classList.remove('hidden'); } else { document.getElementById('admin-target-form')?.classList.add('hidden'); } renderWeeklyTargets(); break;
-        case 'exam-analysis': generateExamAnalysis(); document.getElementById('exam-analysis-view')?.classList.remove('hidden-view'); break;
-        case 'target-calc': window.renderTargetCalc(); document.getElementById('target-calc-view')?.classList.remove('hidden-view'); break;
-        case 'leaderboard': document.getElementById('leaderboard-view')?.classList.remove('hidden-view'); renderLeaderboard(); break;
-        case 'admin-profile': if(window.selectedAdminProfile) { renderAdminProfile(window.selectedAdminProfile); document.getElementById('admin-profile-view')?.classList.remove('hidden-view'); } else { safeBack(); } break;
-        case 'active-exam': if(window.activeExamId) { renderActiveExam(window.activeExamId); document.getElementById('active-exam-view')?.classList.remove('hidden-view'); } else { safeBack(); } break;
-        case 'nova-chat': document.getElementById('nova-chat-view')?.classList.remove('hidden-view'); break;
-        case 'syllabus': 
-    document.getElementById('syllabus-view')?.classList.remove('hidden-view'); 
-    if (window.currentRole === 'admin') { document.getElementById('admin-syllabus-form')?.classList.remove('hidden'); } else { document.getElementById('admin-syllabus-form')?.classList.add('hidden'); } 
-    renderSyllabusTracker(); 
-    break;
-    case 'math-workout': 
-            document.getElementById('math-workout-view')?.classList.remove('hidden-view'); 
+        case 'login': 
+            if (window.currentRole) window.location.hash = window.currentRole; 
+            break;
+        case 'student': 
+            if (window.currentRole !== 'student') window.location.hash = 'admin'; 
+            break;
+        case 'admin': 
+            if (window.currentRole !== 'admin') window.location.hash = 'student'; 
+            break;
+        case 'student-directory': 
+            if(typeof window.renderStudentDirectory === 'function') window.renderStudentDirectory(); 
+            break;
+        case 'chat': 
+            document.getElementById('chat-alert-banner')?.classList.add('hidden-view'); 
+            if(window.currentRole === 'student') document.getElementById('chat-share-btn')?.classList.remove('hidden'); 
+            else document.getElementById('chat-share-btn')?.classList.add('hidden'); 
+            if(typeof window.markChatAsRead === 'function') window.markChatAsRead(); 
+            if(typeof renderChat === 'function') renderChat(); 
+            break;
+        case 'notices': 
+            if(window.currentRole === 'admin') document.getElementById('add-notice-btn')?.classList.remove('hidden'); 
+            else document.getElementById('add-notice-btn')?.classList.add('hidden'); 
+            if(typeof renderNotices === 'function') renderNotices(); 
+            break;
+        case 'session-timer': 
+            if(typeof renderSessionTimer === 'function') renderSessionTimer(); 
+            break;
+        case 'materials': 
+            document.getElementById('btn-upload-material')?.classList.remove('hidden'); 
+            if(typeof renderStudyMaterials === 'function') renderStudyMaterials(); 
+            break;
+        case 'fitness':      
+            if(typeof renderFitnessMonitor === 'function') renderFitnessMonitor();      
+            if(typeof window.enforceFitnessAbsence === 'function') window.enforceFitnessAbsence();      
+            break;
+        case 'weekly-targets': 
+            if (window.currentRole === 'admin') { document.getElementById('admin-target-form')?.classList.remove('hidden'); } 
+            else { document.getElementById('admin-target-form')?.classList.add('hidden'); } 
+            if(typeof renderWeeklyTargets === 'function') renderWeeklyTargets(); 
+            break;
+        case 'exam-analysis': 
+            if(typeof generateExamAnalysis === 'function') generateExamAnalysis(); 
+            break;
+        case 'target-calc': 
+            if(typeof window.renderTargetCalc === 'function') window.renderTargetCalc(); 
+            break;
+        case 'leaderboard': 
+            if(typeof renderLeaderboard === 'function') renderLeaderboard(); 
+            break;
+        case 'admin-profile': 
+            if(window.selectedAdminProfile) { 
+                if(typeof renderAdminProfile === 'function') renderAdminProfile(window.selectedAdminProfile); 
+            } else { safeBack(); } 
+            break;
+        case 'active-exam': 
+            if(window.activeExamId) { 
+                if(typeof renderActiveExam === 'function') renderActiveExam(window.activeExamId); 
+            } else { safeBack(); } 
+            break;
+        case 'syllabus':
+            if (window.currentRole === 'admin') { document.getElementById('admin-syllabus-form')?.classList.remove('hidden'); } 
+            else { document.getElementById('admin-syllabus-form')?.classList.add('hidden'); }
+            if(typeof renderSyllabusTracker === 'function') renderSyllabusTracker();
+            break;
+        case 'math-workout':
             document.getElementById('math-setup-screen')?.classList.remove('hidden');
             document.getElementById('math-game-screen')?.classList.add('hidden');
             document.getElementById('math-result-screen')?.classList.add('hidden');
             break;
- case 'video-hub':
-            document.getElementById('video-hub-view')?.classList.remove('hidden-view');
+        case 'video-hub':
             if (window.currentRole === 'admin') {
                 document.getElementById('btn-upload-video')?.classList.remove('hidden');
             } else {
                 document.getElementById('btn-upload-video')?.classList.add('hidden');
             }
-            
+
             // 3. GHOST AUDIO FIX FOR VIDEO.JS
             if (window.vjsPlayer) {
                 window.vjsPlayer.dispose();
@@ -8036,21 +8165,25 @@ function renderSessionHistory() {
             }
             const natContainer = document.getElementById('native-player-container');
             if(natContainer) natContainer.innerHTML = '';
-            
+
             if (typeof window.renderVideoFeed === 'function') {
                 window.renderVideoFeed();
             }
             break;
-
-        // 4. NEW ROUTE: Opens the Native Player Watch View
+        case 'nova-chat':
         case 'watch-video':
-            document.getElementById('video-watch-view')?.classList.remove('hidden-view');
+            // Simply opens the view, handled globally above.
             break;
-        
-        default: window.location.hash = window.currentRole || 'login'; break;
+        default: 
+            window.location.hash = window.currentRole || 'login'; 
+            break;
     }
-}
-       async function sendOneSignalPush(title, message, imageUrl = null) {
+};
+
+// Map original global function name to window scope so internal legacy buttons don't break
+function handleHashChange() {
+    window.handleHashChange();
+}      async function sendOneSignalPush(title, message, imageUrl = null) {
             const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
             const payload = { app_id: ONESIGNAL_APP_ID, included_segments: ["All"], headings: { "en": title }, contents: { "en": message }, target_channel: "push" };
             if (imageUrl) {
@@ -9638,70 +9771,91 @@ window.uploadDirectToDrive = function() {
     document.getElementById('gdrive-file-input').click();
 };
 
-window.executeDriveUpload = function() { 
+window.executeDriveUpload = async function() { 
     const fileInput = document.getElementById('gdrive-file-input');
     if (!fileInput || !fileInput.files.length) return;
     
-    const file = fileInput.files[0]; 
-
-    // Validate file type
-    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
-    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
-        alert("Please select a valid PDF file or Image.");
-        fileInput.value = '';
-        return;
-    }
-
     const statusEl = document.getElementById('gdrive-upload-status'); 
     const progressContainer = document.getElementById('gdrive-progress-container');
     const progressBar = document.getElementById('gdrive-progress-bar');
-    const uploadBtn = document.getElementById('btn-gdrive-upload'); // Select the button
+    const uploadBtn = document.getElementById('btn-gdrive-upload');
 
-    // 1. UPDATE BUTTON TO SHOW FILE NAME & SPINNER
-    let shortName = file.name;
-    if (shortName.length > 22) shortName = shortName.substring(0, 20) + '...'; // Prevent text overflow
+    let files = Array.from(fileInput.files);
+    let finalFileToUpload = files[0];
+
+    // Reset UI
+    if (statusEl) {
+        statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); 
+        statusEl.classList.add('text-blue-600');
+    }
+    if (progressContainer) progressContainer.classList.remove('hidden');
+    if (progressBar) { progressBar.style.width = '0%'; progressBar.classList.replace('bg-emerald-500', 'bg-blue-500'); }
+
+    // 🔥 SMART PDF CONVERSION ENGINE
+    if (files.length > 0 && files.every(f => f.type.startsWith('image/'))) {
+        if (statusEl) statusEl.innerText = "Converting Images to PDF...";
+        if (uploadBtn) uploadBtn.innerHTML = `<i class="fa-solid fa-file-pdf fa-bounce text-red-500 text-lg"></i> Generating PDF...`;
+        
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+
+        for (let i = 0; i < files.length; i++) {
+            // Compress image first to keep PDF size small
+            const compressedBlob = await window.compressImage(files[i], 1200, 1200, 0.85);
+            const base64Img = await new Promise(res => {
+                const reader = new FileReader();
+                reader.onloadend = () => res(reader.result);
+                reader.readAsDataURL(compressedBlob);
+            });
+
+            if (i > 0) pdf.addPage();
+            
+            // Auto-scale image to fit A4 page
+            const imgProps = pdf.getImageProperties(base64Img);
+            const ratio = Math.min(pdfWidth / imgProps.width, pdfHeight / imgProps.height);
+            const w = imgProps.width * ratio;
+            const h = imgProps.height * ratio;
+            const x = (pdfWidth - w) / 2;
+            const y = (pdfHeight - h) / 2;
+            
+            pdf.addImage(base64Img, 'JPEG', x, y, w, h);
+        }
+
+        const pdfBlob = pdf.output('blob');
+        finalFileToUpload = new File([pdfBlob], `Converted_Material_${Date.now()}.pdf`, { type: "application/pdf" });
+    }
+
+    // UPDATE BUTTON TO SHOW FILE NAME & SPINNER
+    let shortName = finalFileToUpload.name;
+    if (shortName.length > 22) shortName = shortName.substring(0, 20) + '...'; 
     
     if (uploadBtn) {
         uploadBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-blue-500 text-lg"></i> ${shortName}`;
         uploadBtn.className = "w-full bg-blue-50 border border-blue-300 text-blue-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-inner transition-all";
     }
 
-    // Reset Progress UI
-    if (statusEl) {
-        statusEl.innerText = "Reading file..."; 
-        statusEl.classList.remove('hidden', 'text-green-600', 'text-red-600'); 
-        statusEl.classList.add('text-blue-600');
-    }
-    if (progressContainer) progressContainer.classList.remove('hidden');
-    if (progressBar) {
-        progressBar.style.width = '0%';
-        progressBar.classList.remove('bg-emerald-500'); 
-        progressBar.classList.add('bg-blue-500'); 
-    }
-
     const reader = new FileReader();
     reader.onload = async function() {
         const base64Data = reader.result.split(',')[1];
-        if (statusEl) statusEl.innerText = "Uploading... 0%";
+        if (statusEl) statusEl.innerText = "Uploading to Drive... 0%";
 
-        // 🔥 PASTE YOUR NEW APPS SCRIPT WEB APP URL HERE 🔥
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxzuUd8cMmkrKwAXtUvC0mI0wdmYqp3ZS8Z8Lc8KB0WfsL1XdzWaEOaGEttsSgwmAn9SQ/exec";
         
         const payloadData = {
-            fileName: file.name,
-            mimeType: file.type,
+            fileName: finalFileToUpload.name,
+            mimeType: finalFileToUpload.type,
             base64: base64Data,
-            folderType: 'material' // FORCE IT TO GO TO THE MATERIAL HUB FOLDER
-        
+            folderType: 'material' 
         };
 
-        // --- SMART PROGRESS ENGINE ---
+        // Simulated smooth progress bar
         let simulatedProgress = 0;
         let progressInterval = setInterval(() => {
             if (simulatedProgress < 90) {
                 simulatedProgress += Math.floor(Math.random() * 7) + 2; 
                 if (simulatedProgress > 90) simulatedProgress = 90;
-                
                 if (progressBar) progressBar.style.width = simulatedProgress + '%';
                 if (statusEl) statusEl.innerText = `Uploading... ${simulatedProgress}%`;
             }
@@ -9718,51 +9872,31 @@ window.executeDriveUpload = function() {
             clearInterval(progressInterval);
 
             if (result.success) {
-                // 2. UPLOAD SUCCESS: TURN PROGRESS & BUTTON GREEN!
-                if (progressBar) {
-                    progressBar.style.width = '100%';
-                    progressBar.classList.remove('bg-blue-500');
-                    progressBar.classList.add('bg-emerald-500');
-                }
-                
+                if (progressBar) { progressBar.style.width = '100%'; progressBar.classList.replace('bg-blue-500', 'bg-emerald-500'); }
                 const linkInput = document.getElementById('mat-ext-link');
                 if (linkInput) linkInput.value = result.viewUrl; 
                 
-                if (statusEl) {
-                    statusEl.innerText = "Upload Complete!"; 
-                    statusEl.classList.remove('text-blue-600'); 
-                    statusEl.classList.add('text-green-600');
-                }
-
+                if (statusEl) { statusEl.innerText = "Upload Complete!"; statusEl.classList.replace('text-blue-600', 'text-green-600'); }
                 if (uploadBtn) {
                     uploadBtn.innerHTML = `<i class="fa-solid fa-check-circle text-emerald-600 text-lg"></i> Upload Complete!`;
                     uploadBtn.className = "w-full bg-emerald-50 border border-emerald-300 text-emerald-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition-all";
                 }
-                
                 if (progressContainer) setTimeout(() => progressContainer.classList.add('hidden'), 2000);
             } else {
                 throw new Error(result.error);
             }
-
         } catch (error) {
             clearInterval(progressInterval);
-            if (statusEl) {
-                statusEl.innerText = "Upload Error: " + error.message; 
-                statusEl.classList.remove('text-blue-600', 'text-green-600'); 
-                statusEl.classList.add('text-red-600'); 
-            }
+            if (statusEl) { statusEl.innerText = "Upload Error: " + error.message; statusEl.classList.replace('text-blue-600', 'text-red-600'); }
             if (progressContainer) progressContainer.classList.add('hidden');
-            
-            // 3. UPLOAD ERROR: TURN BUTTON RED
             if (uploadBtn) {
                 uploadBtn.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-red-500 text-lg"></i> Try Again`;
                 uploadBtn.className = "w-full bg-red-50 border border-red-300 text-red-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition-all active:scale-95";
             }
         }
-        
         if (fileInput) fileInput.value = '';
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(finalFileToUpload);
 };
 
         window.submitFitnessAbsent = async function() { showLoader("Marking Absent..."); await window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance: 0, time: 0, pace: 'ABSENT', cals: 0, isAbsent: true, date: window.formatDateDDMMYYYY(), timestamp: Date.now() }); hideLoader(); }
@@ -12533,6 +12667,25 @@ window.submitExam = async function() {
     await window.dbDeleteExam(id); 
     window.hideLoader(); 
 };
+// Add this around Line 2623
+window.dbSubmitExam = async function(obj) {
+    if (isFirebaseConfigured) {
+        await addDoc(collection(db, "exams"), obj);
+    } else {
+        window.examsDB.push({ id: Math.random().toString(), ...obj });
+        refreshUI();
+    }
+};
+
+window.dbUpdateExam = async function(id, obj) {
+    if (isFirebaseConfigured) {
+        await updateDoc(doc(db, "exams", id), obj);
+    } else {
+        const index = window.examsDB.findIndex(e => e.id === id);
+        if (index > -1) Object.assign(window.examsDB[index], obj);
+        refreshUI();
+    }
+};
         window.startGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); showLoader("Starting Exam for All..."); await window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 }); hideLoader(); if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`); }
         window.pauseGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); if(!ex) return; showLoader("Pausing Exam..."); const additionalElapsed = Date.now() - ex.globalStartTime; await window.dbUpdateExam(id, { isPaused: true, pausedElapsed: (ex.pausedElapsed || 0) + additionalElapsed }); hideLoader(); }
         window.resumeGlobalExam = async function(id) { showLoader("Resuming Exam..."); await window.dbUpdateExam(id, { isPaused: false, globalStartTime: Date.now() }); hideLoader(); }
@@ -15249,6 +15402,17 @@ window.downloadFullScreenImage = async function() {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+    }
+};
+window.haptic = function(type = 'light') {
+    if (!navigator.vibrate) return;
+    
+    // Different vibration patterns for different actions
+    switch(type) {
+        case 'light': navigator.vibrate(10); break; // Small taps (navigating, opening menus)
+        case 'medium': navigator.vibrate(30); break; // Actions (submitting, saving)
+        case 'heavy': navigator.vibrate([40, 10, 40]); break; // Warnings, deletions, errors
+        case 'success': navigator.vibrate([20, 30, 20, 30, 40]); break; // Finished an exam
     }
 };
 
