@@ -677,27 +677,31 @@ button:active {
         
        <!-- RED PEN ANNOTATION MODAL -->
 <div id="red-pen-modal" class="hidden-view absolute inset-0 z-[300] bg-gray-900 flex flex-col slide-up touch-none">
-    <div class="bg-gray-950 px-3 sm:px-4 py-3 flex justify-between items-center shadow-lg shrink-0 w-full overflow-x-auto no-scrollbar">
+   <div class="bg-gray-950 px-3 sm:px-4 py-3 flex justify-between items-center shadow-lg shrink-0 w-full overflow-x-auto no-scrollbar">
         
-        <!-- Left: Title -->
-        <div class="flex items-center gap-2 shrink-0 pr-2">
-            <div class="w-8 h-8 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center shrink-0"><i class="fa-solid fa-pen"></i></div>
-            <div class="hidden sm:block">
-                <h3 class="text-white font-black text-sm leading-tight">Red Pen</h3>
-                <span class="text-[9px] text-gray-400 font-bold uppercase tracking-widest block mt-0.5">Mark mistakes</span>
+        <!-- Left: Title & Undo/Redo (Moved away from center notch) -->
+        <div class="flex items-center gap-3 sm:gap-4 shrink-0 pr-2">
+            <!-- Icon & Title -->
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center shrink-0"><i class="fa-solid fa-pen"></i></div>
+                <div class="hidden sm:block">
+                    <h3 class="text-white font-black text-sm leading-tight">Editor</h3>
+                </div>
+            </div>
+            
+            <div class="w-px h-5 bg-gray-700 hidden sm:block"></div>
+            
+            <!-- Undo / Redo -->
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <button onclick="window.undoRp()" class="text-gray-300 hover:text-white active:scale-90 transition-all w-8 h-8 flex items-center justify-center bg-gray-800 rounded-full shadow-sm" title="Undo"><i class="fa-solid fa-rotate-left text-xs"></i></button>
+                <button onclick="window.redoRp()" class="text-gray-300 hover:text-white active:scale-90 transition-all w-8 h-8 flex items-center justify-center bg-gray-800 rounded-full shadow-sm" title="Redo"><i class="fa-solid fa-rotate-right text-xs"></i></button>
             </div>
         </div>
 
-        <!-- Center/Right: Tools & Actions -->
+        <!-- Right: Tools & Close -->
         <div class="flex items-center gap-2 sm:gap-3 shrink-0">
-            <!-- Undo / Redo -->
-            <button onclick="window.undoRp()" class="text-gray-300 hover:text-white active:scale-90 transition-all w-8 h-8 flex items-center justify-center bg-gray-800 rounded-full shadow-sm" title="Undo"><i class="fa-solid fa-rotate-left text-xs"></i></button>
-            <button onclick="window.redoRp()" class="text-gray-300 hover:text-white active:scale-90 transition-all w-8 h-8 flex items-center justify-center bg-gray-800 rounded-full shadow-sm" title="Redo"><i class="fa-solid fa-rotate-right text-xs"></i></button>
-            
-            <div class="w-px h-5 bg-gray-700 mx-0.5 sm:mx-1"></div>
-            
-            <!-- Pen / Eraser Toggles -->
-            <button id="rp-tool-pen" onclick="window.setRpTool('pen')" class="text-red-500 bg-red-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-red-500 shadow-sm" title="Pen Mode"><i class="fa-solid fa-pen text-xs"></i></button>
+            <!-- Pen (Click to swap Red/Green) / Eraser -->
+            <button id="rp-tool-pen" onclick="window.toggleRpColor()" class="text-red-500 bg-red-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-red-500 shadow-sm" title="Tap to swap Red/Green"><i class="fa-solid fa-pen text-xs"></i></button>
             <button id="rp-tool-eraser" onclick="window.setRpTool('eraser')" class="text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm" title="Eraser Mode"><i class="fa-solid fa-eraser text-xs"></i></button>
             
             <div class="w-px h-5 bg-gray-700 mx-0.5 sm:mx-1"></div>
@@ -4698,19 +4702,27 @@ window.handleMenuLogout = function() {
             });
         };
         
-      // --- RED PEN CANVAS ENGINE ---
+// --- RED PEN CANVAS ENGINE ---
 let rpCanvas, rpCtx, rpIsDrawing = false;
 window.currentAnnotationData = { scriptId: null, index: null };
 
 // NEW STATE VARIABLES FOR UNDO/REDO & ERASER
 let rpHistory = [];
 let rpStep = -1;
-let rpCurrentTool = 'pen'; // 'pen' or 'eraser'
+let rpCurrentTool = 'pen'; 
+let rpCurrentColor = '#ef4444'; // Start with Red (#ef4444), Green is (#10b981)
+
+// Toggle color between Red and Green
+window.toggleRpColor = function() {
+    if (rpCurrentTool === 'pen') {
+        rpCurrentColor = (rpCurrentColor === '#ef4444') ? '#10b981' : '#ef4444';
+    }
+    window.setRpTool('pen');
+};
 
 // Save canvas snapshot to history array
 function saveRpState() {
     rpStep++;
-    // If we drew something new after an undo, dump the future history
     if (rpStep < rpHistory.length) {
         rpHistory.length = rpStep;
     }
@@ -4747,25 +4759,28 @@ window.setRpTool = function(tool) {
     const eraseBtn = document.getElementById('rp-tool-eraser');
 
     if (tool === 'pen') {
-        rpCtx.globalCompositeOperation = 'source-over'; // Normal drawing mode
-        rpCtx.strokeStyle = '#ef4444'; // Red Pen
+        rpCtx.globalCompositeOperation = 'source-over'; 
+        rpCtx.strokeStyle = rpCurrentColor; 
         rpCtx.lineWidth = 3;
 
-        // Visual Toggle State
-        penBtn.className = "text-red-500 bg-red-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-red-500 shadow-sm";
+        // Apply Red or Green glowing UI state
+        if (rpCurrentColor === '#ef4444') {
+            penBtn.className = "text-red-500 bg-red-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-red-500 shadow-sm";
+        } else {
+            penBtn.className = "text-emerald-500 bg-emerald-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-emerald-500 shadow-sm";
+        }
         eraseBtn.className = "text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm";
     } else {
-        rpCtx.globalCompositeOperation = 'destination-out'; // This turns strokes into an eraser
-        rpCtx.lineWidth = 25; // Much thicker line so erasing is easy
+        rpCtx.globalCompositeOperation = 'destination-out'; 
+        rpCtx.lineWidth = 25; 
 
-        // Visual Toggle State
         eraseBtn.className = "text-indigo-400 bg-indigo-500/20 w-8 h-8 rounded-full flex items-center justify-center transition-all ring-2 ring-indigo-400 shadow-sm";
         penBtn.className = "text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm";
     }
 };
 
 // Start Red Pen Editor
-window.openRedPenEditor = function(imgSrc, scriptId, imgIndex) {
+window.openRedPenEditor = async function(imgSrc, scriptId, imgIndex) {
     window.currentAnnotationData = { scriptId, index: imgIndex };
     const modal = document.getElementById('red-pen-modal');
     const bgImg = document.getElementById('red-pen-bg-img');
@@ -4778,6 +4793,7 @@ window.openRedPenEditor = function(imgSrc, scriptId, imgIndex) {
     // Reset Data on new open
     rpHistory = [];
     rpStep = -1;
+    rpCurrentColor = '#ef4444'; // Always reset back to Red when opening a new paper
 
     bgImg.onload = function() {
         rpCanvas.width = bgImg.width;
@@ -4785,17 +4801,22 @@ window.openRedPenEditor = function(imgSrc, scriptId, imgIndex) {
         rpCanvas.style.width = bgImg.width + 'px';
         rpCanvas.style.height = bgImg.height + 'px';
         
-        // Setup initial tool to Pen
         window.setRpTool('pen');
         rpCtx.lineCap = 'round';
         rpCtx.lineJoin = 'round';
         
-        // Save the blank canvas as the first history state
         saveRpState();
-
         window.hideLoader();
     };
-    bgImg.src = imgSrc;
+
+    try {
+        const response = await fetch(imgSrc, { mode: 'cors' });
+        const blob = await response.blob();
+        bgImg.src = URL.createObjectURL(blob);
+    } catch (e) {
+        console.warn("CORS fetch failed, falling back to direct src", e);
+        bgImg.src = imgSrc; 
+    }
 };
 
 // Drawing Events
@@ -15027,7 +15048,7 @@ if(novaInput) {
             const isImageActive = !document.getElementById('fullscreen-image-modal').classList.contains('hidden-view');
             const isRedPenActive = !document.getElementById('red-pen-modal').classList.contains('hidden-view');
             const isMathActive = !document.getElementById('math-workout-view').classList.contains('hidden-view');
-            
+            const isExamActive = !document.getElementById('active-exam-view').classList.contains('hidden-view');
             // If any of these full-screen interactive views are open, abort the pull-to-refresh
             if (isChatActive || isPdfActive || isImageActive || isRedPenActive || isMathActive) {
                 return; 
