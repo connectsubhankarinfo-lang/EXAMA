@@ -14020,7 +14020,7 @@ window.renderAllPdfPages = async function() {
     for(let num = 1; num <= window.pdfDoc.numPages; num++) {
         const canvas = document.createElement('canvas');
         canvas.id = `pdf-canvas-${num}`;
-        canvas.className = "shadow-[0_10px_30px_rgba(0,0,0,0.1)] rounded-md relative z-10 transition-all duration-300 mx-auto border border-gray-200 bg-white w-full max-w-full";
+        canvas.className = "shadow-[0_10px_30px_rgba(0,0,0,0.1)] rounded-md relative z-10 transition-transform duration-300 mx-auto border border-gray-200 bg-white w-full max-w-full";
         wrapper.appendChild(canvas);
         window.pdfCanvases.push({ num: num, el: canvas });
         
@@ -14028,41 +14028,41 @@ window.renderAllPdfPages = async function() {
     }
     
     const spacer = document.createElement('div');
+    spacer.id = "pdf-bottom-spacer"; // Added ID so we can control it
     spacer.className = "w-full h-32 shrink-0";
     wrapper.appendChild(spacer);
     
     window.isRenderingAll = false;
 };
 
-window.renderSingleCanvas = async function(num, canvas) {
-    try {
-        const page = await window.pdfDoc.getPage(num);
-        const ctx = canvas.getContext('2d');
-        const viewport = page.getViewport({ scale: window.currentPdfScale });
-        
-        // Render at 2x Super-Resolution so it stays perfectly crisp when we zoom in!
-        const outputScale = Math.max(2, window.devicePixelRatio || 2); 
-        
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        
-        // Save the base width so our CSS engine knows exactly how to scale it
-        canvas.baseWidth = Math.floor(viewport.width);
-        
-        // Apply physics-based CSS transition for buttery smooth zooming
-        canvas.style.transition = "width 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1)";
-        canvas.style.width = (canvas.baseWidth * window.currentZoomMultiplier) + "px";
-        canvas.style.maxWidth = "none"; // Unlock maximum width constraints
-        canvas.style.height = "auto"; // Auto maintains the perfect aspect ratio
+// ... keep renderSingleCanvas exactly as it is ...
 
-        await page.render({
-            canvasContext: ctx,
-            transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
-            viewport: viewport
-        }).promise;
-    } catch(e) {
-        console.error(`Failed to render page ${num}`, e);
+window.updateSinglePageVisibility = function() {
+    const wrapper = document.getElementById('pdf-iframe-wrapper');
+    if(!wrapper) return;
+    const isSingle = wrapper.classList.contains('single-page-mode');
+    
+    window.pdfCanvases.forEach(obj => {
+        if (isSingle) {
+            obj.el.style.display = (obj.num === window.pdfPageNum) ? 'block' : 'none';
+        } else {
+            obj.el.style.display = 'block';
+        }
+    });
+    
+    // THE FIX: Hide the empty scroll space at the bottom so it LOCKS to the page perfectly
+    const spacer = document.getElementById('pdf-bottom-spacer');
+    if (spacer) {
+        spacer.style.display = isSingle ? 'none' : 'block';
     }
+    
+    if (!isSingle) {
+        const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
+        if(targetCanvas) targetCanvas.scrollIntoView({ behavior: 'auto', block: 'center' });
+    }
+    
+    const pageNumEl = document.getElementById('pdf-page-num');
+    if(pageNumEl) pageNumEl.textContent = window.pdfPageNum;
 };
 
 // --- ADVANCED ACROBAT NAVIGATION & SINGLE-PAGE ENGINE ---
@@ -14963,22 +14963,23 @@ if(novaInput) {
             }
         }, { passive: true });
 
-        document.getElementById('app').addEventListener('touchmove', (e) => {
-            if (!isPulling || isRefreshing) return;
+       document.getElementById('app').addEventListener('touchstart', (e) => {
+            if (isRefreshing) return;
             
-            ptrCurrentY = e.touches[0].clientY;
-            const deltaY = ptrCurrentY - ptrStartY;
-
-            if (deltaY > 0) {
-                const pullDistance = Math.min(deltaY * 0.4, 80); 
-                ptrEl.style.transform = `translate(-50%, ${pullDistance}px)`;
-                ptrIcon.style.transform = `rotate(${pullDistance * 3.5}deg)`;
-
-                if (e.cancelable) e.preventDefault(); 
-            } else {
-                isPulling = false;
+            // 🔥 THE FIX: Shield the PDF Reader & Modals from triggering pull-to-refresh
+            if (!document.getElementById('custom-pdf-viewer-modal').classList.contains('hidden-view')) return;
+            if (!document.getElementById('fullscreen-image-modal').classList.contains('hidden-view')) return;
+            if (!document.getElementById('red-pen-modal').classList.contains('hidden-view')) return;
+            if (!document.getElementById('auto-quiz-modal').classList.contains('hidden-view')) return;
+            
+            const scrollParent = getScrollParent(e.target);
+            if (!scrollParent || scrollParent.scrollTop <= 0) {
+                ptrStartY = e.touches[0].clientY;
+                ptrCurrentY = ptrStartY; 
+                isPulling = true;
+                ptrEl.style.transition = 'none'; 
             }
-        }, { passive: false });
+        }, { passive: true });
 
         document.getElementById('app').addEventListener('touchend', (e) => {
             if (!isPulling || isRefreshing) return;
