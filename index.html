@@ -683,7 +683,7 @@ button:active {
         <div class="flex items-center gap-3 sm:gap-4 shrink-0 pr-2">
             <!-- Icon & Title -->
             <div class="flex items-center gap-2">
-                <div class="w-8 h-8 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center shrink-0"><i class="fa-solid fa-diagram-lean-canvas"></i></div>
+                <div class="w-8 h-8 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center shrink-0"><i class="fa-solid fa-chalkboard"></i></div>
                 <div class="hidden sm:block">
                     <h3 class="text-white font-black text-sm leading-tight">CANVAS</h3>
                 </div>
@@ -4728,6 +4728,54 @@ function saveRpState() {
     }
     rpHistory.push(rpCanvas.toDataURL());
 }
+window.saveRedPenAnnotation = function() {
+    if (!rpCanvas || window.currentAnnotationData.scriptId === null) return;
+    
+    if (typeof window.showLoader === 'function') window.showLoader("Saving...");
+
+    const bgImg = document.getElementById('red-pen-bg-img');
+    
+    // 1. Create a temporary canvas to merge both layers
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = rpCanvas.width;
+    tempCanvas.height = rpCanvas.height;
+    const tCtx = tempCanvas.getContext('2d');
+
+    // 2. Draw the base exam paper image first
+    tCtx.drawImage(bgImg, 0, 0, tempCanvas.width, tempCanvas.height);
+    
+    // 3. Draw your red pen annotations on top of it
+    tCtx.drawImage(rpCanvas, 0, 0);
+
+    // 4. Extract the flattened/merged image (Using JPEG to save storage space)
+    const mergedDataUrl = tempCanvas.toDataURL("image/jpeg", 0.9); 
+
+    const scriptId = window.currentAnnotationData.scriptId;
+    const idx = window.currentAnnotationData.index;
+
+    // 5. Save to your drafts array
+    if (!window.annotatedImagesDraft) window.annotatedImagesDraft = {};
+    if (!window.annotatedImagesDraft[scriptId]) window.annotatedImagesDraft[scriptId] = {};
+    
+    window.annotatedImagesDraft[scriptId][idx] = mergedDataUrl;
+
+    // 6. Close the modal and clean up
+    document.getElementById('red-pen-modal').classList.add('hidden-view');
+    
+    if (typeof window.hideLoader === 'function') window.hideLoader();
+    if (typeof window.showToast === 'function') {
+        window.showToast("Saved", "Annotation saved successfully.", "success");
+    }
+
+    // 7. Update the UI to show the newly annotated image thumbnail
+    if (typeof window.renderEvaluationImages === 'function') {
+        window.renderEvaluationImages(scriptId); // If you have a re-render function
+    } else {
+        // Fallback: Attempt to update the specific thumbnail image source directly
+        const previewImg = document.getElementById(`eval-img-${scriptId}-${idx}`) || document.getElementById(`eval-img-${idx}`);
+        if (previewImg) previewImg.src = mergedDataUrl;
+    }
+};
 
 window.undoRp = function() {
     if (rpStep > 0) {
@@ -9403,6 +9451,43 @@ setTimeout(() => {
     }
 
 }, 1500); // Small delay to ensure the HTML elements are fully loaded first
+
+window.uploadStudentDP = async function(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    window.showLoader("Uploading Profile Picture...");
+    try {
+        // 1. Upload to Drive using your unified uploader
+        const fileUrl = await window.uploadFileToDrive(file, 'student_dp', false);
+
+        // 2. Update Firebase Firestore
+        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js");
+        await updateDoc(doc(db, "students", window.loggedInMobile), {
+            profilePic: fileUrl
+        });
+
+        // 3. Update local UI elements dynamically
+        const dpElements = document.querySelectorAll('#student-nav-dp, #settings-user-dp');
+        dpElements.forEach(el => el.src = fileUrl);
+        
+        // 4. Update the local DB cache
+        const stuIndex = window.studentsDB.findIndex(s => s.mobile === window.loggedInMobile);
+        if (stuIndex !== -1) window.studentsDB[stuIndex].profilePic = fileUrl;
+
+        window.hideLoader();
+        if (typeof window.showToast === 'function') {
+            window.showToast("Success", "Profile picture updated!", "success");
+        }
+    } catch (error) {
+        window.hideLoader();
+        window.showCustomAlert("Upload Failed", error.message, "error");
+    }
+    
+    // Reset the input so the same file can be selected again if needed
+    input.value = '';
+};
+
 // ==========================================
 // 🎛️ AUTO-HIDE PDF TOOLBAR ENGINE
 // ==========================================
