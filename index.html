@@ -10469,203 +10469,147 @@ function getFitnessLeaderboard() {
                 weeklyPerc: s.weeklyTasks > 0 ? Math.round((s.weeklyCompleted / s.weeklyTasks) * 100) : 0
             }));
         }
+// ==========================================
+// AVATAR FETCH ENGINE (RESTORED)
+// ==========================================
+window.getStudentAvatar = function(mobile, name) {
+    if (!mobile) return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=4f46e5&color=fff&bold=true`;
+    const stu = window.studentsDB ? window.studentsDB.find(s => s.mobile === mobile) : null;
+    if (stu && stu.dpUrl) return stu.dpUrl;
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Student')}&background=4f46e5&color=fff&bold=true`;
+};
 
-        // --- 4. DYNAMIC LEADERBOARD RENDERER ---
-     window.renderLeaderboard = function() {
+// ==========================================
+// DYNAMIC LEADERBOARD RENDERER (CENTERED & ANIMATED)
+// ==========================================
+window.renderLeaderboard = function() {
     const list = document.getElementById('leaderboard-list'); 
     if(!list) return;
 
+    // 🔥 THE LAYOUT FIX: Force the container to be a perfectly centered single column!
+    list.className = "flex flex-col gap-4 sm:gap-5 relative z-10 max-w-2xl mx-auto w-full pb-10";
+
     // 1. SKELETON
-    list.innerHTML = window.getSkeletonHTML('list', 6);
+    list.innerHTML = window.getSkeletonHTML('card', 5);
     
     // 2. DELAY
     setTimeout(() => {
-        let finalHtml = '';
-        
+        let sortedList = [];
+        let theme = { text: 'text-indigo-600', bgBadge: 'bg-indigo-100/80', border: 'border-indigo-200/50', hoverBorder: 'group-hover:border-indigo-400' };
+
+        // --- UNIFIED DATA PREPARATION ---
         if (window.lbMainTab === 'score') {
-            const leaderboard = getOverallLeaderboard();
-            let sortedList = window.lbSubTab === 'weekly' 
-                ? [...leaderboard].sort((a, b) => b.weeklyAvg - a.weeklyAvg) 
-                : [...leaderboard].sort((a, b) => b.avg - a.avg);
-
-            sortedList.forEach((s, idx) => {
-                const rank = idx + 1;
-                const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyAvg : s.avg;
-                const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Avg' : 'Total Avg';
-                const secondaryVal = window.lbSubTab === 'weekly' ? `Total Avg: ${s.avg}%` : `Wk Avg: ${s.weeklyAvg}%`;
-
-                const stuDp = window.getStudentAvatar(s.mobile, s.name);
-
-                let badge = ''; let bg = 'glass-card'; let badgeBg = 'bg-white border-gray-200 text-gray-600';
-                if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-amber-100/80 to-amber-200/80 border-amber-300'; badgeBg = 'bg-amber-100 border-amber-300 text-amber-700'; } 
-                else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; badgeBg = 'bg-gray-100 border-gray-300 text-gray-700'; } 
-                else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; badgeBg = 'bg-orange-100 border-orange-300 text-orange-700'; } 
-                else { badge = `#${rank}`; }
-
-                const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-indigo-50/90 border-indigo-200';
-                finalHtml += `
-                    <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2 mb-3">
-                        <div class="flex items-center gap-3 sm:gap-4 min-w-0 pl-1">
-                            
-                            <!-- 🔥 NEW OVERLAPPING DP & BADGE UI -->
-                            <div class="relative shrink-0 mb-1.5 mt-0.5">
-                                <img src="${stuDp}" class="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover shadow-sm border-[2.5px] border-white/80" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=4f46e5&color=fff'">
-                                <div class="absolute -bottom-2.5 left-1/2 transform -translate-x-1/2 px-1.5 min-w-[22px] h-5 rounded-full flex items-center justify-center font-black text-[9px] sm:text-[10px] shadow-sm border ${badgeBg} z-10 whitespace-nowrap">
-                                    ${badge}
-                                </div>
-                            </div>
-
-                            <div class="min-w-0 pr-1">
-                                <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-indigo-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
-                                <span class="bg-indigo-100/80 text-indigo-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
-                            </div>
-                        </div>
-                        <div class="text-right shrink-0">
-                            <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">%</span></p>
-                            <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
-                        </div>
-                    </div>`;
-            });
+            const lb = getOverallLeaderboard();
+            sortedList = window.lbSubTab === 'weekly' ? [...lb].sort((a, b) => b.weeklyAvg - a.weeklyAvg) : [...lb].sort((a, b) => b.avg - a.avg);
+            sortedList = sortedList.map(s => ({
+                ...s,
+                primaryVal: window.lbSubTab === 'weekly' ? s.weeklyAvg : s.avg,
+                primaryUnit: '%',
+                subLabel: window.lbSubTab === 'weekly' ? 'Weekly Avg' : 'Total Avg',
+                secondaryVal: window.lbSubTab === 'weekly' ? `Total Avg: ${s.avg}%` : `Wk Avg: ${s.weeklyAvg}%`
+            }));
         } 
         else if (window.lbMainTab === 'study') {
-            const leaderboard = getStudyLeaderboard();
-            let sortedList = window.lbSubTab === 'weekly' 
-                ? [...leaderboard].sort((a, b) => parseFloat(b.weeklyHours) - parseFloat(a.weeklyHours)) 
-                : [...leaderboard].sort((a, b) => parseFloat(b.totalHours) - parseFloat(a.totalHours));
-
-            sortedList.forEach((s, idx) => {
-                const rank = idx + 1;
-                const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyHours : s.totalHours;
-                const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Focus' : 'Total Focus';
-                const secondaryVal = window.lbSubTab === 'weekly' ? `Total: ${s.totalHours}h` : `Wk: ${s.weeklyHours}h`;
-
-                const stuDp = window.getStudentAvatar(s.mobile, s.name);
-
-                let badge = ''; let bg = 'glass-card'; let badgeBg = 'bg-white border-gray-200 text-gray-600';
-                if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-emerald-100/80 to-teal-200/80 border-teal-300'; badgeBg = 'bg-teal-100 border-teal-300 text-teal-700'; } 
-                else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; badgeBg = 'bg-gray-100 border-gray-300 text-gray-700'; } 
-                else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; badgeBg = 'bg-orange-100 border-orange-300 text-orange-700'; } 
-                else { badge = `#${rank}`; }
-
-                const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-teal-50/90 border-teal-200';
-                finalHtml += `
-                    <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2 mb-3">
-                        <div class="flex items-center gap-3 sm:gap-4 min-w-0 pl-1">
-                            
-                            <!-- 🔥 NEW OVERLAPPING DP & BADGE UI -->
-                            <div class="relative shrink-0 mb-1.5 mt-0.5">
-                                <img src="${stuDp}" class="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover shadow-sm border-[2.5px] border-white/80" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=4f46e5&color=fff'">
-                                <div class="absolute -bottom-2.5 left-1/2 transform -translate-x-1/2 px-1.5 min-w-[22px] h-5 rounded-full flex items-center justify-center font-black text-[9px] sm:text-[10px] shadow-sm border ${badgeBg} z-10 whitespace-nowrap">
-                                    ${badge}
-                                </div>
-                            </div>
-
-                            <div class="min-w-0 pr-1">
-                                <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-teal-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
-                                <span class="bg-teal-100/80 text-teal-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
-                            </div>
-                        </div>
-                        <div class="text-right shrink-0">
-                            <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">h</span></p>
-                            <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
-                        </div>
-                    </div>`;
-            });
+            const lb = getStudyLeaderboard();
+            sortedList = window.lbSubTab === 'weekly' ? [...lb].sort((a, b) => parseFloat(b.weeklyHours) - parseFloat(a.weeklyHours)) : [...lb].sort((a, b) => parseFloat(b.totalHours) - parseFloat(a.totalHours));
+            theme = { text: 'text-teal-600', bgBadge: 'bg-teal-100/80', border: 'border-teal-200/50', hoverBorder: 'group-hover:border-teal-400' };
+            sortedList = sortedList.map(s => ({
+                ...s,
+                primaryVal: window.lbSubTab === 'weekly' ? s.weeklyHours : s.totalHours,
+                primaryUnit: 'h',
+                subLabel: window.lbSubTab === 'weekly' ? 'Weekly Focus' : 'Total Focus',
+                secondaryVal: window.lbSubTab === 'weekly' ? `Total: ${s.totalHours}h` : `Wk: ${s.weeklyHours}h`
+            }));
         } 
         else if (window.lbMainTab === 'target') {
-            const leaderboard = getTargetLeaderboard();
-            let sortedList = window.lbSubTab === 'weekly' 
-                ? [...leaderboard].sort((a, b) => b.weeklyPerc - a.weeklyPerc) 
-                : [...leaderboard].sort((a, b) => b.totalPerc - a.totalPerc);
-
-            sortedList.forEach((s, idx) => {
-                const rank = idx + 1;
-                const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyPerc : s.totalPerc;
-                const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Target' : 'Total Target';
-                const secondaryVal = window.lbSubTab === 'weekly' 
-                    ? `${s.weeklyCompleted}/${s.weeklyTasks} Tasks (Tot: ${s.totalPerc}%)` 
-                    : `${s.completedTasks}/${s.totalTasks} Tasks (Wk: ${s.weeklyPerc}%)`;
-
-                const stuDp = window.getStudentAvatar(s.mobile, s.name);
-
-                let badge = ''; let bg = 'glass-card'; let badgeBg = 'bg-white border-gray-200 text-gray-600';
-                if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-purple-100/80 to-purple-200/80 border-purple-300'; badgeBg = 'bg-purple-100 border-purple-300 text-purple-700'; } 
-                else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; badgeBg = 'bg-gray-100 border-gray-300 text-gray-700'; } 
-                else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; badgeBg = 'bg-orange-100 border-orange-300 text-orange-700'; } 
-                else { badge = `#${rank}`; }
-
-                const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-purple-50/90 border-purple-200';
-                finalHtml += `
-                    <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2 mb-3">
-                        <div class="flex items-center gap-3 sm:gap-4 min-w-0 pl-1">
-                            
-                            <!-- 🔥 NEW OVERLAPPING DP & BADGE UI -->
-                            <div class="relative shrink-0 mb-1.5 mt-0.5">
-                                <img src="${stuDp}" class="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover shadow-sm border-[2.5px] border-white/80" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=4f46e5&color=fff'">
-                                <div class="absolute -bottom-2.5 left-1/2 transform -translate-x-1/2 px-1.5 min-w-[22px] h-5 rounded-full flex items-center justify-center font-black text-[9px] sm:text-[10px] shadow-sm border ${badgeBg} z-10 whitespace-nowrap">
-                                    ${badge}
-                                </div>
-                            </div>
-
-                            <div class="min-w-0 pr-1">
-                                <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-purple-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
-                                <span class="bg-purple-100/80 text-purple-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
-                            </div>
-                        </div>
-                        <div class="text-right shrink-0">
-                            <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">%</span></p>
-                            <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
-                        </div>
-                    </div>`;
-            });
+            const lb = getTargetLeaderboard();
+            sortedList = window.lbSubTab === 'weekly' ? [...lb].sort((a, b) => b.weeklyPerc - a.weeklyPerc) : [...lb].sort((a, b) => b.totalPerc - a.totalPerc);
+            theme = { text: 'text-purple-600', bgBadge: 'bg-purple-100/80', border: 'border-purple-200/50', hoverBorder: 'group-hover:border-purple-400' };
+            sortedList = sortedList.map(s => ({
+                ...s,
+                primaryVal: window.lbSubTab === 'weekly' ? s.weeklyPerc : s.totalPerc,
+                primaryUnit: '%',
+                subLabel: window.lbSubTab === 'weekly' ? 'Weekly Target' : 'Total Target',
+                secondaryVal: window.lbSubTab === 'weekly' ? `${s.weeklyCompleted}/${s.weeklyTasks} Tasks (Tot: ${s.totalPerc}%)` : `${s.completedTasks}/${s.totalTasks} Tasks (Wk: ${s.weeklyPerc}%)`
+            }));
         } 
         else if (window.lbMainTab === 'fitness') {
-            const leaderboard = getFitnessLeaderboard();
-            let sortedList = window.lbSubTab === 'weekly' 
-                ? [...leaderboard].sort((a, b) => b.weeklyDist - a.weeklyDist) 
-                : [...leaderboard].sort((a, b) => b.totalDist - a.totalDist);
-
-            sortedList.forEach((s, idx) => {
-                const rank = idx + 1;
-                const valToDisplay = window.lbSubTab === 'weekly' ? s.weeklyDist : s.totalDist;
-                const subLabel = window.lbSubTab === 'weekly' ? 'Weekly Run' : 'Total Run';
-                const secondaryVal = window.lbSubTab === 'weekly' ? `Total: ${s.totalDist} KM` : `Wk: ${s.weeklyDist} KM`;
-
-                const stuDp = window.getStudentAvatar(s.mobile, s.name);
-
-                let badge = ''; let bg = 'glass-card'; let badgeBg = 'bg-white border-gray-200 text-gray-600';
-                if(rank === 1) { badge = '🥇'; bg = 'bg-gradient-to-r from-rose-100/80 to-rose-200/80 border-rose-300'; badgeBg = 'bg-rose-100 border-rose-300 text-rose-700'; } 
-                else if(rank === 2) { badge = '🥈'; bg = 'bg-gradient-to-r from-gray-100/80 to-gray-200/80 border-gray-300'; badgeBg = 'bg-gray-100 border-gray-300 text-gray-700'; } 
-                else if(rank === 3) { badge = '🥉'; bg = 'bg-gradient-to-r from-orange-100/80 to-orange-200/80 border-orange-300'; badgeBg = 'bg-orange-100 border-orange-300 text-orange-700'; } 
-                else { badge = `#${rank}`; }
-
-                const isMe = s.mobile === window.loggedInMobile; if(isMe && rank > 3) bg = 'bg-rose-50/90 border-rose-200';
-                finalHtml += `
-                    <div class="${bg} p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center shadow-sm hover:-translate-y-1 transition-all duration-300 gap-2 mb-3">
-                        <div class="flex items-center gap-3 sm:gap-4 min-w-0 pl-1">
-                            
-                            <!-- 🔥 NEW OVERLAPPING DP & BADGE UI -->
-                            <div class="relative shrink-0 mb-1.5 mt-0.5">
-                                <img src="${stuDp}" class="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover shadow-sm border-[2.5px] border-white/80" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=4f46e5&color=fff'">
-                                <div class="absolute -bottom-2.5 left-1/2 transform -translate-x-1/2 px-1.5 min-w-[22px] h-5 rounded-full flex items-center justify-center font-black text-[9px] sm:text-[10px] shadow-sm border ${badgeBg} z-10 whitespace-nowrap">
-                                    ${badge}
-                                </div>
-                            </div>
-
-                            <div class="min-w-0 pr-1">
-                                <h4 class="font-bold text-gray-900 text-[13px] sm:text-[15px] break-words leading-tight">${s.name} ${isMe ? '<span class="text-rose-600 text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>' : ''}</h4>
-                                <span class="bg-rose-100/80 text-rose-700 text-[8px] sm:text-[9px] font-black px-1.5 sm:px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap">${subLabel} Rank</span>
-                            </div>
-                        </div>
-                        <div class="text-right shrink-0">
-                            <p class="text-xl sm:text-2xl font-black text-gray-900 leading-tight">${valToDisplay}<span class="text-xs sm:text-sm text-gray-500 font-bold">KM</span></p>
-                            <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-0.5 whitespace-nowrap">${secondaryVal}</p>
-                        </div>
-                    </div>`;
-            });
+            const lb = getFitnessLeaderboard();
+            sortedList = window.lbSubTab === 'weekly' ? [...lb].sort((a, b) => b.weeklyDist - a.weeklyDist) : [...lb].sort((a, b) => b.totalDist - a.totalDist);
+            theme = { text: 'text-rose-600', bgBadge: 'bg-rose-100/80', border: 'border-rose-200/50', hoverBorder: 'group-hover:border-rose-400' };
+            sortedList = sortedList.map(s => ({
+                ...s,
+                primaryVal: window.lbSubTab === 'weekly' ? s.weeklyDist : s.totalDist,
+                primaryUnit: 'KM',
+                subLabel: window.lbSubTab === 'weekly' ? 'Weekly Run' : 'Total Run',
+                secondaryVal: window.lbSubTab === 'weekly' ? `Total: ${s.totalDist} KM` : `Wk: ${s.weeklyDist} KM`
+            }));
         }
-        list.innerHTML = `<div class="fade-in">${finalHtml}</div>`;
 
+        // --- RENDER HTML WITH ANIMATIONS ---
+        let finalHtml = '';
+        
+        if (sortedList.length === 0) {
+            finalHtml = `<div class="text-center py-10 fade-in"><div class="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3"><i class="fa-solid fa-trophy text-gray-400 text-2xl"></i></div><p class="text-sm text-gray-500 font-bold">No ranking data available yet.</p></div>`;
+        }
+
+        sortedList.forEach((s, idx) => {
+            const rank = idx + 1;
+            const stuDp = window.getStudentAvatar(s.mobile, s.name);
+            const isMe = s.mobile === window.loggedInMobile;
+
+            // Visual Setup based on Rank
+            let cardBg = 'bg-white/90 backdrop-blur-xl border border-gray-200/80';
+            let rankVisual = '';
+            let glowEffect = '';
+
+            if (rank === 1) {
+                cardBg = 'bg-gradient-to-r from-amber-50/90 to-orange-50/90 border border-amber-300';
+                rankVisual = '<div class="text-[40px] sm:text-[50px] drop-shadow-[0_5px_10px_rgba(245,158,11,0.5)] animate-bounce" style="animation-duration: 2.5s;">🥇</div>';
+                glowEffect = '<div class="absolute -right-10 -top-10 w-40 h-40 bg-amber-400/20 rounded-full blur-[30px] pointer-events-none"></div>';
+            } else if (rank === 2) {
+                cardBg = 'bg-gradient-to-r from-slate-50/90 to-gray-100/90 border border-gray-300';
+                rankVisual = '<div class="text-3xl sm:text-4xl drop-shadow-md">🥈</div>';
+            } else if (rank === 3) {
+                cardBg = 'bg-gradient-to-r from-orange-50/60 to-rose-50/60 border border-orange-200';
+                rankVisual = '<div class="text-3xl sm:text-4xl drop-shadow-md">🥉</div>';
+            } else {
+                if (isMe) cardBg = `bg-white border-2 border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]`;
+                rankVisual = `<div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-black text-[13px] sm:text-[15px] shadow-inner border border-gray-300 text-gray-500 bg-white">#${rank}</div>`;
+            }
+
+            // Staggered Animation Delay for cascading effect
+            const animDelay = idx * 0.08;
+
+            finalHtml += `
+            <div class="${cardBg} p-3.5 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] flex items-center shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_15px_30px_rgba(0,0,0,0.08)] hover:-translate-y-1.5 transition-all duration-300 gap-3 sm:gap-5 relative overflow-hidden group slide-up ${theme.hoverBorder}" style="animation-delay: ${animDelay}s; animation-fill-mode: both;">
+                ${glowEffect}
+                
+                <!-- 1. RANK COLUMN -->
+                <div class="w-12 sm:w-16 flex items-center justify-center shrink-0 border-r border-gray-200/60 pr-2 sm:pr-4 relative z-10 group-hover:scale-110 transition-transform duration-300">
+                    ${rankVisual}
+                </div>
+
+                <!-- 2. DP & NAME COLUMN -->
+                <div class="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 relative z-10">
+                    <div class="relative shrink-0">
+                        <img src="${stuDp}" class="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover shadow-md border-2 sm:border-[3px] border-white group-hover:border-indigo-400 transition-colors duration-300" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=4f46e5&color=fff'">
+                    </div>
+                    <div class="min-w-0">
+                        <h4 class="font-black text-gray-900 text-[14.5px] sm:text-[17px] break-words leading-tight group-hover:${theme.text} transition-colors">${s.name} ${isMe ? `<span class="${theme.text} text-[10px] sm:text-xs ml-1 whitespace-nowrap">(You)</span>` : ''}</h4>
+                        <span class="${theme.bgBadge} ${theme.text} text-[8px] sm:text-[9px] font-black px-2 py-0.5 rounded uppercase mt-1 inline-block whitespace-nowrap border ${theme.border} shadow-sm">${s.subLabel}</span>
+                    </div>
+                </div>
+
+                <!-- 3. SCORE COLUMN -->
+                <div class="text-right shrink-0 relative z-10 flex flex-col justify-center items-end pl-1">
+                    <p class="text-[22px] sm:text-3xl font-black text-gray-900 leading-none tracking-tight group-hover:scale-105 transition-transform duration-300 origin-right">${s.primaryVal}<span class="text-xs sm:text-sm text-gray-400 font-bold ml-0.5">${s.primaryUnit}</span></p>
+                    <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold mt-1.5 whitespace-nowrap bg-gray-100/80 px-2 py-0.5 rounded-md border border-gray-200/50 shadow-inner">${s.secondaryVal}</p>
+                </div>
+            </div>`;
+        });
+
+        list.innerHTML = finalHtml;
     }, 200); 
 };
    
@@ -14963,23 +14907,22 @@ if(novaInput) {
             }
         }, { passive: true });
 
-       document.getElementById('app').addEventListener('touchstart', (e) => {
-            if (isRefreshing) return;
+        document.getElementById('app').addEventListener('touchmove', (e) => {
+            if (!isPulling || isRefreshing) return;
             
-            // 🔥 THE FIX: Shield the PDF Reader & Modals from triggering pull-to-refresh
-            if (!document.getElementById('custom-pdf-viewer-modal').classList.contains('hidden-view')) return;
-            if (!document.getElementById('fullscreen-image-modal').classList.contains('hidden-view')) return;
-            if (!document.getElementById('red-pen-modal').classList.contains('hidden-view')) return;
-            if (!document.getElementById('auto-quiz-modal').classList.contains('hidden-view')) return;
-            
-            const scrollParent = getScrollParent(e.target);
-            if (!scrollParent || scrollParent.scrollTop <= 0) {
-                ptrStartY = e.touches[0].clientY;
-                ptrCurrentY = ptrStartY; 
-                isPulling = true;
-                ptrEl.style.transition = 'none'; 
+            ptrCurrentY = e.touches[0].clientY;
+            const deltaY = ptrCurrentY - ptrStartY;
+
+            if (deltaY > 0) {
+                const pullDistance = Math.min(deltaY * 0.4, 80); 
+                ptrEl.style.transform = `translate(-50%, ${pullDistance}px)`;
+                ptrIcon.style.transform = `rotate(${pullDistance * 3.5}deg)`;
+
+                if (e.cancelable) e.preventDefault(); 
+            } else {
+                isPulling = false;
             }
-        }, { passive: true });
+        }, { passive: false });
 
         document.getElementById('app').addEventListener('touchend', (e) => {
             if (!isPulling || isRefreshing) return;
