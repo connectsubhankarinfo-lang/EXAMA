@@ -3879,6 +3879,52 @@ if (isFirebaseConfigured) {
             }
         };
 
+        window.uploadStudentDP = async function(input) {
+    if (!input.files || input.files.length === 0) return;
+    
+    const file = input.files[0];
+    
+    // Check if the user is a student (Admin DP is fixed/handled separately)
+    if (window.currentRole === 'admin') {
+        window.showCustomAlert("Notice", "Admin profile picture is fixed by default.", "info");
+        return;
+    }
+
+    if (typeof window.showLoader === 'function') window.showLoader("Updating Profile Picture...");
+    
+    try {
+        // 1. Upload to Google Drive using your existing engine
+        const fileUrl = await window.uploadFileToDrive(file, 'chat_img', false);
+        
+        // 2. Update Firestore database
+        const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js");
+        await updateDoc(doc(db, "students", window.loggedInMobile), { 
+            dpUrl: fileUrl 
+        });
+        
+        // 3. Update the local database array
+        const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
+        if (student) student.dpUrl = fileUrl;
+        
+        // 4. Update the UI instantly
+        const navDp = document.getElementById('student-nav-dp');
+        const settingsDp = document.getElementById('settings-user-dp');
+        if (navDp) navDp.src = fileUrl;
+        if (settingsDp) settingsDp.src = fileUrl;
+        
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+        window.showCustomAlert("Success", "Profile picture updated successfully!", "success");
+        
+    } catch (err) {
+        if (typeof window.hideLoader === 'function') window.hideLoader();
+        console.error("DP Upload Error:", err);
+        window.showCustomAlert("Upload Failed", "Could not update profile picture. Check your connection.", "error");
+    }
+    
+    // Clear the input so the same file can be selected again if needed
+    input.value = '';
+};
+
         // 🎨 WhatsApp-Style Distinct Group Name Colors
         window.getSenderColor = function(mobile) {
             if (!mobile || mobile === 'admin') return '#128C7E';
