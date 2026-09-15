@@ -14006,27 +14006,27 @@ window.currentPdfRawUrl = "";
 window.currentPdfId = "";
 
 // 2. Core Acrobat Continuous Rendering Functions
+window.currentZoomMultiplier = 1; // Tracks our instant CSS scale
+
 window.renderAllPdfPages = async function() {
     window.isRenderingAll = true;
+    window.currentZoomMultiplier = 1; // Reset zoom to default when a new document opens
     const wrapper = document.getElementById('pdf-iframe-wrapper');
     if(!wrapper) return;
     
     wrapper.innerHTML = ''; 
     window.pdfCanvases = [];
     
-    // Loop and render every page sequentially (Acrobat style)
     for(let num = 1; num <= window.pdfDoc.numPages; num++) {
         const canvas = document.createElement('canvas');
         canvas.id = `pdf-canvas-${num}`;
-        // Soft PDF drop-shadow mimicking real paper
-        canvas.className = "shadow-[0_10px_30px_rgba(0,0,0,0.1)] rounded-md relative z-10 transition-transform duration-300 mx-auto border border-gray-200 bg-white w-full max-w-full";
+        canvas.className = "shadow-[0_10px_30px_rgba(0,0,0,0.1)] rounded-md relative z-10 transition-all duration-300 mx-auto border border-gray-200 bg-white w-full max-w-full";
         wrapper.appendChild(canvas);
         window.pdfCanvases.push({ num: num, el: canvas });
         
         await window.renderSingleCanvas(num, canvas);
     }
     
-    // Add extra space at the bottom for comfortable scrolling
     const spacer = document.createElement('div');
     spacer.className = "w-full h-32 shrink-0";
     wrapper.appendChild(spacer);
@@ -14039,15 +14039,21 @@ window.renderSingleCanvas = async function(num, canvas) {
         const page = await window.pdfDoc.getPage(num);
         const ctx = canvas.getContext('2d');
         const viewport = page.getViewport({ scale: window.currentPdfScale });
-        const outputScale = window.devicePixelRatio || 1;
+        
+        // Render at 2x Super-Resolution so it stays perfectly crisp when we zoom in!
+        const outputScale = Math.max(2, window.devicePixelRatio || 2); 
         
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
         
-        // Allow CSS to handle the physical width to prevent horizontal overflow on small devices
-        canvas.style.width = Math.floor(viewport.width) + "px";
-        canvas.style.maxWidth = "100%"; 
-        canvas.style.height = "auto"; 
+        // Save the base width so our CSS engine knows exactly how to scale it
+        canvas.baseWidth = Math.floor(viewport.width);
+        
+        // Apply physics-based CSS transition for buttery smooth zooming
+        canvas.style.transition = "width 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1)";
+        canvas.style.width = (canvas.baseWidth * window.currentZoomMultiplier) + "px";
+        canvas.style.maxWidth = "none"; // Unlock maximum width constraints
+        canvas.style.height = "auto"; // Auto maintains the perfect aspect ratio
 
         await page.render({
             canvasContext: ctx,
@@ -14102,24 +14108,29 @@ window.handlePdfScroll = function() {
 
 window.zoomCustomPdf = function(dir) {
     if (!window.pdfDoc || window.isRenderingAll) return;
+    
     const zoomStep = 0.25; 
     if (dir === 1) {
-        window.currentPdfScale = Math.min(4.0, window.currentPdfScale + zoomStep);
+        window.currentZoomMultiplier = Math.min(3.0, window.currentZoomMultiplier + zoomStep);
     } else {
-        window.currentPdfScale = Math.max(0.4, window.currentPdfScale - zoomStep);
+        window.currentZoomMultiplier = Math.max(0.5, window.currentZoomMultiplier - zoomStep);
     }
     
-    const loader = document.getElementById('pdf-loader');
-    if(loader) {
-        document.getElementById('pdf-loading-text').innerText = "Rescaling...";
-        loader.classList.remove('hidden');
-    }
-    
-    window.renderAllPdfPages().then(() => {
-        if(loader) loader.classList.add('hidden');
-        const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
-        if(targetCanvas) targetCanvas.scrollIntoView({ behavior: 'auto', block: 'start' });
+    // Instead of re-rendering, instantly scale ALL canvases simultaneously via CSS!
+    window.pdfCanvases.forEach(obj => {
+        const canvas = obj.el;
+        if (canvas.baseWidth) {
+            canvas.style.width = (canvas.baseWidth * window.currentZoomMultiplier) + "px";
+        }
     });
+    
+    // Gently scroll to center the page the user was currently looking at
+    setTimeout(() => {
+        const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
+        if(targetCanvas) {
+            targetCanvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 150);
 };
 
 // 3. Open Custom PDF Viewer
