@@ -2521,7 +2521,8 @@ button:active {
         <button type="button" id="btn-gdrive-upload" onclick="uploadDirectToDrive()" class="w-full bg-white border border-gray-300 text-gray-400 font-black py-3 sm:py-3.5 px-4 rounded-xl hover:bg-blue-50 active:scale-95 flex items-center justify-center gap-2 text-sm shadow-sm transition-all">
             <i class="fa fa-upload text-gray-400 text-lg"></i> SELECT & UPLOAD FILE
         </button>
-      <input type="file" id="gdrive-file-input" class="hidden" multiple accept="image/*,application/pdf" onchange="window.executeDriveUpload()">
+     <!-- Changed accept to "*/*" so mobile allows choosing File Manager -->
+    <input type="file" id="gdrive-file-input" class="hidden" multiple accept="*/*" onchange="window.executeDriveUpload()">
 
         <!-- NEW: Animated Progress Bar (Hidden by default) -->
         <div id="gdrive-progress-container" class="hidden w-full h-2 bg-gray-200 rounded-full mt-1 overflow-hidden shadow-inner">
@@ -8842,7 +8843,11 @@ window.submitStudyMaterial = async function() {
     let subject = document.getElementById('mat-subject').value.trim(); 
     const topic = document.getElementById('mat-topic').value.trim(); 
     const title = document.getElementById('mat-title').value.trim(); 
-    const extLink = document.getElementById('mat-ext-link').value.trim(); 
+    const extLink = document.getElementById('mat-ext-link').value.trim();
+    // Catch missing or "undefined" links
+    if (!extLink || extLink === 'undefined' || extLink === 'null') {
+        return alert("Please select & upload a file first. Wait for the green 'Upload Complete' status before publishing.");
+    }
     
     // NEW: Capture sub-subject if General Knowledge is selected
     if (subject === 'General Knowledge') {
@@ -9693,10 +9698,6 @@ window.initGoogleDriveAPI();
 // 🔑 SILENT GOOGLE DRIVE UPLOAD (EDIT MODAL)
 // ==========================================
 
-window.uploadEditDirectToDrive = function() { 
-    document.getElementById('edit-gdrive-file-input').click();
-};
-
 window.executeEditDriveUpload = function() { 
     const fileInput = document.getElementById('edit-gdrive-file-input');
     if (!fileInput || !fileInput.files.length) return;
@@ -9718,7 +9719,7 @@ window.executeEditDriveUpload = function() {
 
     // UPDATE BUTTON TO SHOW FILE NAME & SPINNER
     let shortName = file.name;
-    if (shortName.length > 22) shortName = shortName.substring(0, 20) + '...';
+    if (shortName.length > 22) shortName = shortName.substring(0, 20) + '...'; 
     
     if (uploadBtn) {
         uploadBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-blue-500 text-lg"></i> ${shortName}`;
@@ -9743,14 +9744,13 @@ window.executeEditDriveUpload = function() {
         const base64Data = reader.result.split(',')[1];
         if (statusEl) statusEl.innerText = "Connecting to Google... 0%";
 
-        // 🔥 URL IS ALREADY CONFIGURED FROM PREVIOUS FIX 🔥
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxtwpq3ctld9qx6VOchc80nwznXkMbvFYNb_sZciTeawrl7Z-XrqM8O5VkV4OZZXk-xiA/exec";
         
-       const payloadData = {
+        const payloadData = {
             fileName: file.name,
             mimeType: file.type,
             base64: base64Data,
-            folderType: 'material' // FORCE IT TO GO TO THE MATERIAL HUB FOLDER
+            folderType: 'material'
         };
 
         const encodedPayload = "payload=" + encodeURIComponent(JSON.stringify(payloadData));
@@ -9781,8 +9781,16 @@ window.executeEditDriveUpload = function() {
             try {
                 const result = JSON.parse(xhr.responseText);
                 if (result.success) {
+                    
+                    // 🔥 THE FIX: Capture the actual valid URL returned by your Google Script
+                    const uploadedUrl = result.url || result.viewUrl || result.fileUrl || result.downloadUrl;
+                    
+                    if (!uploadedUrl) {
+                        throw new Error("Google Drive did not return a valid file link.");
+                    }
+
                     const linkInput = document.getElementById('edit-mat-ext-link');
-                    if (linkInput) linkInput.value = result.viewUrl; 
+                    if (linkInput) linkInput.value = uploadedUrl; 
                     
                     if (statusEl) {
                         statusEl.innerText = "Upload Complete!"; 
@@ -9797,7 +9805,7 @@ window.executeEditDriveUpload = function() {
                     
                     if (progressContainer) setTimeout(() => progressContainer.classList.add('hidden'), 2000);
                 } else {
-                    throw new Error(result.error);
+                    throw new Error(result.error || "Upload failed on server.");
                 }
             } catch (error) {
                 if (statusEl) {
@@ -9942,19 +9950,35 @@ window.executeDriveUpload = async function() {
             clearInterval(progressInterval);
 
             if (result.success) {
-                if (progressBar) { progressBar.style.width = '100%'; progressBar.classList.replace('bg-blue-500', 'bg-emerald-500'); }
-                const linkInput = document.getElementById('mat-ext-link');
-                if (linkInput) linkInput.value = result.viewUrl; 
+                // Support .url, .viewUrl, .fileUrl, or .downloadUrl returned by Apps Script
+                const uploadedUrl = result.url || result.viewUrl || result.fileUrl || result.downloadUrl;
                 
-                if (statusEl) { statusEl.innerText = "Upload Complete!"; statusEl.classList.replace('text-blue-600', 'text-green-600'); }
+                if (!uploadedUrl) {
+                    throw new Error("Google Drive did not return a valid file link.");
+                }
+
+                if (progressBar) { 
+                    progressBar.style.width = '100%'; 
+                    progressBar.classList.replace('bg-blue-500', 'bg-emerald-500'); 
+                }
+                
+                const linkInput = document.getElementById('mat-ext-link');
+                if (linkInput) linkInput.value = uploadedUrl; 
+                
+                if (statusEl) { 
+                    statusEl.innerText = "Upload Complete!"; 
+                    statusEl.classList.replace('text-blue-600', 'text-green-600'); 
+                }
                 if (uploadBtn) {
                     uploadBtn.innerHTML = `<i class="fa-solid fa-check-circle text-emerald-600 text-lg"></i> Upload Complete!`;
                     uploadBtn.className = "w-full bg-emerald-50 border border-emerald-300 text-emerald-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition-all";
                 }
                 if (progressContainer) setTimeout(() => progressContainer.classList.add('hidden'), 2000);
             } else {
-                throw new Error(result.error);
+                throw new Error(result.error || "Upload failed on server.");
             }
+                
+                
         } catch (error) {
             clearInterval(progressInterval);
             if (statusEl) { statusEl.innerText = "Upload Error: " + error.message; statusEl.classList.replace('text-blue-600', 'text-red-600'); }
@@ -14024,6 +14048,11 @@ window.solveQuestionWithNOVA = async function(imgUrl) {
 
         // 3. Open Custom PDF Viewer (Main Handler - Offline Cache First)
         window.openCustomPDFViewer = async function(url, title = 'Material Reader') {
+            // Prevent navigating to invalid relative URLs that trigger GitHub 404
+    if (!url || url === 'undefined' || url === 'null' || !url.startsWith('http')) {
+        alert("This document does not have a valid link. Please re-upload it.");
+        return;
+    }
             document.getElementById('pdf-viewer-title').innerText = title;
             const loader = document.getElementById('pdf-loader');
             const loaderText = loader.querySelector('p');
