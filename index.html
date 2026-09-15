@@ -8072,6 +8072,10 @@ function renderSessionHistory() {
     if (hash === 'login') {
         targetViewId = window.currentRole ? window.currentRole + '-view' : 'login-view';
     }
+    // Map watch-video alias to the correct DOM ID
+    if (hash === 'watch-video' || hash === 'video-watch') {
+        targetViewId = 'video-watch-view';
+    }
 
     // 3. Apply Apple-like Smooth Transition
     const targetEl = document.getElementById(targetViewId);
@@ -11752,145 +11756,139 @@ function buildRecordHTML(r, exam, rank) {
         
         if(savedTarget) { const targetPerc = parseFloat(savedTarget); const myTaken = myRecords.filter(r => !r.isVirtual); const currentTotal = myTaken.reduce((acc, r) => acc + r.percentage, 0); const remCount = window.examsDB.length - myTaken.length; if(remCount > 0) { neededForNextExam = ((targetPerc * window.examsDB.length) - currentTotal) / remCount; } }
 
-        let todayExamsHtml = '';
-        let upcomingExamsHtml = '';
+        let todayExamsList = [];
+        let upcomingExamsList = [];
         
+        // 1. Separate exams into Today vs Upcoming lists
         window.examsDB.forEach(exam => {
             if (exam.assignedTo && !exam.assignedTo.includes('All') && !exam.assignedTo.includes(window.loggedInMobile)) return; 
             const eDate = parseDDMM(exam.date);
-            const hasResult = myRecords.find(r => r.examId === exam.id);
-            const hasSubmittedAnswers = window.peerAnswerScriptsDB.some(s => s.examId === exam.id && s.solverMobile === window.loggedInMobile);
-            const isFinished = hasResult || hasSubmittedAnswers;
-            
             const myPendingEvalsForDisplay = window.peerAnswerScriptsDB.filter(s => s.examId === exam.id && s.targetPeerMobile === window.loggedInMobile && !s.isGraded);
 
             if ((eDate >= todayDate || myPendingEvalsForDisplay.length > 0) && !exam.isEnded) {
-                const allQuestions = window.peerMaterialsDB.filter(m => m.examId === exam.id && m.mobile !== window.loggedInMobile);
-                const myAnswers = window.peerAnswerScriptsDB.filter(s => s.examId === exam.id && s.solverMobile === window.loggedInMobile);
-                const answeredPeerMobiles = myAnswers.map(a => a.targetPeerMobile);
-                const unansweredQuestions = allQuestions.filter(q => !answeredPeerMobiles.includes(q.mobile));
-                const nowTime = Date.now();
-                const myPendingEvals = window.peerAnswerScriptsDB.filter(s => s.examId === exam.id && s.targetPeerMobile === window.loggedInMobile && !s.isGraded && (nowTime - s.timestamp < 6 * 24 * 60 * 60 * 1000));
-
-                let actionHtml = ''; 
-                if (exam.examType === 'auto-quiz') {
-                    if (hasResult) actionHtml = `<button disabled class="w-full bg-gray-50 text-gray-400 border border-gray-200 text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl cursor-not-allowed flex justify-center items-center gap-1.5"><i class="fa-solid fa-check-circle"></i> Completed</button>`;
-                    else actionHtml = `<button onclick="window.startPreSavedAutoQuiz('${exam.id}')" class="w-full bg-gradient-to-r from-blue-600 to-green-400 hover:from-emerald-600 hover:to-green-700 text-white text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-[0_8px_20px_rgba(16,185,129,0.25)] active:scale-95 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-circle-exclamation text-emerald-200"></i> Start Mock Test</button>`;
-                } 
-                
-                
-                else if (exam.examType === 'testbook') {
-                    actionHtml = `<button onclick="window.directSubmitTestbook('${exam.id}')" class="w-full bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-[0_8px_20px_rgba(99,102,241,0.25)] active:scale-95 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-clipboard-check text-indigo-200"></i> Submit Marks</button>`;
-                } else if (exam.examType === 'offline') {
-                    actionHtml = `<button onclick="window.handleStartExam('${exam.id}')" class="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-900 hover:to-black text-white text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-lg active:scale-95 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-door-open text-gray-300"></i> Enter Room</button>`;
+                if (exam.date === today) {
+                    todayExamsList.push(exam);
                 } else {
-                    const hasUploadedMyQuestions = window.peerMaterialsDB.some(m => m.examId === exam.id && m.mobile === window.loggedInMobile);
-                    if (!hasUploadedMyQuestions) { 
-                        actionHtml = `<div class="flex gap-2 w-full"><button onclick="window.openPeerUpload('${exam.id}')" class="flex-1 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] sm:text-xs font-black py-3 px-3 rounded-xl shadow-sm active:scale-95 hover:bg-indigo-100 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-cloud-arrow-up"></i> Upload Q's</button><button onclick="window.showCustomAlert('Locked', 'Attach Peer Q&A to unlock!', 'warning')" class="w-12 h-auto rounded-xl bg-gray-100 text-gray-400 border border-gray-200 flex items-center justify-center text-sm shadow-sm shrink-0"><i class="fa-solid fa-lock"></i></button></div>`; 
-                    } else {
-                        if (unansweredQuestions.length > 0) {
-                            actionHtml = `<button onclick="window.handleStartExam('${exam.id}')" class="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-[10px] sm:text-xs font-black uppercase tracking-wider py-3 px-4 rounded-xl shadow-[0_8px_20px_rgba(79,70,229,0.3)] active:scale-95 transition-all flex justify-center items-center gap-1.5">Enter Room <span class="bg-white/20 px-1.5 py-0.5 rounded text-[9px] ml-1 shadow-inner">${unansweredQuestions.length} New</span> <i class="fa-solid fa-arrow-right text-[10px] ml-1"></i></button>`;
-                        } else if (myPendingEvals.length > 0) {
-                            actionHtml = `<button onclick="window.openPeerEvaluationRoom('${exam.id}')" class="w-full bg-gradient-to-r from-purple-500 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-700 text-white text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-[0_8px_20px_rgba(168,85,247,0.3)] active:scale-95 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-clipboard-user text-purple-200"></i> Evaluate Peers <span class="bg-white/20 px-1.5 py-0.5 rounded text-[9px] ml-1 shadow-inner">${myPendingEvals.length}</span></button>`;
-                        } else {
-                            actionHtml = `<button disabled class="w-full bg-gray-50 border border-gray-200 text-gray-400 text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-sm cursor-not-allowed flex justify-center items-center gap-1.5"><i class="fa-solid fa-hourglass-half"></i> Waiting for Peers</button>`;
-                        }
-                    }
+                    upcomingExamsList.push(exam);
                 }
-
-                let timerStatusHTML = '';
-                if (exam.examType === 'auto-quiz' || exam.examType === 'anytime') timerStatusHTML = `<span class="bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-indigo-200 shadow-sm flex items-center gap-1"><i class="fa-solid fa-infinity text-indigo-400"></i> Anytime</span>`;
-                else if (!exam.globalStartTime) timerStatusHTML = `<span class="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-gray-200 shadow-sm flex items-center gap-1"><i class="fa-regular fa-clock text-gray-400"></i> Awaiting</span>`; 
-                else if (exam.isPaused) timerStatusHTML = `<span class="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-amber-200 shadow-sm flex items-center gap-1"><i class="fa-solid fa-pause text-amber-500"></i> Paused</span>`; 
-                else timerStatusHTML = `<span class="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-emerald-200 shadow-sm flex items-center gap-1"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span> Live Now</span>`; 
-
-                let targetHtml = '';
-                if(neededForNextExam !== null) {
-                    let reqMarks = (neededForNextExam / 100) * exam.totalMarks; 
-                    let tColor = 'text-indigo-900'; let reqTxt = `${reqMarks.toFixed(1)} / ${exam.totalMarks}`;
-                    if(neededForNextExam > 100) { tColor = 'text-rose-600'; reqTxt = 'Exceeds Max'; } 
-                    if(neededForNextExam <= 0) { tColor = 'text-emerald-600'; reqTxt = 'Goal Met'; }
-                    targetHtml = `<div class="mt-1 flex items-center justify-between text-[10px] sm:text-[11px] bg-indigo-50/50 rounded-xl py-2 px-3 border border-indigo-100/50"><span class="text-indigo-800 font-bold tracking-wide flex items-center gap-1.5"><i class="fa-solid fa-bullseye text-indigo-400"></i> Target Needed</span><span class="font-black ${tColor}">${reqTxt}</span></div>`;
-                }
-
-                let infoHtml = exam.info ? `<div class="bg-gray-50/80 rounded-xl p-2.5 sm:p-3 border border-gray-100 flex items-start gap-2 mt-1"><i class="fa-solid fa-circle-info text-indigo-400 text-[10px] sm:text-xs mt-0.5 shrink-0"></i><p class="text-[9px] sm:text-[10px] text-gray-600 font-medium leading-relaxed break-words line-clamp-2">${exam.info}</p></div>` : '';
-
-               const cardHtml = `
-                <div class="relative w-full rounded-lg p-3 sm:p-4 flex flex-col gap-2.5 isolate group overflow-hidden bg-white/50 backdrop-blur-xl border border-white/80 shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.08)] hover:bg-white/60 transition-all duration-300" style="font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;">
-                    
-                    <!-- Ambient Glassmorphic Blue Glows (Scaled down for smaller card) -->
-                    <div class="absolute -top-10 -right-10 w-40 h-40 bg-blue-500/15 rounded-full blur-[40px] pointer-events-none -z-10 group-hover:bg-blue-500/25 transition-colors duration-500"></div>
-                    <div class="absolute -bottom-10 -left-10 w-40 h-40 bg-cyan-400/15 rounded-full blur-[40px] pointer-events-none -z-10 group-hover:bg-cyan-400/25 transition-colors duration-500"></div>
-
-                    <!-- Top Row: Date & Status -->
-                    <div class="flex justify-between items-start relative z-10">
-                        <span class="px-2 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase border shadow-sm backdrop-blur-sm transition-all ${exam.date === today ? 'bg-blue-50/80 text-red-700 border-blue-200' : 'bg-white/80 text-slate-600 border-white/80'} flex items-center gap-1.5">
-                            ${exam.date === today ? '<span class="w-1 h-1 bg-red-600 animate-pulse rounded-full"></span> Today' : '<i class="fa-regular fa-calendar-days text-slate-400 text-[9px]"></i> ' + exam.date}
-                        </span>
-                        <div class="  shadow-sm rounded px-15 py-0.5 backdrop-blur-md scale-90 origin-top-right">
-                            ${timerStatusHTML}
-                        </div>
-                    </div>
-
-                    <!-- Exam Title -->
-                    <h3 class="font-bold text-slate-800 text-base sm:text-lg leading-tight tracking-tight break-words relative z-10 drop-shadow-sm pr-2">
-                        ${exam.name}
-                    </h3>
-
-                    <!-- Info / Syllabus Snippet (Ultra-Compact) -->
-                    ${exam.info ? `
-                    <div class="relative z-10 bg-blue-600/5 border border-white/70 border-l-2 border-l-blue-600 p-2 rounded-r rounded-l-sm flex items-start gap-2 w-full shadow-sm">
-                        <i class="fa-solid fa-circle-info text-blue-600 text-[11px] mt-0.5 shrink-0"></i>
-                        <p class="text-[11px] text-slate-700 font-medium leading-snug break-words whitespace-pre-wrap">${exam.info}</p>
-                    </div>` : ''}
-
-                    <!-- Metrics Grid (Dense Data Blocks) -->
-                    <div class="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-0.5">
-                        <!-- Duration -->
-                        <div class="flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 rounded bg-white/70 border border-white/80 shadow-sm backdrop-blur-sm">
-                            <i class="fa-regular fa-clock text-blue-600 text-[12px]"></i>
-                            <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wide">${exam.duration} min</span>
-                        </div>
-                        <!-- Marks -->
-                        <div class="flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 rounded bg-white/70 border border-white/80 shadow-sm backdrop-blur-sm">
-                            <i class="fa-solid fa-medal text-blue-600 text-[12px]"></i>
-                            <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wide">${exam.totalMarks} Mrk</span>
-                        </div>
-                        <!-- Pass % -->
-                        <div class="flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 rounded bg-white/70 border border-white/80 shadow-sm backdrop-blur-sm">
-                            <i class="fa-solid fa-check-double text-blue-600 text-[12px]"></i>
-                            <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wide">Pass ${exam.passPercentage || 40}%</span>
-                        </div>
-                        <!-- Type -->
-                        <div class="flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 rounded bg-white/70 border border-white/80 shadow-sm backdrop-blur-sm">
-                            <i class="fa-solid fa-layer-group text-blue-600 text-[12px]"></i>
-                            <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wide text-center">${window.getExamTypeBadge(exam.examType)}</span>
-                        </div>
-                    </div>
-
-                    <!-- Target Needed Prediction Box -->
-                    ${targetHtml ? `<div class="relative z-10 w-full mt-0.5 bg-white/60 border border-white/80 p-1.5 rounded shadow-sm text-[11px]">${targetHtml}</div>` : ''}
-
-                    <!-- Action Button Container (Black default, Blue on hover, highly reduced height) -->
-                    <div class="mt-1.5 relative z-10 w-full 
-                        [&>button]:!w-full [&>button]:!flex [&>button]:!justify-center [&>button]:!bg-black hover:[&>button]:!bg-blue-600 [&>button]:!text-white [&>button]:!font-semibold [&>button]:!text-[11px] [&>button]:!tracking-wide [&>button]:!uppercase [&>button]:!rounded [&>button]:!py-2 [&>button]:!border-none [&>button]:!shadow-md [&>button]:!transition-colors [&>button]:!duration-300
-                        [&>a]:!w-full [&>a]:!flex [&>a]:!justify-center [&>a]:!items-center [&>a]:!bg-black hover:[&>a]:!bg-blue-600 [&>a]:!text-white [&>a]:!font-semibold [&>a]:!text-[11px] [&>a]:!tracking-wide [&>a]:!uppercase [&>a]:!rounded [&>a]:!py-2 [&>a]:!border-none [&>a]:!shadow-md [&>a]:!transition-colors [&>a]:!duration-300">
-                        ${actionHtml}
-                    </div>
-                </div>`;
-              
-              
-                if (exam.date === today) todayExamsHtml += cardHtml;
-                else upcomingExamsHtml += cardHtml;
             }
         });
+
+        // 2. SORT UPCOMING EXAMS: Closest / earliest dates first at the top
+        upcomingExamsList.sort((a, b) => {
+            const timeA = parseDDMM(a.date).getTime() || 0;
+            const timeB = parseDDMM(b.date).getTime() || 0;
+            return timeA - timeB; // Smallest date value (nearest) stays on top
+        });
+
+        // 3. Helper to generate each card
+        const generateStudentCard = (exam) => {
+            const allQuestions = window.peerMaterialsDB.filter(m => m.examId === exam.id && m.mobile !== window.loggedInMobile);
+            const myAnswers = window.peerAnswerScriptsDB.filter(s => s.examId === exam.id && s.solverMobile === window.loggedInMobile);
+            const answeredPeerMobiles = myAnswers.map(a => a.targetPeerMobile);
+            const unansweredQuestions = allQuestions.filter(q => !answeredPeerMobiles.includes(q.mobile));
+            const nowTime = Date.now();
+            const myPendingEvals = window.peerAnswerScriptsDB.filter(s => s.examId === exam.id && s.targetPeerMobile === window.loggedInMobile && !s.isGraded && (nowTime - s.timestamp < 6 * 24 * 60 * 60 * 1000));
+            const hasResult = myRecords.find(r => r.examId === exam.id);
+
+            let actionHtml = ''; 
+            if (exam.examType === 'auto-quiz') {
+                if (hasResult) actionHtml = `<button disabled class="w-full bg-gray-50 text-gray-400 border border-gray-200 text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl cursor-not-allowed flex justify-center items-center gap-1.5"><i class="fa-solid fa-check-circle"></i> Completed</button>`;
+                else actionHtml = `<button onclick="window.startPreSavedAutoQuiz('${exam.id}')" class="w-full bg-gradient-to-r from-blue-600 to-green-400 hover:from-emerald-600 hover:to-green-700 text-white text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-[0_8px_20px_rgba(16,185,129,0.25)] active:scale-95 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-circle-exclamation text-emerald-200"></i> Start Mock Test</button>`;
+            } else if (exam.examType === 'testbook') {
+                actionHtml = `<button onclick="window.directSubmitTestbook('${exam.id}')" class="w-full bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-[0_8px_20px_rgba(99,102,241,0.25)] active:scale-95 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-clipboard-check text-indigo-200"></i> Submit Marks</button>`;
+            } else if (exam.examType === 'offline') {
+                actionHtml = `<button onclick="window.handleStartExam('${exam.id}')" class="w-full bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-900 hover:to-black text-white text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-lg active:scale-95 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-door-open text-gray-300"></i> Enter Room</button>`;
+            } else {
+                const hasUploadedMyQuestions = window.peerMaterialsDB.some(m => m.examId === exam.id && m.mobile === window.loggedInMobile);
+                if (!hasUploadedMyQuestions) { 
+                    actionHtml = `<div class="flex gap-2 w-full"><button onclick="window.openPeerUpload('${exam.id}')" class="flex-1 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] sm:text-xs font-black py-3 px-3 rounded-xl shadow-sm active:scale-95 hover:bg-indigo-100 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-cloud-arrow-up"></i> Upload Q's</button><button onclick="window.showCustomAlert('Locked', 'Attach Peer Q&A to unlock!', 'warning')" class="w-12 h-auto rounded-xl bg-gray-100 text-gray-400 border border-gray-200 flex items-center justify-center text-sm shadow-sm shrink-0"><i class="fa-solid fa-lock"></i></button></div>`; 
+                } else {
+                    if (unansweredQuestions.length > 0) {
+                        actionHtml = `<button onclick="window.handleStartExam('${exam.id}')" class="w-full bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white text-[10px] sm:text-xs font-black uppercase tracking-wider py-3 px-4 rounded-xl shadow-[0_8px_20px_rgba(79,70,229,0.3)] active:scale-95 transition-all flex justify-center items-center gap-1.5">Enter Room <span class="bg-white/20 px-1.5 py-0.5 rounded text-[9px] ml-1 shadow-inner">${unansweredQuestions.length} New</span> <i class="fa-solid fa-arrow-right text-[10px] ml-1"></i></button>`;
+                    } else if (myPendingEvals.length > 0) {
+                        actionHtml = `<button onclick="window.openPeerEvaluationRoom('${exam.id}')" class="w-full bg-gradient-to-r from-purple-500 to-fuchsia-600 hover:from-purple-600 hover:to-fuchsia-700 text-white text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-[0_8px_20px_rgba(168,85,247,0.3)] active:scale-95 transition-all flex justify-center items-center gap-1.5"><i class="fa-solid fa-clipboard-user text-purple-200"></i> Evaluate Peers <span class="bg-white/20 px-1.5 py-0.5 rounded text-[9px] ml-1 shadow-inner">${myPendingEvals.length}</span></button>`;
+                    } else {
+                        actionHtml = `<button disabled class="w-full bg-gray-50 border border-gray-200 text-gray-400 text-[10px] sm:text-xs font-black py-3 px-4 rounded-xl shadow-sm cursor-not-allowed flex justify-center items-center gap-1.5"><i class="fa-solid fa-hourglass-half"></i> Waiting for Peers</button>`;
+                    }
+                }
+            }
+
+            let timerStatusHTML = '';
+            if (exam.examType === 'auto-quiz' || exam.examType === 'anytime') timerStatusHTML = `<span class="bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-indigo-200 shadow-sm flex items-center gap-1"><i class="fa-solid fa-infinity text-indigo-400"></i> Anytime</span>`;
+            else if (!exam.globalStartTime) timerStatusHTML = `<span class="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-gray-200 shadow-sm flex items-center gap-1"><i class="fa-regular fa-clock text-gray-400"></i> Awaiting</span>`; 
+            else if (exam.isPaused) timerStatusHTML = `<span class="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-amber-200 shadow-sm flex items-center gap-1"><i class="fa-solid fa-pause text-amber-500"></i> Paused</span>`; 
+            else timerStatusHTML = `<span class="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border border-emerald-200 shadow-sm flex items-center gap-1"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span> Live Now</span>`; 
+
+            let targetHtml = '';
+            if(neededForNextExam !== null) {
+                let reqMarks = (neededForNextExam / 100) * exam.totalMarks; 
+                let tColor = 'text-indigo-900'; let reqTxt = `${reqMarks.toFixed(1)} / ${exam.totalMarks}`;
+                if(neededForNextExam > 100) { tColor = 'text-rose-600'; reqTxt = 'Exceeds Max'; } 
+                if(neededForNextExam <= 0) { tColor = 'text-emerald-600'; reqTxt = 'Goal Met'; }
+                targetHtml = `<div class="mt-1 flex items-center justify-between text-[10px] sm:text-[11px] bg-indigo-50/50 rounded-xl py-2 px-3 border border-indigo-100/50"><span class="text-indigo-800 font-bold tracking-wide flex items-center gap-1.5"><i class="fa-solid fa-bullseye text-indigo-400"></i> Target Needed</span><span class="font-black ${tColor}">${reqTxt}</span></div>`;
+            }
+
+            return `
+            <div class="relative w-full rounded-lg p-3 sm:p-4 flex flex-col gap-2.5 isolate group overflow-hidden bg-white/50 backdrop-blur-xl border border-white/80 shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.08)] hover:bg-white/60 transition-all duration-300">
+                <div class="absolute -top-10 -right-10 w-40 h-40 bg-blue-500/15 rounded-full blur-[40px] pointer-events-none -z-10 group-hover:bg-blue-500/25 transition-colors duration-500"></div>
+                <div class="absolute -bottom-10 -left-10 w-40 h-40 bg-cyan-400/15 rounded-full blur-[40px] pointer-events-none -z-10 group-hover:bg-cyan-400/25 transition-colors duration-500"></div>
+
+                <div class="flex justify-between items-start relative z-10">
+                    <span class="px-2 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase border shadow-sm backdrop-blur-sm transition-all ${exam.date === today ? 'bg-blue-50/80 text-red-700 border-blue-200' : 'bg-white/80 text-slate-600 border-white/80'} flex items-center gap-1.5">
+                        ${exam.date === today ? '<span class="w-1 h-1 bg-red-600 animate-pulse rounded-full"></span> Today' : '<i class="fa-regular fa-calendar-days text-slate-400 text-[9px]"></i> ' + exam.date}
+                    </span>
+                    <div class="shadow-sm rounded px-1.5 py-0.5 backdrop-blur-md scale-90 origin-top-right">
+                        ${timerStatusHTML}
+                    </div>
+                </div>
+
+                <h3 class="font-bold text-slate-800 text-base sm:text-lg leading-tight tracking-tight break-words relative z-10 drop-shadow-sm pr-2">
+                    ${exam.name}
+                </h3>
+
+                ${exam.info ? `
+                <div class="relative z-10 bg-blue-600/5 border border-white/70 border-l-2 border-l-blue-600 p-2 rounded-r rounded-l-sm flex items-start gap-2 w-full shadow-sm">
+                    <i class="fa-solid fa-circle-info text-blue-600 text-[11px] mt-0.5 shrink-0"></i>
+                    <p class="text-[11px] text-slate-700 font-medium leading-snug break-words whitespace-pre-wrap">${exam.info}</p>
+                </div>` : ''}
+
+                <div class="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-0.5">
+                    <div class="flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 rounded bg-white/70 border border-white/80 shadow-sm backdrop-blur-sm">
+                        <i class="fa-regular fa-clock text-blue-600 text-[12px]"></i>
+                        <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wide">${exam.duration} min</span>
+                    </div>
+                    <div class="flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 rounded bg-white/70 border border-white/80 shadow-sm backdrop-blur-sm">
+                        <i class="fa-solid fa-medal text-blue-600 text-[12px]"></i>
+                        <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wide">${exam.totalMarks} Mrk</span>
+                    </div>
+                    <div class="flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 rounded bg-white/70 border border-white/80 shadow-sm backdrop-blur-sm">
+                        <i class="fa-solid fa-check-double text-blue-600 text-[12px]"></i>
+                        <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wide">Pass ${exam.passPercentage || 40}%</span>
+                    </div>
+                    <div class="flex flex-col items-center justify-center gap-0.5 px-1 py-1.5 rounded bg-white/70 border border-white/80 shadow-sm backdrop-blur-sm">
+                        <i class="fa-solid fa-layer-group text-blue-600 text-[12px]"></i>
+                        <span class="text-[9px] font-bold text-slate-600 uppercase tracking-wide text-center">${window.getExamTypeBadge(exam.examType)}</span>
+                    </div>
+                </div>
+
+                ${targetHtml ? `<div class="relative z-10 w-full mt-0.5 bg-white/60 border border-white/80 p-1.5 rounded shadow-sm text-[11px]">${targetHtml}</div>` : ''}
+
+                <div class="mt-1.5 relative z-10 w-full">
+                    ${actionHtml}
+                </div>
+            </div>`;
+        };
+
+        // 4. Generate Cards (Sorted!)
+        let todayExamsHtml = todayExamsList.map(e => generateStudentCard(e)).join('');
+        let upcomingExamsHtml = upcomingExamsList.map(e => generateStudentCard(e)).join('');
 
         let finalPendingHtml = '';
         if (todayExamsHtml) finalPendingHtml += `<div class="relative w-full col-span-1 md:col-span-2 mb-4 bg-transparent overflow-hidden py-2 flex justify-center items-center"><h4 class="relative z-10 text-[13px] sm:text-[14px] font-black text-red-800 uppercase tracking-[0.15em] flex items-center gap-2.5"><div class="relative flex items-center justify-center w-6 h-6"><span class="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-50 animate-ping"></span><div class="relative flex items-center justify-center w-full h-full bg-red-100 text-red-700 rounded-full text-xs"><i class="fa-solid fa-calendar-day"></i></div></div>Today's Exam</h4><div class="absolute bottom-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-red-500 to-transparent animate-pulse opacity-80"></div></div>${todayExamsHtml}`;
         if (upcomingExamsHtml) finalPendingHtml += `<div class="relative w-full col-span-1 md:col-span-2 mb-4 bg-transparent overflow-hidden py-2 flex justify-center items-center"><h4 class="relative z-10 text-[13px] sm:text-[14px] font-black text-blue-800 uppercase tracking-[0.15em] flex items-center gap-2.5"><div class="relative flex items-center justify-center w-6 h-6"><span class="absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-50 animate-ping"></span><div class="relative flex items-center justify-center w-full h-full bg-blue-100 text-blue-700 rounded-full text-xs"><i class="fa-solid fa-calendar-day"></i></div></div>Upcoming Exams</h4><div class="absolute bottom-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-blue-500 to-transparent animate-pulse opacity-80"></div></div>${upcomingExamsHtml}`;
         if (!finalPendingHtml) finalPendingHtml = `<div class="col-span-1 md:col-span-2 text-[10px] sm:text-xs text-gray-500 font-medium italic p-6 text-center border border-dashed border-gray-300 rounded-2xl w-full">No active or upcoming exams currently assigned.</div>`;
         if (pendingList) pendingList.innerHTML = finalPendingHtml;
-
         myRecords.forEach(r => { 
             const exam = window.examsDB.find(e => e.id === r.examId); 
             if(!exam) return; 
