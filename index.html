@@ -5272,8 +5272,7 @@ window.openNovaFeedbackModal = function(scriptId) {
     // 2. Ask for confirmation before deleting
     if (!(await window.showCustomConfirm("Delete Message", "Delete this message for everyone?", "Delete", "Cancel", "danger"))) return;
     
-    window.showLoader("Deleting Message...");
-
+   
     try {
         // 3. Delete from Firebase
         if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) { 
@@ -6329,13 +6328,13 @@ list.appendChild(wrapper);
             }
         };
         
-        window.calculateTargetRequired = async function(isAutoLoad = false) {
+       window.calculateTargetRequired = async function(isAutoLoad = false) {
             const target = parseFloat(document.getElementById('target-percentage-input').value); if(isNaN(target)) return;
             if (!isAutoLoad) {
-                showLoader("Saving Target...");
-                if (isFirebaseConfigured) { try { await updateDoc(doc(db, "students", window.loggedInMobile), { targetPercentage: target }); } catch(e) { console.error("Target Save Error:", e); } } 
+                // Background save, no screen-freezing loader!
+                if (isFirebaseConfigured) { try { updateDoc(doc(db, "students", window.loggedInMobile), { targetPercentage: target }); } catch(e) { console.error("Target Save Error:", e); } } 
                 else { const stu = window.studentsDB.find(s => s.mobile === window.loggedInMobile); if(stu) stu.targetPercentage = target; }
-                hideLoader();
+                window.showToast("Target Saved", `Goal set to ${target}%`, "success");
             }
             
             const myComputed = getComputedResults().filter(r => r.mobile === window.loggedInMobile);
@@ -6972,18 +6971,22 @@ window.renderVideoFeed = function() {
             });
         }
 
-        // Route to the correct renderer
+        // Route to the correct renderer AND dynamically control the gap spacing
         if (window.vhState.view === 'subjects') {
+            container.className = "p-3 sm:p-5 pb-24 space-y-4";
             titleEl.innerText = "My Classes";
             subEl.innerText = "Select a Subject";
             renderVHSubjects(vids, container);
         } 
         else if (window.vhState.view === 'topics') {
+            container.className = "p-3 sm:p-5 pb-24 space-y-4";
             titleEl.innerText = window.vhState.subject || "Subject";
             subEl.innerText = "Select a Chapter";
             renderVHTopics(vids.filter(v => v.subject === window.vhState.subject), container);
         } 
         else if (window.vhState.view === 'lectures') {
+            // Tightened the gap specifically for the lecture list (space-y-2 instead of space-y-4)
+            container.className = "p-3 sm:p-5 pb-24 space-y-2 sm:space-y-2.5";
             titleEl.innerText = window.vhState.topic || "Topic";
             subEl.innerText = "Chapter Lectures";
             renderVHLectures(vids.filter(v => v.subject === window.vhState.subject && v.topic === window.vhState.topic), container);
@@ -7086,21 +7089,18 @@ function renderVHLectures(vids, container) {
             <button onclick="event.stopPropagation(); window.moveVideoDirectly('${vid.id}', 1)" class="w-full py-1.5 hover:bg-indigo-100 hover:text-indigo-600 transition-colors active:bg-indigo-200" title="Move Down"><i class="fa-solid fa-caret-down text-[12px]"></i></button>
         </div>` : '';
 
-        html += `
-        <div class="video-item flex gap-3 bg-white p-2 sm:p-3 rounded-2xl border ${isWatched ? 'border-emerald-200' : 'border-gray-200'} shadow-sm hover:shadow-md transition-all group relative ${isAdmin ? 'pl-10 sm:pl-12' : 'cursor-pointer'}" ${!isAdmin ? `onclick="window.playVideo('${vid.id}')"` : ''} data-id="${vid.id}">
+       html += `
+        <div class="video-item flex gap-3 bg-white p-2 sm:p-2.5 rounded-2xl border ${isWatched ? 'border-emerald-200' : 'border-gray-200'} shadow-sm hover:shadow-md transition-all group relative ${isAdmin ? 'pl-10 sm:pl-12' : 'cursor-pointer'}" ${!isAdmin ? `onclick="window.playVideo('${vid.id}')"` : ''} data-id="${vid.id}">
             ${adminControls}
-            <div class="relative w-32 sm:w-40 aspect-video shrink-0 bg-gray-900 rounded-xl overflow-hidden border border-gray-100 cursor-pointer" onclick="window.playVideo('${vid.id}')">
+            <div class="relative w-28 sm:w-36 aspect-video shrink-0 bg-gray-900 rounded-xl overflow-hidden border border-gray-100 cursor-pointer" onclick="window.playVideo('${vid.id}')">
                 <img src="${vid.thumbnail}" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity">
                 ${isWatched ? `<div class="absolute inset-0 bg-emerald-900/60 backdrop-blur-[1px] flex items-center justify-center"><i class="fa-solid fa-check text-white text-2xl drop-shadow-md"></i></div>` : ''}
                 ${!isWatched ? `<div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><div class="w-10 h-10 rounded-full bg-indigo-600/90 text-white flex items-center justify-center shadow-lg"><i class="fa-solid fa-play ml-1"></i></div></div>` : ''}
-                <span class="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">Lec ${idx + 1}</span>
+                <span class="absolute bottom-1 right-1 bg-black/80 text-white text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">Lec ${idx + 1}</span>
                 ${adminActions}
             </div>
             <div class="flex-1 flex flex-col justify-center min-w-0 pr-1 py-1 cursor-pointer" onclick="window.playVideo('${vid.id}')">
-                <h4 class="font-bold text-gray-900 text-xs sm:text-sm leading-snug line-clamp-2 group-hover:text-indigo-700 transition-colors">${vid.title}</h4>
-                <div class="flex items-center gap-2 mt-2">
-                    <span class="text-[9px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex items-center gap-1"><i class="fa-brands ${vid.videoType === 'youtube' ? 'fa-youtube text-red-500' : 'fa-google-drive text-blue-500'}"></i> ${vid.videoType === 'youtube' ? 'YouTube' : 'Drive'}</span>
-                </div>
+                <h4 class="font-bold text-gray-900 text-xs sm:text-sm leading-snug line-clamp-3 group-hover:text-indigo-700 transition-colors">${vid.title}</h4>
             </div>
         </div>`;
     });
@@ -8072,9 +8072,17 @@ function renderSessionHistory() {
     if (hash === 'login') {
         targetViewId = window.currentRole ? window.currentRole + '-view' : 'login-view';
     }
-    // Map watch-video alias to the correct DOM ID
+    
+    // --- UI ROUTE ALIAS MAPPING ---
+    // Maps short URL hashes to their actual long HTML DOM IDs
     if (hash === 'watch-video' || hash === 'video-watch') {
         targetViewId = 'video-watch-view';
+    }
+    if (hash === 'chat') {
+        targetViewId = 'community-chat-view';
+    }
+    if (hash === 'notices') {
+        targetViewId = 'notice-board-view';
     }
 
     // 3. Apply Apple-like Smooth Transition
@@ -8413,19 +8421,76 @@ setTimeout(() => {
         function requestNotificationPermission() { if ("Notification" in window && Notification.permission === "default") { Notification.requestPermission(); } }
         function sendPushNotification(title, body) { if ("Notification" in window && Notification.permission === "granted") { if (document.hidden) { new Notification(title, { body: body, icon: "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" }); } } }
         
-        window.showToast = function(title, message, type = "info") {
-            const container = document.getElementById('toast-container'); const toastId = 'toast_' + Date.now();
-            let icon = '<i class="fa-solid fa-bell text-blue-500"></i>'; let border = 'border-blue-500'; let bg = 'bg-white/95 backdrop-blur-xl';
-            if(type === 'chat') { icon = '<i class="fa-solid fa-comment text-indigo-500"></i>'; border = 'border-indigo-500'; bg = 'bg-indigo-50/95 backdrop-blur-xl'; }
-            if(type === 'alert') { icon = '<i class="fa-solid fa-bullhorn text-amber-500"></i>'; border = 'border-amber-500'; bg = 'bg-amber-50/95 backdrop-blur-xl'; }
+       window.showToast = function(title, message, type = "info") {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
 
-            const toast = document.createElement('div'); toast.id = toastId;
-            toast.className = `${bg} p-3 sm:p-3.5 rounded-xl sm:rounded-2xl border-l-4 ${border} shadow-2xl flex items-start gap-2.5 sm:gap-3 w-full transform translate-x-full opacity-0 transition-all duration-300 pointer-events-auto cursor-pointer`;
-            toast.innerHTML = `<div class="mt-0.5 text-base sm:text-lg">${icon}</div><div class="flex-1 min-w-0 break-words"><h4 class="text-xs sm:text-[13px] font-black text-gray-900 break-words leading-tight">${title}</h4><p class="text-[10px] sm:text-[11px] font-medium text-gray-600 line-clamp-2 leading-tight mt-0.5 whitespace-pre-wrap break-words">${message}</p></div><button onclick="event.stopPropagation(); this.parentElement.remove();" class="text-gray-400 hover:text-gray-700 active:scale-90 p-1 shrink-0"><i class="fa-solid fa-xmark text-xs sm:text-sm"></i></button>`;
-            toast.onclick = () => { if(type === 'chat') window.location.hash = 'chat'; if(type === 'alert') window.location.hash = 'notices'; toast.remove(); };
-            container.appendChild(toast); requestAnimationFrame(() => { toast.classList.remove('translate-x-full', 'opacity-0'); });
-            setTimeout(() => { if(document.getElementById(toastId)) { toast.classList.add('translate-x-full', 'opacity-0'); setTimeout(() => { if(document.getElementById(toastId)) toast.remove(); }, 300); } }, 5000);
-        }
+            // 1. Force container to act as iOS top-center anchor
+            container.className = "fixed top-4 sm:top-8 left-1/2 transform -translate-x-1/2 z-[9999] flex flex-col items-center pointer-events-none w-[92%] max-w-[340px]";
+            
+            // 2. Clear out any existing toasts so they NEVER stack
+            container.innerHTML = '';
+
+            const toastId = 'toast_' + Date.now();
+            
+            // 3. iOS Style Icon & Colors
+            let iconHtml = '<div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-bell text-[11px]"></i></div>';
+            
+            if (type === 'chat') { 
+                iconHtml = '<div class="w-8 h-8 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-comment text-[11px]"></i></div>'; 
+            } else if (type === 'alert') { 
+                iconHtml = '<div class="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-bullhorn text-[11px]"></i></div>'; 
+            } else if (type === 'success') {
+                iconHtml = '<div class="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-check text-[11px]"></i></div>'; 
+            } else if (type === 'error') {
+                iconHtml = '<div class="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-triangle-exclamation text-[11px]"></i></div>'; 
+            }
+
+            // 4. Create the iOS Premium Glass UI Toast
+            const toast = document.createElement('div'); 
+            toast.id = toastId;
+            toast.className = `bg-white/85 backdrop-blur-2xl p-2.5 sm:p-3 rounded-[20px] shadow-[0_15px_40px_rgba(0,0,0,0.12)] border border-white/60 flex items-center gap-3 w-full transform -translate-y-[150%] opacity-0 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto cursor-pointer`;
+            
+            toast.innerHTML = `
+                ${iconHtml}
+                <div class="flex-1 min-w-0 pr-2">
+                    <h4 class="text-[13px] font-bold text-slate-900 leading-tight truncate">${title}</h4>
+                    <p class="text-[11px] font-medium text-slate-500 leading-snug line-clamp-2 mt-0.5">${message}</p>
+                </div>
+            `;
+
+            // Click action to dismiss or navigate
+            toast.onclick = () => { 
+                if (type === 'chat') window.location.hash = 'chat'; 
+                if (type === 'alert') window.location.hash = 'notices'; 
+                
+                // Slide up instantly on click
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('-translate-y-[150%]', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            };
+
+            container.appendChild(toast); 
+            
+            // Trigger drop-down animation
+            requestAnimationFrame(() => { 
+                setTimeout(() => {
+                    toast.classList.remove('-translate-y-[150%]', 'opacity-0'); 
+                    toast.classList.add('translate-y-0', 'opacity-100');
+                }, 10); // Tiny delay ensures the browser registers the CSS state
+            });
+
+            // Auto dismiss after 3.5 seconds
+            setTimeout(() => { 
+                if (document.getElementById(toastId)) { 
+                    toast.classList.remove('translate-y-0', 'opacity-100');
+                    toast.classList.add('-translate-y-[150%]', 'opacity-0'); 
+                    setTimeout(() => { 
+                        if(document.getElementById(toastId)) toast.remove(); 
+                    }, 400); 
+                } 
+            }, 3500);
+        };
 
         window.updatePresence = async function() { if(!window.loggedInMobile || window.currentRole !== 'student') return; if(isFirebaseConfigured) { try { await updateDoc(doc(db, "students", window.loggedInMobile), { lastActive: Date.now() }); } catch(e) {} } else { const s = window.studentsDB.find(s=>s.mobile===window.loggedInMobile); if(s) s.lastActive = Date.now(); refreshUI(); } }
         setInterval(window.updatePresence, 5000); 
@@ -9904,13 +9969,22 @@ window.executeDriveUpload = async function() {
     reader.readAsDataURL(finalFileToUpload);
 };
 
-        window.submitFitnessAbsent = async function() { showLoader("Marking Absent..."); await window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance: 0, time: 0, pace: 'ABSENT', cals: 0, isAbsent: true, date: window.formatDateDDMMYYYY(), timestamp: Date.now() }); hideLoader(); }
+       window.submitFitnessAbsent = async function() { 
+            window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance: 0, time: 0, pace: 'ABSENT', cals: 0, isAbsent: true, date: window.formatDateDDMMYYYY(), timestamp: Date.now() }); 
+            window.showToast("Logged", "Marked absent for today.", "info");
+        }
+        
         window.submitFitnessLog = async function() {
             const distance = parseFloat(document.getElementById('fit-dist').value); const time = parseFloat(document.getElementById('fit-time').value);
             if(isNaN(distance) || isNaN(time) || distance <= 0 || time <= 0) return alert("Invalid inputs.");
-            showLoader("Logging Run..."); const paceMin = time / distance; const paceMinsStr = Math.floor(paceMin); const paceSecsStr = Math.round((paceMin - paceMinsStr) * 60).toString().padStart(2, '0'); const pace = `${paceMinsStr}:${paceSecsStr}`; const cals = Math.round(distance * 60);
-            await window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance, time, pace, cals, date: window.formatDateDDMMYYYY(), timestamp: Date.now() });
-            document.getElementById('fit-dist').value = ''; document.getElementById('fit-time').value = ''; hideLoader();
+            
+            const paceMin = time / distance; const paceMinsStr = Math.floor(paceMin); const paceSecsStr = Math.round((paceMin - paceMinsStr) * 60).toString().padStart(2, '0'); const pace = `${paceMinsStr}:${paceSecsStr}`; const cals = Math.round(distance * 60);
+            
+            // Fire and forget, no loader
+            window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance, time, pace, cals, date: window.formatDateDDMMYYYY(), timestamp: Date.now() });
+            
+            document.getElementById('fit-dist').value = ''; document.getElementById('fit-time').value = ''; 
+            window.showToast("Run Logged! 🏃", "Great job staying active today.", "success");
         }
         // Auto-Penalty for missed fitness days
         window.enforceFitnessAbsence = async function() {
@@ -10066,16 +10140,21 @@ if (myLogs.length > 0) listEl.innerHTML = `<div class="fade-in">${fitnessHtml}</
             window.currentWeekViewOffset = offset; if (window.currentRole === 'admin') { document.getElementById('admin-target-form').classList.remove('hidden'); } renderWeeklyTargets();
         };
 
-        window.submitWeeklyTask = async function() {
+       window.submitWeeklyTask = async function() {
             const subject = document.getElementById('wt-subject').value.trim(); const topic = document.getElementById('wt-topic').value.trim(); const taskDesc = document.getElementById('wt-task').value.trim();
             if(!subject || !topic || !taskDesc) return alert("Fill all fields");
+            
             const assignType = document.getElementById('wt-assign-type').value; let assignedTo = ['All'];
             if (assignType === 'Specific') { const checkboxes = document.querySelectorAll('.wt-student-cb:checked'); assignedTo = Array.from(checkboxes).map(cb => cb.value); if (assignedTo.length === 0) return alert("Please select at least one student!"); }
-            const { weekKey } = getTargetWeekInfo(window.currentWeekViewOffset); showLoader("Adding Task...");
+            const { weekKey } = getTargetWeekInfo(window.currentWeekViewOffset); 
+            
             const obj = { weekKey, subject, topic, taskDesc, assignedTo, timestamp: Date.now() };
-            if(isFirebaseConfigured) await addDoc(collection(db, "weekly_tasks"), obj); else window.weeklyTasksDB.push({id: Math.random().toString(), ...obj});
-            document.getElementById('wt-task').value = ''; if(assignType === 'Specific') { document.querySelectorAll('.wt-student-cb').forEach(cb => cb.checked = false); }
-            hideLoader(); renderWeeklyTargets();
+            if(isFirebaseConfigured) addDoc(collection(db, "weekly_tasks"), obj); else window.weeklyTasksDB.push({id: Math.random().toString(), ...obj});
+            
+            document.getElementById('wt-task').value = ''; 
+            if(assignType === 'Specific') { document.querySelectorAll('.wt-student-cb').forEach(cb => cb.checked = false); }
+            window.showToast("Task Added", "The weekly target was assigned.", "success");
+            renderWeeklyTargets();
         }
 
         window.deleteWeeklyTask = async function(taskId) { 
@@ -12057,15 +12136,10 @@ window.renderStudentDirectory = function() {
     }, window.adminStudentSearchQuery ? 50 : 300); // 🚀 Renders instantly while typing
 };
       window.renderAdminDashboard = function() {
-    const examList = document.getElementById('admin-exams-list');
-    
-    // Inject skeleton for exams while searching
-    if (!window.adminExamSearchQuery && examList) {
-        examList.innerHTML = window.getSkeletonHTML('card', 3); 
-    }
-
-    setTimeout(() => {
-        const todayStr = window.formatDateDDMMYYYY();
+  const examList = document.getElementById('admin-exams-list');
+        
+        setTimeout(() => {
+            const todayStr = window.formatDateDDMMYYYY();
         let todayExams = []; let upcomingExams = []; let doneExams = [];
         const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
         const todayDate = new Date(); todayDate.setHours(0,0,0,0);
@@ -12685,10 +12759,22 @@ window.dbUpdateExam = async function(id, obj) {
         refreshUI();
     }
 };
-        window.startGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); showLoader("Starting Exam for All..."); await window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 }); hideLoader(); if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`); }
-        window.pauseGlobalExam = async function(id) { const ex = window.examsDB.find(e => e.id === id); if(!ex) return; showLoader("Pausing Exam..."); const additionalElapsed = Date.now() - ex.globalStartTime; await window.dbUpdateExam(id, { isPaused: true, pausedElapsed: (ex.pausedElapsed || 0) + additionalElapsed }); hideLoader(); }
-        window.resumeGlobalExam = async function(id) { showLoader("Resuming Exam..."); await window.dbUpdateExam(id, { isPaused: false, globalStartTime: Date.now() }); hideLoader(); }
-        
+       window.startGlobalExam = async function(id) { 
+            const ex = window.examsDB.find(e => e.id === id); 
+            window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 }); 
+            window.showToast("Exam Started", "The exam is now live for all students.", "success");
+            if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`); 
+        }
+        window.pauseGlobalExam = async function(id) { 
+            const ex = window.examsDB.find(e => e.id === id); if(!ex) return; 
+            const additionalElapsed = Date.now() - ex.globalStartTime; 
+            window.dbUpdateExam(id, { isPaused: true, pausedElapsed: (ex.pausedElapsed || 0) + additionalElapsed }); 
+            window.showToast("Exam Paused", "The exam timer has been stopped.", "info");
+        }
+        window.resumeGlobalExam = async function(id) { 
+            window.dbUpdateExam(id, { isPaused: false, globalStartTime: Date.now() }); 
+            window.showToast("Exam Resumed", "The timer is running again.", "success");
+        }
         window.handleStartExam = function(examId) {
             window.activeExamId = examId; 
             window.location.hash = 'active-exam';
