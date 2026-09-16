@@ -232,13 +232,9 @@ body, html {
     #session-timer-view > div:first-child,
     #nova-chat-view > div:first-child,
     #pdf-modal-header,
-       #red-pen-modal > div:first-child,
     #peer-eval-room-modal > div:first-child,
     #auto-quiz-modal > div:first-child {
-        padding-top: max(2.8rem, env(safe-area-inset-top)) !important;
-        #red-pen-modal > div:first-child 
-             
-
+        padding-top: max(1.8rem, env(safe-area-inset-top)) !important;
     }
 
     /* 2. Scaled Tablet Spacing (Portrait & Landscape perfectly calculated) */
@@ -574,6 +570,36 @@ button:active {
                     </div>
                     <i class="fa-solid fa-chevron-right text-xs text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all shrink-0"></i>
                 </button>
+            </div>
+        </div>
+
+        <!-- Section: Admin Test Mode (Admin Only) -->
+        <div id="settings-test-mode-section" class="hidden">
+            <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">Developer</span>
+            
+            <div class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                <div class="w-full flex items-center justify-between p-3.5">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm shadow-inner shrink-0 border border-amber-100">
+                            <i class="fa-solid fa-flask-vial"></i>
+                        </div>
+                        <div class="text-left min-w-0">
+                            <span class="block text-[13px] font-bold text-slate-900 leading-tight">Test Mode</span>
+                            <span id="test-mode-desc" class="block text-[10px] font-medium text-slate-400 mt-0.5">Notifications are active</span>
+                        </div>
+                    </div>
+                    <!-- iOS-Style Toggle Switch -->
+                    <button id="test-mode-toggle" onclick="window.toggleTestMode()" class="relative w-[51px] h-[31px] rounded-full bg-slate-300 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 shadow-inner" aria-label="Toggle Test Mode">
+                        <span class="absolute top-[2px] left-[2px] w-[27px] h-[27px] bg-white rounded-full shadow-md transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"></span>
+                    </button>
+                </div>
+                <!-- Test Mode Active Banner -->
+                <div id="test-mode-banner" class="hidden px-3.5 pb-3">
+                    <div class="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200/60 rounded-xl">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-500 text-[10px]"></i>
+                        <span class="text-[10px] font-bold text-amber-700">All push & popup notifications are silenced</span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -4666,6 +4692,10 @@ window.openSettingsMenu = function() {
         if (roleEl) roleEl.innerText = "Administrator";
         if (dpEl) dpEl.src = "https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/icon-512.png";
         if (changePassBtn) changePassBtn.style.display = 'none'; // Admin uses 2FA OTP, no student password change
+        // Show Test Mode toggle for admin
+        const testModeSection = document.getElementById('settings-test-mode-section');
+        if (testModeSection) testModeSection.classList.remove('hidden');
+        window.syncTestModeUI();
     } else {
         const student = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
         const studentName = student?.name || localStorage.getItem('exama_name') || 'Student';
@@ -4673,6 +4703,9 @@ window.openSettingsMenu = function() {
         if (roleEl) roleEl.innerText = `Student • ${window.loggedInMobile || ''}`;
         if (dpEl) dpEl.src = window.getStudentAvatar(window.loggedInMobile, studentName);
         if (changePassBtn) changePassBtn.style.display = 'flex';
+        // Hide Test Mode toggle for students
+        const testModeSectionStudent = document.getElementById('settings-test-mode-section');
+        if (testModeSectionStudent) testModeSectionStudent.classList.add('hidden');
     }
 
     // 2. Animate into view
@@ -8460,6 +8493,8 @@ function renderSessionHistory() {
 function handleHashChange() {
     window.handleHashChange();
 }      async function sendOneSignalPush(title, message, imageUrl = null) {
+            // TEST MODE GUARD: Skip all push notifications when test mode is active
+            if (localStorage.getItem('exama_test_mode') === 'true') { console.log('[TEST MODE] Push suppressed:', title, message); return; }
             const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106"; 
             const payload = { app_id: ONESIGNAL_APP_ID, included_segments: ["All"], headings: { "en": title }, contents: { "en": message }, target_channel: "push" };
             if (imageUrl) {
@@ -8682,7 +8717,41 @@ setTimeout(() => {
         function getGreeting() { const hr = new Date().getHours(); if(hr < 12) return "Good Morning,"; if(hr < 18) return "Good Afternoon,"; return "Good Evening,"; }
         function playChime() { try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(587.33, ctx.currentTime); osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.1, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4); osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.4); } catch(e){} }
         function requestNotificationPermission() { if ("Notification" in window && Notification.permission === "default") { Notification.requestPermission(); } }
-        function sendPushNotification(title, body) { if ("Notification" in window && Notification.permission === "granted") { if (document.hidden) { new Notification(title, { body: body, icon: "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" }); } } }
+        function sendPushNotification(title, body) {
+            // TEST MODE GUARD: Skip browser popup notifications when test mode is active
+            if (localStorage.getItem('exama_test_mode') === 'true') { console.log('[TEST MODE] Browser notification suppressed:', title, body); return; }
+            if ("Notification" in window && Notification.permission === "granted") { if (document.hidden) { new Notification(title, { body: body, icon: "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" }); } } }
+
+// ==========================================
+// 🧪 TEST MODE ENGINE
+// ==========================================
+window.toggleTestMode = function() {
+    const isActive = localStorage.getItem('exama_test_mode') === 'true';
+    localStorage.setItem('exama_test_mode', isActive ? 'false' : 'true');
+    window.syncTestModeUI();
+};
+
+window.syncTestModeUI = function() {
+    const isActive = localStorage.getItem('exama_test_mode') === 'true';
+    const toggle = document.getElementById('test-mode-toggle');
+    const desc = document.getElementById('test-mode-desc');
+    const banner = document.getElementById('test-mode-banner');
+    
+    if (toggle) {
+        const knob = toggle.querySelector('span');
+        if (isActive) {
+            toggle.classList.remove('bg-slate-300');
+            toggle.classList.add('bg-amber-500');
+            if (knob) { knob.style.transform = 'translateX(20px)'; }
+        } else {
+            toggle.classList.remove('bg-amber-500');
+            toggle.classList.add('bg-slate-300');
+            if (knob) { knob.style.transform = 'translateX(0)'; }
+        }
+    }
+    if (desc) desc.textContent = isActive ? 'Notifications silenced' : 'Notifications are active';
+    if (banner) banner.classList.toggle('hidden', !isActive);
+};
         
        window.showToast = function(title, message, type = "info") {
             const container = document.getElementById('toast-container');
