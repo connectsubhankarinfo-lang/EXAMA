@@ -8004,6 +8004,27 @@ window.switchLbSubTab = function(tab) {
 
         let sessionTimerInterval = null; let sessionChartInstance = null; const TOTAL_SESSION_MS = 14400000; 
 
+        // 🔥 AUTO SESSION DETECTION — Determines session type based on current hour
+        window.getAutoSessionType = function() {
+            const hour = new Date().getHours();
+            if (hour >= 6 && hour < 12) return { type: 'Morning Session (6 AM - 12 PM)', label: 'Morning', icon: 'fa-sun', color: 'from-amber-400 to-orange-500', endHour: 12 };
+            if (hour >= 12 && hour < 18) return { type: 'Afternoon Session (12 PM - 6 PM)', label: 'Afternoon', icon: 'fa-cloud-sun', color: 'from-sky-400 to-blue-500', endHour: 18 };
+            if (hour >= 18 && hour < 24) return { type: 'Evening Session (6 PM - 12 AM)', label: 'Evening', icon: 'fa-moon', color: 'from-indigo-400 to-purple-600', endHour: 24 };
+            return null; // 12 AM - 6 AM: no session available
+        };
+
+        // 🔥 Returns end time (Date object) for a given session type string
+        window.getSessionEndTime = function(sessionTypeStr) {
+            const now = new Date();
+            let endHour = 0;
+            if (sessionTypeStr.includes('Morning')) endHour = 12;
+            else if (sessionTypeStr.includes('Afternoon')) endHour = 18;
+            else if (sessionTypeStr.includes('Evening')) endHour = 24;
+            else return null;
+            const endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), endHour, 0, 0, 0);
+            return endTime;
+        };
+
         function formatTime(ms) {
             if(ms < 0) ms = 0; const totalSecs = Math.floor(ms / 1000);
             const h = String(Math.floor(totalSecs / 3600)).padStart(2, '0'); const m = String(Math.floor((totalSecs % 3600) / 60)).padStart(2, '0'); const s = String(totalSecs % 60).padStart(2, '0');
@@ -8013,8 +8034,10 @@ window.switchLbSubTab = function(tab) {
        window.toggleSessionState = async function(action) {
             const mobile = window.loggedInMobile; const dateStr = window.formatDateDDMMYYYY(); let sessionType = '';
             if(action === 'START' || action === 'ABSENT') {
-                const selectEl = document.getElementById('session-type-select'); if(!selectEl || !selectEl.value) return alert("Please select a session first!");
-                sessionType = selectEl.value;
+                // 🔥 AUTO-DETECT session based on current time instead of manual dropdown
+                const autoSession = window.getAutoSessionType();
+                if (!autoSession) return window.showToast('No Session Available', 'Sessions are available between 6 AM and 12 AM.', 'warning');
+                sessionType = autoSession.type;
             } else {
                 const active = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK'));
                 if(active) sessionType = active.sessionType; else return;
@@ -8067,10 +8090,18 @@ window.switchLbSubTab = function(tab) {
             const controlDiv = document.getElementById('session-controls');
             
             if (!mySession) {
-                document.getElementById('current-session-name').innerText = "Select a Session";
-                document.getElementById('st-study-time').className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words";
-                document.getElementById('st-study-time').innerText = "04:00:00"; document.getElementById('st-break-time').innerText = "00:00:00";
-                controlDiv.innerHTML = `<select id="session-type-select" class="w-full mb-3 sm:mb-4 px-3 sm:px-4 py-2.5 sm:py-3 bg-gray-50 border border-gray-200 rounded-lg sm:rounded-xl font-bold text-xs sm:text-sm text-gray-700 outline-none cursor-pointer break-words"><option value="" disabled selected>-- Select Session to Start --</option><option value="Morning Session (6 AM - 12 PM)">Morning Session (6 AM - 12 PM)</option><option value="Afternoon Session (12 PM - 6 PM)">Afternoon Session (12 PM - 6 PM)</option><option value="Evening Session (6 PM - 12 AM)">Evening Session (6 PM - 12 AM)</option></select><div class="flex flex-col sm:flex-row gap-2 w-full"><button onclick="toggleSessionState('START')" class="flex-[2] bg-gradient-to-r from-orange-500 to-red-600 text-white text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl shadow-lg active:scale-95 transition-all"><i class="fa-solid fa-play mr-2"></i>Start Timer</button><button onclick="toggleSessionState('ABSENT')" class="flex-1 bg-gray-100 text-gray-500 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-gray-200 active:scale-95 transition-all">Absent</button></div>`;
+                const autoSession = window.getAutoSessionType();
+                if (autoSession) {
+                    document.getElementById('current-session-name').innerText = autoSession.label + ' Session';
+                    document.getElementById('st-study-time').className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-orange-500 to-red-600 drop-shadow-sm leading-none py-1 break-words";
+                    document.getElementById('st-study-time').innerText = "04:00:00"; document.getElementById('st-break-time').innerText = "00:00:00";
+                    controlDiv.innerHTML = `<div class="w-full mb-3 sm:mb-4 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-r ${autoSession.color} rounded-lg sm:rounded-xl text-center text-white font-black text-xs sm:text-sm tracking-wide shadow-md flex items-center justify-center gap-2"><i class="fa-solid ${autoSession.icon}"></i> ${autoSession.type}</div><div class="flex flex-col sm:flex-row gap-2 w-full"><button onclick="toggleSessionState('START')" class="flex-[2] bg-gradient-to-r from-orange-500 to-red-600 text-white text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl shadow-lg active:scale-95 transition-all"><i class="fa-solid fa-play mr-2"></i>Start Timer</button><button onclick="toggleSessionState('ABSENT')" class="flex-1 bg-gray-100 text-gray-500 text-sm sm:text-base font-bold py-3 sm:py-3.5 rounded-lg sm:rounded-xl border border-gray-200 active:scale-95 transition-all">Absent</button></div>`;
+                } else {
+                    document.getElementById('current-session-name').innerText = 'No Active Session Window';
+                    document.getElementById('st-study-time').className = "text-5xl sm:text-6xl md:text-7xl font-mono font-black tracking-tighter text-gray-300 drop-shadow-sm leading-none py-1 break-words";
+                    document.getElementById('st-study-time').innerText = "--:--:--"; document.getElementById('st-break-time').innerText = "00:00:00";
+                    controlDiv.innerHTML = `<div class="w-full px-4 py-5 sm:py-6 bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl text-center"><div class="w-12 h-12 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center"><i class="fa-solid fa-bed text-gray-400 text-xl"></i></div><p class="text-xs sm:text-sm font-bold text-gray-400 mb-1">Rest Time (12 AM – 6 AM)</p><p class="text-[10px] sm:text-[11px] text-gray-400">Sessions are available from 6 AM to 12 AM.</p></div>`;
+                }
             } else {
                 document.getElementById('current-session-name').innerText = mySession.sessionType;
                 if (mySession.status === 'STUDYING') { 
@@ -8111,6 +8142,16 @@ window.handleOvertimeChoice = function(choice) {
     }
 };
        function updateLiveTimers(mySession) {
+            // 🔥 AUTO-STOP: If the current session's time window has ended, auto-stop it
+            if (mySession && (mySession.status === 'STUDYING' || mySession.status === 'BREAK')) {
+                const sessionEnd = window.getSessionEndTime(mySession.sessionType);
+                if (sessionEnd && Date.now() >= sessionEnd.getTime()) {
+                    // Session window is over — auto-stop silently
+                    window.toggleSessionState('STOP');
+                    if(typeof window.showToast === 'function') window.showToast('Session Auto-Ended ⏰', `Your ${mySession.sessionType.split(' ')[0]} session was automatically ended as its time window is over.`, 'info');
+                    return;
+                }
+            }
             const now = Date.now(); const todayStr = window.formatDateDDMMYYYY();
             
             if (mySession) {
@@ -8229,15 +8270,43 @@ window.handleOvertimeChoice = function(choice) {
             if (timelineCard && timelineList) {
                 let allTodayLogs = [];
                 todaysSessions.forEach(session => { if (session.logs && session.logs.length > 0) { session.logs.forEach(log => { allTodayLogs.push({ ...log, sessionName: session.sessionType }); }); } });
+
+                // 🏆 ACHIEVEMENT: Inject a special achievement entry for sessions that completed the full 4 hours
+                todaysSessions.forEach(session => {
+                    if (session.status === 'COMPLETED' && session.totalStudyMs >= TOTAL_SESSION_MS) {
+                        const lastLog = session.logs && session.logs.length > 0 ? session.logs[session.logs.length - 1] : null;
+                        const achieveTime = lastLog ? lastLog.time : session.lastToggleTime;
+                        allTodayLogs.push({ action: 'ACHIEVEMENT', time: achieveTime, sessionName: session.sessionType, totalStudyMs: session.totalStudyMs });
+                    }
+                });
+
                 if (allTodayLogs.length > 0) {
                     timelineCard.classList.remove('hidden'); let logHtml = '';
                     allTodayLogs.sort((a, b) => b.time - a.time).forEach(log => {
                         const t = new Date(log.time).toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'});
+                        const shortName = log.sessionName.split(' ')[0];
+
+                        // 🏆 Special achievement card for 4-hour completion
+                        if (log.action === 'ACHIEVEMENT') {
+                            const hrs = (log.totalStudyMs / 3600000).toFixed(1);
+                            const extraMs = log.totalStudyMs - TOTAL_SESSION_MS;
+                            const extraStr = extraMs > 0 ? ` (+${formatTime(extraMs)} extra!)` : '';
+                            logHtml += `<div class="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl shadow-md border border-amber-300/60 relative overflow-hidden" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 40%, #fde68a 100%);">
+                                <div class="absolute -right-4 -top-4 w-16 h-16 bg-yellow-400/20 rounded-full blur-xl pointer-events-none"></div>
+                                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30"><i class="fa-solid fa-trophy text-[10px] sm:text-xs"></i></div>
+                                <div class="flex-1 min-w-0 pr-1 relative z-10">
+                                    <p class="text-[10px] sm:text-xs font-black text-amber-900 break-words leading-tight flex items-center gap-1">🏆 4-Hour Session Complete!${extraStr}</p>
+                                    <p class="text-[8px] sm:text-[9px] font-bold text-amber-600 uppercase tracking-widest break-words leading-tight mt-0.5"><i class="fa-solid fa-fire text-orange-500"></i> ${shortName} Session · ${hrs}h studied</p>
+                                </div>
+                                <div class="text-[8px] sm:text-[10px] font-black text-amber-500 shrink-0 relative z-10">${t}</div>
+                            </div>`;
+                            return;
+                        }
+
                         let icon = 'fa-play'; let color = 'text-green-500'; let bg = 'bg-green-100'; let text = 'Started Session';
                         if(log.action === 'BREAK') { icon = 'fa-mug-hot'; color = 'text-amber-500'; bg = 'bg-amber-100'; text = 'Took a Break'; }
                         if(log.action === 'RESUME') { icon = 'fa-play'; color = 'text-green-500'; bg = 'bg-green-100'; text = 'Resumed Studying'; }
                         if(log.action === 'STOP' || log.action === 'STOP_AT_LIMIT') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Ended Session'; }
-                        const shortName = log.sessionName.split(' ')[0];
                         logHtml += `<div class="flex items-center gap-2 sm:gap-3 bg-gray-50 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-gray-100 shadow-sm"><div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0"><i class="fa-solid ${icon} text-[9px] sm:text-[10px]"></i></div><div class="flex-1 min-w-0 pr-1"><p class="text-[10px] sm:text-xs font-bold text-gray-800 break-words leading-tight">${text}</p><p class="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">${shortName} Session</p></div><div class="text-[8px] sm:text-[10px] font-black text-gray-400 shrink-0">${t}</div></div>`;
                     });
                     timelineList.innerHTML = logHtml;
