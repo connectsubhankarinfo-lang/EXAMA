@@ -8271,12 +8271,12 @@ window.handleOvertimeChoice = function(choice) {
                 let allTodayLogs = [];
                 todaysSessions.forEach(session => { if (session.logs && session.logs.length > 0) { session.logs.forEach(log => { allTodayLogs.push({ ...log, sessionName: session.sessionType }); }); } });
 
-                // 🏆 ACHIEVEMENT: Inject a special achievement entry for sessions that completed the full 4 hours
+                // 🏆 SESSION RESULT: Inject a result card for ALL completed sessions (Loser / Winner / King)
                 todaysSessions.forEach(session => {
-                    if (session.status === 'COMPLETED' && session.totalStudyMs >= TOTAL_SESSION_MS) {
+                    if (session.status === 'COMPLETED') {
                         const lastLog = session.logs && session.logs.length > 0 ? session.logs[session.logs.length - 1] : null;
                         const achieveTime = lastLog ? lastLog.time : session.lastToggleTime;
-                        allTodayLogs.push({ action: 'ACHIEVEMENT', time: achieveTime, sessionName: session.sessionType, totalStudyMs: session.totalStudyMs });
+                        allTodayLogs.push({ action: 'SESSION_RESULT', time: achieveTime, sessionName: session.sessionType, totalStudyMs: session.totalStudyMs });
                     }
                 });
 
@@ -8286,20 +8286,49 @@ window.handleOvertimeChoice = function(choice) {
                         const t = new Date(log.time).toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'});
                         const shortName = log.sessionName.split(' ')[0];
 
-                        // 🏆 Special achievement card for 4-hour completion
-                        if (log.action === 'ACHIEVEMENT') {
+                        // 🎖️ 3-TIER SESSION RESULT CARD
+                        if (log.action === 'SESSION_RESULT') {
                             const hrs = (log.totalStudyMs / 3600000).toFixed(1);
-                            const extraMs = log.totalStudyMs - TOTAL_SESSION_MS;
-                            const extraStr = extraMs > 0 ? ` (+${formatTime(extraMs)} extra!)` : '';
-                            logHtml += `<div class="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl shadow-md border border-amber-300/60 relative overflow-hidden" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 40%, #fde68a 100%);">
-                                <div class="absolute -right-4 -top-4 w-16 h-16 bg-yellow-400/20 rounded-full blur-xl pointer-events-none"></div>
-                                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30"><i class="fa-solid fa-trophy text-[10px] sm:text-xs"></i></div>
-                                <div class="flex-1 min-w-0 pr-1 relative z-10">
-                                    <p class="text-[10px] sm:text-xs font-black text-amber-900 break-words leading-tight flex items-center gap-1">🏆 4-Hour Session Complete!${extraStr}</p>
-                                    <p class="text-[8px] sm:text-[9px] font-bold text-amber-600 uppercase tracking-widest break-words leading-tight mt-0.5"><i class="fa-solid fa-fire text-orange-500"></i> ${shortName} Session · ${hrs}h studied</p>
-                                </div>
-                                <div class="text-[8px] sm:text-[10px] font-black text-amber-500 shrink-0 relative z-10">${t}</div>
-                            </div>`;
+                            const studiedMs = log.totalStudyMs;
+
+                            if (studiedMs > TOTAL_SESSION_MS) {
+                                // 👑 KING — More than 4 hours (Overtime legend)
+                                const extraMs = studiedMs - TOTAL_SESSION_MS;
+                                logHtml += `<div class="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl shadow-lg border border-purple-300/60 relative overflow-hidden" style="background: linear-gradient(135deg, #faf5ff 0%, #ede9fe 30%, #ddd6fe 60%, #c4b5fd 100%);">
+                                    <div class="absolute -right-4 -top-4 w-20 h-20 bg-purple-400/20 rounded-full blur-xl pointer-events-none"></div>
+                                    <div class="absolute -left-3 -bottom-3 w-14 h-14 bg-amber-400/15 rounded-full blur-lg pointer-events-none"></div>
+                                    <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500 via-indigo-500 to-violet-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/40 ring-2 ring-amber-300/60"><i class="fa-solid fa-crown text-[11px] sm:text-xs"></i></div>
+                                    <div class="flex-1 min-w-0 pr-1 relative z-10">
+                                        <p class="text-[10px] sm:text-xs font-black text-purple-900 break-words leading-tight flex items-center gap-1">👑 Session King! +${formatTime(extraMs)} Overtime</p>
+                                        <p class="text-[8px] sm:text-[9px] font-bold text-purple-500 uppercase tracking-widest break-words leading-tight mt-0.5"><i class="fa-solid fa-bolt text-amber-500"></i> ${shortName} Session · ${hrs}h · Legendary Grind</p>
+                                    </div>
+                                    <div class="text-[8px] sm:text-[10px] font-black text-purple-400 shrink-0 relative z-10">${t}</div>
+                                </div>`;
+                            } else if (studiedMs >= TOTAL_SESSION_MS) {
+                                // 🏆 WINNER — Exactly 4 hours
+                                logHtml += `<div class="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl shadow-md border border-amber-300/60 relative overflow-hidden" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 40%, #fde68a 100%);">
+                                    <div class="absolute -right-4 -top-4 w-16 h-16 bg-yellow-400/20 rounded-full blur-xl pointer-events-none"></div>
+                                    <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/30"><i class="fa-solid fa-trophy text-[10px] sm:text-xs"></i></div>
+                                    <div class="flex-1 min-w-0 pr-1 relative z-10">
+                                        <p class="text-[10px] sm:text-xs font-black text-amber-900 break-words leading-tight flex items-center gap-1">🏆 4-Hour Session Complete!</p>
+                                        <p class="text-[8px] sm:text-[9px] font-bold text-amber-600 uppercase tracking-widest break-words leading-tight mt-0.5"><i class="fa-solid fa-fire text-orange-500"></i> ${shortName} Session · ${hrs}h · Winner!</p>
+                                    </div>
+                                    <div class="text-[8px] sm:text-[10px] font-black text-amber-500 shrink-0 relative z-10">${t}</div>
+                                </div>`;
+                            } else {
+                                // 💀 LOSER — Under 4 hours (quit early)
+                                const remainMs = TOTAL_SESSION_MS - studiedMs;
+                                const pct = Math.round((studiedMs / TOTAL_SESSION_MS) * 100);
+                                logHtml += `<div class="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl shadow-md border border-red-200/60 relative overflow-hidden" style="background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 40%, #fecaca 100%);">
+                                    <div class="absolute -right-4 -top-4 w-16 h-16 bg-red-400/10 rounded-full blur-xl pointer-events-none"></div>
+                                    <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-red-400 to-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-red-500/30"><i class="fa-solid fa-skull text-[10px] sm:text-xs"></i></div>
+                                    <div class="flex-1 min-w-0 pr-1 relative z-10">
+                                        <p class="text-[10px] sm:text-xs font-black text-red-800 break-words leading-tight flex items-center gap-1">💀 Gave Up Early! Only ${pct}%</p>
+                                        <p class="text-[8px] sm:text-[9px] font-bold text-red-500 uppercase tracking-widest break-words leading-tight mt-0.5"><i class="fa-solid fa-heart-crack text-red-400"></i> ${shortName} Session · ${hrs}h · ${formatTime(remainMs)} left</p>
+                                    </div>
+                                    <div class="text-[8px] sm:text-[10px] font-black text-red-400 shrink-0 relative z-10">${t}</div>
+                                </div>`;
+                            }
                             return;
                         }
 
