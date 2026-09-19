@@ -2947,16 +2947,16 @@
         <!-- 6. NOVA EXAM ANALYSIS VIEW -->
         <div id="exam-analysis-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
             <!-- NOVA FAB for Exam Analysis -->
-            <div class="fixed bottom-0 left-0 w-full z-[90] border-t border-white/60 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] flex justify-center items-center cursor-pointer group rounded-t-3xl sm:rounded-t-[2rem]" onclick="window.openNovaChat()">
+            <div class="fixed bottom-0 left-0 w-full z-[90] border-t border-white/60 shadow-[0_-8px_30px_rgba(0,0,0,0.04)] py-2 sm:py-3 flex justify-center items-center cursor-pointer group rounded-t-3xl sm:rounded-t-[2rem]" onclick="window.openNovaChat()">
                 <!-- Animated Blue/Pink Gradient -->
                 <div class="absolute inset-0 z-0 bg-[linear-gradient(90deg,rgba(59,130,246,0.3),rgba(236,72,153,0.3),rgba(59,130,246,0.3))] bg-[length:200%_200%] rounded-t-3xl sm:rounded-t-[2rem]" style="animation: gradientMove 4s ease infinite;"></div>
                 <!-- iOS Glass Overlay -->
                 <div class="absolute inset-0 z-0 bg-white/40 backdrop-blur-[50px] saturate-[2] rounded-t-3xl sm:rounded-t-[2rem]"></div>
                 
-                <button class="relative z-10 w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center group-hover:scale-110 group-active:scale-95 transition-all duration-500 shadow-[0_0_20px_rgba(168,85,247,0.4)] overflow-hidden border border-white/40 pointer-events-none">
+                <button class="relative z-10 w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center group-hover:scale-110 group-active:scale-95 transition-all duration-500 shadow-[0_0_25px_rgba(168,85,247,0.5)] overflow-hidden border border-white/40 pointer-events-none">
                     <div class="absolute inset-[-50%] bg-[conic-gradient(from_0deg,#3b82f6,#8b5cf6,#ec4899,#06b6d4,#3b82f6)] blur-md opacity-90 transition-opacity" style="animation: spin-slow 4s linear infinite;"></div>
                     <div class="absolute inset-0 bg-white/10 backdrop-blur-[2px]"></div>
-                    <div class="relative z-10 w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center border-2 border-white/80 shadow-[0_0_15px_rgba(255,255,255,0.6)] overflow-hidden bg-white">
+                    <div class="relative z-10 w-13 h-13 sm:w-16 sm:h-16 rounded-full flex items-center justify-center border-2 border-white/80 shadow-[0_0_15px_rgba(255,255,255,0.6)] overflow-hidden bg-white" style="width: 85%; height: 85%;">
                         <img src="https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true" class="w-full h-full object-cover scale-[1.05] transition-transform duration-500">
                     </div>
                 </button>
@@ -18434,21 +18434,55 @@ ${textContent ? `
                             const data = chatRef.data();
                             if(data.history && data.history.length > 0) {
                                 window.novaChatHistory = data.history;
-                                // Clear existing UI except pattern and welcome msg
-                                const chatBox = document.getElementById('nova-chat-messages');
-                                if(chatBox) {
-                                    // Remove old loaded messages if any
-                                    const rendered = chatBox.querySelectorAll('.rendered-msg');
-                                    rendered.forEach(el => el.remove());
-                                    // Render history
-                                    data.history.forEach(msg => {
-                                        window.appendNovaMessage(msg.role, msg.parts[0].text, true); // true = is loaded
-                                    });
-                                }
+                                window.novaChatVisibleCount = 10;
+                                window.renderNovaChatHistory();
                             }
                         }
                     } catch(e) { console.error("Error loading chat", e); }
                 }
+            };
+
+            window.renderNovaChatHistory = function() {
+                const chatBox = document.getElementById('nova-chat-messages');
+                if(!chatBox) return;
+
+                // Remove old loaded messages and the load more button
+                const rendered = chatBox.querySelectorAll('.rendered-msg, .load-more-btn-container');
+                rendered.forEach(el => el.remove());
+
+                // Calculate which messages to show
+                const total = window.novaChatHistory.length;
+                const startIndex = Math.max(0, total - window.novaChatVisibleCount);
+                const messagesToShow = window.novaChatHistory.slice(startIndex);
+
+                // If there are more messages, prepend a load more button
+                if (startIndex > 0) {
+                    const btnWrapper = document.createElement('div');
+                    btnWrapper.className = 'load-more-btn-container flex justify-center w-full my-4 relative z-10';
+                    btnWrapper.innerHTML = `<button onclick="window.loadMoreNovaChat()" class="px-4 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-bold rounded-full border border-indigo-200 shadow-sm transition-colors cursor-pointer active:scale-95">Load Previous Messages</button>`;
+                    chatBox.appendChild(btnWrapper);
+                }
+
+                // Render history
+                messagesToShow.forEach(msg => {
+                    window.appendNovaMessage(msg.role, msg.parts[0].text, true); // true = is loaded
+                });
+            };
+
+            window.loadMoreNovaChat = function() {
+                window.novaChatVisibleCount += 15;
+                const chatBox = document.getElementById('nova-chat-messages');
+                const previousHeight = chatBox ? chatBox.scrollHeight : 0;
+                
+                window.renderNovaChatHistory();
+                
+                // Try to maintain scroll position after loading older messages
+                setTimeout(() => {
+                    if (chatBox) {
+                        const newHeight = chatBox.scrollHeight;
+                        chatBox.scrollTop = newHeight - previousHeight;
+                    }
+                }, 50);
             };
 
             window.openNovaChat = async function () {
