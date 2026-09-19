@@ -3401,7 +3401,7 @@
                         <i class="fa-solid fa-chevron-left text-base"></i>
                     </button>
                     <div class="min-w-0">
-                        <h2 class="text-xl sm:text-2xl font-black tracking-tight break-words leading-tight flex items-center gap-2 text-amber-950">
+                        <h2 class="text-xl sm:text-2xl font-black tracking-tight break-words leading-tight flex items-center gap-2 text-red-900">
                             Notice Board <i class="fa-solid fa-sparkles text-amber-600 text-sm"></i>
                         </h2>
                         <p class="text-[10px] font-bold text-amber-800 uppercase tracking-widest mt-0.5">Stay updated</p>
@@ -9454,6 +9454,58 @@ ${textContent ? `
                 document.getElementById('admin-notice-form').classList.toggle('hidden');
             }
 
+            window.submitNotice = async function () {
+                const title = document.getElementById('notice-title').value.trim();
+                const body = document.getElementById('notice-body').value.trim();
+                const imageInput = document.getElementById('notice-image');
+                
+                if (!title || !body) {
+                    alert("Please provide a title and body for the notice.");
+                    return;
+                }
+
+                showLoader("Publishing Notice...");
+
+                let imageUrl = "";
+                try {
+                    if (imageInput.files && imageInput.files.length > 0) {
+                        const file = imageInput.files[0];
+                        // Uploading to the specific Google Drive Folder ID
+                        imageUrl = await window.uploadFileToDrive(file, '1L7Q1IphUqrpwFTpJQcRDEfQnGv8rTn4i', false);
+                    }
+
+                    const noticePayload = {
+                        title: title,
+                        text: body,
+                        date: window.formatDateDDMMYYYY ? window.formatDateDDMMYYYY() : new Date().toLocaleDateString('en-GB'),
+                        type: 'update',
+                        timestamp: Date.now(),
+                        assignedTo: ['All'],
+                        imageUrl: imageUrl
+                    };
+
+                    await window.dbSendNotice(noticePayload);
+
+                    // Clear form
+                    document.getElementById('notice-title').value = '';
+                    document.getElementById('notice-body').value = '';
+                    if (imageInput) imageInput.value = '';
+                    window.toggleNoticeForm();
+
+                    if (typeof sendOneSignalPush === 'function') {
+                        sendOneSignalPush(`New Notice: ${title}`, "Check the Notice Board for details.");
+                    }
+                    
+                    hideLoader();
+                    showToast("Success", "Notice published successfully!", "success");
+
+                } catch (e) {
+                    console.error("Error publishing notice:", e);
+                    hideLoader();
+                    alert("Failed to publish notice. Please try again.");
+                }
+            };
+
             window.deleteNotice = async function (id) {
                 if (!(await window.showCustomConfirm("Delete Notice", "Delete this notice?", "Delete", "Cancel", "danger"))) return;
                 if (isFirebaseConfigured) await deleteDoc(doc(db, "notices", id));
@@ -9511,27 +9563,30 @@ ${textContent ? `
                         // Determine icon and color based on type
                         let iconClass = 'fa-bell text-indigo-500';
                         let iconBg = 'bg-indigo-50';
+                        let titleClass = 'text-gray-950';
 
                         if (n.type === 'new_exam') {
                             iconClass = 'fa-file-signature text-blue-500';
                             iconBg = 'bg-blue-50';
+                            titleClass = 'text-blue-900';
                         } else if (n.type === 'reset_exam') {
-                            iconClass = 'fa-rotate-right text-orange-500';
-                            iconBg = 'bg-orange-50';
+                            iconClass = 'fa-rotate-right text-red-500';
+                            iconBg = 'bg-red-50';
+                            titleClass = 'text-red-900';
                         } else if (n.type === 'exam_ended') {
                             iconClass = 'fa-flag-checkered text-emerald-500';
                             iconBg = 'bg-emerald-50';
                         }
 
                         finalHtml += `
-            <div class="bg-white/80 backdrop-blur-xl p-5 sm:p-6 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] mb-4 relative overflow-hidden border border-white/60 transition-transform hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] group">
+            <div class="bg-white/40 backdrop-blur-2xl p-5 sm:p-6 rounded-[2rem] shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] mb-4 relative overflow-hidden border border-white/70 transition-transform hover:-translate-y-1 hover:shadow-[0_8px_32px_0_rgba(31,38,135,0.15)] group">
                 <div class="flex justify-between items-start mb-3 sm:mb-4 gap-3 relative z-10">
                     <div class="flex items-start gap-3 sm:gap-4 min-w-0 pr-1">
                         <div class="w-12 h-12 sm:w-14 sm:h-14 shrink-0 ${iconBg} rounded-[1.25rem] flex items-center justify-center text-xl sm:text-2xl shadow-inner mt-1">
                             <i class="fa-solid ${iconClass}"></i>
                         </div>
                         <div class="min-w-0 flex flex-col pt-1 justify-center">
-                            <h4 class="font-black text-gray-900 text-sm sm:text-base leading-tight break-words pr-2 mt-1.5">
+                            <h4 class="font-black ${titleClass} text-sm sm:text-base leading-tight break-words pr-2 mt-1.5">
                                 ${n.title}
                             </h4>
                         </div>
