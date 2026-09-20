@@ -2424,7 +2424,7 @@
 
 
                     <!-- 📄 4. REPORT DOWNLOAD -->
-                    <div onclick="generatePDFReport()"
+                    <div onclick="document.getElementById('report-timeframe-modal').classList.remove('hidden'); document.getElementById('report-timeframe-modal').classList.add('flex'); document.getElementById('report-timeframe-modal-content').classList.remove('translate-y-full');"
                         class="glass-card p-3.5 rounded-2xl flex items-center justify-center gap-2.5 cursor-pointer active:scale-95 transition-all shadow-sm border-gray-300 hover:bg-gray-100 bg-white">
                         <i class="fa-solid fa-file-pdf text-red-500 text-lg"></i>
                         <h4 class="text-xs sm:text-sm font-black text-gray-800 tracking-wide uppercase">Download Report
@@ -11369,7 +11369,7 @@ ${textContent ? `
                 const timelineCard = document.getElementById('session-timeline-card'); const timelineList = document.getElementById('session-timeline-list');
                 if (timelineCard && timelineList) {
                     let allTodayLogs = [];
-                    todaysSessions.forEach(session => { if (session.logs && session.logs.length > 0) { session.logs.forEach(log => { allTodayLogs.push({ ...log, sessionName: session.sessionType }); }); } });
+                    todaysSessions.forEach(session => { if (session.logs && session.logs.length > 0) { session.logs.forEach(log => { allTodayLogs.push({ ...log, sessionName: session.sessionType, sessionStudyMs: session.totalStudyMs }); }); } });
 
                     // ☸  SESSION RESULT: Inject a result card for ALL completed sessions (Loser / Winner / King)
                     todaysSessions.forEach(session => {
@@ -11433,9 +11433,11 @@ ${textContent ? `
                             }
 
                             let icon = 'fa-play'; let color = 'text-green-500'; let bg = 'bg-green-100'; let text = 'Started Session';
-                            if (log.action === 'BREAK') { icon = 'fa-mug-hot'; color = 'text-amber-500'; bg = 'bg-amber-100'; text = 'Took a Break'; }
-                            if (log.action === 'RESUME') { icon = 'fa-play'; color = 'text-green-500'; bg = 'bg-green-100'; text = 'Resumed Studying'; }
-                            if (log.action === 'STOP' || log.action === 'STOP_AT_LIMIT') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Ended Session'; }
+                            if (log.action !== 'BREAK' && log.action !== 'RESUME' && log.action !== 'STOP' && log.action !== 'STOP_AT_LIMIT' && log.action !== 'SESSION_RESULT' && log.sessionStudyMs === 0) {
+                                icon = 'fa-bed'; color = 'text-gray-500'; bg = 'bg-gray-100'; text = 'Absent';
+                            } else if (log.action === 'BREAK') { icon = 'fa-mug-hot'; color = 'text-amber-500'; bg = 'bg-amber-100'; text = 'Took a Break'; }
+                            else if (log.action === 'RESUME') { icon = 'fa-play'; color = 'text-green-500'; bg = 'bg-green-100'; text = 'Resumed Studying'; }
+                            else if (log.action === 'STOP' || log.action === 'STOP_AT_LIMIT') { icon = 'fa-stop'; color = 'text-red-500'; bg = 'bg-red-100'; text = 'Ended Session'; }
                             logHtml += `<div class="flex items-center gap-2 sm:gap-3 bg-gray-50 p-2 sm:p-2.5 rounded-lg sm:rounded-xl border border-gray-100 shadow-sm"><div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full ${bg} ${color} flex items-center justify-center shrink-0"><i class="fa-solid ${icon} text-[9px] sm:text-[10px]"></i></div><div class="flex-1 min-w-0 pr-1"><p class="text-[10px] sm:text-xs font-bold text-gray-800 break-words leading-tight">${text}</p><p class="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest break-words leading-tight">${shortName} Session</p></div><div class="text-[8px] sm:text-[10px] font-black text-gray-400 shrink-0">${t}</div></div>`;
                         });
                         timelineList.innerHTML = logHtml;
@@ -19891,6 +19893,44 @@ YOUR DIRECTIVES:
                 }
             }, { passive: true });
         </script>
+    <!-- Report Timeframe Modal -->
+    <div id="report-timeframe-modal" class="fixed inset-0 z-[100] hidden items-end sm:items-center justify-center p-0 sm:p-4 transition-all duration-300">
+        <div class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity" onclick="document.getElementById('report-timeframe-modal').classList.add('hidden'); document.getElementById('report-timeframe-modal').classList.remove('flex')"></div>
+        <div class="bg-white/90 backdrop-blur-3xl w-full sm:w-[450px] rounded-t-3xl sm:rounded-3xl shadow-2xl relative z-10 transform transition-transform duration-300 translate-y-full sm:translate-y-0 max-h-[90vh] flex flex-col font-sans overflow-hidden border border-white/60" id="report-timeframe-modal-content">
+            <div class="flex items-center justify-between p-5 border-b border-gray-100 bg-white/50">
+                <h3 class="font-bold text-gray-900 text-lg flex items-center gap-2"><i class="fa-solid fa-file-pdf text-red-500"></i> Download Report</h3>
+                <button onclick="document.getElementById('report-timeframe-modal').classList.add('hidden'); document.getElementById('report-timeframe-modal').classList.remove('flex')" class="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto no-scrollbar space-y-5">
+                <div class="space-y-3">
+                    <label class="text-sm font-bold text-gray-700">Select Timeframe</label>
+                    <select id="report-timeframe-select" class="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-3 font-bold" onchange="window.toggleReportCustomDate()">
+                        <option value="this_week">This Week</option>
+                        <option value="past_week">Past Week</option>
+                        <option value="lifetime">Lifetime</option>
+                        <option value="custom">Custom Date Range (Calendar)</option>
+                    </select>
+                </div>
+                <div id="report-custom-date-container" class="hidden space-y-4 pt-2">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 mb-1">Start Date</label>
+                            <input type="date" id="report-start-date" class="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5 font-bold">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 mb-1">End Date</label>
+                            <input type="date" id="report-end-date" class="bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block w-full p-2.5 font-bold">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5 border-t border-gray-100 bg-gray-50/50">
+                <button onclick="window.generatePDFReportWithDates()" class="w-full bg-gradient-to-r from-red-500 to-rose-600 text-white font-black py-3.5 rounded-xl hover:shadow-lg active:scale-95 transition-all text-sm shadow-md flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-download"></i> Generate PDF
+                </button>
+            </div>
+        </div>
+    </div>
     <!-- Chat Info Modal -->
     <div id="chatInfoModal"
         class="fixed inset-0 z-[100] hidden items-end sm:items-center justify-center p-0 sm:p-4 transition-all duration-300">
