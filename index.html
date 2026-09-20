@@ -14710,24 +14710,221 @@ ${textContent ? `
             };
 
             window.downloadAdminStudentReport = function () { if (window.selectedAdminProfile) { generatePDFReport(window.selectedAdminProfile); } }
-            window.generatePDFReport = function (targetMobile = null) {
-                const mobileToUse = typeof targetMobile === 'string' ? targetMobile : window.loggedInMobile; showLoader("Generating Report...");
-                const student = window.studentsDB.find(s => s.mobile === mobileToUse); if (!student) { hideLoader(); alert("Student profile data not found."); return; }
+                        window.generatePDFReport = function (targetMobile = null, startDate = null, endDate = null, periodLabel = 'Lifetime') {
+                const mobileToUse = targetMobile || window.loggedInMobile;
+                const student = window.studentsDB.find(s => s.mobile === mobileToUse);
+                if (!student) return;
+                window.showLoader("Gathering Data & Generating PDF...");
 
-                const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`); };
-                const myRecords = getComputedResults().filter(r => r.mobile === mobileToUse); myRecords.sort((a, b) => { const exA = window.examsDB.find(e => e.id === a.examId); const exB = window.examsDB.find(e => e.id === b.examId); if (!exA || !exB) return 0; return parseDDMM(exB.date) - parseDDMM(exA.date); });
-                let totalPerc = 0; let totalSaved = 0; let presents = 0; myRecords.forEach(r => { totalPerc += r.percentage; if (r.timeSaved) totalSaved += r.timeSaved; if (r.status !== 'ABSENT') presents++; });
-                const avg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : 0; const attRate = myRecords.length > 0 ? ((presents / myRecords.length) * 100).toFixed(0) : 0;
-                const lb = getOverallLeaderboard(); const myRankIdx = lb.findIndex(s => s.mobile === mobileToUse); const rank = myRankIdx !== -1 ? `☸ ${myRankIdx + 1}` : '☸ -'; const percentile = lb.length > 1 ? (((lb.length - (myRankIdx + 1)) / (lb.length - 1)) * 100).toFixed(0) : 100;
+                // Helper to parse dates
+                const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`).getTime(); };
 
-                let html = `<div style="padding: 40px; font-family: Helvetica, Arial, sans-serif; color: #0f172a; width: 800px; background: white;"><div style="text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px;"><div style="width: 60px; height: 60px; background: #4f46e5; border-radius: 12px; margin: 0 auto 10px auto; color: white; font-size: 40px; font-weight: bold; line-height: 60px; text-align: center;">E</div><h1 style="font-size: 32px; font-weight: bold; color: #4f46e5; margin: 0;">EXAMA</h1><p style="font-size: 11px; font-weight: bold; color: #64748b; margin-top: 5px; text-transform: uppercase; letter-spacing: 2px;">Official Performance Transcript</p></div><div style="width: 100%; display: table; margin-bottom: 30px;"><div style="display: table-cell; vertical-align: bottom;"><h2 style="font-size: 26px; font-weight: bold; margin: 0;">${student.name}</h2><p style="font-size: 14px; color: #64748b; margin-top: 5px; font-weight: bold;">Student ID / Mobile: ${student.mobile}</p></div><div style="display: table-cell; text-align: right; vertical-align: bottom;"><p style="font-size: 12px; font-weight: bold; color: #94a3b8;">Date Generated: ${window.formatDateDDMMYYYY()}</p></div></div><div style="width: 100%; display: table; margin-bottom: 30px; table-layout: fixed;"><div style="display: table-cell; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;"><p style="font-size: 10px; color: #64748b; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Overall Average</p><p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #0f172a;">${avg}%</p></div><div style="display: table-cell; width: 15px;"></div><div style="display: table-cell; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;"><p style="font-size: 10px; color: #64748b; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Global Rank</p><p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #4f46e5;">${rank}</p></div><div style="display: table-cell; width: 15px;"></div><div style="display: table-cell; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;"><p style="font-size: 10px; color: #64748b; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Attendance</p><p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #0f172a;">${attRate}%</p></div></div><div style="margin-bottom: 30px; background: #f1f5f9; padding: 15px 20px; border-radius: 8px; width: 100%; display: table;"><div style="display: table-cell;"><strong style="font-size:12px; color:#475569;">Global Percentile:</strong> <span style="font-size:14px; font-weight:bold; color:#4f46e5;">Top ${100 - percentile}%</span></div><div style="display: table-cell; text-align: center;"><strong style="font-size:12px; color:#475569;">Time Saved:</strong> <span style="font-size:14px; font-weight:bold; color:#10b981;">${totalSaved} mins early</span></div><div style="display: table-cell; text-align: right;"><strong style="font-size:12px; color:#475569;">Total Exams:</strong> <span style="font-size:14px; font-weight:bold; color:#0f172a;">${myRecords.length}</span></div></div><h3 style="font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #0f172a; border-bottom: 2px solid #0f172a; display: inline-block; padding-bottom: 4px;">Detailed Exam History</h3><table style="width: 100%; border-collapse: collapse; margin-bottom: 40px; margin-top: 10px;"><thead><tr style="background: #e2e8f0; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; letter-spacing: 1px;"><th style="padding: 12px; border-radius: 8px 0 0 8px;">Exam Name</th><th style="padding: 12px;">Date</th><th style="padding: 12px;">Pass Req.</th><th style="padding: 12px;">Score</th><th style="padding: 12px; border-radius: 0 8px 8px 0;">Status</th></tr></thead><tbody>`;
-                myRecords.forEach(r => { let exam = window.examsDB.find(e => e.id === r.examId); if (!exam) exam = { name: r.examName || 'AI Generated Quiz', date: window.formatDateDDMMYYYY(new Date(r.timestamp || Date.now())), passPercentage: 40 }; const c = r.status === 'PASS' ? '#16a34a' : '#dc2626'; html += `<tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 12px; font-weight: bold; font-size: 13px; color: #0f172a;">${exam.name}</td><td style="padding: 12px; font-size: 12px; color: #64748b;">${exam.date}</td><td style="padding: 12px; font-size: 12px; color: #64748b; font-weight: bold;">${exam.passPercentage || 40}%</td><td style="padding: 12px; font-weight: bold; font-size: 14px; color: #0f172a;">${r.obtained}/${r.total} <span style="font-size: 11px; color: #64748b;">(${r.percentage.toFixed(0)}%)</span></td><td style="padding: 12px; font-weight: bold; font-size: 12px; color: ${c};">${r.status}</td></tr>`; });
-                html += `</tbody></table><div style="text-align: center; margin-top: 50px; padding-top: 20px; border-top: 2px solid #e2e8f0;"><div style="width: 30px; height: 30px; background: #4f46e5; border-radius: 6px; margin: 0 auto 8px auto; color: white; font-size: 20px; font-weight: bold; line-height: 30px; text-align: center;">E</div><p style="font-size: 10px; font-weight: bold; color: #94a3b8; letter-spacing: 2px; margin-bottom: 4px;">POWERED BY EXAMA APP</p></div></div>`;
+                // 1. FILTER RESULTS
+                let myRecords = getComputedResults().filter(r => r.mobile === mobileToUse);
+                if (startDate && endDate) {
+                    myRecords = myRecords.filter(r => {
+                        const ts = parseDDMM(window.examsDB.find(e => e.id === r.examId)?.date || window.formatDateDDMMYYYY(new Date()));
+                        return ts >= startDate && ts <= endDate;
+                    });
+                }
+                
+                myRecords.sort((a, b) => { 
+                    const exA = window.examsDB.find(e => e.id === a.examId); 
+                    const exB = window.examsDB.find(e => e.id === b.examId); 
+                    if (!exA || !exB) return 0; 
+                    return parseDDMM(exB.date) - parseDDMM(exA.date); 
+                });
+
+                let totalPerc = 0; let totalSaved = 0; let presents = 0; 
+                myRecords.forEach(r => { totalPerc += r.percentage; if (r.timeSaved) totalSaved += r.timeSaved; if (r.status !== 'ABSENT') presents++; });
+                const avg = myRecords.length > 0 ? (totalPerc / myRecords.length).toFixed(1) : 0; 
+                
+                // 2. FILTER SESSIONS
+                let studyMs = 0; let focusSessionsCompleted = 0;
+                let mySessions = (window.sessionsDB || []).filter(s => s.mobile === mobileToUse);
+                if (startDate && endDate) {
+                    mySessions = mySessions.filter(s => {
+                        const ts = parseDDMM(s.dateStr);
+                        return ts >= startDate && ts <= endDate;
+                    });
+                }
+                mySessions.forEach(s => {
+                    studyMs += s.totalStudyMs || 0;
+                    if (s.status === 'COMPLETED') focusSessionsCompleted++;
+                });
+                const studyHrs = (studyMs / 3600000).toFixed(1);
+
+                // 3. FILTER TODO/TARGETS
+                let myTodos = (window.studentTasksDB || []).filter(t => t.mobile === mobileToUse);
+                if (startDate && endDate) {
+                    myTodos = myTodos.filter(t => t.timestamp >= startDate && t.timestamp <= endDate);
+                }
+                let achievedTodos = myTodos.filter(t => t.completed).length;
+
+                // 4. FILTER FITNESS
+                let myFitness = (window.fitnessDB || []).filter(f => f.mobile === mobileToUse);
+                if (startDate && endDate) {
+                    myFitness = myFitness.filter(f => f.timestamp >= startDate && f.timestamp <= endDate);
+                }
+                let totalSteps = 0;
+                myFitness.forEach(f => totalSteps += (f.steps || 0));
+
+                const dpUrl = window.getStudentAvatar(student.mobile, student.name);
+                const logoUrl = 'https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/1fe2276cb0dbce2df0f0adfc150fcdd79a9624ad/Group%2014.png';
+
+                let html = `
+                <div style="padding: 40px; font-family: Helvetica, Arial, sans-serif; color: #0f172a; width: 800px; background: white;">
+                    
+                    <!-- Header Section -->
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px;">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <img src="${logoUrl}" style="height: 50px; object-fit: contain;">
+                            <div>
+                                <h1 style="font-size: 24px; font-weight: bold; color: #4f46e5; margin: 0; letter-spacing: -0.5px;">EXAMA</h1>
+                                <p style="font-size: 10px; font-weight: bold; color: #64748b; margin-top: 2px; text-transform: uppercase; letter-spacing: 2px;">Performance Transcript</p>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <p style="font-size: 14px; font-weight: bold; color: #0f172a; margin: 0;">Period: ${periodLabel}</p>
+                            <p style="font-size: 11px; font-weight: bold; color: #94a3b8; margin-top: 5px;">Date Generated: ${window.formatDateDDMMYYYY()}</p>
+                        </div>
+                    </div>
+
+                    <!-- Student Info Section -->
+                    <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                        <img src="${dpUrl}" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+                        <div>
+                            <h2 style="font-size: 26px; font-weight: bold; margin: 0; color: #0f172a;">${student.name}</h2>
+                            <p style="font-size: 14px; color: #64748b; margin-top: 5px; font-weight: bold;">Phone Number: ${student.mobile}</p>
+                        </div>
+                    </div>
+
+                    <!-- 4-Grid Overview (Exam Avg, Focus, Todos, Fitness) -->
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+                        <div style="background: #eff6ff; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #bfdbfe;">
+                            <p style="font-size: 10px; color: #3b82f6; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Exam Avg</p>
+                            <p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #1d4ed8;">${avg}%</p>
+                        </div>
+                        <div style="background: #fefce8; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #fef08a;">
+                            <p style="font-size: 10px; color: #eab308; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Study Time</p>
+                            <p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #a16207;">${studyHrs}h</p>
+                        </div>
+                        <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #bbf7d0;">
+                            <p style="font-size: 10px; color: #22c55e; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Todos Hit</p>
+                            <p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #15803d;">${achievedTodos}/${myTodos.length}</p>
+                        </div>
+                        <div style="background: #fdf2f8; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #fbcfe8;">
+                            <p style="font-size: 10px; color: #ec4899; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 1px;">Steps Logged</p>
+                            <p style="font-size: 28px; font-weight: bold; margin: 5px 0 0; color: #be185d;">${totalSteps}</p>
+                        </div>
+                    </div>
+
+                    <!-- Split Layout: Todos/Fitness on Left, Exams on Right -->
+                    <div style="display: flex; gap: 30px;">
+                        <!-- Left Column (Todos & Focus) -->
+                        <div style="flex: 1;">
+                            <h3 style="font-size: 16px; font-weight: bold; margin-bottom: 12px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px;">Target Todo List</h3>
+                            <div style="margin-bottom: 30px;">
+                                ${myTodos.length === 0 ? '<p style="font-size: 13px; color: #94a3b8; font-style: italic;">No targets recorded for this period.</p>' : ''}
+                                ${myTodos.map(t => `
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                        <div style="width: 16px; height: 16px; border-radius: 4px; background: ${t.completed ? '#22c55e' : '#f1f5f9'}; color: white; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold;">
+                                            ${t.completed ? '✔' : ''}
+                                        </div>
+                                        <p style="font-size: 13px; margin: 0; color: ${t.completed ? '#64748b' : '#0f172a'}; text-decoration: ${t.completed ? 'line-through' : 'none'};">${t.title || 'Task'}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            
+                            <h3 style="font-size: 16px; font-weight: bold; margin-bottom: 12px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px;">Focus Sessions</h3>
+                            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                <p style="font-size: 13px; margin: 0 0 5px 0; color: #475569;"><strong>Sessions Completed:</strong> ${focusSessionsCompleted}</p>
+                                <p style="font-size: 13px; margin: 0; color: #475569;"><strong>Total Time Logged:</strong> ${studyHrs} Hours</p>
+                            </div>
+                        </div>
+
+                        <!-- Right Column (Exams) -->
+                        <div style="flex: 2;">
+                            <h3 style="font-size: 16px; font-weight: bold; margin-bottom: 12px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 4px;">Exam History</h3>
+                            ${myRecords.length === 0 ? '<p style="font-size: 13px; color: #94a3b8; font-style: italic;">No exams recorded for this period.</p>' : ''}
+                            ${myRecords.length > 0 ? `
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="background: #e2e8f0; text-align: left; font-size: 10px; text-transform: uppercase; color: #475569; letter-spacing: 1px;">
+                                            <th style="padding: 8px; border-radius: 6px 0 0 6px;">Exam</th>
+                                            <th style="padding: 8px;">Date</th>
+                                            <th style="padding: 8px;">Score</th>
+                                            <th style="padding: 8px; border-radius: 0 6px 6px 0;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${myRecords.map(r => { 
+                                            let exam = window.examsDB.find(e => e.id === r.examId); 
+                                            if (!exam) exam = { name: r.examName || 'Quiz', date: window.formatDateDDMMYYYY(new Date(r.timestamp || Date.now())) }; 
+                                            const c = r.status === 'PASS' ? '#16a34a' : '#dc2626'; 
+                                            return `
+                                            <tr style="border-bottom: 1px solid #f1f5f9;">
+                                                <td style="padding: 10px 8px; font-weight: bold; font-size: 12px; color: #0f172a;">${exam.name}</td>
+                                                <td style="padding: 10px 8px; font-size: 11px; color: #64748b;">${exam.date}</td>
+                                                <td style="padding: 10px 8px; font-weight: bold; font-size: 12px; color: #0f172a;">${r.obtained}/${r.total} <span style="font-size: 10px; color: #64748b;">(${r.percentage.toFixed(0)}%)</span></td>
+                                                <td style="padding: 10px 8px; font-weight: bold; font-size: 11px; color: ${c};">${r.status}</td>
+                                            </tr>`; 
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            ` : ''}
+                        </div>
+                    </div>
+
+                    <div style="text-align: center; margin-top: 50px; padding-top: 20px; border-top: 2px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <img src="${logoUrl}" style="height: 30px; margin-bottom: 8px; opacity: 0.6; filter: grayscale(100%);">
+                        <p style="font-size: 10px; font-weight: bold; color: #94a3b8; letter-spacing: 2px; margin: 0;">POWERED BY EXAMA APP</p>
+                    </div>
+                </div>`;
+                
                 const downloadDate = new Date().toISOString().split('T')[0];
-                const opt = { margin: 0, filename: `${student.name.replace(/\s+/g, '_')}_Exama_Report_${downloadDate}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, logging: false }, jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } };
+                const opt = { margin: 0, filename: `${student.name.replace(/\s+/g, '_')}_Report_${downloadDate}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2, useCORS: true, logging: false }, jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' } };
                 const safeTimeout = setTimeout(() => { hideLoader(); alert("The PDF generation took too long or was blocked. Please try again."); }, 8000);
                 html2pdf().set(opt).from(html).save().then(() => { clearTimeout(safeTimeout); hideLoader(); }).catch(err => { console.error(err); clearTimeout(safeTimeout); hideLoader(); alert("Failed to generate PDF. Check browser console."); });
             }
+
+            window.toggleReportCustomDate = function() {
+                const val = document.getElementById('report-timeframe-select').value;
+                const c = document.getElementById('report-custom-date-container');
+                if (val === 'custom') c.classList.remove('hidden');
+                else c.classList.add('hidden');
+            };
+
+            window.generatePDFReportWithDates = function() {
+                const mobileToUse = window.currentRole === 'admin' && window.selectedAdminProfile ? window.selectedAdminProfile : window.loggedInMobile;
+                const val = document.getElementById('report-timeframe-select').value;
+                let startDate = null; let endDate = null; let periodLabel = '';
+                const now = new Date();
+                
+                if (val === 'this_week') {
+                    const start = new Date(now); start.setDate(now.getDate() - now.getDay()); start.setHours(0,0,0,0);
+                    startDate = start.getTime(); endDate = Date.now();
+                    periodLabel = 'This Week';
+                } else if (val === 'past_week') {
+                    const start = new Date(now); start.setDate(now.getDate() - now.getDay() - 7); start.setHours(0,0,0,0);
+                    const end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23,59,59,999);
+                    startDate = start.getTime(); endDate = end.getTime();
+                    periodLabel = 'Past Week';
+                } else if (val === 'custom') {
+                    const s = document.getElementById('report-start-date').value;
+                    const e = document.getElementById('report-end-date').value;
+                    if (!s || !e) return window.showToast('Error', 'Please select start and end dates', 'error');
+                    startDate = new Date(s).getTime();
+                    endDate = new Date(e).setHours(23,59,59,999);
+                    periodLabel = `${s} to ${e}`;
+                } else {
+                    periodLabel = 'Lifetime';
+                }
+                
+                document.getElementById('report-timeframe-modal').classList.add('hidden');
+                document.getElementById('report-timeframe-modal').classList.remove('flex');
+                window.generatePDFReport(mobileToUse, startDate, endDate, periodLabel);
+            };
 
             window.onload = async function () {
                 // 🔥 NEW: CATCH GOOGLE DRIVE REDIRECT TOKEN
