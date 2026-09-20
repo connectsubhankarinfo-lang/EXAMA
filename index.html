@@ -8155,7 +8155,8 @@
                         const rStu = window.studentsDB.find(s => s.mobile === readerMob);
                         const rName = rStu ? rStu.name : 'Unknown';
                         const rDp = window.getStudentAvatar(readerMob, rName);
-                        const readTime = new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        const readTs = (msg.readTimestamps && msg.readTimestamps[readerMob]) ? msg.readTimestamps[readerMob] : msg.timestamp;
+                        const readTime = new Date(readTs).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
                         html += `
                             <div class="flex items-center justify-between p-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
                                 <div class="flex items-center gap-3">
@@ -12039,8 +12040,9 @@ ${textContent ? `
                 if (!window.loggedInMobile) return; const myMobile = window.loggedInMobile;
                 const unreadMsgs = window.chatDB.filter(m => m.mobile !== myMobile && !(m.readBy && m.readBy.includes(myMobile)));
                 if (unreadMsgs.length > 0) {
-                    if (isFirebaseConfigured) { const updatePromises = unreadMsgs.map(msg => { return updateDoc(doc(db, "chat", msg.id), { readBy: arrayUnion(myMobile) }); }); await Promise.all(updatePromises); }
-                    else { unreadMsgs.forEach(msg => { if (!msg.readBy) msg.readBy = []; if (!msg.readBy.includes(myMobile)) msg.readBy.push(myMobile); }); }
+                    const now = Date.now();
+                    if (isFirebaseConfigured) { const updatePromises = unreadMsgs.map(msg => { return updateDoc(doc(db, "chat", msg.id), { readBy: arrayUnion(myMobile), [`readTimestamps.${myMobile}`]: now }); }); await Promise.all(updatePromises); }
+                    else { unreadMsgs.forEach(msg => { if (!msg.readBy) msg.readBy = []; if (!msg.readBy.includes(myMobile)) { msg.readBy.push(myMobile); if (!msg.readTimestamps) msg.readTimestamps = {}; msg.readTimestamps[myMobile] = now; } }); }
                 }
                 updateChatUnreadCount();
             }
