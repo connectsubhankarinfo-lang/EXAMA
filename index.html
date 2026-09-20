@@ -2524,7 +2524,8 @@
 
                 <!-- Dynamic Records -->
                 <div>
-                    
+                    <h3 class="font-bold text-gray-900 mb-2 sm:mb-3 px-1 sm:px-2 tracking-tight text-sm sm:text-base">
+                        Exam History</h3>
                     <div id="student-records-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4"></div>
                 </div>
             </div>
@@ -7478,8 +7479,15 @@
             // ADMIN EXAM RESULTS POPUP ENGINE
             // ==========================================
             window.openExamResults = function (examId) {
-                const exam = window.examsDB.find(e => e.id === examId);
-                if (!exam) return;
+                let exam = window.examsDB.find(e => e.id === examId);
+                if (!exam) {
+                    const rList = window.getComputedResults().filter(r => r.examId === examId);
+                    if(rList.length > 0) {
+                        exam = { name: rList[0].examName || 'AI Generated Quiz' };
+                    } else {
+                        return;
+                    }
+                }
 
                 document.getElementById('aer-exam-name').innerText = exam.name;
                 const listContainer = document.getElementById('aer-results-list');
@@ -15259,8 +15267,20 @@ ${textContent ? `
                 // 1. Fetch Result & Exam Data
                 const allResults = window.getComputedResults().filter(res => res.examId === examId && !res.isVirtual);
                 const r = allResults.find(res => res.mobile === window.loggedInMobile);
-                const exam = window.examsDB.find(e => e.id === examId);
-                if (!r || !exam) return;
+                if (!r) return;
+                
+                let exam = window.examsDB.find(e => e.id === examId);
+                if (!exam) {
+                    exam = {
+                        id: examId,
+                        name: r.examName || 'AI Generated Quiz',
+                        examType: r.examType || 'quiz',
+                        date: window.formatDateDDMMYYYY(new Date(r.timestamp || Date.now())),
+                        duration: (r.timeTaken || 0) + (r.timeSaved || 0) || 10,
+                        totalMarks: r.total,
+                        passPercentage: 40
+                    };
+                }
 
                 const isAbsent = r.status === 'ABSENT';
                 let c = 'rose';
@@ -15539,8 +15559,8 @@ ${textContent ? `
         <div class="flex flex-wrap items-center justify-between gap-2 relative z-10 pt-3 border-t border-white/60">
             <!-- Tags Row (Rank) -->
             <div class="flex flex-wrap gap-2">
-                <span class="bg-amber-50/80 backdrop-blur-sm border border-amber-200/50 text-amber-700 px-2.5 py-1 rounded-lg text-[8px] sm:text-[10px] font-black tracking-widest uppercase flex items-center gap-1.5 shadow-sm">
-                    🏆 ${rank}
+                <span onclick="window.openExamResults('${exam.id}')" class="cursor-pointer bg-amber-50/80 backdrop-blur-sm border border-amber-200/50 text-amber-700 px-2.5 py-1 rounded-lg text-[8px] sm:text-[10px] font-black tracking-widest uppercase flex items-center gap-1.5 shadow-sm hover:bg-amber-100 transition-colors">
+                    WHAT RANK: ${rank}
                 </span>
             </div>
             
@@ -15597,10 +15617,9 @@ ${textContent ? `
 
                     const myRecords = getComputedResults().filter(r => String(r.mobile) === String(window.loggedInMobile));
                     myRecords.sort((a, b) => {
-                        const exA = window.examsDB.find(e => e.id === a.examId);
-                        const exB = window.examsDB.find(e => e.id === b.examId);
-                        if (!exA || !exB) return 0;
-                        return parseDDMM(exB.date).getTime() - parseDDMM(exA.date).getTime();
+                        const timeA = a.timestamp || (window.examsDB.find(e => e.id === a.examId) ? parseDDMM(window.examsDB.find(e => e.id === a.examId).date).getTime() : 0);
+                        const timeB = b.timestamp || (window.examsDB.find(e => e.id === b.examId) ? parseDDMM(window.examsDB.find(e => e.id === b.examId).date).getTime() : 0);
+                        return timeB - timeA;
                     });
 
                     let totalPerc = 0; let weeklyPerc = 0; let weeklyCount = 0; const chartLabels = []; const chartData = []; const chartStatuses = []; const today = window.formatDateDDMMYYYY();
@@ -15748,14 +15767,22 @@ ${textContent ? `
                     if (!finalPendingHtml) finalPendingHtml = `<div class="col-span-1 md:col-span-2 text-[10px] sm:text-xs text-gray-500 font-medium italic p-6 text-center border border-dashed border-gray-300 rounded-2xl w-full">No active or upcoming exams currently assigned.</div>`;
                     if (pendingList) pendingList.innerHTML = finalPendingHtml;
                     myRecords.forEach(r => {
-                        const exam = window.examsDB.find(e => e.id === r.examId);
-                        if (!exam) return;
+                        let exam = window.examsDB.find(e => e.id === r.examId);
+                        let eTime;
+                        let eName;
+                        if (exam) {
+                            eTime = parseDDMM(exam.date).getTime();
+                            eName = exam.name;
+                        } else {
+                            eTime = r.timestamp || Date.now();
+                            eName = r.examName || 'Quiz';
+                        }
+                        
                         totalPerc += r.percentage;
-                        const eTime = parseDDMM(exam.date).getTime();
                         if (eTime >= mondayMs && eTime <= sundayMs) { 
                             weeklyPerc += r.percentage; 
                             weeklyCount++; 
-                            chartLabels.push(exam.name.substring(0, 6) + '...'); 
+                            chartLabels.push(eName.substring(0, 6) + '...'); 
                             chartData.push(r.percentage); 
                             chartStatuses.push(r.status);
                         }
