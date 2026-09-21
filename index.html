@@ -2891,6 +2891,27 @@
                     </div>
                 </div>
 
+                <!-- Budget Overview (Admin) -->
+                <div class="w-full relative z-10 mb-4 md:w-3/4 md:mx-auto">
+                    <div class="bg-gradient-to-r from-green-50 to-emerald-50/50 p-4 rounded-[1.5rem] sm:rounded-[2rem] flex justify-between items-center border border-green-100/60 shadow-sm relative overflow-hidden group">
+                        <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><i class="fa-solid fa-wallet text-6xl text-green-500"></i></div>
+                        <div>
+                            <p class="text-[10px] sm:text-[11px] text-green-800 font-black tracking-widest uppercase mb-1 flex items-center gap-1.5"><i class="fa-solid fa-wallet"></i>Budget</p>
+                            <div class="text-xl sm:text-2xl font-black text-green-600 leading-none drop-shadow-sm" id="ap-budget-balance"><i class="fa-solid fa-spinner fa-spin text-sm"></i></div>
+                        </div>
+                        <div class="text-right">
+                            <div class="flex items-center gap-1.5 justify-end mb-1">
+                                <i class="fa-solid fa-arrow-down text-green-500 text-[8px]"></i>
+                                <span class="text-xs sm:text-sm font-bold text-gray-700" id="ap-budget-income">₹0</span>
+                            </div>
+                            <div class="flex items-center gap-1.5 justify-end">
+                                <i class="fa-solid fa-arrow-up text-red-500 text-[8px]"></i>
+                                <span class="text-xs sm:text-sm font-bold text-gray-700" id="ap-budget-expense">₹0</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div
                     class="glass-card p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] relative z-10 md:w-3/4 md:mx-auto shadow-sm border border-gray-200/50">
                     <div class="flex justify-between items-center mb-3 sm:mb-5">
@@ -6186,26 +6207,6 @@
                     </div>
                 </div>
                 
-                <!-- Budget Overview (Admin) -->
-                <div class="w-full px-6 sm:px-8 relative z-10 mb-4">
-                    <div class="bg-gradient-to-r from-green-50 to-emerald-50/50 p-4 rounded-3xl flex justify-between items-center border border-green-100/60 shadow-sm relative overflow-hidden group">
-                        <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity"><i class="fa-solid fa-wallet text-6xl text-green-500"></i></div>
-                        <div>
-                            <p class="text-[10px] sm:text-[11px] text-green-800 font-black tracking-widest uppercase mb-1 flex items-center gap-1.5"><i class="fa-solid fa-wallet"></i>Budget</p>
-                            <div class="text-xl sm:text-2xl font-black text-green-600 leading-none drop-shadow-sm" id="ss-budget-balance"><i class="fa-solid fa-spinner fa-spin text-sm"></i></div>
-                        </div>
-                        <div class="text-right">
-                            <div class="flex items-center gap-1.5 justify-end mb-1">
-                                <i class="fa-solid fa-arrow-down text-green-500 text-[8px]"></i>
-                                <span class="text-xs sm:text-sm font-bold text-gray-700" id="ss-budget-income">₹0</span>
-                            </div>
-                            <div class="flex items-center gap-1.5 justify-end">
-                                <i class="fa-solid fa-arrow-up text-red-500 text-[8px]"></i>
-                                <span class="text-xs sm:text-sm font-bold text-gray-700" id="ss-budget-expense">₹0</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- 2x2 Grid of Stats -->
                 <div class="w-full grid grid-cols-2 gap-3 sm:gap-4 px-6 sm:px-8 relative z-10">
@@ -14607,6 +14608,31 @@ ${textContent ? `
                 const rankIdx = lb.findIndex(s => s.mobile === mobile);
                 document.getElementById('ap-rank').innerText = rankIdx !== -1 ? `☸ ${rankIdx + 1}` : '☸ -';
 
+                // Fetch & Calculate Budget for Admin Profile
+                if (document.getElementById('ap-budget-balance')) {
+                    document.getElementById('ap-budget-balance').innerHTML = '<i class="fa-solid fa-spinner fa-spin text-sm"></i>';
+                    document.getElementById('ap-budget-income').innerText = '₹0';
+                    document.getElementById('ap-budget-expense').innerText = '₹0';
+                    let totalIncome = 0;
+                    let totalExpense = 0;
+                    try {
+                        if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
+                            // Note: getDocs and collection must be in scope; assume global or imported in standard flow
+                            getDocs(collection(db, "students", mobile, "budget")).then(snap => {
+                                snap.forEach(doc => {
+                                    const d = doc.data();
+                                    if (d.type === 'income') totalIncome += d.amount;
+                                    if (d.type === 'expense' || d.type === 'transfer') totalExpense += d.amount;
+                                });
+                                const bal = totalIncome - totalExpense;
+                                document.getElementById('ap-budget-balance').innerText = '₹' + bal.toLocaleString('en-IN');
+                                document.getElementById('ap-budget-income').innerText = '₹' + totalIncome.toLocaleString('en-IN');
+                                document.getElementById('ap-budget-expense').innerText = '₹' + totalExpense.toLocaleString('en-IN');
+                            }).catch(e => console.error("Budget fetch err", e));
+                        }
+                    } catch(e) { console.error("Budget sync err", e); }
+                }
+
                 const stuObj = window.studentsDB.find(s => s.mobile === mobile);
                 const tgt = stuObj && stuObj.targetPercentage ? stuObj.targetPercentage : null;
                 window.updateChart('adminProfileChart', window.adminProfileChartInstance, chartLabels, chartData, chartStatuses, inst => window.adminProfileChartInstance = inst, tgt);
@@ -20474,6 +20500,7 @@ YOUR DIRECTIVES:
             // Budget Track Logic
             window.trackTimeFilter = 'this_week';
             let budgetPieChartInstance = null;
+            let budgetIncomePieChartInstance = null;
 
             window.filterTrackTime = function(time) {
                 window.trackTimeFilter = time;
@@ -20492,6 +20519,23 @@ YOUR DIRECTIVES:
                     document.getElementById('track-custom-date-container').classList.remove('grid');
                 }
                 window.renderBudgetTrackView();
+            };
+
+            window.updateTransferFormDP = function() {
+                const select = document.getElementById('budget-transfer-to');
+                const dpImg = document.getElementById('budget-transfer-dp');
+                if (!select || !dpImg) return;
+                
+                const mobile = select.value;
+                if (!mobile) {
+                    dpImg.classList.add('hidden');
+                    return;
+                }
+                
+                const receiver = (window.studentsDB || []).find(s => s.mobile === mobile);
+                const dpSrc = window.getStudentAvatar ? window.getStudentAvatar(mobile, receiver?.name || 'Student') : '';
+                dpImg.src = dpSrc;
+                dpImg.classList.remove('hidden');
             };
 
             window.renderBudgetTrackView = function() {
@@ -20607,27 +20651,68 @@ YOUR DIRECTIVES:
                 const data = Object.values(catTotals);
 
                 if (labels.length === 0) {
-                    ctx.style.display = 'none';
+                    if (ctx) ctx.style.display = 'none';
                 } else {
-                    ctx.style.display = 'block';
-                    budgetPieChartInstance = new Chart(ctx, {
-                        type: 'doughnut',
-                        data: {
-                            labels: labels,
-                            datasets: [{
-                                data: data,
-                                backgroundColor: ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7'],
-                                borderWidth: 0
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10, family: "'Inter', sans-serif" } } }
+                    if (ctx) {
+                        ctx.style.display = 'block';
+                        budgetPieChartInstance = new Chart(ctx, {
+                            type: 'doughnut',
+                            data: {
+                                labels: labels,
+                                datasets: [{
+                                    data: data,
+                                    backgroundColor: ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7'],
+                                    borderWidth: 0
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                cutout: '75%',
+                                plugins: { legend: { display: false } }
                             }
-                        }
-                    });
+                        });
+                    }
+                }
+
+                // Render Income Chart
+                const incomeTotals = {};
+                txs.forEach(tx => {
+                    if (tx.type === 'income') {
+                        const cat = (tx.category === 'Transfer' || tx.category === 'transfer') ? 'Transfer' : (tx.category || 'Other');
+                        incomeTotals[cat] = (incomeTotals[cat] || 0) + tx.amount;
+                    }
+                });
+
+                const ctxInc = document.getElementById('budgetIncomePieChart');
+                if (budgetIncomePieChartInstance) budgetIncomePieChartInstance.destroy();
+
+                const incLabels = Object.keys(incomeTotals);
+                const incData = Object.values(incomeTotals);
+
+                if (incLabels.length === 0) {
+                    if (ctxInc) ctxInc.style.display = 'none';
+                } else {
+                    if (ctxInc) {
+                        ctxInc.style.display = 'block';
+                        budgetIncomePieChartInstance = new Chart(ctxInc, {
+                            type: 'doughnut',
+                            data: {
+                                labels: incLabels,
+                                datasets: [{
+                                    data: incData,
+                                    backgroundColor: ['#22c55e', '#16a34a', '#15803d', '#14b8a6', '#0ea5e9', '#3b82f6', '#8b5cf6', '#d946ef'],
+                                    borderWidth: 0
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                cutout: '75%',
+                                plugins: { legend: { display: false } }
+                            }
+                        });
+                    }
                 }
             };
 
@@ -20813,9 +20898,12 @@ YOUR DIRECTIVES:
                     </div>
                     <div id="budget-transfer-container" class="hidden">
                         <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Transfer To (Student)</label>
-                        <select id="budget-transfer-to" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all">
-                            <option value="">Select a student...</option>
-                        </select>
+                        <div class="flex items-center gap-3">
+                            <img id="budget-transfer-dp" src="" class="w-12 h-12 rounded-xl object-cover border border-gray-200 hidden bg-white shadow-sm shrink-0" alt="DP">
+                            <select id="budget-transfer-to" class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all" onchange="if(typeof window.updateTransferFormDP === 'function') window.updateTransferFormDP()">
+                                <option value="">Select a student...</option>
+                            </select>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Payment Method</label>
@@ -20860,7 +20948,6 @@ YOUR DIRECTIVES:
                 <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                     <div class="flex flex-wrap gap-2 mb-3">
                         <button onclick="window.filterTrackTime('this_week')" id="track-time-this_week" class="track-time-btn bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm">This Week</button>
-                        <button onclick="window.filterTrackTime('past_week')" id="track-time-past_week" class="track-time-btn bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200">Past Week</button>
                         <button onclick="window.filterTrackTime('lifetime')" id="track-time-lifetime" class="track-time-btn bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200">Lifetime</button>
                         <button onclick="window.filterTrackTime('custom')" id="track-time-custom" class="track-time-btn bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-gray-200">Custom</button>
                     </div>
@@ -20884,10 +20971,18 @@ YOUR DIRECTIVES:
                 </div>
 
                 <!-- Pie Chart Section -->
-                <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
-                    <h3 class="font-bold text-gray-900 text-sm mb-3 self-start w-full">Expense Categories</h3>
-                    <div class="relative w-48 h-48 sm:w-56 sm:h-56">
-                        <canvas id="budgetPieChart"></canvas>
+                <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                    <div class="bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+                        <h3 class="font-bold text-red-600 text-[11px] sm:text-sm mb-2 self-start w-full uppercase tracking-wider">Expense</h3>
+                        <div class="relative w-full aspect-square max-w-[12rem] mx-auto">
+                            <canvas id="budgetPieChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+                        <h3 class="font-bold text-green-600 text-[11px] sm:text-sm mb-2 self-start w-full uppercase tracking-wider">Income</h3>
+                        <div class="relative w-full aspect-square max-w-[12rem] mx-auto">
+                            <canvas id="budgetIncomePieChart"></canvas>
+                        </div>
                     </div>
                 </div>
 
