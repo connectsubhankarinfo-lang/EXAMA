@@ -14620,7 +14620,6 @@ ${textContent ? `
                             document.getElementById('ap-budget-income').innerText = '₹' + totalIncome.toLocaleString('en-IN');
                             document.getElementById('ap-budget-expense').innerText = '₹' + totalExpense.toLocaleString('en-IN');
                         }
-                        }
                     } catch(e) { console.error("Budget sync err", e); }
                 }
 
@@ -20240,20 +20239,40 @@ YOUR DIRECTIVES:
 
                 let income = 0;
                 let expense = 0;
+                let weeklyIncome = 0;
+                let weeklyExpense = 0;
+                const weekAgo = Date.now() - 604800000;
                 let html = '';
 
                 let filtered = [...window.budgetsDB].sort((a, b) => b.timestamp - a.timestamp);
 
                 filtered.forEach(tx => {
-                    if (tx.type === 'income') income += Number(tx.amount);
-                    if (tx.type === 'expense' || tx.type === 'transfer') expense += Number(tx.amount);
+                    const amt = Number(tx.amount);
+                    if (tx.type === 'income') {
+                        income += amt;
+                        if (tx.timestamp >= weekAgo) weeklyIncome += amt;
+                    }
+                    if (tx.type === 'expense' || tx.type === 'transfer') {
+                        expense += amt;
+                        if (tx.timestamp >= weekAgo) weeklyExpense += amt;
+                    }
                 });
 
                 const balance = income - expense;
-                totalBalEl.innerHTML = '&#8377;' + balance;
-                totalBalEl.className = `text-3xl font-black mb-4 ${balance >= 0 ? 'text-gray-900' : 'text-red-600'}`;
-                totalIncEl.innerHTML = '&#8377;' + income;
-                totalExpEl.innerHTML = '&#8377;' + expense;
+                const weeklyBalance = weeklyIncome - weeklyExpense;
+                totalBalEl.innerHTML = '&#8377;' + weeklyBalance.toLocaleString('en-IN');
+                totalBalEl.className = `text-3xl font-black ${weeklyBalance >= 0 ? 'text-gray-900' : 'text-red-600'}`;
+                
+                const lifetimeBalEl = document.getElementById('budget-lifetime-balance');
+                if (lifetimeBalEl) lifetimeBalEl.innerHTML = '&#8377;' + balance.toLocaleString('en-IN');
+
+                totalIncEl.innerHTML = '&#8377;' + weeklyIncome.toLocaleString('en-IN');
+                totalExpEl.innerHTML = '&#8377;' + weeklyExpense.toLocaleString('en-IN');
+                
+                const wIncEl = document.getElementById('budget-lifetime-income');
+                const wExpEl = document.getElementById('budget-lifetime-expense');
+                if (wIncEl) wIncEl.innerHTML = '&#8377;' + income.toLocaleString('en-IN');
+                if (wExpEl) wExpEl.innerHTML = '&#8377;' + expense.toLocaleString('en-IN');
 
                 if (window.currentBudgetFilter !== 'all') {
                     filtered = filtered.filter(tx => tx.type === window.currentBudgetFilter);
@@ -20278,9 +20297,18 @@ YOUR DIRECTIVES:
                             const receiver = (window.studentsDB || []).find(s => s.mobile === tx.transferTo);
                             const dpSrc = window.getStudentAvatar ? window.getStudentAvatar(tx.transferTo, receiver?.name || 'Student') : '';
                             avatarHtml = `<img src="${dpSrc}" class="w-11 h-11 rounded-2xl object-cover border-[3px] border-red-100 shadow-sm shrink-0" alt="DP">`;
-                        } else if (tx.type === 'income' && tx.category === 'Transfer' && tx.transferFrom) {
-                            const sender = (window.studentsDB || []).find(s => s.mobile === tx.transferFrom);
-                            const dpSrc = window.getStudentAvatar ? window.getStudentAvatar(tx.transferFrom, sender?.name || 'Student') : '';
+                        } else if (tx.type === 'income' && tx.category === 'Transfer') {
+                            let senderMobile = tx.transferFrom;
+                            let senderName = 'Student';
+                            if (!senderMobile && tx.title && tx.title.startsWith("Transfer from ")) {
+                                senderName = tx.title.replace("Transfer from ", "").trim();
+                                const senderObj = (window.studentsDB || []).find(s => s.name === senderName);
+                                if (senderObj) senderMobile = senderObj.mobile;
+                            } else if (senderMobile) {
+                                const senderObj = (window.studentsDB || []).find(s => s.mobile === senderMobile);
+                                if (senderObj) senderName = senderObj.name;
+                            }
+                            const dpSrc = window.getStudentAvatar ? window.getStudentAvatar(senderMobile, senderName) : '';
                             avatarHtml = `<img src="${dpSrc}" class="w-11 h-11 rounded-2xl object-cover border-[3px] border-green-100 shadow-sm shrink-0" alt="DP">`;
                         }
                         
@@ -20321,15 +20349,31 @@ YOUR DIRECTIVES:
                 const type = document.querySelector('input[name="budget-type"]:checked').value;
                 const catContainer = document.getElementById('budget-category-container');
                 const transferContainer = document.getElementById('budget-transfer-container');
+                const catSelect = document.getElementById('budget-category');
+
                 if (type === 'expense') {
                     catContainer.classList.remove('hidden');
                     transferContainer.classList.add('hidden');
+                    catSelect.innerHTML = `
+                        <option value="Educational">Educational</option>
+                        <option value="Vegetable">Vegetable</option>
+                        <option value="Grocery">Grocery</option>
+                        <option value="Meat">Meat</option>
+                        <option value="Food">Food</option>
+                        <option value="Other">Other</option>
+                    `;
+                } else if (type === 'income') {
+                    catContainer.classList.remove('hidden');
+                    transferContainer.classList.add('hidden');
+                    catSelect.innerHTML = `
+                        <option value="Home">Home</option>
+                        <option value="Scholarship">Scholarship</option>
+                        <option value="Tuition">Tuition</option>
+                        <option value="Other">Other</option>
+                    `;
                 } else if (type === 'transfer') {
                     catContainer.classList.add('hidden');
                     transferContainer.classList.remove('hidden');
-                } else {
-                    catContainer.classList.add('hidden');
-                    transferContainer.classList.add('hidden');
                 }
             };
 
@@ -20372,7 +20416,7 @@ YOUR DIRECTIVES:
 
                 let category = null;
                 let transferTo = null;
-                if (type === 'expense') {
+                if (type === 'expense' || type === 'income') {
                     category = document.getElementById('budget-category').value;
                 } else if (type === 'transfer') {
                     transferTo = document.getElementById('budget-transfer-to').value;
@@ -20415,6 +20459,7 @@ YOUR DIRECTIVES:
                                 type: 'income',
                                 method: method,
                                 category: 'Transfer',
+                                transferFrom: window.loggedInMobile,
                                 timestamp: Date.now()
                             });
                         }
@@ -20444,6 +20489,40 @@ YOUR DIRECTIVES:
                 } finally {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i> Save Transaction';
                     btn.disabled = false;
+                }
+            };
+
+            window.resetStudentBudget = async function() {
+                if (window.showCustomConfirm) {
+                    const confirm = await window.showCustomConfirm(
+                        'Reset Budget?',
+                        'Are you sure you want to permanently delete ALL budget transactions for this student?',
+                        'Yes, Reset',
+                        'Cancel',
+                        'error'
+                    );
+                    if (!confirm) return;
+                } else {
+                    if (!confirm("Are you sure you want to permanently delete ALL budget transactions?")) return;
+                }
+
+                try {
+                    if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.loggedInMobile) {
+                        const txs = [...window.budgetsDB];
+                        for (let tx of txs) {
+                            if (tx.id) {
+                                await deleteDoc(doc(db, "students", window.loggedInMobile, "budget", tx.id));
+                            }
+                        }
+                        if (window.showToast) window.showToast('Budget data reset successfully!', 'success');
+                    } else {
+                        window.budgetsDB = [];
+                        if (window.showToast) window.showToast('Local budget data reset successfully!', 'success');
+                    }
+                    if (window.renderBudgetDashboard) window.renderBudgetDashboard();
+                } catch (e) {
+                    console.error("Reset error:", e);
+                    if (window.showToast) window.showToast('Error resetting budget data', 'error');
                 }
             };
 
@@ -20602,9 +20681,18 @@ YOUR DIRECTIVES:
                             const receiver = (window.studentsDB || []).find(s => s.mobile === tx.transferTo);
                             const dpSrc = window.getStudentAvatar ? window.getStudentAvatar(tx.transferTo, receiver?.name || 'Student') : '';
                             avatarHtml = `<img src="${dpSrc}" class="w-10 h-10 rounded-full object-cover border-[3px] border-red-100 shadow-sm shrink-0" alt="DP">`;
-                        } else if (tx.type === 'income' && tx.category === 'Transfer' && tx.transferFrom) {
-                            const sender = (window.studentsDB || []).find(s => s.mobile === tx.transferFrom);
-                            const dpSrc = window.getStudentAvatar ? window.getStudentAvatar(tx.transferFrom, sender?.name || 'Student') : '';
+                        } else if (tx.type === 'income' && tx.category === 'Transfer') {
+                            let senderMobile = tx.transferFrom;
+                            let senderName = 'Student';
+                            if (!senderMobile && tx.title && tx.title.startsWith("Transfer from ")) {
+                                senderName = tx.title.replace("Transfer from ", "").trim();
+                                const senderObj = (window.studentsDB || []).find(s => s.name === senderName);
+                                if (senderObj) senderMobile = senderObj.mobile;
+                            } else if (senderMobile) {
+                                const senderObj = (window.studentsDB || []).find(s => s.mobile === senderMobile);
+                                if (senderObj) senderName = senderObj.name;
+                            }
+                            const dpSrc = window.getStudentAvatar ? window.getStudentAvatar(senderMobile, senderName) : '';
                             avatarHtml = `<img src="${dpSrc}" class="w-10 h-10 rounded-full object-cover border-[3px] border-green-100 shadow-sm shrink-0" alt="DP">`;
                         }
                         
@@ -20795,6 +20883,9 @@ YOUR DIRECTIVES:
                     <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 truncate"><i class="fa-solid fa-wallet"></i> Budget Manager</h2>
                     <p class="text-[10px] sm:text-xs font-bold text-green-100 uppercase tracking-widest mt-0.5">Manage Your Finances</p>
                 </div>
+                <button onclick="window.resetStudentBudget()" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-red-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-600">
+                    <i class="fa-solid fa-rotate-left text-sm sm:text-base"></i>
+                </button>
             </div>
 
             <div class="flex-1 overflow-y-auto p-4 sm:p-5 relative z-0 pb-24">
@@ -20809,15 +20900,26 @@ YOUR DIRECTIVES:
                                 <i class="fa-solid fa-chart-pie"></i> Track
                             </button>
                         </div>
-                        <div class="text-3xl font-black text-gray-900 mb-4" id="budget-total-balance">₹0</div>
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="text-3xl font-black text-gray-900" id="budget-total-balance">₹0</div>
+                            <span class="text-[10px] text-gray-400 font-bold tracking-wider bg-white/50 px-2 py-1 rounded border border-gray-100 shadow-sm flex items-center gap-1"><i class="fa-solid fa-infinity"></i> Lifetime: <span id="budget-lifetime-balance" class="font-black text-gray-600 ml-0.5">₹0</span></span>
+                        </div>
                         <div class="grid grid-cols-2 gap-3">
                             <div class="bg-green-50 rounded-xl p-3 border border-green-100 shadow-sm">
-                                <p class="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-up"></i> Income</p>
-                                <p class="text-lg font-black text-green-700" id="budget-total-income">₹0</p>
+                                <p class="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-down"></i> Wkly Income</p>
+                                <p class="text-lg font-black text-green-700 leading-none mb-1.5" id="budget-total-income">₹0</p>
+                                <div class="border-t border-green-200/50 mt-1.5 pt-1.5 flex justify-between items-center">
+                                    <span class="text-[9px] font-bold text-green-600/80 uppercase">Lifetime</span>
+                                    <span class="text-[11px] font-black text-green-700" id="budget-lifetime-income">₹0</span>
+                                </div>
                             </div>
                             <div class="bg-red-50 rounded-xl p-3 border border-red-100 shadow-sm">
-                                <p class="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-down"></i> Expenses</p>
-                                <p class="text-lg font-black text-red-700" id="budget-total-expense">₹0</p>
+                                <p class="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-up"></i> Wkly Exp.</p>
+                                <p class="text-lg font-black text-red-700 leading-none mb-1.5" id="budget-total-expense">₹0</p>
+                                <div class="border-t border-red-200/50 mt-1.5 pt-1.5 flex justify-between items-center">
+                                    <span class="text-[9px] font-bold text-red-600/80 uppercase">Lifetime</span>
+                                    <span class="text-[11px] font-black text-red-700" id="budget-lifetime-expense">₹0</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -20876,15 +20978,10 @@ YOUR DIRECTIVES:
                         <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Title / Note</label>
                         <input type="text" id="budget-title" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-all" placeholder="E.g., Groceries, Pocket Money">
                     </div>
-                    <div id="budget-category-container">
+                    <div id="budget-category-container" class="hidden">
                         <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Category</label>
                         <select id="budget-category" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-all">
-                            <option value="Educational">Educational</option>
-                            <option value="Vegetable">Vegetable</option>
-                            <option value="Grocery">Grocery</option>
-                            <option value="Meat">Meat</option>
-                            <option value="Food">Food</option>
-                            <option value="Other">Other</option>
+                            <!-- Populated dynamically via JS -->
                         </select>
                     </div>
                     <div id="budget-transfer-container" class="hidden">
