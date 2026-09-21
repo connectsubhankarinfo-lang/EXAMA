@@ -2,9 +2,317 @@
 <html lang="en">
 
 <head>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
     <!-- SortableJS for Drag and Drop -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&family=Space+Grotesk:wght@700&display=swap"
         rel="stylesheet">
     <meta charset="UTF-8">
@@ -17,16 +325,786 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
     <!-- PDF.js Engine -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
     <!-- LocalForage for Offline Storage -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
 
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
     <!-- HTML2PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts -->
@@ -36,14 +1114,630 @@
         rel="stylesheet">
 
     <!-- Google Drive API / OAuth2 SDK -->
-    <script src="https://apis.google.com/js/api.js"></script>
-    <script src="https://accounts.google.com/gsi/client"></script>
+    <script src="https://apis.google.com/js/api.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
+    <script src="https://accounts.google.com/gsi/client">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
 
     <!-- Video.js Core -->
     <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet" />
-    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <script src="https://vjs.zencdn.net/8.6.1/video.min.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
     <!-- Video.js YouTube Plugin -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-youtube/3.0.1/Youtube.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-youtube/3.0.1/Youtube.min.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
 
     <style>
         /* Custom Video.js Exama Theme Override */
@@ -70,7 +1764,161 @@
     </style>
 
     <!-- OneSignal Push Notifications SDK -->
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer>
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
     <script>
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function (OneSignal) {
@@ -80,10 +1928,318 @@
                 console.warn("OneSignal skipped: Not on production domain.");
             }
         });
-    </script>
+    
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
 
     <!-- 8x8 Jitsi API Integration -->
-    <script src="https://8x8.vc/vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/external_api.js"></script>
+    <script src="https://8x8.vc/vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/external_api.js">
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
+        </script>
+
 
     <meta name="theme-color" content="#4f46e5">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -945,7 +3101,7 @@
             class="fixed right-0 top-0 bottom-0 w-[86%] max-w-[340px] bg-white/85 backdrop-blur-2xl z-[9999] transform translate-x-full transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shadow-[-20px_0_50px_rgba(15,23,42,0.08)] flex flex-col rounded-l-[2rem] border-l border-white/80 overflow-hidden select-none">
 
             <!-- Top Bar -->
-            <div class="px-5 pt-6 pb-4 flex items-center justify-between border-b border-slate-200/50 bg-white/40">
+            <div class="px-5 pt-6 md:pt-10 pb-4 flex items-center justify-between border-b border-slate-200/50 bg-white/40">
                 <span class="text-[11px] font-extrabold uppercase tracking-[0.2em] text-slate-400">Settings</span>
                 <button onclick="closeSettingsMenu()"
                     class="w-8 h-8 rounded-full bg-slate-200/50 hover:bg-slate-200 text-slate-600 flex items-center justify-center active:scale-90 transition-all text-xs"
@@ -2021,7 +4177,7 @@
 
             <!-- COMPACT FLOATING HEADER WITH FIXED TOP CORNER BRANDING -->
             <div
-                class="glass-nav text-white p-5 sm:px-6 md:p-5 md:px-6 md:mx-5 md:mt-5 rounded-b-[2rem] md:rounded-[1.5rem] shadow-xl shadow-indigo-900/10 relative z-20 shrink-0 transition-all">
+                class="glass-nav text-white p-5 sm:px-6 md:py-3 md:px-5 md:mx-3 md:mt-3 rounded-b-[2rem] md:rounded-[1.5rem] shadow-xl shadow-indigo-900/10 relative z-20 shrink-0 transition-all">
                 <!-- Main Flex Row -->
                 <div class="flex flex-col lg:flex-row justify-between w-full gap-4 lg:gap-6 relative z-10">
                     <!-- LEFT SIDE: Corner Branding + DP + Name -->
@@ -12174,12 +14330,45 @@ ${textContent ? `
             // ==========================================
             window.toggleTestMode = async function () {
                 const newStatus = !window.isGlobalTestMode;
+                const toggle = document.getElementById('test-mode-toggle');
+                
+                // Instantly animate the UI for a smooth iOS feel BEFORE the prompt
+                if (toggle) {
+                    if (newStatus) {
+                        toggle.classList.remove('bg-slate-300');
+                        toggle.classList.add('bg-amber-500');
+                        toggle.querySelector('span').classList.add('translate-x-[20px]');
+                    } else {
+                        toggle.classList.remove('bg-amber-500');
+                        toggle.classList.add('bg-slate-300');
+                        toggle.querySelector('span').classList.remove('translate-x-[20px]');
+                    }
+                }
+
                 if (newStatus) {
                     const confirmStart = await window.showCustomConfirm("Start Test Mode?", "Are you sure you want to enter the Sandbox? The app will be completely isolated from production data.", "Enter Sandbox", "Cancel", "info");
-                    if (!confirmStart) return;
+                    if (!confirmStart) {
+                        // Revert UI if cancelled
+                        if (toggle) {
+                            toggle.classList.remove('bg-amber-500');
+                            toggle.classList.add('bg-slate-300');
+                            toggle.querySelector('span').classList.remove('translate-x-[20px]');
+                        }
+                        return;
+                    }
+                    if (typeof window.closeSettingsMenu === 'function') window.closeSettingsMenu();
                 } else {
                     const confirmEnd = await window.showCustomConfirm("End Test Mode?", "Are you sure you want to turn OFF Test Mode? This will permanently delete all sandbox data.", "Delete & Exit", "Cancel", "warning");
-                    if (!confirmEnd) return;
+                    if (!confirmEnd) {
+                        // Revert UI if cancelled
+                        if (toggle) {
+                            toggle.classList.remove('bg-slate-300');
+                            toggle.classList.add('bg-amber-500');
+                            toggle.querySelector('span').classList.add('translate-x-[20px]');
+                        }
+                        return;
+                    }
+                    if (typeof window.closeSettingsMenu === 'function') window.closeSettingsMenu();
                     window.showLoader("Cleaning up Sandbox...");
                     try {
                         // Cleanup logic
@@ -20937,7 +23126,161 @@ YOUR DIRECTIVES:
                 };
                 html2pdf().set(opt).from(element).save();
             };
+        
+            // ==========================================
+            // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
+            // ==========================================
+            window.activeNativeSelect = null;
+            window.selectedCustomValue = null;
+
+            window.initCustomSelects = function() {
+                const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
+                selects.forEach(select => {
+                    select.classList.add('custom-select-initialized');
+                    select.style.display = 'none';
+                    
+                    const proxyBtn = document.createElement('button');
+                    proxyBtn.type = 'button';
+                    // Copy existing classes and force it to look like a solid box
+                    let baseClass = select.className.replace('hidden', '');
+                    if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
+                    if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
+                    if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
+                    
+                    proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
+                    
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
+                    
+                    const iconSpan = document.createElement('span');
+                    iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
+                    
+                    proxyBtn.appendChild(labelSpan);
+                    proxyBtn.appendChild(iconSpan);
+                    
+                    const syncLabel = () => {
+                        const selectedOpt = select.options[select.selectedIndex];
+                        if (selectedOpt) {
+                            labelSpan.innerText = selectedOpt.text;
+                            // Add placeholder style if it's disabled or empty value
+                            if (selectedOpt.disabled || !selectedOpt.value) {
+                                labelSpan.classList.add('text-gray-400');
+                            } else {
+                                labelSpan.classList.remove('text-gray-400');
+                            }
+                        } else {
+                            labelSpan.innerText = "Select...";
+                        }
+                    };
+                    
+                    syncLabel();
+                    select.addEventListener('change', syncLabel);
+                    
+                    select.parentNode.insertBefore(proxyBtn, select);
+                    
+                    proxyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.openCustomSelect(select);
+                    });
+                });
+            };
+
+            window.openCustomSelect = function(nativeSelectElement) {
+                window.activeNativeSelect = nativeSelectElement;
+                window.selectedCustomValue = nativeSelectElement.value;
+                
+                let title = "Select Option";
+                if (nativeSelectElement.id) {
+                    title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
+                }
+                document.getElementById('ios-select-title').innerText = title || "Select";
+                
+                const optionsContainer = document.getElementById('ios-select-options');
+                optionsContainer.innerHTML = '';
+                
+                Array.from(nativeSelectElement.options).forEach((opt, index) => {
+                    if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
+                    
+                    const btn = document.createElement('button');
+                    btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
+                    btn.style.width = 'calc(100% - 32px)';
+                    
+                    const textSpan = document.createElement('span');
+                    textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
+                    textSpan.innerText = opt.text;
+                    
+                    const checkSpan = document.createElement('span');
+                    checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
+                    checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    
+                    btn.appendChild(textSpan);
+                    btn.appendChild(checkSpan);
+                    
+                    btn.onclick = () => {
+                        Array.from(optionsContainer.children).forEach(c => {
+                            c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
+                            c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
+                        });
+                        checkSpan.classList.replace('opacity-0', 'opacity-100');
+                        textSpan.classList.replace('font-medium', 'font-bold');
+                        
+                        window.selectedCustomValue = opt.value;
+                        
+                        setTimeout(() => {
+                            window.confirmCustomSelect();
+                        }, 150);
+                    };
+                    
+                    optionsContainer.appendChild(btn);
+                });
+                
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                // Check active element and blur to close keyboard
+                if(document.activeElement) document.activeElement.blur();
+                
+                overlay.classList.remove('hidden');
+                void overlay.offsetWidth;
+                overlay.classList.remove('opacity-0');
+                overlay.classList.add('opacity-100');
+                
+                sheet.classList.remove('translate-y-full');
+            };
+
+            window.closeCustomSelect = function() {
+                const overlay = document.getElementById('ios-select-overlay');
+                const sheet = document.getElementById('ios-select-sheet');
+                
+                sheet.classList.add('translate-y-full');
+                overlay.classList.remove('opacity-100');
+                overlay.classList.add('opacity-0');
+                
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    window.activeNativeSelect = null;
+                }, 300);
+            };
+
+            window.confirmCustomSelect = function() {
+                if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
+                    window.activeNativeSelect.value = window.selectedCustomValue;
+                    window.activeNativeSelect.dispatchEvent(new Event('change'));
+                }
+                window.closeCustomSelect();
+            };
+
+            // Auto-initialize periodically to catch modals opening and dynamic content
+            setInterval(() => {
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            }, 1000);
+            
+            // Run initially
+            setTimeout(() => window.initCustomSelects(), 500);
+
         </script>
+
     <!-- Report Timeframe Modal -->
     <div id="report-timeframe-modal" class="fixed inset-0 z-[100] hidden items-end sm:items-center justify-center p-0 sm:p-4 transition-all duration-300">
         <div class="absolute inset-0 bg-gray-900/40 backdrop-blur-sm transition-opacity" onclick="document.getElementById('report-timeframe-modal').classList.add('hidden'); document.getElementById('report-timeframe-modal').classList.remove('flex')"></div>
@@ -21255,6 +23598,20 @@ YOUR DIRECTIVES:
                 </button>
             </div>
         </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- CUSTOM iOS BOTTOM SHEET SELECT -->
+    <!-- ========================================== -->
+    <div id="ios-select-overlay" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[99999] hidden opacity-0 transition-opacity duration-300" onclick="window.closeCustomSelect()"></div>
+    <div id="ios-select-sheet" class="fixed bottom-0 left-0 right-0 max-h-[85vh] bg-slate-100 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-[100000] transform translate-y-full transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col pointer-events-auto select-none">
+        <div class="px-5 py-4 border-b border-slate-200/80 bg-white/80 backdrop-blur-md rounded-t-3xl flex justify-between items-center shrink-0">
+            <button onclick="window.closeCustomSelect()" class="text-indigo-600 font-semibold text-[15px] active:opacity-60 px-2 py-1 -ml-2 rounded-lg">Cancel</button>
+            <h3 id="ios-select-title" class="text-slate-900 font-bold text-[16px] truncate max-w-[50%] text-center">Select Option</h3>
+            <button onclick="window.confirmCustomSelect()" class="text-indigo-600 font-bold text-[15px] active:opacity-60 px-2 py-1 -mr-2 rounded-lg">Done</button>
+        </div>
+        <div class="overflow-y-auto no-scrollbar flex-1 bg-slate-100" id="ios-select-options"></div>
+        <div class="pb-8 bg-slate-100"></div>
     </div>
 </body>
 
