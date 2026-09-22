@@ -13888,7 +13888,8 @@ if (isFirebaseConfigured) {
 // 13. CHAT (View Specific - Only renders if looking at Chat)
                     let firstChat = true;
                     await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(query(collection(db, window.getCollectionName("chat")), orderBy("timestamp", "desc"), limit(50)), (snapshot) => {
+                    const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
+                    onSnapshot(query(collection(db, window.getCollectionName("chat")), where("timestamp", ">=", threeDaysAgo), orderBy("timestamp", "desc")), (snapshot) => {
                         const oldLen = window.chatDB.length;
                         window.chatDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
 
@@ -13998,7 +13999,17 @@ if (isFirebaseConfigured) {
                 }
 
                 // 3. Apply Apple-like Smooth Transition
-                const targetEl = document.getElementById(targetViewId);
+                
+                if (targetViewId === 'budget-manager-view' || targetViewId === 'budget-track-view') { if(window.setupBudgetListener) window.setupBudgetListener(); }
+                if (targetViewId === 'syllabus-view') { if(window.setupSyllabusListener) window.setupSyllabusListener(); }
+                if (targetViewId === 'fitness-view') { if(window.setupFitnessListener) window.setupFitnessListener(); }
+                if (targetViewId === 'weekly-targets-view') { if(window.setupTasksListener) window.setupTasksListener(); }
+                if (targetViewId === 'session-timer-view') { if(window.setupSessionsListener) window.setupSessionsListener(); }
+                if (targetViewId === 'notice-board-view') { if(window.setupNoticesListener) window.setupNoticesListener(); }
+                if (targetViewId === 'video-hub-view' || targetViewId === 'video-watch-view') { if(window.loadVideosData) window.loadVideosData(); }
+                if (targetViewId === 'materials-view') { if(window.loadMaterialsData) window.loadMaterialsData(); }
+
+const targetEl = document.getElementById(targetViewId);
                 if (targetEl) {
                     targetEl.classList.remove('hidden-view');
                     void targetEl.offsetWidth; // Force reflow to restart animation flawlessly
@@ -14530,7 +14541,102 @@ if (isFirebaseConfigured) {
                 badges.forEach(b => { if (unreadCount > 0) { b.innerText = unreadCount; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } });
             }
 
-            async function fetchInitialData() {
+            
+            window.isSyllabusLoaded = false;
+            window.setupSyllabusListener = async function() {
+                if (window.isSyllabusLoaded || !isFirebaseConfigured) return;
+                window.isSyllabusLoaded = true;
+                // 5. SYLLABUS TOPICS (View Specific + Dashboard Stats)
+                    let firstSyl = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(collection(db, window.getCollectionName("syllabus_topics")), (snapshot) => {
+                        window.syllabusTopicsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstSyl || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstSyl = false;
+                            if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
+                            debouncedRefreshUI();
+                        }
+                    });
+
+                    
+                // 6. SYLLABUS PROGRESS (View Specific + Dashboard Stats)
+                    let firstSylProg = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(collection(db, window.getCollectionName("student_syllabus_progress")), (snapshot) => {
+                        window.studentSyllabusProgressDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstSylProg || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstSylProg = false;
+                            if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
+                            debouncedRefreshUI();
+                        }
+                    });
+
+                    
+            };
+
+            window.isFitnessLoaded = false;
+            window.setupFitnessListener = async function() {
+                if (window.isFitnessLoaded || !isFirebaseConfigured) return;
+                window.isFitnessLoaded = true;
+                // 9. FITNESS LOGS (Core Data - Needed for Leaderboard & Dashboard)
+                    let firstFit = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(query(collection(db, window.getCollectionName("fitness_logs")), orderBy("timestamp", "desc"), limit(200)), (snapshot) => {
+                        window.fitnessDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstFit || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstFit = false;
+                            debouncedRefreshUI();
+                        }
+                    });
+
+                    
+            };
+
+            window.isTasksLoaded = false;
+            window.setupTasksListener = async function() {
+                if (window.isTasksLoaded || !isFirebaseConfigured) return;
+                window.isTasksLoaded = true;
+                // 10. WEEKLY TASKS (Core Data)
+                    let firstWk = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(collection(db, window.getCollectionName("weekly_tasks")), (snapshot) => {
+                        window.weeklyTasksDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstWk || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstWk = false;
+                            debouncedRefreshUI();
+                        }
+                    });
+
+                    
+                // 11. STUDENT TASKS (Core Data)
+                    let firstStuTask = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(collection(db, window.getCollectionName("student_tasks")), (snapshot) => {
+                        window.studentTasksDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstStuTask || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstStuTask = false;
+                            debouncedRefreshUI();
+                        }
+                    });
+
+                    
+            };
+
+            window.isSessionsLoaded = false;
+            window.setupSessionsListener = async function() {
+                if (window.isSessionsLoaded || !isFirebaseConfigured) return;
+                window.isSessionsLoaded = true;
+                
+            };
+
+            window.isNoticesLoaded = false;
+            window.setupNoticesListener = async function() {
+                if (window.isNoticesLoaded || !isFirebaseConfigured) return;
+                window.isNoticesLoaded = true;
+                
+            };
+
+async function fetchInitialData() {
                 if (isFirebaseConfigured) {
 
                     
@@ -14612,30 +14718,6 @@ if (isFirebaseConfigured) {
                         allMaterials.forEach(async (m) => { if (m.expiresAt <= now) await deleteDoc(doc(db, window.getCollectionName("peer_exams"), m.id)); });
                     });
 
-                    // 5. SYLLABUS TOPICS (View Specific + Dashboard Stats)
-                    let firstSyl = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("syllabus_topics")), (snapshot) => {
-                        window.syllabusTopicsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstSyl || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstSyl = false;
-                            if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
-                            debouncedRefreshUI();
-                        }
-                    });
-
-                    // 6. SYLLABUS PROGRESS (View Specific + Dashboard Stats)
-                    let firstSylProg = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("student_syllabus_progress")), (snapshot) => {
-                        window.studentSyllabusProgressDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstSylProg || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstSylProg = false;
-                            if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
-                            debouncedRefreshUI();
-                        }
-                    });
-
                     // 7. PEER SCRIPTS (Core Data)
                     let firstPeerScripts = true;
                     await new Promise(r => requestAnimationFrame(r));
@@ -14648,39 +14730,6 @@ if (isFirebaseConfigured) {
                     });
 
                     
-                    // 9. FITNESS LOGS (Core Data - Needed for Leaderboard & Dashboard)
-                    let firstFit = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(query(collection(db, window.getCollectionName("fitness_logs")), orderBy("timestamp", "desc"), limit(200)), (snapshot) => {
-                        window.fitnessDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstFit || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstFit = false;
-                            debouncedRefreshUI();
-                        }
-                    });
-
-                    // 10. WEEKLY TASKS (Core Data)
-                    let firstWk = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("weekly_tasks")), (snapshot) => {
-                        window.weeklyTasksDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstWk || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstWk = false;
-                            debouncedRefreshUI();
-                        }
-                    });
-
-                    // 11. STUDENT TASKS (Core Data)
-                    let firstStuTask = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("student_tasks")), (snapshot) => {
-                        window.studentTasksDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstStuTask || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstStuTask = false;
-                            debouncedRefreshUI();
-                        }
-                    });
-
                     // 12. SESSIONS (Core Data)
                     let firstSes = true;
                     await new Promise(r => requestAnimationFrame(r));
