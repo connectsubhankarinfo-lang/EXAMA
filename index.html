@@ -13347,7 +13347,33 @@ ${textContent ? `
                     existing.lastToggleTime = now; if (!existing.logs) existing.logs = []; existing.logs.push({ action: action, time: now });
                 }
 
-                if (isFirebaseConfigured) await setDoc(doc(db, window.getCollectionName("sessions"), id), existing); else { window.sessionsDB = window.sessionsDB.filter(s => s.id !== id); window.sessionsDB.push(existing); }
+                
+if (isFirebaseConfigured) {
+    try {
+        const docRef = doc(db, window.getCollectionName("sessions"), id);
+        const syncPromise = setDoc(docRef, existing);
+        syncPromise.catch(e => console.warn("Firebase background sync warning:", e.message));
+
+        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('timeout'), 3000));
+        const result = await Promise.race([syncPromise, timeoutPromise]);
+        
+        if (result === 'timeout') {
+            window.showToast("Bad Internet", "Session saved locally. Will sync online automatically when connection improves.", "info");
+        }
+        
+        window.sessionsDB = window.sessionsDB.filter(s => s.id !== id);
+        window.sessionsDB.push(existing);
+    } catch (e) {
+        window.showToast("Sync Warning", "Session saved locally. Will sync automatically.", "info");
+        console.error("Firebase setDoc Error:", e);
+        window.sessionsDB = window.sessionsDB.filter(s => s.id !== id);
+        window.sessionsDB.push(existing);
+    }
+} else { 
+    window.sessionsDB = window.sessionsDB.filter(s => s.id !== id); 
+    window.sessionsDB.push(existing); 
+}
+
 
                 const timeString = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); const sessionShortName = sessionType.split(' ')[0];
                 if (action === 'START') sendOneSignalPush("Focus Session Started 🚀", `${existing.name} started their ${sessionShortName} at ${timeString}.`);
@@ -17751,6 +17777,33 @@ window.onload = async function () {
             // 👨‍🎓 ADMIN: CREATE NEW STUDENT SECURELY
             // ==========================================
             // Overwrite your existing submitStudent function
+            
+            // INFINITE SCROLL LISTENERS FOR BUDGET
+            setTimeout(() => {
+                const dashContent = document.getElementById('budget-content');
+                if (dashContent) {
+                    dashContent.addEventListener('scroll', function() {
+                        if (this.scrollTop + this.clientHeight >= this.scrollHeight - 50) {
+                            if (window.budgetDashLimit < window.budgetDashTotal) {
+                                window.budgetDashLimit += 10;
+                                window.renderBudgetDashboard(true);
+                            }
+                        }
+                    });
+                }
+                const trackContent = document.getElementById('budget-track-content');
+                if (trackContent) {
+                    trackContent.addEventListener('scroll', function() {
+                        if (this.scrollTop + this.clientHeight >= this.scrollHeight - 50) {
+                            if (window.budgetTrackLimit < window.budgetTrackTotal) {
+                                window.budgetTrackLimit += 10;
+                                window.renderBudgetTrackView(true);
+                            }
+                        }
+                    });
+                }
+            }, 2000);
+
             window.submitStudent = async function () {
                 const name = document.getElementById('new-stu-name').value.trim();
                 const mob = document.getElementById('new-stu-mobile').value.trim();
@@ -22548,7 +22601,9 @@ YOUR DIRECTIVES:
             window.currentBudgetFilter = 'all'; // all, income, expense
             window.budgetListenerStarted = false;
 
-            window.renderBudgetDashboard = function () {
+            window.renderBudgetDashboard = function (isLoadMore = false) {
+                if (typeof isLoadMore !== 'boolean') isLoadMore = false;
+                if (!isLoadMore) window.budgetDashLimit = 10;
                 const listEl = document.getElementById('budget-transactions-list');
                 const totalBalEl = document.getElementById('budget-total-balance');
                 const totalIncEl = document.getElementById('budget-total-income');
@@ -22595,6 +22650,9 @@ YOUR DIRECTIVES:
                 if (window.currentBudgetFilter !== 'all') {
                     filtered = filtered.filter(tx => tx.type === window.currentBudgetFilter);
                 }
+
+                window.budgetDashTotal = filtered.length;
+                filtered = filtered.slice(0, window.budgetDashLimit);
 
                 if (filtered.length === 0) {
                     html = `<div class="text-center p-6 text-gray-400 font-bold bg-white rounded-2xl border border-gray-100 shadow-sm mt-4"><i class="fa-solid fa-receipt text-3xl mb-2 opacity-50"></i><p>No transactions found</p></div>`;
@@ -22926,7 +22984,9 @@ YOUR DIRECTIVES:
                 dpImg.classList.remove('hidden');
             };
 
-            window.renderBudgetTrackView = function() {
+            window.renderBudgetTrackView = function(isLoadMore = false) {
+                if (typeof isLoadMore !== 'boolean') isLoadMore = false;
+                if (!isLoadMore) window.budgetTrackLimit = 10;
                 const listEl = document.getElementById('budget-track-list');
                 const searchQuery = (document.getElementById('track-search').value || '').toLowerCase();
                 const sortType = document.getElementById('track-sort').value;
@@ -22975,6 +23035,9 @@ YOUR DIRECTIVES:
                 });
 
                 document.getElementById('track-tx-count').textContent = txs.length;
+
+                window.budgetTrackTotal = txs.length;
+                txs = txs.slice(0, window.budgetTrackLimit);
 
                 // Render List
                 listEl.innerHTML = '';
