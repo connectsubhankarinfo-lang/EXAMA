@@ -5447,7 +5447,62 @@
             </div>
 
             <div id="chat-messages" class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-4 chat-bg flex flex-col pb-4">
+                <!-- Default welcome message -->
+                <div id="chat-welcome-message" class="text-center text-gray-500 text-sm my-4">
+                    Welcome to Discus! Start a conversation below.
+                </div>
             </div>
+
+            <!-- LocalStorage Cache for Messages (FIX for page refresh issue) -->
+            <script>
+            // Cache chat messages locally to survive page refreshes
+            window.cachedMessages = window.cachedMessages || [];
+
+            window.saveMessageToLocal = function(message) {
+                try {
+                    const cached = JSON.parse(localStorage.getItem('discusMessages') || '[]');
+                    cached.push(message);
+                    localStorage.setItem('discusMessages', JSON.stringify(cached));
+                } catch (e) {
+                    console.error('Error saving message to localStorage:', e);
+                }
+            };
+
+            window.loadMessagesFromLocal = function() {
+                try {
+                    return JSON.parse(localStorage.getItem('discusMessages') || '[]');
+                } catch (e) {
+                    console.error('Error loading messages from localStorage:', e);
+                    return [];
+                }
+            };
+
+            // Show cached messages on page load
+            document.addEventListener('DOMContentLoaded', function() {
+                const cachedMessages = window.loadMessagesFromLocal();
+                const chatMessagesContainer = document.getElementById('chat-messages');
+                const welcomeMessage = document.getElementById('chat-welcome-message');
+
+                if (cachedMessages.length > 0 && welcomeMessage) {
+                    chatMessagesContainer.removeChild(welcomeMessage);
+
+                    const firebase = window.firebase || {};
+                    cachedMessages.forEach(function(msg) {
+                        if (typeof msg.html === 'string') {
+                            const msgDiv = document.createElement('div');
+                            msgDiv.className = 'message-bubble ' + (msg.isOwn ? 'own-message' : 'other-message');
+                            msgDiv.innerHTML = msg.html;
+                            chatMessagesContainer.appendChild(msgDiv);
+                        }
+                    });
+                }
+
+                // Auto-scroll to bottom
+                if (chatMessagesContainer) {
+                    chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                }
+            });
+            </script>
 
             <div class="w-full bg-[#efeae2] p-2 flex flex-col shrink-0 relative md:rounded-b-[2.5rem]">
 
@@ -10724,11 +10779,17 @@
                 if (!text) return;
 
                 input.value = '';
-                input.style.height = 'auto'; // <-- Reset height here
+                input.style.height = 'auto';
                 toggleSendButton();
 
                 const senderName = window.currentRole === 'student' ? window.studentsDB.find(s => s.mobile === window.loggedInMobile).name : 'EXAMA';
-                await window.dbSendChat({ text, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
+                const msgObj = { text, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null };
+
+                // FIX: Save to localStorage for page refresh persistence
+                window.saveMessageToLocal({ ...msgObj, isOwn: true });
+
+                // Send to Firebase - will update local chatDB and call renderChat() for immediate UI update
+                await window.dbSendChat(msgObj);
                 sendOneSignalPush(`New Message from ${senderName}`, text);
                 window.markChatAsRead();
                 cancelChatReply();
@@ -11148,7 +11209,7 @@
         
         <div class="flex-1 flex flex-col justify-center min-w-0">
             <!-- Interactive Waveform Progress Bar -->
-            <div class="relative h-6 w-full flex items-center cursor-pointer group/wave" onclick="window.seekChatAudio(event, '${msg.id}')" title="Click to skip">
+            <div class="relative h-6 w-full flex items-center cursor-pointer group/wave" onclick="window.seekAudioProgress(event, '${msg.id}')" title="Click to skip">
                 <!-- Background Faded Waveform Bars -->
                 <div class="absolute inset-0 flex items-center gap-1 px-0.5 pointer-events-none opacity-30">
                     <div class="h-2 w-1 bg-[#128C7E] rounded-full"></div>
@@ -13884,6 +13945,22 @@ ${textContent ? `
                         }
                     });
 
+                    // FIX: Add MutationObserver to detect when chat view becomes visible
+                    const chatView = document.getElementById('community-chat-view');
+                    if (chatView) {
+                        const chatObserver = new MutationObserver((mutations) => {
+                            mutations.forEach((mutation) => {
+                                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                                    if (!chatView.classList.contains('hidden-view')) {
+                                        // Chat view became visible - re-render messages
+                                        renderChat();
+                                        window.markChatAsRead();
+                                    }
+                                }
+                            });
+                        });
+                        chatObserver.observe(chatView, { attributes: true });
+                    }
             };
             
             window.isVideosLoaded = false;
@@ -14764,16 +14841,22 @@ ${textContent ? `
                 }
             }
             window.dbDeleteExam = async function (id) { if (isFirebaseConfigured) { await deleteDoc(doc(db, window.getCollectionName("exams"), id)); } else { window.examsDB = window.examsDB.filter(e => e.id !== id); refreshUI(); } }
-            window.dbSendChat = async function (obj) { 
-                obj.readBy = []; 
+            window.dbSendChat = async function (obj) {
+                obj.readBy = [];
                 if (isFirebaseConfigured) {
                     const chatPath = window.isGlobalTestMode ? 'test_chat' : 'chat';
                     const chatRef = ref(window.rtdb, chatPath);
                     const newRef = push(chatRef);
                     await set(newRef, obj);
-                } else { 
-                    window.chatDB.push({ id: Math.random().toString(), ...obj }); renderChat(); updateChatUnreadCount(); 
-                } 
+                    // FIX: Also update local chatDB so renderChat() shows it immediately
+                    window.chatDB.push({ id: newRef.key || Math.random().toString(), ...obj });
+                    renderChat();
+                    updateChatUnreadCount();
+                    // Cache locally for page refresh persistence
+                    window.saveMessageToLocal({ ...obj, isOwn: true });
+                } else {
+                    window.chatDB.push({ id: Math.random().toString(), ...obj }); renderChat(); updateChatUnreadCount();
+                }
             }
             window.dbUpdateChatReactions = async function (msgId, reactions) { 
                 if (isFirebaseConfigured) { 
@@ -21320,6 +21403,11 @@ window.onload = async function () {
             window.novaChatHistory = [];
 
             window.dbSaveNovaChat = async function() {
+                // FIX: Save to localStorage too for page refresh persistence
+                try {
+                    localStorage.setItem('novaChatHistory', JSON.stringify(window.novaChatHistory));
+                } catch(e) { console.error("Error saving NOVA chat to localStorage", e); }
+
                 if(isFirebaseConfigured && window.loggedInMobile) {
                     try {
                         await setDoc(doc(db, window.getCollectionName("nova_chats"), window.loggedInMobile), { history: window.novaChatHistory });
@@ -21328,6 +21416,19 @@ window.onload = async function () {
             };
 
             window.dbLoadNovaChat = async function() {
+                // FIX: Try loading from localStorage first for instant display
+                try {
+                    const localHistory = localStorage.getItem('novaChatHistory');
+                    if(localHistory) {
+                        const parsed = JSON.parse(localHistory);
+                        if(parsed.length > 0) {
+                            window.novaChatHistory = parsed;
+                            window.novaChatVisibleCount = 10;
+                            window.renderNovaChatHistory();
+                        }
+                    }
+                } catch(e) { console.error("Error loading NOVA chat from localStorage", e); }
+
                 if(isFirebaseConfigured && window.loggedInMobile) {
                     try {
                         const chatRef = await getDoc(doc(db, window.getCollectionName("nova_chats"), window.loggedInMobile));
@@ -21337,9 +21438,16 @@ window.onload = async function () {
                                 window.novaChatHistory = data.history;
                                 window.novaChatVisibleCount = 10;
                                 window.renderNovaChatHistory();
+                                // Update localStorage with fresh data from Firebase
+                                try { localStorage.setItem('novaChatHistory', JSON.stringify(data.history)); } catch(e) {}
                             }
                         }
                     } catch(e) { console.error("Error loading chat", e); }
+                }
+
+                // FIX: If nothing loaded from anywhere, show empty state
+                if(window.novaChatHistory.length === 0) {
+                    window.renderNovaChatHistory();
                 }
             };
 
@@ -21459,6 +21567,21 @@ window.onload = async function () {
             window.appendNovaMessage = function (role, text, isLoaded=false) {
                 const chatBox = document.getElementById('nova-chat-messages');
                 if (!chatBox) return;
+
+                // FIX: Cache to localStorage for page refresh
+                try {
+                    let localHistory = [];
+                    const saved = localStorage.getItem('novaChatHistory');
+                    if(saved) {
+                        localHistory = JSON.parse(saved);
+                    }
+                    // Check if message already exists (avoid duplicates during load)
+                    const exists = localHistory.some(m => m.role === role && m.parts[0].text === text);
+                    if(!exists) {
+                        localHistory.push({ role: role, parts: [{ text: text }] });
+                        localStorage.setItem('novaChatHistory', JSON.stringify(localHistory));
+                    }
+                } catch(e) { console.error("Error caching NOVA message:", e); }
 
                 const wrapper = document.createElement('div');
                 const isMe = role === 'user';
