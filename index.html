@@ -2539,6 +2539,7 @@
             pointer-events: auto;
         }
     </style>
+<script>window.addEventListener('error', function(e) { alert('JS Error: ' + e.message + ' at ' + e.lineno); }); window.addEventListener('unhandledrejection', function(e) { alert('Promise Error: ' + e.reason); });</script>
 </head>
 
 <body class="bg-gray-900 flex justify-center md:items-center min-h-[100dvh] relative">
@@ -8452,6 +8453,7 @@
             import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion, enableIndexedDbPersistence, limit, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
             // 🔥 NEW AUTH IMPORTS
             import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
+            import { getDatabase, ref, set, get, push, update, remove, onValue, off, onDisconnect, query as rtdbQuery, orderByChild, limitToLast, endBefore, serverTimestamp as rtdbServerTimestamp, child } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
 
             
             // ==========================================
@@ -8468,7 +8470,7 @@
 
             const firebaseConfig = {
                 apiKey: "AIzaSyBGmVplT3n_5Jrb4powBC5KAcw9ylJibGo", authDomain: "exama-cfb56.firebaseapp.com",
-                projectId: "exama-cfb56", messagingSenderId: "670163422803",
+                projectId: "exama-cfb56", databaseURL: "https://exama-cfb56-default-rtdb.asia-southeast1.firebasedatabase.app", messagingSenderId: "670163422803",
                 appId: "1:670163422803:web:20fb4d598783dbd215c0a6", measurementId: "G-GZ2L1G71QX"
             };
 
@@ -8481,6 +8483,7 @@
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
+                window.rtdb = getDatabase(app);
 
                 // Create a secondary isolated app instance so Admin can register users without losing their session
                 const secondaryApp = initializeApp(firebaseConfig, "Secondary");
@@ -10282,7 +10285,8 @@
                 try {
                     // 3. Delete from Firebase
                     if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
-                        await deleteDoc(doc(db, window.getCollectionName("chat"), id));
+                        const chatPath = window.isGlobalTestMode ? 'test_chat' : 'chat';
+                        await remove(ref(window.rtdb, `${chatPath}/${id}`));
                     }
 
                     // 4. CRITICAL FIX: Remove the message from BOTH local arrays so old messages vanish instantly
@@ -10945,21 +10949,18 @@
                     if (combinedChat.length > 0) oldestTimestamp = combinedChat[0].timestamp;
 
                     // 2. Fetch previous 50 messages before that timestamp from Firebase
-                    const olderQuery = query(
-                        collection(db, window.getCollectionName("chat")),
-                        where("timestamp", "<", oldestTimestamp),
-                        orderBy("timestamp", "desc"),
-                        limit(50)
-                    );
+                    const chatPath = window.isGlobalTestMode ? 'test_chat' : 'chat';
+                    const olderQuery = rtdbQuery(ref(window.rtdb, chatPath), orderByChild('timestamp'), endBefore(oldestTimestamp), limitToLast(50));
 
-                    const snapshot = await getDocs(olderQuery);
+                    const snapshot = await get(olderQuery);
 
-                    if (snapshot.empty || snapshot.docs.length < 50) {
+                    if (!snapshot.exists() || Object.keys(snapshot.val() || {}).length < 50) {
                         window.chatHasMoreHistory = false; // We reached the absolute beginning of the chat
                     }
 
-                    if (!snapshot.empty) {
-                        const newOlderMsgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+                    if (snapshot.exists()) {
+                        const rawData = snapshot.val();
+                        const newOlderMsgs = Object.entries(rawData).map(([key, val]) => ({ id: key, ...val })).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
                         // Prepend the new batch of messages to our memory bank
                         window.olderChatDB = [...newOlderMsgs, ...window.olderChatDB];
@@ -11889,7 +11890,7 @@ ${textContent ? `
 
             window.deleteNotice = async function (id) {
                 if (!(await window.showCustomConfirm("Delete Notice", "Delete this notice?", "Delete", "Cancel", "danger"))) return;
-                if (isFirebaseConfigured) await deleteDoc(doc(db, window.getCollectionName("notices"), id));
+                if (isFirebaseConfigured) { const noticePath = window.isGlobalTestMode ? 'test_notices' : 'notices'; await remove(ref(window.rtdb, `${noticePath}/${id}`)); }
                 else { window.noticesDB = window.noticesDB.filter(n => n.id !== id); window.renderNotices(); checkUnreadNotices(); }
             };
 
@@ -11898,14 +11899,8 @@ ${textContent ? `
                 
                 if (isFirebaseConfigured) {
                     try {
-                        const noticesCol = collection(db, window.getCollectionName("notices"));
-                        const q = query(noticesCol);
-                        const querySnapshot = await getDocs(q);
-                        const batch = writeBatch(db);
-                        querySnapshot.forEach((document) => {
-                            batch.delete(document.ref);
-                        });
-                        await batch.commit();
+                        const noticePath = window.isGlobalTestMode ? 'test_notices' : 'notices';
+                        await remove(ref(window.rtdb, noticePath));
                     } catch (e) {
                         console.error("Error clearing notices:", e);
                     }
@@ -13347,33 +13342,7 @@ ${textContent ? `
                     existing.lastToggleTime = now; if (!existing.logs) existing.logs = []; existing.logs.push({ action: action, time: now });
                 }
 
-                
-if (isFirebaseConfigured) {
-    try {
-        const docRef = doc(db, window.getCollectionName("sessions"), id);
-        const syncPromise = setDoc(docRef, existing);
-        syncPromise.catch(e => console.warn("Firebase background sync warning:", e.message));
-
-        const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('timeout'), 3000));
-        const result = await Promise.race([syncPromise, timeoutPromise]);
-        
-        if (result === 'timeout') {
-            window.showToast("Bad Internet", "Session saved locally. Will sync online automatically when connection improves.", "info");
-        }
-        
-        window.sessionsDB = window.sessionsDB.filter(s => s.id !== id);
-        window.sessionsDB.push(existing);
-    } catch (e) {
-        window.showToast("Sync Warning", "Session saved locally. Will sync automatically.", "info");
-        console.error("Firebase setDoc Error:", e);
-        window.sessionsDB = window.sessionsDB.filter(s => s.id !== id);
-        window.sessionsDB.push(existing);
-    }
-} else { 
-    window.sessionsDB = window.sessionsDB.filter(s => s.id !== id); 
-    window.sessionsDB.push(existing); 
-}
-
+                if (isFirebaseConfigured) { const sesPath = window.isGlobalTestMode ? 'test_sessions' : 'sessions'; await set(ref(window.rtdb, `${sesPath}/${id}`), existing); } else { window.sessionsDB = window.sessionsDB.filter(s => s.id !== id); window.sessionsDB.push(existing); }
 
                 const timeString = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); const sessionShortName = sessionType.split(' ')[0];
                 if (action === 'START') sendOneSignalPush("Focus Session Started 🚀", `${existing.name} started their ${sessionShortName} at ${timeString}.`);
@@ -13404,7 +13373,7 @@ if (isFirebaseConfigured) {
                             const id = `${mobile}_${todayStr.replace(/\//g, '-')}_${sess.type.split(' ')[0]}`;
                             const newSess = { id, mobile, dateStr: todayStr, sessionType: sess.type, name: window.studentsDB.find(s => s.mobile === mobile)?.name || 'Unknown', status: 'ABSENT', lastToggleTime: Date.now(), totalStudyMs: 0, totalBreakMs: 0, timestamp: Date.now(), logs: [{ action: 'ABSENT', time: Date.now() }], overtimePrompted: false };
                             window.sessionsDB.push(newSess);
-                            if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.db) setDoc(doc(window.db, "sessions", id), newSess);
+                            if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.rtdb) { const sesPath = window.isGlobalTestMode ? 'test_sessions' : 'sessions'; set(ref(window.rtdb, `${sesPath}/${id}`), newSess); }
                             changed = true;
                         }
                     }
@@ -13488,7 +13457,7 @@ if (isFirebaseConfigured) {
                     // Trigger Modal exactly when they hit 4 Hours, BUT DO NOT PAUSE THE CLOCK
                     if (isOvertime && !mySession.overtimePrompted && mySession.status === 'STUDYING') {
                         mySession.overtimePrompted = true;
-                        if (isFirebaseConfigured) updateDoc(doc(db, window.getCollectionName("sessions"), mySession.id), { overtimePrompted: true });
+                        if (isFirebaseConfigured) { const sesPath = window.isGlobalTestMode ? 'test_sessions' : 'sessions'; update(ref(window.rtdb, `${sesPath}/${mySession.id}`), { overtimePrompted: true }); }
 
                         // The clock stays in 'STUDYING' state and keeps ticking up behind the modal
                         document.getElementById('session-overtime-modal').classList.remove('hidden-view');
@@ -13885,13 +13854,16 @@ if (isFirebaseConfigured) {
             window.loadChatData = async function() {
                 if (window.isChatLoaded || !isFirebaseConfigured) return;
                 window.isChatLoaded = true;
-// 13. CHAT (View Specific - Only renders if looking at Chat)
+// 13. CHAT (View Specific - RTDB Real-time Listener)
                     let firstChat = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1000);
-                    onSnapshot(query(collection(db, window.getCollectionName("chat")), where("timestamp", ">=", threeDaysAgo), orderBy("timestamp", "desc")), (snapshot) => {
+                    const chatPath = window.isGlobalTestMode ? 'test_chat' : 'chat';
+                    const chatQuery = rtdbQuery(ref(window.rtdb, chatPath), orderByChild('timestamp'), limitToLast(50));
+                    onValue(chatQuery, (snapshot) => {
                         const oldLen = window.chatDB.length;
-                        window.chatDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+                        const msgs = [];
+                        snapshot.forEach(child => { msgs.push({ id: child.key, ...child.val() }); });
+                        msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                        window.chatDB = msgs;
 
                         if (window.chatDB.length > oldLen && oldLen > 0) {
                             const latest = window.chatDB[window.chatDB.length - 1];
@@ -13901,7 +13873,7 @@ if (isFirebaseConfigured) {
                                 if (document.getElementById('community-chat-view')?.classList.contains('hidden-view')) { showToast(`Message from ${latest.name}`, msgText, 'chat'); }
                             }
                         }
-                        if (firstChat || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                        if (firstChat || window.chatDB.length !== oldLen) {
                             firstChat = false;
                             if (!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) {
                                 renderChat();
@@ -13999,17 +13971,7 @@ if (isFirebaseConfigured) {
                 }
 
                 // 3. Apply Apple-like Smooth Transition
-                
-                if (targetViewId === 'budget-manager-view' || targetViewId === 'budget-track-view') { if(window.setupBudgetListener) window.setupBudgetListener(); }
-                if (targetViewId === 'syllabus-view') { if(window.setupSyllabusListener) window.setupSyllabusListener(); }
-                if (targetViewId === 'fitness-view') { if(window.setupFitnessListener) window.setupFitnessListener(); }
-                if (targetViewId === 'weekly-targets-view') { if(window.setupTasksListener) window.setupTasksListener(); }
-                if (targetViewId === 'session-timer-view') { if(window.setupSessionsListener) window.setupSessionsListener(); }
-                if (targetViewId === 'notice-board-view') { if(window.setupNoticesListener) window.setupNoticesListener(); }
-                if (targetViewId === 'video-hub-view' || targetViewId === 'video-watch-view') { if(window.loadVideosData) window.loadVideosData(); }
-                if (targetViewId === 'materials-view') { if(window.loadMaterialsData) window.loadMaterialsData(); }
-
-const targetEl = document.getElementById(targetViewId);
+                const targetEl = document.getElementById(targetViewId);
                 if (targetEl) {
                     targetEl.classList.remove('hidden-view');
                     void targetEl.offsetWidth; // Force reflow to restart animation flawlessly
@@ -14420,7 +14382,7 @@ const targetEl = document.getElementById(targetViewId);
                 }
                 
                 if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
-                    await setDoc(doc(db, "settings", "global"), { isTestModeActive: newStatus }, { merge: true });
+                    await set(ref(window.rtdb, "settings/global"), { isTestModeActive: newStatus });
                 } else {
                     window.isGlobalTestMode = newStatus;
                     window.location.reload();
@@ -14520,15 +14482,48 @@ const targetEl = document.getElementById(targetViewId);
                 }, 3500);
             };
 
-            window.updatePresence = async function () { if (!window.loggedInMobile || window.currentRole !== 'student') return; if (isFirebaseConfigured) { try { await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { lastActive: Date.now() }); } catch (e) { } } else { const s = window.studentsDB.find(s => s.mobile === window.loggedInMobile); if (s) s.lastActive = Date.now(); refreshUI(); } }
-            setInterval(window.updatePresence, 1000);
+            // === RTDB PRESENCE SYSTEM (replaces 1s Firestore polling) ===
+            window.setupPresence = function() {
+                if (!window.loggedInMobile || window.currentRole !== 'student') return;
+                if (window._presenceSetup) return; // Prevent duplicate setup
+                window._presenceSetup = true;
+                const rtdbInstance = window.rtdb;
+                const presPath = window.isGlobalTestMode ? 'test_presence' : 'presence';
+                const presenceRef = ref(rtdbInstance, `${presPath}/${window.loggedInMobile}`);
+                const connectedRef = ref(rtdbInstance, '.info/connected');
+                onValue(connectedRef, (snap) => {
+                    if (snap.val() === true) {
+                        const presData = { online: true, lastActive: rtdbServerTimestamp() };
+                        onDisconnect(presenceRef).set({ online: false, lastActive: rtdbServerTimestamp() });
+                        set(presenceRef, presData);
+                    }
+                });
+                // Update presence every 30s (instead of 1s) as a heartbeat for RTDB
+                setInterval(() => {
+                    if (window.loggedInMobile && window.currentRole === 'student') {
+                        set(ref(rtdbInstance, `${presPath}/${window.loggedInMobile}`), { online: true, lastActive: rtdbServerTimestamp() });
+                    }
+                }, 30000);
+            };
+            // Legacy compatibility shim
+            window.updatePresence = function() { /* No-op: presence handled by RTDB onDisconnect */ };
 
             window.markChatAsRead = async function () {
                 if (!window.loggedInMobile) return; const myMobile = window.loggedInMobile;
                 const unreadMsgs = window.chatDB.filter(m => m.mobile !== myMobile && !(m.readBy && m.readBy.includes(myMobile)));
                 if (unreadMsgs.length > 0) {
                     const now = Date.now();
-                    if (isFirebaseConfigured) { const updatePromises = unreadMsgs.map(msg => { return updateDoc(doc(db, window.getCollectionName("chat"), msg.id), { readBy: arrayUnion(myMobile), [`readTimestamps.${myMobile}`]: now }); }); await Promise.all(updatePromises); }
+                    if (isFirebaseConfigured) { 
+                        const chatPath = window.isGlobalTestMode ? 'test_chat' : 'chat';
+                        const updates = {};
+                        unreadMsgs.forEach(msg => {
+                            if (!msg.readBy) msg.readBy = [];
+                            if (!msg.readBy.includes(myMobile)) msg.readBy.push(myMobile);
+                            updates[`${chatPath}/${msg.id}/readBy`] = msg.readBy;
+                            updates[`${chatPath}/${msg.id}/readTimestamps/${myMobile}`] = now;
+                        });
+                        await update(ref(window.rtdb), updates);
+                    }
                     else { unreadMsgs.forEach(msg => { if (!msg.readBy) msg.readBy = []; if (!msg.readBy.includes(myMobile)) { msg.readBy.push(myMobile); if (!msg.readTimestamps) msg.readTimestamps = {}; msg.readTimestamps[myMobile] = now; } }); }
                 }
                 updateChatUnreadCount();
@@ -14541,109 +14536,14 @@ const targetEl = document.getElementById(targetViewId);
                 badges.forEach(b => { if (unreadCount > 0) { b.innerText = unreadCount; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } });
             }
 
-            
-            window.isSyllabusLoaded = false;
-            window.setupSyllabusListener = async function() {
-                if (window.isSyllabusLoaded || !isFirebaseConfigured) return;
-                window.isSyllabusLoaded = true;
-                // 5. SYLLABUS TOPICS (View Specific + Dashboard Stats)
-                    let firstSyl = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("syllabus_topics")), (snapshot) => {
-                        window.syllabusTopicsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstSyl || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstSyl = false;
-                            if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
-                            debouncedRefreshUI();
-                        }
-                    });
-
-                    
-                // 6. SYLLABUS PROGRESS (View Specific + Dashboard Stats)
-                    let firstSylProg = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("student_syllabus_progress")), (snapshot) => {
-                        window.studentSyllabusProgressDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstSylProg || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstSylProg = false;
-                            if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
-                            debouncedRefreshUI();
-                        }
-                    });
-
-                    
-            };
-
-            window.isFitnessLoaded = false;
-            window.setupFitnessListener = async function() {
-                if (window.isFitnessLoaded || !isFirebaseConfigured) return;
-                window.isFitnessLoaded = true;
-                // 9. FITNESS LOGS (Core Data - Needed for Leaderboard & Dashboard)
-                    let firstFit = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(query(collection(db, window.getCollectionName("fitness_logs")), orderBy("timestamp", "desc"), limit(200)), (snapshot) => {
-                        window.fitnessDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstFit || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstFit = false;
-                            debouncedRefreshUI();
-                        }
-                    });
-
-                    
-            };
-
-            window.isTasksLoaded = false;
-            window.setupTasksListener = async function() {
-                if (window.isTasksLoaded || !isFirebaseConfigured) return;
-                window.isTasksLoaded = true;
-                // 10. WEEKLY TASKS (Core Data)
-                    let firstWk = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("weekly_tasks")), (snapshot) => {
-                        window.weeklyTasksDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstWk || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstWk = false;
-                            debouncedRefreshUI();
-                        }
-                    });
-
-                    
-                // 11. STUDENT TASKS (Core Data)
-                    let firstStuTask = true;
-                    await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("student_tasks")), (snapshot) => {
-                        window.studentTasksDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstStuTask || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
-                            firstStuTask = false;
-                            debouncedRefreshUI();
-                        }
-                    });
-
-                    
-            };
-
-            window.isSessionsLoaded = false;
-            window.setupSessionsListener = async function() {
-                if (window.isSessionsLoaded || !isFirebaseConfigured) return;
-                window.isSessionsLoaded = true;
-                
-            };
-
-            window.isNoticesLoaded = false;
-            window.setupNoticesListener = async function() {
-                if (window.isNoticesLoaded || !isFirebaseConfigured) return;
-                window.isNoticesLoaded = true;
-                
-            };
-
-async function fetchInitialData() {
+            async function fetchInitialData() {
                 if (isFirebaseConfigured) {
 
                     
                     // GLOBAL TEST MODE SYNC
-                    onSnapshot(doc(db, "settings", "global"), (docSnap) => {
-                        if (docSnap.exists()) {
-                            const newTestMode = !!docSnap.data().isTestModeActive;
+                    onValue(ref(window.rtdb, "settings/global"), (snap) => {
+                        if (snap.exists()) {
+                            const newTestMode = !!snap.val().isTestModeActive;
                             if (window.isGlobalTestMode !== newTestMode) {
                                 // If state changed after boot, reload to remount everything!
                                 if (typeof window.hasBootedOnce !== 'undefined') {
@@ -14673,10 +14573,23 @@ async function fetchInitialData() {
                         if (needsUpdate) {
                             firstStudents = false;
                             debouncedRefreshUI();
-                        } else {
-                            // Only update chat DP online indicators if needed
-                            if (!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) renderChat();
                         }
+                        // Note: Online status is now tracked via RTDB presence, not lastActive field changes
+                    });
+
+                    // RTDB Presence Listener - Merges online status into studentsDB
+                    const presPath = window.isGlobalTestMode ? 'test_presence' : 'presence';
+                    onValue(ref(window.rtdb, presPath), (presSnap) => {
+                        const presenceData = presSnap.val() || {};
+                        window.studentsDB.forEach(s => {
+                            const key = s.mobile || s.id;
+                            const p = presenceData[key];
+                            if (p) {
+                                s.lastActive = p.lastActive;
+                                s._online = p.online === true;
+                            }
+                        });
+                        if (!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) renderChat();
                     });
 
                     // 2. EXAMS (Core Data)
@@ -14714,8 +14627,34 @@ async function fetchInitialData() {
                             debouncedRefreshUI();
                         }
 
-                        // Clean up expired peer exams
-                        allMaterials.forEach(async (m) => { if (m.expiresAt <= now) await deleteDoc(doc(db, window.getCollectionName("peer_exams"), m.id)); });
+                        // Clean up expired peer exams (admin only to prevent duplicate deletes)
+                        if (window.currentRole === 'admin') {
+                            allMaterials.forEach(async (m) => { if (m.expiresAt <= now) await deleteDoc(doc(db, window.getCollectionName("peer_exams"), m.id)); });
+                        }
+                    });
+
+                    // 5. SYLLABUS TOPICS (View Specific + Dashboard Stats)
+                    let firstSyl = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(collection(db, window.getCollectionName("syllabus_topics")), (snapshot) => {
+                        window.syllabusTopicsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstSyl || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstSyl = false;
+                            if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
+                            debouncedRefreshUI();
+                        }
+                    });
+
+                    // 6. SYLLABUS PROGRESS (View Specific + Dashboard Stats)
+                    let firstSylProg = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(collection(db, window.getCollectionName("student_syllabus_progress")), (snapshot) => {
+                        window.studentSyllabusProgressDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstSylProg || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstSylProg = false;
+                            if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
+                            debouncedRefreshUI();
+                        }
                     });
 
                     // 7. PEER SCRIPTS (Core Data)
@@ -14730,12 +14669,46 @@ async function fetchInitialData() {
                     });
 
                     
+                    // 9. FITNESS LOGS (Core Data - Needed for Leaderboard & Dashboard)
+                    let firstFit = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(query(collection(db, window.getCollectionName("fitness_logs")), orderBy("timestamp", "desc"), limit(200)), (snapshot) => {
+                        window.fitnessDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstFit || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstFit = false;
+                            debouncedRefreshUI();
+                        }
+                    });
+
+                    // 10. WEEKLY TASKS (Core Data)
+                    let firstWk = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(collection(db, window.getCollectionName("weekly_tasks")), (snapshot) => {
+                        window.weeklyTasksDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstWk || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstWk = false;
+                            debouncedRefreshUI();
+                        }
+                    });
+
+                    // 11. STUDENT TASKS (Core Data)
+                    let firstStuTask = true;
+                    await new Promise(r => requestAnimationFrame(r));
+                    onSnapshot(collection(db, window.getCollectionName("student_tasks")), (snapshot) => {
+                        window.studentTasksDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (firstStuTask || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                            firstStuTask = false;
+                            debouncedRefreshUI();
+                        }
+                    });
+
                     // 12. SESSIONS (Core Data)
                     let firstSes = true;
                     await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(collection(db, window.getCollectionName("sessions")), (snapshot) => {
-                        window.sessionsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                        if (firstSes || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                    onValue(ref(window.rtdb, window.isGlobalTestMode ? 'test_sessions' : 'sessions'), (snapshot) => {
+                        const data = snapshot.val() || {};
+                        window.sessionsDB = Object.entries(data).map(([key, val]) => ({ id: key, ...val }));
+                        if (firstSes || true) {
                             firstSes = false;
                             debouncedRefreshUI();
                         }
@@ -14746,9 +14719,14 @@ async function fetchInitialData() {
                     // 15. NOTICES (View Specific + Badges)
                     let firstNotices = true;
                     await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(query(collection(db, window.getCollectionName("notices")), orderBy("timestamp", "desc"), limit(20)), (snapshot) => {
+                    onValue(ref(window.rtdb, window.isGlobalTestMode ? 'test_notices' : 'notices'), (snapshot) => {
                         const oldLen = window.noticesDB.length;
-                        window.noticesDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        const data = snapshot.val() || {};
+                        window.noticesDB = Object.entries(data).map(([key, val]) => ({ id: key, ...val }));
+                        // Sort by timestamp descending (newest first)
+                        window.noticesDB.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                        // Limit to 20 most recent
+                        if (window.noticesDB.length > 20) window.noticesDB = window.noticesDB.slice(0, 20);
 
                         if (window.noticesDB.length > oldLen && oldLen > 0) {
                             const latest = window.noticesDB[0];
@@ -14756,7 +14734,7 @@ async function fetchInitialData() {
                             showToast("New Notice", latest.title, 'alert');
                         }
 
-                        if (firstNotices || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
+                        if (firstNotices || window.noticesDB.length !== oldLen) {
                             firstNotices = false;
                             if (!document.getElementById('notice-board-view')?.classList.contains('hidden-view')) renderNotices();
                             checkUnreadNotices();
@@ -14765,9 +14743,9 @@ async function fetchInitialData() {
 
                     // 16. ACTIVE CALLS
                     await new Promise(r => requestAnimationFrame(r));
-                    onSnapshot(doc(db, window.getCollectionName("active_calls"), "discus_call"), (snapshot) => {
+                    onValue(ref(window.rtdb, (window.isGlobalTestMode ? 'test_active_calls' : 'active_calls') + '/discus_call'), (snapshot) => {
                         if (snapshot.exists()) {
-                            const callData = snapshot.data();
+                            const callData = snapshot.val();
                             const now = Date.now();
                             if (callData.status === 'ringing' && callData.callerMobile !== window.loggedInMobile && (now - callData.timestamp < 30000)) {
                                 window.showIncomingCallPopup(callData);
@@ -14786,9 +14764,34 @@ async function fetchInitialData() {
                 }
             }
             window.dbDeleteExam = async function (id) { if (isFirebaseConfigured) { await deleteDoc(doc(db, window.getCollectionName("exams"), id)); } else { window.examsDB = window.examsDB.filter(e => e.id !== id); refreshUI(); } }
-            window.dbSendChat = async function (obj) { obj.readBy = []; if (isFirebaseConfigured) await addDoc(collection(db, window.getCollectionName("chat")), obj); else { window.chatDB.push({ id: Math.random().toString(), ...obj }); renderChat(); updateChatUnreadCount(); } }
-            window.dbUpdateChatReactions = async function (msgId, reactions) { if (isFirebaseConfigured) { try { await updateDoc(doc(db, window.getCollectionName("chat"), msgId), { reactions: reactions }); } catch(e) { console.error("Reaction sync err:", e); } } }
-            window.dbSendNotice = async function (obj) { if (isFirebaseConfigured) await addDoc(collection(db, window.getCollectionName("notices")), { ...obj, readBy: [] }); else { window.noticesDB.unshift({ id: Math.random().toString(), ...obj, readBy: [] }); renderNotices(); checkUnreadNotices(); } }
+            window.dbSendChat = async function (obj) { 
+                obj.readBy = []; 
+                if (isFirebaseConfigured) {
+                    const chatPath = window.isGlobalTestMode ? 'test_chat' : 'chat';
+                    const chatRef = ref(window.rtdb, chatPath);
+                    const newRef = push(chatRef);
+                    await set(newRef, obj);
+                } else { 
+                    window.chatDB.push({ id: Math.random().toString(), ...obj }); renderChat(); updateChatUnreadCount(); 
+                } 
+            }
+            window.dbUpdateChatReactions = async function (msgId, reactions) { 
+                if (isFirebaseConfigured) { 
+                    try { 
+                        const chatPath = window.isGlobalTestMode ? 'test_chat' : 'chat';
+                        await update(ref(window.rtdb, `${chatPath}/${msgId}`), { reactions: reactions }); 
+                    } catch(e) { console.error("Reaction sync err:", e); } 
+                } 
+            }
+            window.dbSendNotice = async function (obj) { 
+                if (isFirebaseConfigured) {
+                    const noticePath = window.isGlobalTestMode ? 'test_notices' : 'notices';
+                    const newRef = push(ref(window.rtdb, noticePath));
+                    await set(newRef, { ...obj, readBy: [] });
+                } else { 
+                    window.noticesDB.unshift({ id: Math.random().toString(), ...obj, readBy: [] }); renderNotices(); checkUnreadNotices(); 
+                } 
+            }
             window.dbSendMaterial = async function (obj) { if (isFirebaseConfigured) await addDoc(collection(db, window.getCollectionName("materials")), obj); else { window.materialsDB.unshift({ id: Math.random().toString(), ...obj }); renderStudyMaterials(); } }
             window.dbSendFitnessLog = async function (obj) { if (isFirebaseConfigured) await addDoc(collection(db, window.getCollectionName("fitness_logs")), obj); else { window.fitnessDB.unshift({ id: Math.random().toString(), ...obj }); renderFitnessMonitor(); } }
             window.dbSubmitResult = async function (obj) {
@@ -14927,9 +14930,20 @@ async function fetchInitialData() {
                         
                         // Fire and forget background save
                         if (isFirebaseConfigured && latest.id) { 
-                            updateDoc(doc(db, window.getCollectionName("notices"), latest.id), { readBy: arrayUnion(myMobile) }).catch(e => {
-                                if (e.code !== 'not-found') console.error("Notice Save Error:", e);
-                            }); 
+                            (() => {
+                                const noticePath = window.isGlobalTestMode ? 'test_notices' : 'notices';
+                                // Read current readBy, add mobile, write back
+                                const noticeRef = ref(window.rtdb, `${noticePath}/${latest.id}`);
+                                get(noticeRef).then(snap => {
+                                    if (snap.exists()) {
+                                        const current = snap.val().readBy || [];
+                                        if (!current.includes(myMobile)) {
+                                            current.push(myMobile);
+                                            update(ref(window.rtdb, `${noticePath}/${latest.id}`), { readBy: current });
+                                        }
+                                    }
+                                }).catch(e => { if (e.code !== 'PERMISSION_DENIED') console.error("Notice Save Error:", e); });
+                            })(); 
                         }
                         
                         setTimeout(() => checkUnreadNotices(), 300);
@@ -17826,33 +17840,6 @@ window.onload = async function () {
             // 👨‍🎓 ADMIN: CREATE NEW STUDENT SECURELY
             // ==========================================
             // Overwrite your existing submitStudent function
-            
-            // INFINITE SCROLL LISTENERS FOR BUDGET
-            setTimeout(() => {
-                const dashContent = document.getElementById('budget-content');
-                if (dashContent) {
-                    dashContent.addEventListener('scroll', function() {
-                        if (this.scrollTop + this.clientHeight >= this.scrollHeight - 50) {
-                            if (window.budgetDashLimit < window.budgetDashTotal) {
-                                window.budgetDashLimit += 10;
-                                window.renderBudgetDashboard(true);
-                            }
-                        }
-                    });
-                }
-                const trackContent = document.getElementById('budget-track-content');
-                if (trackContent) {
-                    trackContent.addEventListener('scroll', function() {
-                        if (this.scrollTop + this.clientHeight >= this.scrollHeight - 50) {
-                            if (window.budgetTrackLimit < window.budgetTrackTotal) {
-                                window.budgetTrackLimit += 10;
-                                window.renderBudgetTrackView(true);
-                            }
-                        }
-                    });
-                }
-            }, 2000);
-
             window.submitStudent = async function () {
                 const name = document.getElementById('new-stu-name').value.trim();
                 const mob = document.getElementById('new-stu-mobile').value.trim();
@@ -17906,7 +17893,7 @@ window.onload = async function () {
             };
 
             function executeLoginUI(role, mob) {
-                window.updatePresence(); requestNotificationPermission();
+                window.setupPresence(); requestNotificationPermission();
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
                 checkUnreadNotices(); updateChatUnreadCount(); refreshUI(); startTimerEngine();
 
@@ -20688,7 +20675,7 @@ window.onload = async function () {
 
                 if (!isAnswering) {
                     const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'video', status: 'ringing', timestamp: Date.now() };
-                    if (isFirebaseConfigured) await setDoc(doc(db, window.getCollectionName("active_calls"), "discus_call"), callPayload);
+                    if (isFirebaseConfigured) { const callsPath = window.isGlobalTestMode ? 'test_active_calls' : 'active_calls'; await set(ref(window.rtdb, `${callsPath}/discus_call`), callPayload); }
                     await window.dbSendChat({ type: 'call_log', callType: 'video', text: "Started a Video Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
                     sendOneSignalPush(`🎥 Incoming Video Call`, `${senderName} started a live video call in Discus Community.`);
                 }
@@ -20704,7 +20691,7 @@ window.onload = async function () {
 
                 if (!isAnswering) {
                     const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'audio', status: 'ringing', timestamp: Date.now() };
-                    if (isFirebaseConfigured) await setDoc(doc(db, window.getCollectionName("active_calls"), "discus_call"), callPayload);
+                    if (isFirebaseConfigured) { const callsPath = window.isGlobalTestMode ? 'test_active_calls' : 'active_calls'; await set(ref(window.rtdb, `${callsPath}/discus_call`), callPayload); }
                     await window.dbSendChat({ type: 'call_log', callType: 'audio', text: "Started an Audio Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
                     sendOneSignalPush(`📞 Incoming Audio Call`, `${senderName} started a live audio call in Discus Community.`);
                 }
@@ -22650,9 +22637,7 @@ YOUR DIRECTIVES:
             window.currentBudgetFilter = 'all'; // all, income, expense
             window.budgetListenerStarted = false;
 
-            window.renderBudgetDashboard = function (isLoadMore = false) {
-                if (typeof isLoadMore !== 'boolean') isLoadMore = false;
-                if (!isLoadMore) window.budgetDashLimit = 10;
+            window.renderBudgetDashboard = function () {
                 const listEl = document.getElementById('budget-transactions-list');
                 const totalBalEl = document.getElementById('budget-total-balance');
                 const totalIncEl = document.getElementById('budget-total-income');
@@ -22699,9 +22684,6 @@ YOUR DIRECTIVES:
                 if (window.currentBudgetFilter !== 'all') {
                     filtered = filtered.filter(tx => tx.type === window.currentBudgetFilter);
                 }
-
-                window.budgetDashTotal = filtered.length;
-                filtered = filtered.slice(0, window.budgetDashLimit);
 
                 if (filtered.length === 0) {
                     html = `<div class="text-center p-6 text-gray-400 font-bold bg-white rounded-2xl border border-gray-100 shadow-sm mt-4"><i class="fa-solid fa-receipt text-3xl mb-2 opacity-50"></i><p>No transactions found</p></div>`;
@@ -23033,9 +23015,7 @@ YOUR DIRECTIVES:
                 dpImg.classList.remove('hidden');
             };
 
-            window.renderBudgetTrackView = function(isLoadMore = false) {
-                if (typeof isLoadMore !== 'boolean') isLoadMore = false;
-                if (!isLoadMore) window.budgetTrackLimit = 10;
+            window.renderBudgetTrackView = function() {
                 const listEl = document.getElementById('budget-track-list');
                 const searchQuery = (document.getElementById('track-search').value || '').toLowerCase();
                 const sortType = document.getElementById('track-sort').value;
@@ -23084,9 +23064,6 @@ YOUR DIRECTIVES:
                 });
 
                 document.getElementById('track-tx-count').textContent = txs.length;
-
-                window.budgetTrackTotal = txs.length;
-                txs = txs.slice(0, window.budgetTrackLimit);
 
                 // Render List
                 listEl.innerHTML = '';
