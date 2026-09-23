@@ -7701,9 +7701,9 @@
                     <div class="relative">
                         <select id="math-difficulty"
                             class="w-full p-4 pl-12 bg-white border border-gray-200 rounded-2xl outline-none font-bold text-sm text-gray-800 focus:border-red-400 transition-all cursor-pointer shadow-sm appearance-none">
-                            <option value="easy">Easy </option>
-                            <option value="moderate" selected>Moderate </option>
-                            <option value="tough">Tough </option>
+                            <option value="easy">Easy (Fundamentals)</option>
+                            <option value="moderate" selected>Moderate (Competitive Level)</option>
+                            <option value="tough">Tough (Advanced Drill)</option>
                         </select>
                         <i
                             class="fa-solid fa-fire absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none"></i>
@@ -8395,7 +8395,7 @@
                         class="hidden glass-card p-4 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border-orange-100 shadow-sm bg-white mb-4 sm:mb-6">
                         <h3
                             class="font-bold text-gray-900 mb-2 sm:mb-3 text-xs sm:text-sm flex items-center gap-1.5 sm:gap-2 break-words">
-                            <i class="fa-solid fa-list-ul text-orange-500"></i>MY ACTIVITY
+                            <i class="fa-solid fa-list-ul text-orange-500"></i> Today's Activity Log
                         </h3>
                         <div id="session-timeline-list" class="space-y-1.5 sm:space-y-2"></div>
                     </div>
@@ -21209,28 +21209,49 @@ window.onload = async function () {
             // Core rendering functions defined in CORE PDF ENGINE section below.
             // ==========================================
 
+            window.pdfViewMode = 0;
             window.togglePdfFullscreen = function () {
                 const header = document.getElementById('pdf-modal-header');
                 const icon = document.getElementById('icon-pdf-fullscreen');
-                const wrapper = document.getElementById('pdf-iframe-wrapper');
+                const innerWrapper = document.getElementById('pdf-iframe-wrapper');
+                const wrapper = document.getElementById('pdf-scroll-wrapper');
 
-                if (!header || !icon || !wrapper) return;
+                if (!header || !icon || !wrapper || !innerWrapper) return;
 
-                const isCurrentlyFullscreen = header.classList.contains('hidden');
-
-                if (!isCurrentlyFullscreen) {
-                    // ENTER SINGLE PAGE FULLSCREEN
+                if (!window.pdfViewMode || window.pdfViewMode === 0) {
+                    // State 1: Enter Distraction-Free (Portrait Fullscreen)
+                    window.pdfViewMode = 1;
                     header.classList.add('hidden');
-                    icon.classList.replace('fa-expand', 'fa-compress');
-                    wrapper.classList.add('single-page-mode');
-                    wrapper.classList.remove('gap-6'); // Remove spaces between pages
+                    icon.className = 'fa-solid fa-mobile-screen';
+                    
+                    innerWrapper.classList.add('single-page-mode');
+                    innerWrapper.classList.remove('gap-6'); // Remove spaces between pages
+                    
+                    wrapper.style.cssText = 'scroll-behavior: smooth;'; // Reset just in case
                     window.updateSinglePageVisibility();
+                    
+                } else if (window.pdfViewMode === 1) {
+                    // State 2: Enter Landscape Fullscreen
+                    window.pdfViewMode = 2;
+                    header.classList.add('hidden');
+                    icon.className = 'fa-solid fa-compress';
+                    
+                    innerWrapper.classList.add('single-page-mode');
+                    innerWrapper.classList.remove('gap-6');
+                    
+                    wrapper.style.cssText = 'scroll-behavior: smooth; transform: rotate(90deg); transform-origin: center; width: 100vh !important; height: 100vw !important; position: fixed; top: 50%; left: 50%; margin-left: -50vh !important; margin-top: -50vw !important; z-index: 140; overflow-x: hidden;';
+                    window.updateSinglePageVisibility();
+                    
                 } else {
-                    // EXIT TO CONTINUOUS SCROLL
+                    // State 3: Exit to Normal Mode
+                    window.pdfViewMode = 0;
                     header.classList.remove('hidden');
-                    icon.classList.replace('fa-compress', 'fa-expand');
-                    wrapper.classList.remove('single-page-mode');
-                    wrapper.classList.add('gap-6'); // Add spaces back
+                    icon.className = 'fa-solid fa-expand';
+                    
+                    innerWrapper.classList.remove('single-page-mode');
+                    innerWrapper.classList.add('gap-6'); // Add spaces back
+                    
+                    wrapper.style.cssText = 'scroll-behavior: smooth;';
                     window.updateSinglePageVisibility();
                 }
             };
@@ -21240,6 +21261,7 @@ window.onload = async function () {
                 const wrapper = document.getElementById('pdf-iframe-wrapper');
 
                 if (header && header.classList.contains('hidden')) {
+                    window.pdfViewMode = 2; // Force state machine into State 3 (Exit)
                     window.togglePdfFullscreen(); // Safely exit fullscreen first
                 }
 
@@ -21270,8 +21292,10 @@ window.onload = async function () {
                 const isCurrentlyFullscreen = header.classList.contains('hidden');
 
                 if (isLandscape && !isCurrentlyFullscreen) {
+                    window.pdfViewMode = 1; // Trick to go directly to Landscape
                     window.togglePdfFullscreen();
                 } else if (!isLandscape && isCurrentlyFullscreen) {
+                    window.pdfViewMode = 2; // Force exit
                     window.togglePdfFullscreen();
                 }
             };
