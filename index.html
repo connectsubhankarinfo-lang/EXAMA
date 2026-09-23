@@ -2597,6 +2597,17 @@
             opacity: 1;
             pointer-events: auto;
         }
+
+        /* Unapproved Material Folder Glow Animation */
+        @keyframes unapprovedGlow {
+            0% { box-shadow: 0 0 5px rgba(251, 191, 36, 0.3), 0 0 10px rgba(251, 191, 36, 0.1); }
+            50% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.5), 0 0 24px rgba(251, 191, 36, 0.2); }
+            100% { box-shadow: 0 0 5px rgba(251, 191, 36, 0.3), 0 0 10px rgba(251, 191, 36, 0.1); }
+        }
+        .unapproved-glow {
+            animation: unapprovedGlow 2s ease-in-out infinite;
+            border-color: rgb(251 191 36) !important;
+        }
     </style>
 <script>window.addEventListener('error', function(e) { alert('JS Error: ' + e.message + ' at ' + e.lineno); }); window.addEventListener('unhandledrejection', function(e) { alert('Promise Error: ' + e.reason); });</script>
 </head>
@@ -2611,9 +2622,9 @@
 
         </div>
 
-        <!-- TOAST CONTAINER -->
+        <!-- TOAST CONTAINER (fixed positioning to render above all modals/views) -->
         <div id="toast-container"
-            class="absolute top-4 right-4 z-[200] flex flex-col gap-3 pointer-events-none w-[90%] max-w-sm md:w-[350px]">
+            class="fixed top-4 sm:top-8 left-1/2 transform -translate-x-1/2 z-[9999] flex flex-col items-center pointer-events-none w-[92%] max-w-[340px]">
         </div>
         <!-- GLOBAL LOADER: EXAMA FLASH LOGO & NETFLIX ZOOM -->
         <div id="global-loader"
@@ -15637,55 +15648,7 @@ ${textContent ? `
 
             setTimeout(() => {
 
-                // ------------------------------------------
-                // 1. NATIVE PDF VIEWER: PINCH-TO-ZOOM
-                // ------------------------------------------
-                const pdfWrapper = document.getElementById('pdf-scroll-wrapper');
-                const pdfContent = document.getElementById('pdf-iframe-wrapper');
-
-                let pdfStartDist = 0;
-                let pdfTempScale = 1;
-
-                if (pdfWrapper && pdfContent) {
-                    pdfWrapper.addEventListener('touchstart', (e) => {
-                        if (e.touches.length === 2) {
-                            // Measure initial distance between two fingers
-                            pdfStartDist = Math.hypot(
-                                e.touches[0].pageX - e.touches[1].pageX,
-                                e.touches[0].pageY - e.touches[1].pageY
-                            );
-                        }
-                    }, { passive: false });
-
-                    pdfWrapper.addEventListener('touchmove', (e) => {
-                        if (e.touches.length === 2) {
-                            e.preventDefault(); // Stop native scrolling
-                            const currentDist = Math.hypot(
-                                e.touches[0].pageX - e.touches[1].pageX,
-                                e.touches[0].pageY - e.touches[1].pageY
-                            );
-
-                            // Calculate temporary CSS zoom
-                            pdfTempScale = currentDist / pdfStartDist;
-                            pdfContent.style.transformOrigin = 'top center';
-                            pdfContent.style.transform = `scale(${pdfTempScale})`;
-                        }
-                    }, { passive: false });
-
-                    pdfWrapper.addEventListener('touchend', (e) => {
-                        if (e.touches.length < 2 && pdfStartDist > 0 && pdfTempScale !== 1) {
-                            // When fingers leave, lock in the new scale
-                            window.currentPdfScale = Math.min(Math.max(0.4, window.currentPdfScale * pdfTempScale), 4.0);
-
-                            // Reset CSS transform and trigger a high-quality PDF.js render!
-                            pdfContent.style.transform = 'scale(1)';
-                            pdfTempScale = 1;
-                            pdfStartDist = 0;
-
-                            if (window.pdfPageNum) window.queueRenderPage(window.pdfPageNum);
-                        }
-                    });
-                }
+                // NOTE: PDF pinch-to-zoom is handled by the 60FPS Pinch Gesture Engine below.
 
                 // ------------------------------------------
                 // 2. RED PEN EDITOR: 2-FINGER ZOOM & PAN
@@ -15934,8 +15897,16 @@ ${textContent ? `
                             let totalFiles = 0;
                             subMaterials.forEach(m => { totalFiles += (m.files ? m.files.length : 0) + (m.extLink ? 1 : 0); });
                             const theme = getMaterialSubjectTheme(sub);
+
+                            // Glow effect for admin: check if any materials in this subject are unapproved
+                            const isAdmin = window.currentRole === 'admin';
+                            const pendingInSubject = isAdmin ? subMaterials.filter(m => m.isApproved === false).length : 0;
+                            const glowClass = pendingInSubject > 0 ? 'unapproved-glow' : '';
+                            const pendingBadge = pendingInSubject > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm z-20 animate-pulse">${pendingInSubject} Pending</span>` : '';
+
                             html += `
-                <div onclick="window.openMHSubject('${String(sub).replace(/'/g, "\\'")}')" class="bg-white rounded-[1.5rem] p-4 sm:p-5 shadow-sm border ${theme.border} hover:shadow-lg hover:border-indigo-300 transition-all duration-300 cursor-pointer flex flex-col items-center text-center group hover:-translate-y-1">
+                <div onclick="window.openMHSubject('${String(sub).replace(/'/g, "\\'")}')" class="relative bg-white rounded-[1.5rem] p-4 sm:p-5 shadow-sm border ${theme.border} hover:shadow-lg hover:border-indigo-300 transition-all duration-300 cursor-pointer flex flex-col items-center text-center group hover:-translate-y-1 ${glowClass}">
+                    ${pendingBadge}
                     <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl ${theme.bg} ${theme.color} flex justify-center items-center text-2xl sm:text-3xl mb-3 group-hover:scale-110 transition-transform shadow-inner">
                         <i class="fa-solid ${theme.icon}"></i>
                     </div>
@@ -15960,8 +15931,16 @@ ${textContent ? `
                             const topMaterials = subMats.filter(m => m.topic === top);
                             let fileCount = 0;
                             topMaterials.forEach(m => { fileCount += (m.files ? m.files.length : 0) + (m.extLink ? 1 : 0); });
+
+                            // Glow effect for admin: check if any materials in this chapter are unapproved
+                            const isAdmin = window.currentRole === 'admin';
+                            const pendingInTopic = isAdmin ? topMaterials.filter(m => m.isApproved === false).length : 0;
+                            const glowClass = pendingInTopic > 0 ? 'unapproved-glow' : '';
+                            const pendingBadge = pendingInTopic > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm z-20 animate-pulse">${pendingInTopic} Pending</span>` : '';
+
                             html += `
-                <div onclick="window.openMHTopic('${String(top).replace(/'/g, "\\'")}')" class="bg-white p-4 sm:p-5 rounded-[1.5rem] flex flex-col items-center justify-center text-center cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-all duration-300 border border-gray-200/80 shadow-sm group relative overflow-hidden">
+                <div onclick="window.openMHTopic('${String(top).replace(/'/g, "\\'")}')" class="bg-white p-4 sm:p-5 rounded-[1.5rem] flex flex-col items-center justify-center text-center cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-all duration-300 border border-gray-200/80 shadow-sm group relative overflow-hidden ${glowClass}">
+                    ${pendingBadge}
                     <div class="relative z-10 w-full flex flex-col items-center">
                         <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center text-2xl mb-3 shadow-inner group-hover:scale-110 transition-transform">
                             <i class="fa-solid fa-folder-open text-indigo-500"></i>
@@ -18289,6 +18268,11 @@ window.onload = async function () {
                 window.setupPresence(); requestNotificationPermission();
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
                 checkUnreadNotices(); updateChatUnreadCount(); refreshUI(); startTimerEngine();
+
+                // Load chat & materials data immediately so unread badges and unapproved
+                // material counts update in real-time without waiting for the user to visit those views.
+                window.loadChatData();
+                window.loadMaterialsData();
 
                 // 🚀 NEW: Check for missed fitness days 2.5 seconds after login!
                 if (role === 'student') {
@@ -21095,187 +21079,9 @@ window.onload = async function () {
             };
             // ==========================================
             // CUSTOM MATERIAL READER ENGINE (PDF.js)
+            // Correct togglePdfFullscreen & closeCustomPDFViewer below.
+            // Core rendering functions defined in CORE PDF ENGINE section below.
             // ==========================================
-
-            // 1. Global State for PDF
-            window.pdfDoc = null;
-            window.pdfPageNum = 1;
-            window.currentPdfScale = 1;
-            window.pdfCanvases = [];
-            window.isRenderingAll = false;
-            window.currentPdfRawUrl = "";
-            window.currentPdfId = "";
-
-            // 2. Core Acrobat Continuous Rendering Functions
-            window.currentZoomMultiplier = 1; // Tracks our instant CSS scale
-
-            window.renderAllPdfPages = async function () {
-                window.isRenderingAll = true;
-                window.currentZoomMultiplier = 1; // Reset zoom to default when a new document opens
-                const wrapper = document.getElementById('pdf-iframe-wrapper');
-                if (!wrapper) return;
-
-                wrapper.innerHTML = '';
-                window.pdfCanvases = [];
-
-                for (let num = 1; num <= window.pdfDoc.numPages; num++) {
-                    const canvas = document.createElement('canvas');
-                    canvas.id = `pdf-canvas-${num}`;
-                    canvas.className = "shadow-[0_10px_30px_rgba(0,0,0,0.1)] rounded-md relative z-10 transition-transform duration-300 mx-auto border border-gray-200 bg-white w-full max-w-full";
-                    wrapper.appendChild(canvas);
-                    window.pdfCanvases.push({ num: num, el: canvas });
-
-                    await window.renderSingleCanvas(num, canvas);
-                }
-
-                const spacer = document.createElement('div');
-                spacer.id = "pdf-bottom-spacer"; // Added ID so we can control it
-                spacer.className = "w-full h-32 shrink-0";
-                wrapper.appendChild(spacer);
-
-                window.isRenderingAll = false;
-            };
-
-            // ... keep renderSingleCanvas exactly as it is ...
-
-            window.updateSinglePageVisibility = function () {
-                const wrapper = document.getElementById('pdf-iframe-wrapper');
-                if (!wrapper) return;
-                const isSingle = wrapper.classList.contains('single-page-mode');
-
-                window.pdfCanvases.forEach(obj => {
-                    if (isSingle) {
-                        obj.el.style.display = (obj.num === window.pdfPageNum) ? 'block' : 'none';
-                    } else {
-                        obj.el.style.display = 'block';
-                    }
-                });
-
-                // THE FIX: Hide the empty scroll space at the bottom so it LOCKS to the page perfectly
-                const spacer = document.getElementById('pdf-bottom-spacer');
-                if (spacer) {
-                    spacer.style.display = isSingle ? 'none' : 'block';
-                }
-
-                if (!isSingle) {
-                    const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
-                    if (targetCanvas) targetCanvas.scrollIntoView({ behavior: 'auto', block: 'center' });
-                }
-
-                const pageNumEl = document.getElementById('pdf-page-num');
-                if (pageNumEl) pageNumEl.textContent = window.pdfPageNum;
-            };
-
-            // --- ADVANCED ACROBAT NAVIGATION & SINGLE-PAGE ENGINE ---
-
-            window.updateSinglePageVisibility = function () {
-                const wrapper = document.getElementById('pdf-iframe-wrapper');
-                if (!wrapper) return;
-                const isSingle = wrapper.classList.contains('single-page-mode');
-
-                // Hide all canvases except the current one if in fullscreen mode
-                window.pdfCanvases.forEach(obj => {
-                    if (isSingle) {
-                        obj.el.style.display = (obj.num === window.pdfPageNum) ? 'block' : 'none';
-                    } else {
-                        obj.el.style.display = 'block';
-                    }
-                });
-
-                // If returning to continuous mode, gently scroll back to where they were
-                if (!isSingle) {
-                    const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
-                    if (targetCanvas) targetCanvas.scrollIntoView({ behavior: 'auto', block: 'center' });
-                }
-
-                const pageNumEl = document.getElementById('pdf-page-num');
-                if (pageNumEl) pageNumEl.textContent = window.pdfPageNum;
-            };
-
-            window.onPdfPrevPage = function () {
-                if (!window.pdfDoc || window.pdfPageNum <= 1) return;
-                window.pdfPageNum--;
-
-                const wrapper = document.getElementById('pdf-iframe-wrapper');
-                if (wrapper && wrapper.classList.contains('single-page-mode')) {
-                    window.updateSinglePageVisibility();
-                    document.getElementById('pdf-scroll-wrapper').scrollTop = 0; // Snap to top
-                } else {
-                    const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
-                    if (targetCanvas) targetCanvas.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            };
-
-            window.onPdfNextPage = function () {
-                if (!window.pdfDoc || window.pdfPageNum >= window.pdfDoc.numPages) return;
-                window.pdfPageNum++;
-
-                const wrapper = document.getElementById('pdf-iframe-wrapper');
-                if (wrapper && wrapper.classList.contains('single-page-mode')) {
-                    window.updateSinglePageVisibility();
-                    document.getElementById('pdf-scroll-wrapper').scrollTop = 0; // Snap to top
-                } else {
-                    const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
-                    if (targetCanvas) targetCanvas.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            };
-
-            window.handlePdfScroll = function () {
-                if (window.isRenderingAll || !window.pdfCanvases) return;
-
-                const wrapper = document.getElementById('pdf-scroll-wrapper');
-                const iframeWrapper = document.getElementById('pdf-iframe-wrapper');
-
-                // Do NOT auto-update page numbers by scrolling if we are in Single Page mode!
-                if (iframeWrapper && iframeWrapper.classList.contains('single-page-mode')) return;
-
-                const scrollCenter = wrapper.scrollTop + (wrapper.clientHeight / 3);
-
-                let closestPage = 1;
-                let minDistance = Infinity;
-
-                window.pdfCanvases.forEach(obj => {
-                    const canvasCenter = obj.el.offsetTop;
-                    const dist = Math.abs(scrollCenter - canvasCenter);
-                    if (dist < minDistance) {
-                        minDistance = dist;
-                        closestPage = obj.num;
-                    }
-                });
-
-                if (window.pdfPageNum !== closestPage) {
-                    window.pdfPageNum = closestPage;
-                    const pageNumEl = document.getElementById('pdf-page-num');
-                    if (pageNumEl) pageNumEl.textContent = closestPage;
-                }
-
-                if (typeof window.resetPdfToolbarTimer === 'function') window.resetPdfToolbarTimer();
-            };
-
-            window.zoomCustomPdf = function (dir) {
-                if (!window.pdfDoc || window.isRenderingAll) return;
-                const zoomStep = 0.25;
-                if (dir === 1) {
-                    window.currentZoomMultiplier = Math.min(4.0, window.currentZoomMultiplier + zoomStep);
-                } else {
-                    window.currentZoomMultiplier = Math.max(0.5, window.currentZoomMultiplier - zoomStep);
-                }
-
-                window.pdfCanvases.forEach(obj => {
-                    const canvas = obj.el;
-                    if (canvas.baseWidth) {
-                        canvas.style.width = (canvas.baseWidth * window.currentZoomMultiplier) + "px";
-                    }
-                });
-
-                setTimeout(() => {
-                    const wrapper = document.getElementById('pdf-iframe-wrapper');
-                    if (!wrapper.classList.contains('single-page-mode')) {
-                        const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
-                        if (targetCanvas) targetCanvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                }, 150);
-            };
 
             window.togglePdfFullscreen = function () {
                 const header = document.getElementById('pdf-modal-header');
@@ -21419,6 +21225,7 @@ window.onload = async function () {
                 }
 
                 const spacer = document.createElement('div');
+                spacer.id = "pdf-bottom-spacer";
                 spacer.className = "w-full h-32 shrink-0";
                 wrapper.appendChild(spacer);
 
@@ -21464,9 +21271,21 @@ window.onload = async function () {
                     }
                 });
 
+                // Hide bottom spacer in single-page mode so page locks perfectly
+                const spacer = document.getElementById('pdf-bottom-spacer');
+                if (spacer) {
+                    spacer.style.display = isSingle ? 'none' : 'block';
+                }
+
                 if (!isSingle) {
                     const targetCanvas = document.getElementById(`pdf-canvas-${window.pdfPageNum}`);
                     if (targetCanvas) targetCanvas.scrollIntoView({ behavior: 'auto', block: 'center' });
+                }
+
+                // Scroll to top in single-page mode
+                if (isSingle) {
+                    const scrollWrapper = document.getElementById('pdf-scroll-wrapper');
+                    if (scrollWrapper) scrollWrapper.scrollTop = 0;
                 }
 
                 const pageNumEl = document.getElementById('pdf-page-num');
@@ -21663,23 +21482,6 @@ window.onload = async function () {
                     window.showCustomAlert("Notice", `Native reader unavailable: ${error.message}\n\nOpening the standard viewer instead.`, "info");
                     window.open(window.currentPdfRawUrl, '_blank');
                     window.closeCustomPDFViewer();
-                }
-            };
-            // ==========================================
-
-            window.togglePdfFullscreen = function () {
-                const header = document.getElementById('pdf-modal-header');
-                const icon = document.getElementById('icon-pdf-fullscreen');
-                if (!header || !icon) return;
-
-                const isCurrentlyFullscreen = header.classList.contains('hidden');
-
-                if (!isCurrentlyFullscreen) {
-                    header.classList.add('hidden');
-                    icon.classList.replace('fa-expand', 'fa-compress');
-                } else {
-                    header.classList.remove('hidden');
-                    icon.classList.replace('fa-compress', 'fa-expand');
                 }
             };
 
