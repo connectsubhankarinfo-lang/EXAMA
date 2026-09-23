@@ -10552,6 +10552,8 @@
                 if (actionMenu) {
                     actionMenu.classList.add('hidden', 'opacity-0', 'scale-90');
                 }
+                const msgContainer = document.getElementById(`chat-msg-${id}`);
+                if (msgContainer) msgContainer.style.zIndex = '';
 
                 // 2. Ask for confirmation before deleting
                 if (!(await window.showCustomConfirm("Delete Message", "Delete this message for everyone?", "Delete", "Cancel", "danger"))) return;
@@ -10582,6 +10584,7 @@
             };
             window.sendReaction = async function(msgId, emoji) {
                 document.querySelectorAll('[id^="chat-actions-"]').forEach(el => el.classList.add('hidden', 'opacity-0', 'scale-90'));
+                document.querySelectorAll('[id^="chat-msg-"]').forEach(el => el.style.zIndex = '');
                 const mobile = window.loggedInMobile || 'guest';
                 const msg = window.chatDB.find(m => m.id === msgId);
                 if (!msg) return;
@@ -10719,12 +10722,22 @@
                     el.classList.add('hidden', 'opacity-0', 'scale-90');
                     el.classList.remove('flip-below');
                 });
+                document.querySelectorAll('[id^="chat-msg-"]').forEach(el => {
+                    el.style.zIndex = '';
+                });
 
                 const actions = document.getElementById(`chat-actions-${id}`);
                 if (!actions) return;
 
                 // Show menu with pop animation
                 actions.classList.remove('hidden');
+                
+                // Fix Z-Index stacking context bug by elevating parent
+                const msgContainer = document.getElementById(`chat-msg-${id}`);
+                if (msgContainer) {
+                    msgContainer.style.position = 'relative';
+                    msgContainer.style.zIndex = '999999';
+                }
 
                 // Auto-flip BELOW the bubble when there isn't enough room above -
                 // this is what stops the popup from getting buried under/behind
@@ -10754,7 +10767,11 @@
                     // If the tap was NOT inside the menu, close the menu
                     if (!actions.contains(e.target)) {
                         actions.classList.add('opacity-0', 'scale-90');
-                        setTimeout(() => actions.classList.add('hidden'), 200);
+                        setTimeout(() => {
+                            actions.classList.add('hidden');
+                            const msgContainer = document.getElementById(`chat-msg-${id}`);
+                            if (msgContainer) msgContainer.style.zIndex = '';
+                        }, 200);
                         document.removeEventListener('pointerdown', window.closeChatMenuHandler);
                     }
                 };
@@ -10776,6 +10793,8 @@
                 if (actionMenu) {
                     actionMenu.classList.add('hidden', 'opacity-0', 'scale-90');
                 }
+                const msgContainer = document.getElementById(`chat-msg-${id}`);
+                if (msgContainer) msgContainer.style.zIndex = '';
 
                 document.getElementById('chat-input').focus();
             };
@@ -13099,6 +13118,46 @@ ${textContent ? `
             window.addEventListener('orientationchange', function () {
                 setTimeout(window.updateCSSFullscreenLayout, 150);
             });
+
+            // ==========================================
+            // 🔄 AUTO-ROTATE: Video auto-enters/exits fullscreen
+            // whenever the phone is physically turned sideways.
+            // (playsinline blocks the browser's native auto-fullscreen-
+            // on-rotate behavior, so we replicate it here manually.)
+            // ==========================================
+            window.handleVideoAutoRotate = function () {
+                const watchView = document.getElementById('video-watch-view');
+                const container = document.getElementById('native-player-container');
+                if (!watchView || watchView.classList.contains('hidden-view') || !container) return;
+
+                const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+                const isTabletOrDesktop = window.innerWidth >= 768;
+                const isCSSFullscreen = container.classList.contains('fixed');
+                const isNativeFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+
+                if (isLandscape) {
+                    // Rotated to landscape: auto-expand if not already maximized
+                    if (!isCSSFullscreen && !isNativeFullscreen) {
+                        window.toggleVideoFullscreen();
+                    }
+                } else {
+                    // Rotated back to portrait: only auto-shrink the CSS (phone) fullscreen
+                    // we fully control ourselves; tablet/iOS native fullscreen keep their own exit UX.
+                    if (!isTabletOrDesktop && isCSSFullscreen) {
+                        window.toggleVideoFullscreen();
+                    }
+                }
+            };
+
+            window.addEventListener('orientationchange', function () {
+                setTimeout(window.handleVideoAutoRotate, 250);
+            });
+            if (window.matchMedia) {
+                const videoOrientationQuery = window.matchMedia('(orientation: landscape)');
+                const videoAutoRotateHandler = function () { setTimeout(window.handleVideoAutoRotate, 250); };
+                if (videoOrientationQuery.addEventListener) videoOrientationQuery.addEventListener('change', videoAutoRotateHandler);
+                else if (videoOrientationQuery.addListener) videoOrientationQuery.addListener(videoAutoRotateHandler); // older Safari
+            }
 
             window._enterCSSFullscreen = function () {
                 const container = document.getElementById('native-player-container');
@@ -21181,6 +21240,37 @@ window.onload = async function () {
                 window.pdfCanvases = [];
                 window.pdfDoc = null;
             };
+
+            // ==========================================
+            // 🔄 AUTO-ROTATE: PDF reader auto-enters/exits its
+            // immersive single-page fullscreen mode whenever the
+            // phone is physically turned sideways, to make the
+            // most of the extra landscape width automatically.
+            // ==========================================
+            window.handlePdfAutoRotate = function () {
+                const modal = document.getElementById('custom-pdf-viewer-modal');
+                const header = document.getElementById('pdf-modal-header');
+                if (!modal || modal.classList.contains('hidden-view') || !header) return;
+
+                const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+                const isCurrentlyFullscreen = header.classList.contains('hidden');
+
+                if (isLandscape && !isCurrentlyFullscreen) {
+                    window.togglePdfFullscreen();
+                } else if (!isLandscape && isCurrentlyFullscreen) {
+                    window.togglePdfFullscreen();
+                }
+            };
+
+            window.addEventListener('orientationchange', function () {
+                setTimeout(window.handlePdfAutoRotate, 250);
+            });
+            if (window.matchMedia) {
+                const pdfOrientationQuery = window.matchMedia('(orientation: landscape)');
+                const pdfAutoRotateHandler = function () { setTimeout(window.handlePdfAutoRotate, 250); };
+                if (pdfOrientationQuery.addEventListener) pdfOrientationQuery.addEventListener('change', pdfAutoRotateHandler);
+                else if (pdfOrientationQuery.addListener) pdfOrientationQuery.addListener(pdfAutoRotateHandler); // older Safari
+            }
 
             // ==========================================
             // ✌️ 60FPS PINCH-TO-ZOOM GESTURE ENGINE
