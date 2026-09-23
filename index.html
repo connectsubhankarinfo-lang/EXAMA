@@ -13641,10 +13641,10 @@ ${textContent ? `
                 if (isFirebaseConfigured) { const sesPath = window.isGlobalTestMode ? 'test_sessions' : 'sessions'; await set(ref(window.rtdb, `${sesPath}/${id}`), existing); } else { window.sessionsDB = window.sessionsDB.filter(s => s.id !== id); window.sessionsDB.push(existing); }
 
                 const timeString = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); const sessionShortName = sessionType.split(' ')[0];
-                if (action === 'START') { let msg = `${existing.name} started their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Focus Session Started \uD83D\uDE80', msg); if (window.rtdb && isFirebaseConfigured) set(ref(window.rtdb, window.isGlobalTestMode ? 'test_live_toasts' : 'live_toasts'), { msg: msg, time: Date.now(), mobile: existing.mobile, name: existing.name, action: 'START' }); }
-                else if (action === 'BREAK') { let msg = `${existing.name} took a break at ${timeString}.`; sendOneSignalPush('Session Pause \u2615', msg); if (window.rtdb && isFirebaseConfigured) set(ref(window.rtdb, window.isGlobalTestMode ? 'test_live_toasts' : 'live_toasts'), { msg: msg, time: Date.now(), mobile: existing.mobile, name: existing.name, action: 'BREAK' }); }
-                else if (action === 'RESUME') { let msg = `${existing.name} resumed studying at ${timeString}.`; sendOneSignalPush('Session Resumed \uD83C\uDFC3', msg); if (window.rtdb && isFirebaseConfigured) set(ref(window.rtdb, window.isGlobalTestMode ? 'test_live_toasts' : 'live_toasts'), { msg: msg, time: Date.now(), mobile: existing.mobile, name: existing.name, action: 'RESUME' }); }
-                else if (action === 'STOP' || action === 'STOP_AT_LIMIT') { let msg = `${existing.name} ended their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session Ended \uD83C\uDFC1', msg); if (window.rtdb && isFirebaseConfigured) set(ref(window.rtdb, window.isGlobalTestMode ? 'test_live_toasts' : 'live_toasts'), { msg: msg, time: Date.now(), mobile: existing.mobile, name: existing.name, action: action }); }
+                if (action === 'START') { let msg = `${existing.name} started their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Focus Session Started \uD83D\uDE80', msg); }
+                else if (action === 'BREAK') { let msg = `${existing.name} took a break at ${timeString}.`; sendOneSignalPush('Session Pause \u2615', msg); }
+                else if (action === 'RESUME') { let msg = `${existing.name} resumed studying at ${timeString}.`; sendOneSignalPush('Session Resumed \uD83C\uDFC3', msg); }
+                else if (action === 'STOP' || action === 'STOP_AT_LIMIT') { let msg = `${existing.name} ended their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session Ended \uD83C\uDFC1', msg); }
 
                 hideLoader(); renderSessionTimer();
             };
@@ -14152,6 +14152,8 @@ ${textContent ? `
                 window.isChatLoaded = true;
 // 13. CHAT (View Specific - RTDB Real-time Listener)
                     let firstChat = true;
+                    let knownChatIds = null;   // null until the first snapshot has been seeded
+                    let lastChatKey = null;
                     const chatPath = window.isGlobalTestMode ? 'test_chat' : 'chat';
                     const chatQuery = rtdbQuery(ref(window.rtdb, chatPath), orderByChild('timestamp'), limitToLast(50));
                     onValue(chatQuery, (snapshot) => {
@@ -14161,20 +14163,37 @@ ${textContent ? `
                         msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
                         window.chatDB = msgs;
 
-                        if (window.chatDB.length > oldLen && oldLen > 0) {
-                            const latest = window.chatDB[window.chatDB.length - 1];
-                            if (latest && latest.mobile !== window.loggedInMobile) {
-                                playChime(); const msgText = latest.text || (latest.audioUrl ? 'Shared a Voice Message' : 'Shared a Performance Card/Photo');
-                                sendPushNotification(`New Message from ${latest.name}`, msgText);
-                                // Show the toast everywhere in the app EXCEPT while already inside Discus,
-                                // using the sender's own DP (profile photo) instead of a generic icon.
-                                if (document.getElementById('community-chat-view')?.classList.contains('hidden-view')) {
-                                    const senderDp = window.getStudentAvatar(latest.mobile, latest.name);
-                                    showToast(`Message from ${latest.name}`, msgText, 'chat', senderDp);
+                        // ---- DISCUS MESSAGE TOAST (everyone, except while already inside Discus) ----
+                        // New messages are detected by ID. The old check compared array lengths, but this
+                        // query is capped at the last 50 messages, so once the chat was full the length
+                        // never grew and the toast never fired.
+                        try {
+                            if (knownChatIds === null) {
+                                knownChatIds = new Set(msgs.map(m => m.id));   // first load: just remember, no toast
+                            } else {
+                                const fresh = msgs.filter(m => !knownChatIds.has(m.id));
+                                msgs.forEach(m => knownChatIds.add(m.id));
+                                // ignore my own messages, and old messages that slide back into the 50-window after a delete
+                                const incoming = fresh.filter(m => m.mobile !== window.loggedInMobile && (Date.now() - (m.timestamp || 0)) < 120000);
+                                const latest = incoming[incoming.length - 1];
+                                if (latest) {
+                                    const msgText = latest.text || (latest.audioUrl ? 'Shared a Voice Message' : 'Shared a Performance Card/Photo');
+                                    playChime();
+                                    sendPushNotification(`New Message from ${latest.name}`, msgText);
+                                    const chatViewEl = document.getElementById('community-chat-view');
+                                    const insideDiscus = !!chatViewEl && !chatViewEl.classList.contains('hidden-view');
+                                    if (!insideDiscus) {
+                                        const senderDp = window.getStudentAvatar(latest.mobile, latest.name);
+                                        window.showToast('Message from ' + window.escapeToastHtml(latest.name || 'Someone'), window.escapeToastHtml(msgText), 'chat', senderDp);
+                                    }
                                 }
                             }
-                        }
-                        if (firstChat || window.chatDB.length !== oldLen) {
+                        } catch (toastErr) { console.warn('Discus toast error:', toastErr); }
+
+                        const newestChatKey = msgs.length ? msgs[msgs.length - 1].id : null;
+                        const newestChanged = newestChatKey !== lastChatKey;
+                        lastChatKey = newestChatKey;
+                        if (firstChat || window.chatDB.length !== oldLen || newestChanged) {
                             firstChat = false;
                             if (!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) {
                                 renderChat();
@@ -14728,6 +14747,13 @@ ${textContent ? `
                 if (banner) banner.classList.toggle('hidden', !isActive);
             };
 
+            // Escape user-supplied text (chat messages, names) before it is placed inside a toast's innerHTML.
+            window.escapeToastHtml = function (str) {
+                return String(str == null ? '' : str)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            };
+
             window.showToast = function (title, message, type = "info", avatarUrl = null, actionBadge = null) {
                 const container = document.getElementById('toast-container');
                 if (!container) return;
@@ -14767,7 +14793,8 @@ ${textContent ? `
                     } else if (type === 'chat') {
                         badgeHtml = '<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-indigo-500 border-2 border-white flex items-center justify-center shadow-sm"><i class="fa-solid fa-comment text-white text-[5px]"></i></span>';
                     }
-                    iconHtml = `<div class="relative w-8 h-8 shrink-0"><img src="${avatarUrl}" class="w-8 h-8 rounded-full object-cover shadow-sm border border-white/70 bg-indigo-100">${badgeHtml}</div>`;
+                    const safeAvatar = String(avatarUrl).replace(/"/g, '&quot;');
+                    iconHtml = `<div class="relative w-8 h-8 shrink-0"><img src="${safeAvatar}" onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=U&background=4f46e5&color=fff&bold=true'" class="w-8 h-8 rounded-full object-cover shadow-sm border border-white/70 bg-indigo-100">${badgeHtml}</div>`;
                 }
 
                 // 4. Create the iOS Premium Glass UI Toast
@@ -15038,10 +15065,45 @@ ${textContent ? `
 
                     // 12. SESSIONS (Core Data)
                     let firstSes = true;
+                    let knownSessionLogCounts = null;   // null until the first snapshot has been seeded
+                    const SESSION_TOAST_TEXT = {
+                        START: (n, ss, t) => `${n} started their ${ss} at ${t}.`,
+                        BREAK: (n, ss, t) => `${n} took a break at ${t}.`,
+                        RESUME: (n, ss, t) => `${n} resumed studying at ${t}.`,
+                        STOP: (n, ss, t) => `${n} ended their ${ss} at ${t}.`,
+                        STOP_AT_LIMIT: (n, ss, t) => `${n} ended their ${ss} at ${t}.`
+                    };
                     await new Promise(r => requestAnimationFrame(r));
                     onValue(ref(window.rtdb, window.isGlobalTestMode ? 'test_sessions' : 'sessions'), (snapshot) => {
                         const data = snapshot.val() || {};
                         window.sessionsDB = Object.entries(data).map(([key, val]) => ({ id: key, ...val }));
+
+                        // ---- FOCUS SESSION TOAST (shown to everyone: start / break / resume / end) ----
+                        // Built from the sessions data that every device already syncs, by spotting a new
+                        // entry in a session's action log. No extra database path and no clock comparison.
+                        try {
+                            const counts = new Map();
+                            const events = [];
+                            window.sessionsDB.forEach(ses => {
+                                const logs = Array.isArray(ses.logs) ? ses.logs : Object.values(ses.logs || {});
+                                counts.set(ses.id, logs.length);
+                                if (knownSessionLogCounts && logs.length > (knownSessionLogCounts.get(ses.id) || 0)) {
+                                    const last = logs[logs.length - 1];
+                                    // ignore stale changes (e.g. catching up after being offline)
+                                    if (last && SESSION_TOAST_TEXT[last.action] && (Date.now() - (last.time || 0)) < 180000) events.push({ ses, last });
+                                }
+                            });
+                            knownSessionLogCounts = counts;   // first load: just remember, no toast
+                            events.sort((x, y) => (x.last.time || 0) - (y.last.time || 0));
+                            const ev = events[events.length - 1];
+                            if (ev) {
+                                const shortName = String(ev.ses.sessionType || 'session').split(' ')[0];
+                                const timeStr = new Date(ev.last.time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                                const text = SESSION_TOAST_TEXT[ev.last.action](window.escapeToastHtml(ev.ses.name || 'A student'), shortName, timeStr);
+                                const actorDp = window.getStudentAvatar(ev.ses.mobile, ev.ses.name);
+                                window.showToast('Focus Session', text, 'info', actorDp, ev.last.action);
+                            }
+                        } catch (sesToastErr) { console.warn('Session toast error:', sesToastErr); }
                         if (firstSes || true) {
                             firstSes = false;
                             debouncedRefreshUI();
@@ -15050,16 +15112,7 @@ ${textContent ? `
 
                     
                     
-                    // Live Toasts - shown globally to every logged-in user (student & admin)
-                    // whenever anyone starts, takes a break on, resumes, or ends a focus session.
-                    // Uses that student's own DP (profile photo) instead of a generic bell icon.
-                    onValue(ref(window.rtdb, window.isGlobalTestMode ? 'test_live_toasts' : 'live_toasts'), (snapshot) => {
-                        const data = snapshot.val();
-                        if (data && data.msg && (Date.now() - data.time < 10000)) {
-                            const actorDp = data.mobile ? window.getStudentAvatar(data.mobile, data.name) : null;
-                            window.showToast('Focus Session', data.msg, 'info', actorDp, data.action || null);
-                        }
-                    });
+                    // (Focus-session toasts are now generated inside the SESSIONS listener above.)
 
                     // 15. NOTICES (View Specific + Badges)
                     let firstNotices = true;
