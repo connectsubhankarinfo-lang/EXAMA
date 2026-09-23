@@ -2302,6 +2302,7 @@
             animation: shimmer 2s infinite;
         }
         }
+        
 
         * {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol" !important;
@@ -2347,6 +2348,22 @@
             /* Match this to your app frame background */
         }
 
+        /* --- DISCUS REACTION POPUP ---
+           Always paint above every message bubble (including the other person's),
+           and auto-flip to open BELOW the bubble (via .flip-below, toggled in JS)
+           when there isn't enough room above, so it never gets buried/clipped. */
+        [id^="chat-actions-"] {
+            z-index: 99999 !important;
+        }
+        [id^="chat-actions-"].flip-below {
+            top: auto !important;
+            bottom: -3rem !important;
+        }
+        @media (min-width: 640px) {
+            [id^="chat-actions-"].flip-below {
+                bottom: -3.5rem !important;
+            }
+        }
         /* Allow rubber-banding ONLY inside your scrollable containers */
         .overflow-y-auto,
         .no-scrollbar {
@@ -2770,8 +2787,10 @@
                 html.is-tablet.is-portrait #evaluation-modal>div:first-child,
                 html.is-tablet.is-portrait #peer-eval-room-modal>div:first-child,
                 html.is-tablet.is-portrait #red-pen-modal>div:first-child,
-                html.is-tablet.is-portrait #auto-quiz-modal>div:first-child {
-                    padding-top: max(3rem, env(safe-area-inset-top)) !important;
+                html.is-tablet.is-portrait #auto-quiz-modal>div:first-child,
+                html.is-tablet.is-portrait #student-view>div:first-child {
+                    margin-top: 4.5rem !important;
+                    padding-top: max(1.5rem, env(safe-area-inset-top)) !important;
                 }
 
                 #action-sheet,
@@ -10680,10 +10699,11 @@
                 }
             };
 
-            window.showChatMenu = function (id) {
+                       window.showChatMenu = function (id) {
                 // Hide all other open menus first
                 document.querySelectorAll('[id^="chat-actions-"]').forEach(el => {
                     el.classList.add('hidden', 'opacity-0', 'scale-90');
+                    el.classList.remove('flip-below');
                 });
 
                 const actions = document.getElementById(`chat-actions-${id}`);
@@ -10691,11 +10711,25 @@
 
                 // Show menu with pop animation
                 actions.classList.remove('hidden');
+
+                // Auto-flip BELOW the bubble when there isn't enough room above -
+                // this is what stops the popup from getting buried under/behind
+                // the previous message bubble (often the other person's).
+                const chatList = document.getElementById('chat-messages');
+                if (chatList) {
+                    const listRect = chatList.getBoundingClientRect();
+                    const actionsRect = actions.getBoundingClientRect();
+                    if (actionsRect.top < listRect.top + 8) {
+                        actions.classList.add('flip-below');
+                    } else {
+                        actions.classList.remove('flip-below');
+                    }
+                }
+
                 setTimeout(() => {
                     actions.classList.remove('opacity-0', 'scale-90');
                     actions.classList.add('opacity-100', 'scale-100');
                 }, 10);
-
                 // Remove old listeners to prevent duplicates
                 if (window.closeChatMenuHandler) {
                     document.removeEventListener('pointerdown', window.closeChatMenuHandler);
