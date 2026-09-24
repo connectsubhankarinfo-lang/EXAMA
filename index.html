@@ -2855,20 +2855,29 @@
                     !!(document.fullscreenElement || document.webkitFullscreenElement);
             }
 
-            const EDGE_PX = 32, MIN_DX = 56;
+            // Wider catch zone + lower distance thresholds: different Android
+            // skins recognize the back-gesture edge at different widths, and a
+            // quick real swipe can be shorter than you'd expect.
+            const EDGE_PX = 48, MIN_DX = 32, CANCEL_DX = 14;
             let g = null;   // the edge swipe currently being tracked
 
-            function finishEdge(s, isCancel) {
-                if (!s) return;
-                if (Date.now() - s.t0 > 800) return;
-                const need = isCancel ? 20 : MIN_DX;
-                if (s.dx < need || s.dy > s.dx * 0.6) return;          // must be a mostly-horizontal, inward swipe
+            function armEdgeBack(s) {
+                if (!s || s.armed) return;              // only ever schedule once per gesture
+                s.armed = true;
                 setTimeout(function () {
                     if (navCount !== s.nav) return;                     // system already went back -> leave it
                     if (!applied || keyboardUp || viewerActive()) return;
                     try { if (typeof window.safeBack === 'function') window.safeBack(); else history.back(); }
                     catch (e) { history.back(); }
-                }, 350);
+                }, 300);
+            }
+
+            function finishEdge(s, isCancel) {
+                if (!s || s.armed) return;
+                if (Date.now() - s.t0 > 900) return;
+                const need = isCancel ? CANCEL_DX : MIN_DX;
+                if (s.dx < need || s.dy > s.dx * 0.75) return;          // must be a mostly-horizontal, inward swipe
+                armEdgeBack(s);
             }
 
             if (EDGE_BACK) {
@@ -2879,7 +2888,7 @@
                     const t = e.touches[0], W = window.innerWidth;
                     const side = t.clientX <= EDGE_PX ? 'L' : (t.clientX >= W - EDGE_PX ? 'R' : null);
                     if (!side) return;
-                    g = { side: side, x0: t.clientX, y0: t.clientY, t0: Date.now(), nav: navCount, dx: 0, dy: 0 };
+                    g = { side: side, x0: t.clientX, y0: t.clientY, t0: Date.now(), nav: navCount, dx: 0, dy: 0, armed: false };
                 }, opt);
                 document.addEventListener('touchmove', function (e) {
                     if (!g) return;
@@ -2887,6 +2896,13 @@
                     const t = e.touches[0];
                     g.dx = (t.clientX - g.x0) * (g.side === 'L' ? 1 : -1);
                     g.dy = Math.abs(t.clientY - g.y0);
+                    // Fire as soon as the gesture qualifies, mid-swipe. On some
+                    // Android versions the OS hijacks the touch stream partway
+                    // through to animate the bars back in and never delivers a
+                    // touchend/touchcancel at all, so waiting for those events
+                    // would silently drop the gesture. Reacting here means we
+                    // don't depend on getting a "final" event at all.
+                    finishEdge(g, false);
                 }, opt);
                 document.addEventListener('touchend', function () { const s = g; g = null; finishEdge(s, false); }, opt);
                 document.addEventListener('touchcancel', function () { const s = g; g = null; finishEdge(s, true); }, opt);
