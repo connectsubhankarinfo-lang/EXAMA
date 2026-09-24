@@ -2678,6 +2678,13 @@
             let inited = false;
             let docFS = false;          // true while WE hold browser fullscreen
             let lastOwnChange = 0;
+            let navCount = 0;           // bumps on every history navigation (hashchange / popstate)
+
+            // ---- switches -------------------------------------------------------
+            const APP_WIDE = true;      // true  = hide the status bar on every screen
+                                        // false = only inside the video / PDF / image viewers
+            const EDGE_BACK = true;     // true  = one-swipe back while the bars are hidden
+            // ---------------------------------------------------------------------
 
             const bridge = function () { return window.median || window.gonative || null; };
             const inMedian = function () { return !!bridge() || /median|gonative/i.test(navigator.userAgent); };
@@ -2761,7 +2768,7 @@
                 const b = bridge();
                 if (inited || !b) return;
                 inited = true;
-                appWide = true;
+                appWide = APP_WIDE;
                 try {
                     // Android full screen makes the keyboard overlay the page, so show the
                     // bars while typing and hide them again afterwards (Median's advice).
@@ -2819,6 +2826,71 @@
             }
             if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
             else start();
+
+            // After ANY back/forward navigation, put the bars away again. Android reveals
+            // them on the first gesture and (depending on the device) may leave them showing.
+            function onNav() {
+                navCount++;
+                if (!inMedian()) return;
+                setTimeout(reapply, 400);
+                setTimeout(reapply, 1800);
+            }
+            window.addEventListener('hashchange', onNav);
+            window.addEventListener('popstate', onNav);
+
+            // ------------------------------------------------------------------
+            // ONE-SWIPE BACK while the system bars are hidden.
+            // Android disables the back gesture while its bars are hidden, so the
+            // first edge swipe only reveals them and you have to swipe twice.
+            // We watch for that swipe ourselves; if the system did NOT navigate
+            // within 350ms we go back for it. If the system did (2nd swipe, or a
+            // newer Android that already allows one swipe) we do nothing, so a
+            // swipe can never go back twice.
+            // ------------------------------------------------------------------
+            function viewerActive() {
+                const vis = function (id) { const el = document.getElementById(id); return !!el && !el.classList.contains('hidden-view'); };
+                const c = document.getElementById('native-player-container');
+                return vis('fullscreen-image-modal') || vis('custom-pdf-viewer-modal') ||
+                    !!(c && c.classList.contains('fixed')) ||
+                    !!(document.fullscreenElement || document.webkitFullscreenElement);
+            }
+
+            const EDGE_PX = 32, MIN_DX = 56;
+            let g = null;   // the edge swipe currently being tracked
+
+            function finishEdge(s, isCancel) {
+                if (!s) return;
+                if (Date.now() - s.t0 > 800) return;
+                const need = isCancel ? 20 : MIN_DX;
+                if (s.dx < need || s.dy > s.dx * 0.6) return;          // must be a mostly-horizontal, inward swipe
+                setTimeout(function () {
+                    if (navCount !== s.nav) return;                     // system already went back -> leave it
+                    if (!applied || keyboardUp || viewerActive()) return;
+                    try { if (typeof window.safeBack === 'function') window.safeBack(); else history.back(); }
+                    catch (e) { history.back(); }
+                }, 350);
+            }
+
+            if (EDGE_BACK) {
+                const opt = { passive: true, capture: true };
+                document.addEventListener('touchstart', function (e) {
+                    g = null;
+                    if (!inMedian() || !applied || keyboardUp || e.touches.length !== 1 || viewerActive()) return;
+                    const t = e.touches[0], W = window.innerWidth;
+                    const side = t.clientX <= EDGE_PX ? 'L' : (t.clientX >= W - EDGE_PX ? 'R' : null);
+                    if (!side) return;
+                    g = { side: side, x0: t.clientX, y0: t.clientY, t0: Date.now(), nav: navCount, dx: 0, dy: 0 };
+                }, opt);
+                document.addEventListener('touchmove', function (e) {
+                    if (!g) return;
+                    if (e.touches.length !== 1) { g = null; return; }
+                    const t = e.touches[0];
+                    g.dx = (t.clientX - g.x0) * (g.side === 'L' ? 1 : -1);
+                    g.dy = Math.abs(t.clientY - g.y0);
+                }, opt);
+                document.addEventListener('touchend', function () { const s = g; g = null; finishEdge(s, false); }, opt);
+                document.addEventListener('touchcancel', function () { const s = g; g = null; finishEdge(s, true); }, opt);
+            }
 
             return {
                 request: request,
