@@ -4343,7 +4343,7 @@
                 <h1
                     class="text-3xl sm:text-4xl font-black tracking-tight leading-snug text-transparent bg-clip-text bg-gradient-to-r from-indigo-700 via-purple-600 to-cyan-500 drop-shadow-sm break-words px-2"
                     style="font-family: 'Inter', 'Segoe UI', sans-serif; letter-spacing: -0.03em;">
-                   Hi There! </h1>
+                    Login to your<br>account</h1>
                 <p
                     class="text-indigo-400/80 mt-3 sm:mt-4 font-semibold tracking-wide text-xs sm:text-sm break-words px-2"
                     style="font-family: 'Inter', 'Segoe UI', sans-serif;">
@@ -14702,29 +14702,34 @@ ${textContent ? `
                 if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
             }
 
+            // Helper: navigate without pushing a new history entry
+            // This prevents the double-back-press issue in median.io WebView
+            function navigateReplace(hash) {
+                history.replaceState(null, '', '#' + hash);
+                if (typeof window.handleHashChange === 'function') window.handleHashChange();
+            }
+            window.navigateReplace = navigateReplace;
+
             function safeBack() {
                 cleanupJitsi();
-                // Navigate directly to dashboard instead of history.back()
-                // This fixes the double-back-press issue in WebView (median.io APK)
-                // where intermediate hash redirects create extra history entries.
                 const currentHash = window.location.hash.replace('#', '');
 
                 // Handle nested views: go to parent view instead of dashboard
                 if (currentHash === 'watch-video' || currentHash === 'video-watch') {
-                    window.location.hash = 'video-hub';
+                    navigateReplace('video-hub');
                     return;
                 }
                 if (currentHash === 'admin-profile') {
-                    window.location.hash = 'admin';
+                    navigateReplace('admin');
                     return;
                 }
                 if (currentHash === 'budget-track') {
-                    window.location.hash = 'budget-manager';
+                    navigateReplace('budget-manager');
                     return;
                 }
 
                 // Default: go to current role's dashboard
-                window.location.hash = window.currentRole || 'login';
+                navigateReplace(window.currentRole || 'login');
             }
             window.safeBack = safeBack;
 
@@ -14848,7 +14853,8 @@ ${textContent ? `
 
                 // Auth security gate
                 if (hash !== 'login' && !window.currentRole) {
-                    window.location.hash = 'login';
+                    history.replaceState(null, '', '#login');
+                    window.handleHashChange();
                     return;
                 }
 
@@ -14900,13 +14906,13 @@ ${textContent ? `
                 // 4. Run View-Specific Logic
                 switch (hash) {
                     case 'login':
-                        if (window.currentRole) window.location.hash = window.currentRole;
+                        if (window.currentRole) { navigateReplace(window.currentRole); return; }
                         break;
                     case 'student':
-                        if (window.currentRole !== 'student') window.location.hash = 'admin';
+                        if (window.currentRole !== 'student') { navigateReplace('admin'); return; }
                         break;
                     case 'admin':
-                        if (window.currentRole !== 'admin') window.location.hash = 'student';
+                        if (window.currentRole !== 'admin') { navigateReplace('student'); return; }
                         break;
                     case 'student-directory':
                         if (typeof window.renderStudentDirectory === 'function') window.renderStudentDirectory();
