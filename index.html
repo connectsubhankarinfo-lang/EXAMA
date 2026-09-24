@@ -2631,14 +2631,135 @@
     <script>window.addEventListener('error', function (e) { alert('JS Error: ' + e.message + ' at ' + e.lineno); }); window.addEventListener('unhandledrejection', function (e) { alert('Promise Error: ' + e.reason); });</script>
 
     <script>
-        // Wait for Median JS bridge to be ready
-        function median_library_ready(){
-            median.statusbar.set({
-                'style': 'dark',
-                'color': '00000000',
-                'overlay': true
-            });
+        function enforceTransparentStatusBar() {
+            if (typeof median !== 'undefined' && median.statusbar) {
+                median.statusbar.set({'style': 'dark', 'color': '00000000', 'overlay': true});
+            }
         }
+        function median_library_ready(){ enforceTransparentStatusBar(); }
+        // ==========================================================
+        // APP FULLSCREEN CONTROLLER
+        // Hides the system status bar (and Android nav bar) while the
+        // video player, PDF reader (fullscreen / landscape) or image
+        // viewer is open, then restores everything on close.
+        //   - Median Android app : median.android.screen.fullScreen() / .normal()
+        //   - Browser / PWA      : Fullscreen API on <html>
+        // Uses "owners" so nested viewers (image over PDF) never fight.
+        // ==========================================================
+        window.AppFS = (function () {
+            const owners = new Set();
+            let docFS = false;          // true while WE hold browser fullscreen
+            let lastOwnChange = 0;      // timestamp of our own fullscreen change
+
+            const bridge = () => window.median || window.gonative || null;
+            const inMedian = () => !!bridge() || /median|gonative/i.test(navigator.userAgent);
+
+            function nativeHide() {
+                const b = bridge();
+                try {
+                    if (b && b.android && b.android.screen && typeof b.android.screen.fullScreen === 'function') {
+                        b.android.screen.fullScreen(); return;
+                    }
+                    if (b && b.screen && typeof b.screen.fullScreen === 'function' && typeof b.screen.normal === 'function') {
+                        b.screen.fullScreen();
+                    }
+                } catch (e) { }
+            }
+
+            function nativeShow() {
+                const b = bridge();
+                try {
+                    if (b && b.android && b.android.screen && typeof b.android.screen.normal === 'function') b.android.screen.normal();
+                    else if (b && b.screen && typeof b.screen.normal === 'function') b.screen.normal();
+                } catch (e) { }
+                // Put the app's transparent overlay status bar back
+                setTimeout(function () {
+                    try { if (typeof enforceTransparentStatusBar === 'function') enforceTransparentStatusBar(); } catch (e) { }
+                }, 300);
+            }
+
+            function browserEnter() {
+                const el = document.documentElement;
+                const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+                if (!fn || document.fullscreenElement || document.webkitFullscreenElement) return;
+                lastOwnChange = Date.now();
+                try {
+                    docFS = true;
+                    const p = fn.call(el);
+                    if (p && p.catch) p.catch(function () { docFS = false; });
+                } catch (e) { docFS = false; }
+            }
+
+            function browserExit() {
+                if (!docFS) return;
+                docFS = false;
+                lastOwnChange = Date.now();
+                try {
+                    const fn = document.exitFullscreen || document.webkitExitFullscreen;
+                    if (fn && (document.fullscreenElement || document.webkitFullscreenElement)) {
+                        const p = fn.call(document);
+                        if (p && p.catch) p.catch(function () { });
+                    }
+                } catch (e) { }
+            }
+
+            function request(owner, opts) {
+                const first = owners.size === 0;
+                owners.add(owner);
+                if (inMedian()) {
+                    if (first) nativeHide();
+                } else if (!(opts && opts.browser === false)) {
+                    browserEnter();
+                }
+            }
+
+            function release(owner) {
+                if (!owners.delete(owner)) return;
+                if (owners.size === 0) {
+                    if (inMedian()) nativeShow();
+                    browserExit();
+                }
+            }
+
+            // Any element that goes fullscreen through the browser (tablet video,
+            // Google Drive iframe player...) should also hide the system bars.
+            function syncNative() {
+                if (Date.now() - lastOwnChange < 1000) return;   // our own change
+                const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+                if (fsEl) request('native', { browser: false });
+                else { docFS = false; release('native'); }
+            }
+            document.addEventListener('fullscreenchange', syncNative);
+            document.addEventListener('webkitfullscreenchange', syncNative);
+
+            // Safety net: whatever closes a viewer (back button, other code),
+            // the status bar must always come back.
+            function watchHidden(id, onHide) {
+                const start = function () {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    new MutationObserver(function () {
+                        if (el.classList.contains('hidden-view')) onHide();
+                    }).observe(el, { attributes: true, attributeFilter: ['class'] });
+                };
+                if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+                else start();
+            }
+            watchHidden('fullscreen-image-modal', function () { release('image'); });
+            watchHidden('custom-pdf-viewer-modal', function () { release('pdf'); });
+            watchHidden('video-watch-view', function () {
+                const c = document.getElementById('native-player-container');
+                if (c && c.classList.contains('fixed') && typeof window._exitCSSFullscreen === 'function') window._exitCSSFullscreen();
+                release('video');
+            });
+
+            return {
+                request: request,
+                release: release,
+                isOwnFullscreenEvent: function () { return Date.now() - lastOwnChange < 1000; }
+            };
+        })();
+        
     </script>
 </head>
 
@@ -4354,7 +4475,7 @@
                 <h1
                     class="text-3xl sm:text-4xl font-black tracking-tight leading-snug text-transparent bg-clip-text bg-gradient-to-r from-indigo-700 via-purple-600 to-cyan-500 drop-shadow-sm break-words px-2"
                     style="font-family: 'Inter', 'Segoe UI', sans-serif; letter-spacing: -0.03em;">
-                    Hi There!</h1>
+                    Login to your<br>account</h1>
                 <p
                     class="text-indigo-400/80 mt-3 sm:mt-4 font-semibold tracking-wide text-xs sm:text-sm break-words px-2"
                     style="font-family: 'Inter', 'Segoe UI', sans-serif;">
@@ -13674,12 +13795,18 @@ ${textContent ? `
                     if (container.requestFullscreen) container.requestFullscreen();
                     else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
                     else if (container.msRequestFullscreen) container.msRequestFullscreen();
+                    if (window.AppFS) window.AppFS.request('video', { browser: false });
 
                     try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => { }); } catch (err) { }
                 } else {
                     // 📱 MOBILE: Use pure CSS to avoid conflicting with the App's global Fullscreen
                     container.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
                     container.classList.remove('aspect-video', 'relative');
+
+                    // 📱 Hide the status bar (Median Android app, or browser Fullscreen API)
+                    if (window.AppFS) window.AppFS.request('video');
+                    // In a browser the orientation lock only works once fullscreen is active
+                    setTimeout(function () { try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () { }); } catch (err) { } }, 400);
 
                     window.updateCSSFullscreenLayout();
 
@@ -13716,6 +13843,7 @@ ${textContent ? `
 
                 try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (err) { }
 
+                if (window.AppFS) window.AppFS.release('video');
                 if (window.vjsPlayer) window.vjsPlayer.isFullscreen(false);
             };
 
@@ -13736,32 +13864,18 @@ ${textContent ? `
                 }
 
                 if (!isCurrentlyMaximized) {
-                    // PUSH dummy history state for Mobile Android Back Button
-                    if (!isTabletOrDesktop) history.pushState({ isVideoFullscreen: true }, "");
                     window._enterCSSFullscreen();
                 } else {
-                    // TRIGGER Back to safely shrink video on Mobile, or manually exit on Tablet
-                    if (!isTabletOrDesktop && isCSSFullscreen) {
-                        history.back(); // This safely calls _exitCSSFullscreen via the popstate listener
-                    } else {
-                        window._exitCSSFullscreen();
-                    }
-                }
-            };
-
-            // 🛡️ MOBILE RESCUE: Hardware Back Button
-            window.addEventListener('popstate', function (event) {
-                const container = document.getElementById('native-player-container');
-                if (container && container.classList.contains('fixed')) {
                     window._exitCSSFullscreen();
                 }
-            });
+            };
 
             // 🛡️ TABLET RESCUE: Listen for Desktop ESC key or Tablet UI exit
             document.addEventListener('fullscreenchange', syncNativeFullscreenExit);
             document.addEventListener('webkitfullscreenchange', syncNativeFullscreenExit);
 
             function syncNativeFullscreenExit() {
+                if (window.AppFS && window.AppFS.isOwnFullscreenEvent()) return;
                 const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
                 if (!isNativeFullscreen) {
                     window._exitCSSFullscreen();
@@ -15138,6 +15252,7 @@ ${textContent ? `
                     }
                 }
                 modal.classList.remove('hidden-view');
+                if (window.AppFS) window.AppFS.request('image'); // hide status bar
             };
 
             window.zoomImg = function (dir) {
@@ -15151,6 +15266,7 @@ ${textContent ? `
             };
 
             window.closeFullScreenImage = function () {
+                if (window.AppFS) window.AppFS.release('image'); // restore status bar
                 document.getElementById('fullscreen-image-modal').classList.add('hidden-view');
                 document.getElementById('fullscreen-img-src').src = '';
                 document.getElementById('fullscreen-pdf-src').src = '';
@@ -21722,6 +21838,7 @@ ${textContent ? `
 
                 if (!window.pdfViewMode || window.pdfViewMode === 0) {
                     // State 1: Enter Distraction-Free (Portrait Fullscreen)
+                    if (window.AppFS) window.AppFS.request('pdf');
                     window.pdfViewMode = 1;
                     header.classList.add('hidden');
                     icon.className = 'fa-solid fa-mobile-screen';
@@ -21735,6 +21852,7 @@ ${textContent ? `
 
                 } else if (window.pdfViewMode === 1) {
                     // State 2: Enter Landscape Fullscreen
+                    if (window.AppFS) window.AppFS.request('pdf');
                     window.pdfViewMode = 2;
                     header.classList.add('hidden');
                     icon.className = 'fa-solid fa-compress';
@@ -21748,6 +21866,7 @@ ${textContent ? `
 
                 } else {
                     // State 3: Exit to Normal Mode
+                    if (window.AppFS) window.AppFS.release('pdf');
                     window.pdfViewMode = 0;
                     header.classList.remove('hidden');
                     icon.className = 'fa-solid fa-expand';
@@ -24806,4 +24925,3 @@ YOUR DIRECTIVES:
 </body>
 
 </html>
-
