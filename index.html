@@ -13738,51 +13738,41 @@ ${textContent ? `
                 }
             };
 
-            // 🛡️ MOBILE RESCUE: Hardware Back Button (Median.io APK Fullscreen Fix)
-            // Problem: In median.io fullscreen/immersive mode, Android's first back press
-            // exits immersive mode (shows status bar) without triggering popstate.
-            // Solution: Maintain a dummy history entry. When popstate fires, we handle
-            // navigation ourselves and re-push the dummy entry for the next back press.
-
-            // Push initial dummy entry so hardware back always triggers popstate
-            (function initBackButtonHandler() {
-                // Only push if we don't already have a state marker
-                if (!history.state || !history.state._appBackGuard) {
-                    history.pushState({ _appBackGuard: true }, '');
-                }
-            })();
-
+            // 🛡️ MOBILE RESCUE: Hardware Back Button
             window.addEventListener('popstate', function (event) {
-                // 1. If video player is in CSS fullscreen, exit that first
                 const container = document.getElementById('native-player-container');
                 if (container && container.classList.contains('fixed')) {
                     window._exitCSSFullscreen();
-                    // Re-push dummy entry for next back press
-                    history.pushState({ _appBackGuard: true }, '');
-                    return;
                 }
+            });
 
-                // 2. Check if any modal/overlay is open and close it
-                const modalOverlay = document.getElementById('modal-overlay');
-                if (modalOverlay && !modalOverlay.classList.contains('hidden-view')) {
-                    if (typeof window.closeBottomSheet === 'function') window.closeBottomSheet();
-                    history.pushState({ _appBackGuard: true }, '');
-                    return;
-                }
-
-                // 3. For normal views: navigate back to dashboard
-                const currentHash = window.location.hash.replace('#', '');
-                const dashboardHashes = [window.currentRole, 'login', 'student', 'admin', ''];
+            // 🛡️ ANDROID FULLSCREEN RESCUE: Single-Press Back Fix
+            // In Android Full Screen mode, the 1st back press exits immersive mode (shows status bar).
+            // This consumes the hardware back event natively. We detect the status bar appearing 
+            // via a small viewport height decrease and automatically navigate back for the user.
+            let _lastViewportHeight = window.innerHeight;
+            let _lastViewportWidth = window.innerWidth;
+            
+            window.addEventListener('resize', () => {
+                const heightDiff = _lastViewportHeight - window.innerHeight;
+                const widthDiff = Math.abs(_lastViewportWidth - window.innerWidth);
                 
-                if (!dashboardHashes.includes(currentHash)) {
-                    // We're in a sub-view, go back to dashboard
-                    if (typeof window.safeBack === 'function') {
-                        window.safeBack();
+                // If width is unchanged, and height decreased by 15-120px (status/nav bar size)
+                if (widthDiff === 0 && heightDiff > 15 && heightDiff < 120) {
+                    const currentHash = window.location.hash.replace('#', '');
+                    const dashboardHashes = [window.currentRole, 'login', 'student', 'admin', ''];
+                    
+                    if (!dashboardHashes.includes(currentHash)) {
+                        // User is in a sub-view, trigger the actual back navigation!
+                        if (typeof window.safeBack === 'function') {
+                            window.safeBack();
+                        }
                     }
                 }
-
-                // Re-push dummy entry so next hardware back press also works
-                history.pushState({ _appBackGuard: true }, '');
+                
+                // Update tracker
+                _lastViewportHeight = window.innerHeight;
+                _lastViewportWidth = window.innerWidth;
             });
 
             // 🛡️ TABLET RESCUE: Listen for Desktop ESC key or Tablet UI exit
@@ -14741,34 +14731,9 @@ ${textContent ? `
                 if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; }
             }
 
-            // Helper: navigate without pushing a new history entry
-            // This prevents the double-back-press issue in median.io WebView
-            function navigateReplace(hash) {
-                history.replaceState(null, '', '#' + hash);
-                if (typeof window.handleHashChange === 'function') window.handleHashChange();
-            }
-            window.navigateReplace = navigateReplace;
-
             function safeBack() {
                 cleanupJitsi();
-                const currentHash = window.location.hash.replace('#', '');
-
-                // Handle nested views: go to parent view instead of dashboard
-                if (currentHash === 'watch-video' || currentHash === 'video-watch') {
-                    navigateReplace('video-hub');
-                    return;
-                }
-                if (currentHash === 'admin-profile') {
-                    navigateReplace('admin');
-                    return;
-                }
-                if (currentHash === 'budget-track') {
-                    navigateReplace('budget-manager');
-                    return;
-                }
-
-                // Default: go to current role's dashboard
-                navigateReplace(window.currentRole || 'login');
+                if (window.history.length > 1) { window.history.back(); } else { window.location.hash = window.currentRole || 'login'; }
             }
             window.safeBack = safeBack;
 
@@ -14892,8 +14857,7 @@ ${textContent ? `
 
                 // Auth security gate
                 if (hash !== 'login' && !window.currentRole) {
-                    history.replaceState(null, '', '#login');
-                    window.handleHashChange();
+                    window.location.hash = 'login';
                     return;
                 }
 
@@ -14945,13 +14909,13 @@ ${textContent ? `
                 // 4. Run View-Specific Logic
                 switch (hash) {
                     case 'login':
-                        if (window.currentRole) { navigateReplace(window.currentRole); return; }
+                        if (window.currentRole) { history.replaceState(null, '', '#' + window.currentRole); window.handleHashChange(); return; }
                         break;
                     case 'student':
-                        if (window.currentRole !== 'student') { navigateReplace('admin'); return; }
+                        if (window.currentRole !== 'student') { history.replaceState(null, '', '#admin'); window.handleHashChange(); return; }
                         break;
                     case 'admin':
-                        if (window.currentRole !== 'admin') { navigateReplace('student'); return; }
+                        if (window.currentRole !== 'admin') { history.replaceState(null, '', '#student'); window.handleHashChange(); return; }
                         break;
                     case 'student-directory':
                         if (typeof window.renderStudentDirectory === 'function') window.renderStudentDirectory();
