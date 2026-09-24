@@ -2636,23 +2636,51 @@
                 median.statusbar.set({'style': 'dark', 'color': '00000000', 'overlay': true});
             }
         }
-        function median_library_ready(){ enforceTransparentStatusBar(); }
+        function median_library_ready(){ enforceTransparentStatusBar(); if (window.AppFS) window.AppFS.init(); }
         // ==========================================================
-        // APP FULLSCREEN CONTROLLER
-        // Hides the system status bar (and Android nav bar) while the
-        // video player, PDF reader (fullscreen / landscape) or image
-        // viewer is open, then restores everything on close.
-        //   - Median Android app : median.android.screen.fullScreen() / .normal()
-        //   - Browser / PWA      : Fullscreen API on <html>
-        // Uses "owners" so nested viewers (image over PDF) never fight.
+        // DEVICE HELPERS + APP FULLSCREEN CONTROLLER
+        //  - isTabletDevice(): decided by the SMALLEST screen side, so a phone
+        //    in landscape (~870px wide) is never mistaken for a tablet.
+        //  - viewportSettled: one debounced "screen size/rotation changed" hook.
+        //  - AppFS: hides the system status bar (+ Android nav bar).
+        //      * Whole app  : Median Android  median.android.screen.fullScreen()
+        //      * Keyboard   : bars come back while the keyboard is open (Median advice)
+        //      * Viewers    : video / PDF / image also request it (needed in browsers)
         // ==========================================================
-        window.AppFS = (function () {
-            const owners = new Set();
-            let docFS = false;          // true while WE hold browser fullscreen
-            let lastOwnChange = 0;      // timestamp of our own fullscreen change
+        window.isTabletDevice = function () {
+            return Math.min(window.innerWidth, window.innerHeight) >= 480;
+        };
 
-            const bridge = () => window.median || window.gonative || null;
-            const inMedian = () => !!bridge() || /median|gonative/i.test(navigator.userAgent);
+        window.viewportSettled = (function () {
+            const cbs = [];
+            function run() { cbs.forEach(function (f) { try { f(); } catch (e) { } }); }
+            function schedule() {
+                requestAnimationFrame(run);
+                setTimeout(run, 150);
+                setTimeout(run, 450);
+            }
+            window.addEventListener('resize', schedule);
+            window.addEventListener('orientationchange', schedule);
+            if (window.visualViewport) window.visualViewport.addEventListener('resize', schedule);
+            try { if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', schedule); } catch (e) { }
+            return { add: function (f) { cbs.push(f); }, schedule: schedule };
+        })();
+        window.viewportSettled.add(function () {
+            if (typeof window.updateCSSFullscreenLayout === 'function') window.updateCSSFullscreenLayout();
+            if (typeof window.updatePdfLandscapeLayout === 'function') window.updatePdfLandscapeLayout();
+        });
+
+        window.AppFS = (function () {
+            const owners = new Set();   // viewers that want fullscreen (video / pdf / image / native)
+            let appWide = false;        // whole app stays fullscreen (set by init in Median)
+            let applied = false;        // native bars currently hidden
+            let keyboardUp = false;
+            let inited = false;
+            let docFS = false;          // true while WE hold browser fullscreen
+            let lastOwnChange = 0;
+
+            const bridge = function () { return window.median || window.gonative || null; };
+            const inMedian = function () { return !!bridge() || /median|gonative/i.test(navigator.userAgent); };
 
             function nativeHide() {
                 const b = bridge();
@@ -2672,10 +2700,23 @@
                     if (b && b.android && b.android.screen && typeof b.android.screen.normal === 'function') b.android.screen.normal();
                     else if (b && b.screen && typeof b.screen.normal === 'function') b.screen.normal();
                 } catch (e) { }
-                // Put the app's transparent overlay status bar back
                 setTimeout(function () {
                     try { if (typeof enforceTransparentStatusBar === 'function') enforceTransparentStatusBar(); } catch (e) { }
                 }, 300);
+            }
+
+            function wantHidden() { return (appWide || owners.size > 0) && !keyboardUp; }
+
+            function sync() {
+                if (!inMedian()) return;
+                const want = wantHidden();
+                if (want && !applied) { applied = true; nativeHide(); }
+                else if (!want && applied) { applied = false; nativeShow(); }
+            }
+
+            function reapply() {            // e.g. app came back from background
+                if (!inMedian() || !wantHidden()) return;
+                applied = true; nativeHide();
             }
 
             function browserEnter() {
@@ -2704,22 +2745,34 @@
             }
 
             function request(owner, opts) {
-                const first = owners.size === 0;
                 owners.add(owner);
-                if (inMedian()) {
-                    if (first) nativeHide();
-                } else if (!(opts && opts.browser === false)) {
-                    browserEnter();
-                }
+                if (inMedian()) sync();
+                else if (!(opts && opts.browser === false)) browserEnter();
             }
 
             function release(owner) {
                 if (!owners.delete(owner)) return;
-                if (owners.size === 0) {
-                    if (inMedian()) nativeShow();
-                    browserExit();
-                }
+                if (inMedian()) sync();
+                else if (owners.size === 0 && !appWide) browserExit();
             }
+
+            // Whole-app mode: called once the Median bridge is ready.
+            function init() {
+                const b = bridge();
+                if (inited || !b) return;
+                inited = true;
+                appWide = true;
+                try {
+                    // Android full screen makes the keyboard overlay the page, so show the
+                    // bars while typing and hide them again afterwards (Median's advice).
+                    if (b.keyboard && typeof b.keyboard.listen === 'function') {
+                        b.keyboard.listen(function (d) { keyboardUp = !!(d && d.visible); sync(); });
+                    }
+                } catch (e) { }
+                sync();
+            }
+
+            function setAppWide(on) { appWide = !!on; sync(); }
 
             // Any element that goes fullscreen through the browser (tablet video,
             // Google Drive iframe player...) should also hide the system bars.
@@ -2732,30 +2785,47 @@
             document.addEventListener('fullscreenchange', syncNative);
             document.addEventListener('webkitfullscreenchange', syncNative);
 
-            // Safety net: whatever closes a viewer (back button, other code),
-            // the status bar must always come back.
-            function watchHidden(id, onHide) {
-                const start = function () {
-                    const el = document.getElementById(id);
-                    if (!el) return;
-                    new MutationObserver(function () {
-                        if (el.classList.contains('hidden-view')) onHide();
-                    }).observe(el, { attributes: true, attributeFilter: ['class'] });
-                };
-                if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
-                else start();
-            }
-            watchHidden('fullscreen-image-modal', function () { release('image'); });
-            watchHidden('custom-pdf-viewer-modal', function () { release('pdf'); });
-            watchHidden('video-watch-view', function () {
-                const c = document.getElementById('native-player-container');
-                if (c && c.classList.contains('fixed') && typeof window._exitCSSFullscreen === 'function') window._exitCSSFullscreen();
-                release('video');
+            // Android can restore the bars when the app returns from the background.
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) setTimeout(reapply, 250);
             });
+            window.addEventListener('load', function () { setTimeout(init, 1200); });
+
+            // Safety net: whatever closes a viewer (back button, other code),
+            // the viewer's fullscreen claim must be dropped.
+            function watchHidden(id, onHide) {
+                const el = document.getElementById(id);
+                if (!el) return;
+                new MutationObserver(function () {
+                    if (el.classList.contains('hidden-view')) onHide();
+                }).observe(el, { attributes: true, attributeFilter: ['class'] });
+            }
+            function start() {
+                watchHidden('fullscreen-image-modal', function () { release('image'); });
+                watchHidden('custom-pdf-viewer-modal', function () { release('pdf'); });
+                watchHidden('video-watch-view', function () {
+                    const c = document.getElementById('native-player-container');
+                    if (c && c.classList.contains('fixed') && typeof window._exitCSSFullscreen === 'function') window._exitCSSFullscreen();
+                    release('video');
+                });
+                // ResizeObserver is more reliable than window events inside WebViews
+                if (window.ResizeObserver) {
+                    const ro = new ResizeObserver(function () { window.viewportSettled.schedule(); });
+                    ['custom-pdf-viewer-modal', 'video-watch-view'].forEach(function (id) {
+                        const el = document.getElementById(id);
+                        if (el) ro.observe(el);
+                    });
+                }
+            }
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+            else start();
 
             return {
                 request: request,
                 release: release,
+                init: init,
+                setAppWide: setAppWide,
+                reapply: reapply,
                 isOwnFullscreenEvent: function () { return Date.now() - lastOwnChange < 1000; }
             };
         })();
@@ -13713,24 +13783,30 @@ ${textContent ? `
             window.updateCSSFullscreenLayout = function () {
                 const container = document.getElementById('native-player-container');
                 if (!container || !container.classList.contains('fixed')) return;
+                if (window.isTabletDevice()) return;   // tablets use the native fullscreen path
 
-                const isMobileSize = window.innerWidth < 768;
-                const isPortrait = window.innerHeight > window.innerWidth;
+                // The "fixed" player is positioned against #video-watch-view (its enter animation
+                // leaves a transform on it), so measure THAT box - 100vh/100vw drift when the
+                // system bars hide/show, which is what made the rotation jump.
+                const host = document.getElementById('video-watch-view');
+                const useHost = host && getComputedStyle(host).transform !== 'none';
+                const W = Math.round(useHost ? host.clientWidth : window.innerWidth);
+                const H = Math.round(useHost ? host.clientHeight : window.innerHeight);
+                if (!W || !H) return;
 
-                if (isMobileSize) {
-                    if (isPortrait) {
-                        // 📱 Phone in PORTRAIT: Force CSS rotation to fake landscape
-                        container.style.width = window.innerHeight + 'px';
-                        container.style.height = window.innerWidth + 'px';
-                        container.style.transformOrigin = 'top left';
-                        container.style.transform = 'translateY(100vh) rotate(-90deg)';
-                    } else {
-                        // 📱 Phone in LANDSCAPE: Remove CSS rotation and just fill screen
-                        container.style.width = '100vw';
-                        container.style.height = '100dvh';
-                        container.style.transformOrigin = '';
-                        container.style.transform = 'none';
-                    }
+                container.style.transition = 'none';   // no 300ms sweep while resizing/rotating
+                if (H > W) {
+                    // Phone held in PORTRAIT: rotate the player to fake landscape
+                    container.style.width = H + 'px';
+                    container.style.height = W + 'px';
+                    container.style.transformOrigin = 'top left';
+                    container.style.transform = 'translateY(' + H + 'px) rotate(-90deg)';
+                } else {
+                    // Phone physically in LANDSCAPE: just fill the screen, no rotation
+                    container.style.width = W + 'px';
+                    container.style.height = H + 'px';
+                    container.style.transformOrigin = '';
+                    container.style.transform = 'none';
                 }
             };
 
@@ -13751,23 +13827,25 @@ ${textContent ? `
                 const container = document.getElementById('native-player-container');
                 if (!watchView || watchView.classList.contains('hidden-view') || !container) return;
 
-                const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-                const isTabletOrDesktop = window.innerWidth >= 768;
+                const isLandscape = window.innerWidth > window.innerHeight;
+                const isTabletOrDesktop = window.isTabletDevice();
                 const isCSSFullscreen = container.classList.contains('fixed');
                 const isNativeFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
 
-                if (isLandscape) {
-                    // Rotated to landscape: auto-expand if not already maximized
-                    if (!isCSSFullscreen && !isNativeFullscreen) {
+                window._vidAutoCall = true;
+                try {
+                    if (isLandscape) {
+                        // Rotated to landscape: auto-expand if not already maximized
+                        if (!isCSSFullscreen && !isNativeFullscreen) {
+                            window._vidAutoEntered = true;
+                            window.toggleVideoFullscreen();
+                        }
+                    } else if (!isTabletOrDesktop && isCSSFullscreen && window._vidAutoEntered) {
+                        // Back to portrait: only shrink if WE auto-expanded it. If the user pressed
+                        // fullscreen themselves, respect that and keep it.
                         window.toggleVideoFullscreen();
                     }
-                } else {
-                    // Rotated back to portrait: only auto-shrink the CSS (phone) fullscreen
-                    // we fully control ourselves; tablet/iOS native fullscreen keep their own exit UX.
-                    if (!isTabletOrDesktop && isCSSFullscreen) {
-                        window.toggleVideoFullscreen();
-                    }
-                }
+                } finally { window._vidAutoCall = false; }
             };
 
             window.addEventListener('orientationchange', function () {
@@ -13786,7 +13864,7 @@ ${textContent ? `
                 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
                 // Check if device is a Tablet/Desktop
-                const isTabletOrDesktop = window.innerWidth >= 768;
+                const isTabletOrDesktop = window.isTabletDevice();
 
                 if (isIOS && videoApi && videoApi.webkitEnterFullscreen) {
                     videoApi.webkitEnterFullscreen();
@@ -13802,6 +13880,7 @@ ${textContent ? `
                     // 📱 MOBILE: Use pure CSS to avoid conflicting with the App's global Fullscreen
                     container.classList.add('fixed', 'top-0', 'left-0', 'z-[99999]', 'bg-black');
                     container.classList.remove('aspect-video', 'relative');
+                    container.style.transition = 'none';
 
                     // 📱 Hide the status bar (Median Android app, or browser Fullscreen API)
                     if (window.AppFS) window.AppFS.request('video');
@@ -13820,7 +13899,7 @@ ${textContent ? `
                 const container = document.getElementById('native-player-container');
                 const videoApi = document.querySelector('.video-js video');
                 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-                const isTabletOrDesktop = window.innerWidth >= 768;
+                const isTabletOrDesktop = window.isTabletDevice();
 
                 const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
 
@@ -13843,6 +13922,8 @@ ${textContent ? `
 
                 try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (err) { }
 
+                window._vidAutoEntered = false;
+                container.style.transition = '';
                 if (window.AppFS) window.AppFS.release('video');
                 if (window.vjsPlayer) window.vjsPlayer.isFullscreen(false);
             };
@@ -13850,9 +13931,10 @@ ${textContent ? `
             window.toggleVideoFullscreen = function () {
                 const container = document.getElementById('native-player-container');
                 if (!container) return;
+                if (!window._vidAutoCall) window._vidAutoEntered = false;   // manual tap = user's choice
 
                 const isCSSFullscreen = container.classList.contains('fixed');
-                const isTabletOrDesktop = window.innerWidth >= 768;
+                const isTabletOrDesktop = window.isTabletDevice();
                 const isNativeFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
 
                 // Determine if the video is currently maximized based on device type
@@ -21827,6 +21909,34 @@ ${textContent ? `
             // ==========================================
 
             window.pdfViewMode = 0;
+
+            // Landscape mode layout. Uses the modal's real pixel size (not vh/vw) and only
+            // rotates the page when the phone is held in PORTRAIT. If the phone is already
+            // physically landscape it simply fills the screen - no double rotation.
+            window.updatePdfLandscapeLayout = function () {
+                if (window.pdfViewMode !== 2) return;
+                const modal = document.getElementById('custom-pdf-viewer-modal');
+                const rw = document.getElementById('pdf-rotation-wrapper');
+                if (!modal || !rw || modal.classList.contains('hidden-view')) return;
+                const W = modal.clientWidth, H = modal.clientHeight;
+                if (!W || !H) return;
+                const base = 'position:absolute !important; top:0 !important; left:0 !important; margin:0 !important; z-index:140 !important; transition:none !important;';
+                if (H > W) {
+                    rw.style.cssText = base + 'width:' + H + 'px !important; height:' + W + 'px !important; transform-origin:top left !important; transform:translateX(' + W + 'px) rotate(90deg) !important;';
+                } else {
+                    rw.style.cssText = base + 'width:' + W + 'px !important; height:' + H + 'px !important; transform:none !important;';
+                }
+            };
+
+            // Step the 0 -> 1 -> 2 -> 0 state machine to a target mode (used by auto-rotate)
+            window.setPdfMode = function (target) {
+                let guard = 0;
+                window._pdfAutoCall = true;
+                try {
+                    while (window.pdfViewMode !== target && guard++ < 4) window.togglePdfFullscreen();
+                } finally { window._pdfAutoCall = false; }
+            };
+
             window.togglePdfFullscreen = function () {
                 const rotationWrapper = document.getElementById('pdf-rotation-wrapper');
                 const header = document.getElementById('pdf-modal-header');
@@ -21835,6 +21945,7 @@ ${textContent ? `
                 const wrapper = document.getElementById('pdf-scroll-wrapper');
 
                 if (!header || !icon || !wrapper || !innerWrapper || !rotationWrapper) return;
+                if (!window._pdfAutoCall) window._pdfAutoReturnMode = null;   // manual tap = user's choice
 
                 if (!window.pdfViewMode || window.pdfViewMode === 0) {
                     // State 1: Enter Distraction-Free (Portrait Fullscreen)
@@ -21861,7 +21972,8 @@ ${textContent ? `
                     innerWrapper.classList.remove('gap-6');
 
                     wrapper.style.cssText = 'scroll-behavior: smooth; height: 100%; width: 100%;';
-                    rotationWrapper.style.cssText = 'transform: rotate(90deg); transform-origin: center; width: 100vh !important; height: 100vw !important; position: fixed !important; top: 50% !important; left: 50% !important; margin-left: -50vh !important; margin-top: -50vw !important; z-index: 140 !important;';
+                    rotationWrapper.style.cssText = '';
+                    window.updatePdfLandscapeLayout();
                     window.updateSinglePageVisibility();
 
                 } else {
@@ -21909,18 +22021,21 @@ ${textContent ? `
             // ==========================================
             window.handlePdfAutoRotate = function () {
                 const modal = document.getElementById('custom-pdf-viewer-modal');
-                const header = document.getElementById('pdf-modal-header');
-                if (!modal || modal.classList.contains('hidden-view') || !header) return;
+                if (!modal || modal.classList.contains('hidden-view')) return;
 
-                const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-                const isCurrentlyFullscreen = header.classList.contains('hidden');
+                const isLandscape = window.innerWidth > window.innerHeight;
+                const mode = window.pdfViewMode || 0;
 
-                if (isLandscape && !isCurrentlyFullscreen) {
-                    window.pdfViewMode = 1; // Trick to go directly to Landscape
-                    window.togglePdfFullscreen();
-                } else if (!isLandscape && isCurrentlyFullscreen) {
-                    window.pdfViewMode = 2; // Force exit
-                    window.togglePdfFullscreen();
+                if (isLandscape && mode !== 2) {
+                    // Phone turned sideways: go to landscape reading mode, remember where we were
+                    window._pdfAutoReturnMode = mode;
+                    window.setPdfMode(2);
+                } else if (!isLandscape && mode === 2 && window._pdfAutoReturnMode != null) {
+                    // Turned back upright: only undo what auto-rotate did. A mode the user picked
+                    // with the button is left alone.
+                    const back = window._pdfAutoReturnMode;
+                    window._pdfAutoReturnMode = null;
+                    window.setPdfMode(back);
                 }
             };
 
