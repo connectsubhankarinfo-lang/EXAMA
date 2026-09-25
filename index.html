@@ -4,88 +4,12 @@
 <head>
 <script>window.getOtherStudentsMobiles = function() { return (window.studentsDB || []).map(s => s.mobile).filter(m => m !== window.loggedInMobile); };</script>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
         // ==========================================
         // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
         // ==========================================
         window.activeNativeSelect = null;
         window.selectedCustomValue = null;
-
-        window.promptMedianPush = function() {
-            if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1 || window.median) {
-                // Fire native command using the most direct URL protocol method (cannot be blocked by async)
-                window.location.href = 'median://onesignal/register';
-                
-                // Fallback for newer Median plugins
-                if (window.median && window.median.onesignal && typeof window.median.onesignal.register === 'function') {
-                    window.median.onesignal.register();
-                }
-            } else {
-                console.warn('Not in a Median app - cannot prompt for native push notifications.');
-                if (window.OneSignal) window.OneSignal.Notifications.requestPermission();
-            }
-        };
-
-        // ==========================================
-        // PUSH NOTIFICATION SOFT PROMPT
-        // ==========================================
-        window.showPushPrompt = function() {
-            if (document.getElementById('median-push-prompt')) return; // Already showing
-            
-            const overlay = document.createElement('div');
-            overlay.id = 'median-push-prompt';
-            overlay.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 opacity-0 transition-opacity duration-300';
-            
-            const modal = document.createElement('div');
-            modal.className = 'bg-white rounded-2xl p-6 md:p-8 max-w-sm w-full shadow-2xl transform scale-95 transition-transform duration-300 text-center';
-            
-            modal.innerHTML = `
-                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-                    </svg>
-                </div>
-                <h3 class="text-xl font-bold text-gray-900 mb-2">Enable Notifications</h3>
-                <p class="text-gray-600 mb-6">Never miss important updates, new materials, and chat messages from your classes.</p>
-                
-                <div class="flex flex-col gap-3">
-                    <button id="push-allow-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors">
-                        Allow Notifications
-                    </button>
-                    <button id="push-decline-btn" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-3 px-4 rounded-xl transition-colors">
-                        Maybe Later
-                    </button>
-                </div>
-            `;
-            
-            overlay.appendChild(modal);
-            document.body.appendChild(overlay);
-            
-            // Animate in
-            requestAnimationFrame(() => {
-                overlay.classList.remove('opacity-0');
-                modal.classList.remove('scale-95');
-            });
-            
-            const closeModal = () => {
-                overlay.classList.add('opacity-0');
-                modal.classList.add('scale-95');
-                setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 300);
-            };
-            
-            document.getElementById('push-allow-btn').onclick = function() {
-                window.promptMedianPush();
-                closeModal();
-                // Optionally save choice to localStorage so we don't ask every login
-                localStorage.setItem('push_prompt_seen', 'true');
-            };
-            
-            document.getElementById('push-decline-btn').onclick = function() {
-                closeModal();
-                localStorage.setItem('push_prompt_seen', 'true');
-            };
-        };
 
         window.initCustomSelects = function () {
             const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
@@ -19625,21 +19549,6 @@ ${textContent ? `
                 localStorage.clear();
                 if (globalTimerInterval) clearInterval(globalTimerInterval);
 
-                // Clear OneSignal External IDs
-                try {
-                    if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { await OneSignal.logout(); }); }
-                    if (window.median && window.median.onesignal) {
-                        if (typeof window.median.onesignal.logout === 'function') window.median.onesignal.logout();
-                        if (typeof window.median.onesignal.removeExternalUserId === 'function') window.median.onesignal.removeExternalUserId();
-                    } else if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1) {
-                        const fireIframe = (url) => { const iframe = document.createElement("IFRAME"); iframe.setAttribute("src", url); document.documentElement.appendChild(iframe); iframe.parentNode.removeChild(iframe); };
-                        fireIframe('median://onesignal/logout');
-                        fireIframe('median://onesignal/removeExternalUserId');
-                        fireIframe('gonative://onesignal/logout');
-                        fireIframe('gonative://onesignal/removeExternalUserId');
-                    }
-                } catch(e) { console.warn("Error logging out of OneSignal", e); }
-
                 // Sign out from Firebase Auth
                 if (auth) await auth.signOut();
 
@@ -19657,74 +19566,40 @@ ${textContent ? `
                       if (navigator.userAgent.indexOf('median') > -1 || window.median) {
                           
                       
-                      // Bulletproof Median OneSignal Registration & Firebase Sync
-                      console.log('[Median Bridge] Firing OneSignal URL schemes. UA:', navigator.userAgent);
-                      const strMob = String(mob);
-                      window.loggedInMobile = strMob; // ensure global is set for callback
-                      
-                      const fireIframe = (url) => {
-                          const iframe = document.createElement("IFRAME");
-                          iframe.setAttribute("src", url);
-                          document.documentElement.appendChild(iframe);
-                          setTimeout(() => iframe.parentNode.removeChild(iframe), 500);
-                      };
-                      
-                      // 1. Force the Native Push Permission Prompt immediately
-                      fireIframe('median://onesignal/register');
-                      fireIframe('gonative://onesignal/register');
-                      
-                      // 2. Setup a global callback to receive the OneSignal info asynchronously
-                      window.handleMedianOneSignalInfo = function(info) {
+                      // Robust loop for Median/GoNative OneSignal Identity (Native plugins take time to init)
+                      console.log('[Median Bridge] Starting identity-link loop. window.median exists:', !!window.median, '| UA:', navigator.userAgent);
+                      let medianAttempts = 0;
+                      const tagInterval = setInterval(() => {
+                          medianAttempts++;
                           try {
-                              if (info && info.oneSignalId) {
-                                  const osid = info.oneSignalId;
-                                  console.log('[Median Bridge] Received OneSignal ID:', osid);
+                              const strMob = String(mob);
+                              if (window.median && window.median.onesignal) {
+                                  window.median.onesignal.tags.set({ mobile: strMob });
+                                  window.median.onesignal.setExternalUserId({ externalId: strMob });
+                                  console.log('[Median Bridge] SUCCESS (attempt ' + medianAttempts + '): linked externalId=' + strMob + ' via window.median.onesignal');
+                                  clearInterval(tagInterval);
+                              } else if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1) {
+                                  console.warn('[Median Bridge] window.median.onesignal NOT available yet (attempt ' + medianAttempts + '). Falling back to median:// iframe scheme.');
+                                  const fireIframe = (url) => {
+                                      const iframe = document.createElement("IFRAME");
+                                      iframe.setAttribute("src", url);
+                                      document.documentElement.appendChild(iframe);
+                                      iframe.parentNode.removeChild(iframe);
+                                  };
+                                  // Fire all known combinations securely
+                                  const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
+                                  fireIframe('median://onesignal/setExternalUserId?externalId=' + strMob);
+                                  fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
+                                  fireIframe('gonative://onesignal/setExternalUserId?externalId=' + strMob);
+                                  fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
                                   
-                                  // Save to Firebase!
-                                  if (window.db) {
-                                      window.db.collection('students').doc(strMob).set({
-                                          onesignal_id: osid
-                                      }, { merge: true });
-                                  }
-                                  
-                                  // Map it as External ID and tag
-                                  fireIframe('median://onesignal/login?external_id=' + osid);
-                                  fireIframe('median://onesignal/setExternalUserId?externalId=' + osid);
-                                  
-                                  if (window.median && window.median.onesignal) {
-                                      if (typeof window.median.onesignal.login === 'function') window.median.onesignal.login(osid);
-                                      if (typeof window.median.onesignal.setExternalUserId === 'function') window.median.onesignal.setExternalUserId({ externalId: osid });
-                                      if (window.median.onesignal.tags && window.median.onesignal.tags.set) window.median.onesignal.tags.set({ mobile: strMob, onesignal_id: osid });
-                                  }
+                                  if (medianAttempts > 3) { console.error('[Median Bridge] GAVE UP after 3 attempts. window.median.onesignal never appeared - the native OneSignal plugin is likely not enabled/rebuilt in App Studio.'); clearInterval(tagInterval); }
+                              } else {
+                                  console.warn('[Median Bridge] Not detected as a Median/GoNative app (user agent has neither string) - skipping identity link entirely.');
+                                  clearInterval(tagInterval); // Not Median/GoNative
                               }
-                          } catch(err) {
-                              console.error('[Median Bridge] Callback error:', err);
-                          }
-                      };
-                      
-                      // 3. Request OneSignal info, pointing to our callback
-                      fireIframe('median://onesignal/info?callback=handleMedianOneSignalInfo');
-                      fireIframe('gonative://onesignal/info?callback=handleMedianOneSignalInfo');
-                      
-                      // 4. JS Bridge Fallback (Delayed to ensure bridge loads)
-                      setTimeout(() => {
-                          if (window.median && window.median.onesignal) {
-                              if (typeof window.median.onesignal.register === 'function') window.median.onesignal.register();
-                              if (typeof window.median.onesignal.info === 'function') {
-                                  try {
-                                      // Some versions accept an object with a callback property
-                                      window.median.onesignal.info({ callback: window.handleMedianOneSignalInfo });
-                                  } catch(e) {}
-                                  try {
-                                      // Some versions might actually return a promise, so we chain it safely
-                                      const promise = window.median.onesignal.info();
-                                      if (promise && typeof promise.then === 'function') {
-                                          promise.then(window.handleMedianOneSignalInfo).catch(e => console.error(e));
-                                      }
-                                  } catch(e) {}
-                              }
-                          }
-                      }, 3000);
+                          } catch(e) { console.error('[Median Bridge] Error in identity-link loop:', e.message); clearInterval(tagInterval); }
+                      }, 2000);
                       }
                   } catch(e) {}
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
@@ -19818,7 +19693,11 @@ ${textContent ? `
                 btn.innerHTML = origText; btn.disabled = false; document.getElementById('warning-modal').classList.add('hidden-view'); window.unackAbsences = [];
             }
 
-
+            window.logout = function () {
+                cleanupJitsi(); localStorage.clear(); if (globalTimerInterval) clearInterval(globalTimerInterval);
+                window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null;
+                window.location.hash = 'login'; document.getElementById('login-form').reset();
+            }
 
             window.refreshUI = function () {
                 if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
