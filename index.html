@@ -19657,9 +19657,10 @@ ${textContent ? `
                       if (navigator.userAgent.indexOf('median') > -1 || window.median) {
                           
                       
-                      // Fetch OneSignal ID directly, link it to the Mobile Number in Firebase, and set it as External ID
-                      console.log('[Median Bridge] Starting loop to wait for window.median.onesignal... UA:', navigator.userAgent);
+                      // Bulletproof Median OneSignal Registration & Firebase Sync
+                      console.log('[Median Bridge] Firing OneSignal URL schemes. UA:', navigator.userAgent);
                       const strMob = String(mob);
+                      window.loggedInMobile = strMob; // ensure global is set for callback
                       
                       const fireIframe = (url) => {
                           const iframe = document.createElement("IFRAME");
@@ -19668,62 +19669,62 @@ ${textContent ? `
                           setTimeout(() => iframe.parentNode.removeChild(iframe), 500);
                       };
                       
-                      // Fallback automatic permission prompt
+                      // 1. Force the Native Push Permission Prompt immediately
                       fireIframe('median://onesignal/register');
                       fireIframe('gonative://onesignal/register');
                       
-                      let medianAttempts = 0;
-                      const medianInterval = setInterval(async () => {
-                          medianAttempts++;
-                          
-                          if (window.median && window.median.onesignal) {
-                              console.log('[Median Bridge] Bridge found! Fetching OneSignal Info (Attempt ' + medianAttempts + ')');
-                              
-                              try {
-                                  // Prompt for notifications automatically
-                                  if (typeof window.median.onesignal.register === 'function') {
-                                      window.median.onesignal.register();
+                      // 2. Setup a global callback to receive the OneSignal info asynchronously
+                      window.handleMedianOneSignalInfo = function(info) {
+                          try {
+                              if (info && info.oneSignalId) {
+                                  const osid = info.oneSignalId;
+                                  console.log('[Median Bridge] Received OneSignal ID:', osid);
+                                  
+                                  // Save to Firebase!
+                                  if (window.db) {
+                                      window.db.collection('students').doc(strMob).set({
+                                          onesignal_id: osid
+                                      }, { merge: true });
                                   }
                                   
-                                  // Fetch OneSignal ID
-                                  if (typeof window.median.onesignal.info === 'function') {
-                                      const info = await window.median.onesignal.info();
-                                      if (info && info.oneSignalId) {
-                                          const osid = info.oneSignalId;
-                                          console.log('[Median Bridge] Successfully retrieved OneSignal ID:', osid);
-                                          
-                                          // Link OneSignal ID to Mobile Number in Firebase Database
-                                          if (window.db) {
-                                              window.db.collection('students').doc(strMob).set({
-                                                  onesignal_id: osid
-                                              }, { merge: true });
-                                          }
-                                          
-                                          // Also set the External ID to the OneSignal ID as requested
-                                          if (typeof window.median.onesignal.login === 'function') {
-                                              window.median.onesignal.login(osid);
-                                          } else if (typeof window.median.onesignal.setExternalUserId === 'function') {
-                                              window.median.onesignal.setExternalUserId({ externalId: osid });
-                                          }
-                                          
-                                          // Set tags
-                                          if (typeof window.median.onesignal.tags === 'object' && typeof window.median.onesignal.tags.set === 'function') {
-                                              window.median.onesignal.tags.set({ mobile: strMob, onesignal_id: osid });
-                                          }
-                                      }
+                                  // Map it as External ID and tag
+                                  fireIframe('median://onesignal/login?external_id=' + osid);
+                                  fireIframe('median://onesignal/setExternalUserId?externalId=' + osid);
+                                  
+                                  if (window.median && window.median.onesignal) {
+                                      if (typeof window.median.onesignal.login === 'function') window.median.onesignal.login(osid);
+                                      if (typeof window.median.onesignal.setExternalUserId === 'function') window.median.onesignal.setExternalUserId({ externalId: osid });
+                                      if (window.median.onesignal.tags && window.median.onesignal.tags.set) window.median.onesignal.tags.set({ mobile: strMob, onesignal_id: osid });
                                   }
-                              } catch(e) {
-                                  console.error('[Median Bridge] Error executing commands:', e);
                               }
-                              
-                              clearInterval(medianInterval);
-                          } else if (medianAttempts > 15) {
-                              console.warn('[Median Bridge] Bridge not found after 30 seconds. Giving up.');
-                              clearInterval(medianInterval);
-                          } else {
-                              console.log('[Median Bridge] Waiting for bridge... (Attempt ' + medianAttempts + ')');
+                          } catch(err) {
+                              console.error('[Median Bridge] Callback error:', err);
                           }
-                      }, 2000);
+                      };
+                      
+                      // 3. Request OneSignal info, pointing to our callback
+                      fireIframe('median://onesignal/info?callback=handleMedianOneSignalInfo');
+                      fireIframe('gonative://onesignal/info?callback=handleMedianOneSignalInfo');
+                      
+                      // 4. JS Bridge Fallback (Delayed to ensure bridge loads)
+                      setTimeout(() => {
+                          if (window.median && window.median.onesignal) {
+                              if (typeof window.median.onesignal.register === 'function') window.median.onesignal.register();
+                              if (typeof window.median.onesignal.info === 'function') {
+                                  try {
+                                      // Some versions accept an object with a callback property
+                                      window.median.onesignal.info({ callback: window.handleMedianOneSignalInfo });
+                                  } catch(e) {}
+                                  try {
+                                      // Some versions might actually return a promise, so we chain it safely
+                                      const promise = window.median.onesignal.info();
+                                      if (promise && typeof promise.then === 'function') {
+                                          promise.then(window.handleMedianOneSignalInfo).catch(e => console.error(e));
+                                      }
+                                  } catch(e) {}
+                              }
+                          }
+                      }, 3000);
                       }
                   } catch(e) {}
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
