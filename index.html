@@ -19549,6 +19549,21 @@ ${textContent ? `
                 localStorage.clear();
                 if (globalTimerInterval) clearInterval(globalTimerInterval);
 
+                // Clear OneSignal External IDs
+                try {
+                    if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { await OneSignal.logout(); }); }
+                    if (window.median && window.median.onesignal) {
+                        if (typeof window.median.onesignal.logout === 'function') window.median.onesignal.logout();
+                        if (typeof window.median.onesignal.removeExternalUserId === 'function') window.median.onesignal.removeExternalUserId();
+                    } else if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1) {
+                        const fireIframe = (url) => { const iframe = document.createElement("IFRAME"); iframe.setAttribute("src", url); document.documentElement.appendChild(iframe); iframe.parentNode.removeChild(iframe); };
+                        fireIframe('median://onesignal/logout');
+                        fireIframe('median://onesignal/removeExternalUserId');
+                        fireIframe('gonative://onesignal/logout');
+                        fireIframe('gonative://onesignal/removeExternalUserId');
+                    }
+                } catch(e) { console.warn("Error logging out of OneSignal", e); }
+
                 // Sign out from Firebase Auth
                 if (auth) await auth.signOut();
 
@@ -19700,11 +19715,7 @@ ${textContent ? `
                 btn.innerHTML = origText; btn.disabled = false; document.getElementById('warning-modal').classList.add('hidden-view'); window.unackAbsences = [];
             }
 
-            window.logout = function () {
-                cleanupJitsi(); localStorage.clear(); if (globalTimerInterval) clearInterval(globalTimerInterval);
-                window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null;
-                window.location.hash = 'login'; document.getElementById('login-form').reset();
-            }
+
 
             window.refreshUI = function () {
                 if (!document.getElementById('syllabus-view')?.classList.contains('hidden-view')) renderSyllabusTracker();
