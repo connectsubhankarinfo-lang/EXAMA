@@ -19657,59 +19657,45 @@ ${textContent ? `
                       if (navigator.userAgent.indexOf('median') > -1 || window.median) {
                           
                       
-                      // Robust loop for Median/GoNative OneSignal Identity (Native plugins take time to init)
-                      console.log('[Median Bridge] Starting identity-link loop. window.median exists:', !!window.median, '| UA:', navigator.userAgent);
-                      let medianAttempts = 0;
-                      const tagInterval = setInterval(() => {
-                          medianAttempts++;
-                          try {
-                              const strMob = String(mob);
-                              const isMedianApp = (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1 || window.median);
-                              
-                              if (isMedianApp || medianAttempts > 10) { // Keep trying for up to 10 seconds if window.median is slow to inject
-                                  if (isMedianApp) {
-                                      const fireIframe = (url) => {
-                                          const iframe = document.createElement("IFRAME");
-                                          iframe.setAttribute("src", url);
-                                          document.documentElement.appendChild(iframe);
-                                          iframe.parentNode.removeChild(iframe);
-                                      };
-                                      
-                                      // 1. Force External ID First (so the device knows WHO it is)
-                                      fireIframe('median://onesignal/login?external_id=' + strMob);
-                                      fireIframe('median://onesignal/setExternalUserId?externalId=' + strMob);
-                                      fireIframe('gonative://onesignal/login?external_id=' + strMob);
-                                      fireIframe('gonative://onesignal/setExternalUserId?externalId=' + strMob);
-                                      
-                                      // 2. Force Tags
-                                      const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
-                                      fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
-                                      fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
-                                      
-                                      // Note: We use the HTML Soft Prompt here. This guarantees the user has to click "Allow", 
-                                      // which legally bypasses all iOS/Android asynchronous dialog blocks!
-                                      setTimeout(() => {
-                                          if (window.showPushPrompt) window.showPushPrompt();
-                                          console.log('[Median Bridge] Showing HTML Soft Prompt for push permissions.');
-                                      }, 2000);
-                                      
-                                      if (window.median && window.median.onesignal) {
-                                          if (typeof window.median.onesignal.login === 'function') window.median.onesignal.login(strMob);
-                                          if (typeof window.median.onesignal.setExternalUserId === 'function') window.median.onesignal.setExternalUserId({ externalId: strMob });
-                                          window.median.onesignal.tags.set({ mobile: strMob });
-                                      }
-
-                                      console.log('[Median Bridge] SUCCESS (attempt ' + medianAttempts + '): Fired URL schemes for ' + strMob);
-                                  } else {
-                                      console.warn('[Median Bridge] Not detected as a Median/GoNative app after 10 attempts - skipping identity link entirely.');
-                                  }
-                                  clearInterval(tagInterval); // clear interval whether we succeeded or hit the 10-attempt limit
-                              } else {
-                                  // Still waiting for window.median to inject...
-                                  console.log('[Median Bridge] Waiting for native bridge (attempt ' + medianAttempts + ')...');
-                              }
-                          } catch(e) { console.error('[Median Bridge] Error in identity-link loop:', e.message); clearInterval(tagInterval); }
-                      }, 2000);
+                      // Force Median/GoNative OneSignal Identity (Fire URL schemes immediately, they don't need JS to be ready)
+                      console.log('[Median Bridge] Forcing identity-link loop on login. UA:', navigator.userAgent);
+                      
+                      const strMob = String(mob);
+                      const fireIframe = (url) => {
+                          const iframe = document.createElement("IFRAME");
+                          iframe.setAttribute("src", url);
+                          document.documentElement.appendChild(iframe);
+                          setTimeout(() => iframe.parentNode.removeChild(iframe), 500);
+                      };
+                      
+                      // 1. Force External ID First (URL schemes work even before JS bridge loads)
+                      fireIframe('median://onesignal/login?external_id=' + strMob);
+                      fireIframe('median://onesignal/setExternalUserId?externalId=' + strMob);
+                      fireIframe('gonative://onesignal/login?external_id=' + strMob);
+                      fireIframe('gonative://onesignal/setExternalUserId?externalId=' + strMob);
+                      
+                      // 2. Force Tags
+                      const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
+                      fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
+                      fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
+                      
+                      // JS Fallback for setting external ID
+                      if (window.median && window.median.onesignal) {
+                          if (typeof window.median.onesignal.login === 'function') window.median.onesignal.login(strMob);
+                          if (typeof window.median.onesignal.setExternalUserId === 'function') window.median.onesignal.setExternalUserId({ externalId: strMob });
+                          window.median.onesignal.tags.set({ mobile: strMob });
+                      }
+                      
+                      // 3. Automatically Prompt for Notifications 3 seconds after login
+                      setTimeout(() => {
+                          console.log('[Median Bridge] Firing automatic native push prompt.');
+                          fireIframe('median://onesignal/register');
+                          fireIframe('gonative://onesignal/register');
+                          
+                          if (window.median && window.median.onesignal && typeof window.median.onesignal.register === 'function') {
+                              window.median.onesignal.register();
+                          }
+                      }, 3000);
                       }
                   } catch(e) {}
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
