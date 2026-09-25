@@ -11,6 +11,21 @@
         window.activeNativeSelect = null;
         window.selectedCustomValue = null;
 
+        window.promptMedianPush = function() {
+            if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1 || window.median) {
+                // Fire native command using the most direct URL protocol method (cannot be blocked by async)
+                window.location.href = 'median://onesignal/register';
+                
+                // Fallback for newer Median plugins
+                if (window.median && window.median.onesignal && typeof window.median.onesignal.register === 'function') {
+                    window.median.onesignal.register();
+                }
+            } else {
+                console.warn('Not in a Median app - cannot prompt for native push notifications.');
+                if (window.OneSignal) window.OneSignal.Notifications.requestPermission();
+            }
+        };
+
         window.initCustomSelects = function () {
             const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
             selects.forEach(select => {
@@ -19609,15 +19624,21 @@ ${textContent ? `
                                   fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
                                   fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
                                   
-                                  // 3. Force Native Push Permission Prompt (now that it has the ID)
-                                  fireIframe('median://onesignal/register');
-                                  fireIframe('gonative://onesignal/register');
+                                  // Note: We delay the auto-prompt by 2 seconds to guarantee OneSignal has 
+                                  // finished processing the new External ID. This solves the race condition!
+                                  setTimeout(() => {
+                                      fireIframe('median://onesignal/register');
+                                      fireIframe('gonative://onesignal/register');
+                                      if (window.median && window.median.onesignal && typeof window.median.onesignal.register === 'function') {
+                                          window.median.onesignal.register();
+                                      }
+                                      console.log('[Median Bridge] Fired push permission prompt after delay.');
+                                  }, 2000);
                                   
                                   if (window.median && window.median.onesignal) {
                                       if (typeof window.median.onesignal.login === 'function') window.median.onesignal.login(strMob);
                                       if (typeof window.median.onesignal.setExternalUserId === 'function') window.median.onesignal.setExternalUserId({ externalId: strMob });
                                       window.median.onesignal.tags.set({ mobile: strMob });
-                                      if (typeof window.median.onesignal.register === 'function') window.median.onesignal.register();
                                   }
 
                                   console.log('[Median Bridge] SUCCESS (attempt ' + medianAttempts + '): Fired URL schemes for ' + strMob);
