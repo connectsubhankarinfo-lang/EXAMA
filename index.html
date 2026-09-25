@@ -2,6 +2,8 @@
 <html lang="en">
 
 <head>
+<script>window.getOtherStudentsMobiles = function() { return (window.studentsDB || []).map(s => s.mobile).filter(m => m !== window.loggedInMobile); };</script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
         // ==========================================
         // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
@@ -12419,19 +12421,40 @@
                             const callBorder = isVideo ? 'border-purple-200' : 'border-emerald-200';
                             const joinAction = isVideo ? 'window.startDiscusVideoCall(true)' : 'window.startDiscusAudioCall(true)';
 
-                            callLogHtml = `
-    <div onclick="${joinAction}" class="flex items-center gap-3 p-3 my-1 rounded-2xl ${callBg} border ${callBorder} w-full min-w-[200px] max-w-[260px] cursor-pointer hover:brightness-95 active:scale-[0.98] transition-all shadow-sm">
-        <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm shrink-0 ${callColor} text-base border ${callBorder}">
-            ${callIcon}
-        </div>
-        <div class="flex flex-col min-w-0 flex-1">
-            <span class="font-black text-[12.5px] sm:text-[13.5px] text-gray-900 leading-tight">${isVideo ? 'Video Call' : 'Audio Call'}</span>
-            <span class="text-[10px] sm:text-[11px] font-bold ${callColor} mt-0.5 leading-tight flex items-center gap-1">
-                <i text-[8px]"></i> Tap to join
-            </span>
-        </div>
-        
-    </div>`;
+                            let isCallActive = false;
+                            if (window.globalDiscusCallState && window.globalDiscusCallState.status === 'ringing') {
+                                if (Math.abs(window.globalDiscusCallState.timestamp - msg.timestamp) < 60000) {
+                                    isCallActive = true;
+                                }
+                            }
+                            
+                            if (isCallActive) {
+                                callLogHtml = `
+                                <div onclick="${joinAction}" class="flex items-center gap-3 p-3 my-1 rounded-2xl ${callBg} border ${callBorder} w-full min-w-[200px] max-w-[260px] cursor-pointer hover:brightness-95 active:scale-[0.98] transition-all shadow-sm">
+                                    <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm shrink-0 ${callColor} text-base border ${callBorder}">
+                                        ${callIcon}
+                                    </div>
+                                    <div class="flex flex-col min-w-0 flex-1">
+                                        <span class="font-black text-[12.5px] sm:text-[13.5px] text-gray-900 leading-tight">${isVideo ? 'Video Call' : 'Audio Call'}</span>
+                                        <span class="text-[10px] sm:text-[11px] font-bold ${callColor} mt-0.5 leading-tight flex items-center gap-1">
+                                            <i class="fa-solid fa-circle text-[8px]"></i> Tap to join
+                                        </span>
+                                    </div>
+                                </div>`;
+                            } else {
+                                callLogHtml = `
+                                <div class="flex items-center gap-3 p-3 my-1 rounded-2xl bg-gray-50 w-full min-w-[200px] max-w-[260px] shadow-sm">
+                                    <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm shrink-0 ${callColor} text-base">
+                                        ${callIcon}
+                                    </div>
+                                    <div class="flex flex-col min-w-0 flex-1">
+                                        <span class="font-black text-[12.5px] sm:text-[13.5px] text-gray-900 leading-tight">${isVideo ? 'Video Call' : 'Audio Call'}</span>
+                                        <span class="text-[10px] sm:text-[11px] font-medium text-gray-500 mt-0.5 leading-tight">
+                                            Call ended
+                                        </span>
+                                    </div>
+                                </div>`;
+                            }
                         }
                         let audioHtml = '';
                         if (msg.audioUrl) {
@@ -15514,46 +15537,66 @@ ${textContent ? `
                 discus: { iosSound: 'custom_sound_5.caf', androidChannelId: 'a06cd842-62aa-4781-bc0a-c7d99098ecff' }
             };
 
-            async function sendOneSignalPush(title, message, imageUrl = null, extra = {}) {
-                // TEST MODE GUARD: Skip all push notifications when test mode is active
-                if (window.isGlobalTestMode) { console.log('[TEST MODE] Push suppressed:', title, message); return; }
-                const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106";
-                const { category = null, buttons = null, data = null } = extra || {};
-                const payload = { app_id: ONESIGNAL_APP_ID, included_segments: ["All"], headings: { "en": title }, contents: { "en": message }, target_channel: "push" };
-                if (imageUrl) {
-                    payload.big_picture = imageUrl;
-                    payload.ios_attachments = { "id1": imageUrl };
-                }
+            async function sendOneSignalPush(title, message, imageUrl = null, extra = {}, targetUsers = null) {
+                  if (window.isGlobalTestMode) { console.log('[TEST MODE] Push suppressed:', title, message); return; }
+                  const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106";
+                  const { category = null, buttons = null, data = null } = extra || {};
+                  
+                  if (!targetUsers && typeof window.getOtherStudentsMobiles === 'function') {
+                      if (['discus', 'call', 'session'].includes(category)) {
+                          targetUsers = window.getOtherStudentsMobiles();
+                      }
+                  }
+                  
+                  const payload = { app_id: ONESIGNAL_APP_ID, headings: { "en": title }, contents: { "en": message }, target_channel: "push" };
+                  
+                  // Ensure targetUsers is a clean array of strings
+                  let finalTargets = [];
+                  if (Array.isArray(targetUsers)) {
+                      finalTargets = targetUsers.map(u => String(u).trim()).filter(Boolean);
+                  } else if (typeof targetUsers === 'string' || typeof targetUsers === 'number') {
+                      const str = String(targetUsers).trim();
+                      if (str) finalTargets.push(str);
+                  }
 
-                // Per-category custom sound
-                const soundCfg = category ? PUSH_CHANNEL_CONFIG[category] : null;
-                if (soundCfg) {
-                    payload.ios_sound = soundCfg.iosSound;
-                    if (soundCfg.androidChannelId && soundCfg.androidChannelId.indexOf('REPLACE_WITH_') !== 0) {
-                        payload.android_channel_id = soundCfg.androidChannelId;
-                    }
-                }
+                  if (finalTargets.length > 0 && !finalTargets.includes('All')) {
+                      // Some OneSignal workers prefer include_external_user_ids for backwards compatibility
+                      payload.include_external_user_ids = finalTargets;
+                  } else {
+                      payload.included_segments = ["All"];
+                  }
 
-                // Up to 3 native action buttons (Android + iOS). Each: { id, text }
-                if (Array.isArray(buttons) && buttons.length) {
-                    payload.buttons = buttons.slice(0, 3);
-                }
+                  if (imageUrl) {
+                      payload.big_picture = imageUrl;
+                      payload.ios_attachments = { "id1": imageUrl };
+                  }
 
-                // Extra data delivered to window.median_onesignal_push_opened() on tap
-                if (data || category) {
-                    payload.data = Object.assign({ pushCategory: category || 'general' }, data || {});
-                }
+                  const soundCfg = category ? PUSH_CHANNEL_CONFIG[category] : null;
+                  if (soundCfg) {
+                      payload.ios_sound = soundCfg.iosSound;
+                      if (soundCfg.androidChannelId && soundCfg.androidChannelId.indexOf('REPLACE_WITH_') !== 0) {
+                          payload.android_channel_id = soundCfg.androidChannelId;
+                      }
+                  }
 
-                const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
-                console.log('[OneSignal Request]', JSON.stringify(payload));
-                try {
-                    const response = await fetch(secureProxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-                    const responseText = await response.text();
-                    console.log('[OneSignal Response]', response.status, responseText);
-                    if (!response.ok) throw new Error("Push blocked or failed: " + responseText);
-                }
-                catch (e) { console.warn("API Push Failed:", e.message); sendPushNotification(title, message); }
-            }
+                  if (Array.isArray(buttons) && buttons.length) {
+                      payload.buttons = buttons.slice(0, 3);
+                  }
+
+                  if (data || category) {
+                      payload.data = Object.assign({ pushCategory: category || 'general' }, data || {});
+                  }
+
+                  const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
+                  console.log('[OneSignal Request]', JSON.stringify(payload));
+                  try {
+                      const response = await fetch(secureProxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                      const responseText = await response.text();
+                      console.log('[OneSignal Response]', response.status, responseText);
+                      if (!response.ok) throw new Error("Push blocked or failed: " + responseText);
+                  }
+                  catch (e) { console.warn("API Push Failed:", e.message); if (typeof sendPushNotification === 'function') sendPushNotification(title, message); }
+              }
 
             // ==========================================
             // HANDLE NOTIFICATION TAPS (Median calls this automatically
@@ -15817,7 +15860,7 @@ ${textContent ? `
             }, 1000); // Give the DOM a second to load
 
             function getGreeting() { const hr = new Date().getHours(); if (hr < 12) return "Good Morning,"; if (hr < 18) return "Good Afternoon,"; return "Good Evening,"; }
-            function playChime() { try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(587.33, ctx.currentTime); osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.1, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4); osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.4); } catch (e) { } }
+            function playChime() { if (typeof playRingPattern === 'function') playRingPattern(); }
             function requestNotificationPermission() { if ("Notification" in window && Notification.permission === "default") { Notification.requestPermission(); } }
             function sendPushNotification(title, body) {
                 // TEST MODE GUARD: Skip browser popup notifications when test mode is active
@@ -16309,12 +16352,18 @@ ${textContent ? `
                     // 16. ACTIVE CALLS
                     await new Promise(r => requestAnimationFrame(r));
                     onValue(ref(window.rtdb, (window.isGlobalTestMode ? 'test_active_calls' : 'active_calls') + '/discus_call'), (snapshot) => {
-                        if (snapshot.exists()) {
-                            const callData = snapshot.val();
+                          if (snapshot.exists()) {
+                              const callData = snapshot.val();
+                              window.globalDiscusCallState = callData;
+                              if (typeof window.renderChat === 'function') window.renderChat();
                             const now = Date.now();
                             if (callData.status === 'ringing' && callData.callerMobile !== window.loggedInMobile && (now - callData.timestamp < 30000)) {
-                                window.showIncomingCallPopup(callData);
-                            }
+                                  window.showIncomingCallPopup(callData);
+                              } else {
+                                  if (window.currentIncomingCall && window.currentIncomingCall.callerMobile === callData.callerMobile) {
+                                      if (typeof window.declineIncomingCall === 'function') window.declineIncomingCall();
+                                  }
+                              }
                         }
                     });
 
@@ -19485,7 +19534,15 @@ ${textContent ? `
             };
 
             function executeLoginUI(role, mob) {
-                window.setupPresence(); requestNotificationPermission();
+                  window.setupPresence(); requestNotificationPermission();
+                  try {
+                      if (navigator.userAgent.indexOf('median') > -1 || window.median) {
+                          window.location.href = 'median://onesignal/setExternalUserId?externalId=' + encodeURIComponent(mob);
+                          if (window.median && window.median.onesignal) {
+                              window.median.onesignal.setExternalUserId({externalId: mob});
+                          }
+                      }
+                  } catch(e) {}
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
                 checkUnreadNotices(); updateChatUnreadCount(); refreshUI(); startTimerEngine();
 
@@ -20802,10 +20859,7 @@ ${textContent ? `
                 };
 
                 await window.dbSubmitExam(payload);
-                sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`, null, {
-                    category: 'exam',
-                    buttons: [{ id: 'view_notice', text: 'View' }]
-                });
+                sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`, null, { category: 'exam', buttons: [{ id: 'view_notice', text: 'View' }] }, typeof assignedTo !== 'undefined' ? assignedTo : null);
                 await window.dbSendNotice({ title: `New Exam: ${examName}`, text: `A new exam has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard!`, date: window.formatDateDDMMYYYY(), type: 'new_exam', timestamp: Date.now(), assignedTo: assignedTo });
 
                 document.getElementById('admin-exam-info').value = '';
@@ -21164,10 +21218,7 @@ ${textContent ? `
                 const ex = window.examsDB.find(e => e.id === id);
                 window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 });
                 window.showToast("Exam Started", "The exam is now live for all students.", "success");
-                if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`, null, {
-                    category: 'exam',
-                    buttons: [{ id: 'view_notice', text: 'View' }]
-                });
+                if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`, null, { category: 'exam', buttons: [{ id: 'view_notice', text: 'View' }] }, ex.assignedTo);
             }
             window.pauseGlobalExam = async function (id) {
                 const ex = window.examsDB.find(e => e.id === id); if (!ex) return;
@@ -22278,16 +22329,20 @@ ${textContent ? `
                 const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'EXAMA' : 'Student');
                 const options = { roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall', parentNode: container, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: false, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'camera', 'desktop', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: senderName } };
                 window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options); window.chatJitsiApi.executeCommand('join');
+window.chatJitsiApi.addEventListener('videoConferenceLeft', async () => {
+    if (typeof window.closeDiscusVideoCall === 'function') window.closeDiscusVideoCall();
+});
 
                 if (!isAnswering) {
                     const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'video', status: 'ringing', timestamp: Date.now() };
                     if (isFirebaseConfigured) { const callsPath = window.isGlobalTestMode ? 'test_active_calls' : 'active_calls'; await set(ref(window.rtdb, `${callsPath}/discus_call`), callPayload); }
-                    await window.dbSendChat({ type: 'call_log', callType: 'video', text: "Started a Video Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
-                    sendOneSignalPush(`🎥 Incoming Video Call`, `${senderName} started a live video call in Discus Community.`, null, {
+                    
+                    await window.dbSendChat({ type: 'call_log', callType: 'video', text: "Video Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
+                      sendOneSignalPush(`🎥 Incoming Video Call`, `${senderName} started a live video call in Discus Community.`, null, {
                         category: 'call',
                         buttons: [{ id: 'call_accept', text: 'Accept' }, { id: 'call_decline', text: 'Decline' }],
                         data: { callType: 'video' }
-                    });
+                    }, window.getOtherStudentsMobiles());
                 }
             };
 
@@ -22298,22 +22353,42 @@ ${textContent ? `
                 const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'EXAMA' : 'Student');
                 const options = { roomName: 'vpaas-magic-cookie-6bb1206fb8a3440093f4feba9f556ac4/EXAMA_DiscusCommunityCall', parentNode: container, width: '100%', height: '100%', configOverwrite: { prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, startWithAudioMuted: false, startWithVideoMuted: true, disableDeepLinking: true }, interfaceConfigOverwrite: { TOOLBAR_BUTTONS: ['microphone', 'hangup', 'tileview'], SHOW_JITSI_WATERMARK: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false }, userInfo: { displayName: senderName } };
                 window.chatJitsiApi = new window.JitsiMeetExternalAPI("8x8.vc", options); window.chatJitsiApi.executeCommand('join');
+window.chatJitsiApi.addEventListener('videoConferenceLeft', async () => {
+    if (typeof window.closeDiscusVideoCall === 'function') window.closeDiscusVideoCall();
+});
 
                 if (!isAnswering) {
                     const callPayload = { callerMobile: window.loggedInMobile, callerName: senderName, callType: 'audio', status: 'ringing', timestamp: Date.now() };
                     if (isFirebaseConfigured) { const callsPath = window.isGlobalTestMode ? 'test_active_calls' : 'active_calls'; await set(ref(window.rtdb, `${callsPath}/discus_call`), callPayload); }
-                    await window.dbSendChat({ type: 'call_log', callType: 'audio', text: "Started an Audio Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
-                    sendOneSignalPush(`📞 Incoming Audio Call`, `${senderName} started a live audio call in Discus Community.`, null, {
+                    
+                    await window.dbSendChat({ type: 'call_log', callType: 'audio', text: "Audio Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
+                      sendOneSignalPush(`📞 Incoming Audio Call`, `${senderName} started a live audio call in Discus Community.`, null, {
                         category: 'call',
                         buttons: [{ id: 'call_accept', text: 'Accept' }, { id: 'call_decline', text: 'Decline' }],
                         data: { callType: 'audio' }
-                    });
+                    }, window.getOtherStudentsMobiles());
                 }
             };
 
-            window.closeDiscusVideoCall = function () {
-                stopRingtone(); if (window.chatJitsiApi) { window.chatJitsiApi.dispose(); window.chatJitsiApi = null; } document.getElementById('discus-video-modal').classList.add('hidden-view');
-            };
+            window.closeDiscusVideoCall = async function () {
+    stopRingtone();
+    if (window.chatJitsiApi) {
+        try {
+            let num = 0;
+            try { num = window.chatJitsiApi.getNumberOfParticipants(); } catch(e) {}
+            
+            if (num <= 1 && typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
+                const callsPath = window.isGlobalTestMode ? 'test_active_calls' : 'active_calls';
+                if(typeof set === 'function' && typeof ref === 'function') {
+                    await set(ref(window.rtdb, callsPath + '/discus_call/status'), 'ended');
+                }
+            }
+        } catch(e) {}
+        try { window.chatJitsiApi.dispose(); } catch(e) {}
+        window.chatJitsiApi = null;
+    }
+    document.getElementById('discus-video-modal').classList.add('hidden-view');
+};
             // ==========================================
             // CUSTOM MATERIAL READER ENGINE (PDF.js)
             // Correct togglePdfFullscreen & closeCustomPDFViewer below.
