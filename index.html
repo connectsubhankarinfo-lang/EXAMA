@@ -19588,46 +19588,43 @@ ${textContent ? `
                           medianAttempts++;
                           try {
                               const strMob = String(mob);
-                              if (window.median && window.median.onesignal) {
-                                  // Prompt for push notification permission (the "Allow" option)
-                                  if (typeof window.median.onesignal.register === 'function') {
-                                      window.median.onesignal.register();
-                                  }
-                                  
-                                  window.median.onesignal.tags.set({ mobile: strMob });
-                                  if (typeof window.median.onesignal.login === 'function') {
-                                      window.median.onesignal.login(strMob);
-                                  }
-                                  if (typeof window.median.onesignal.setExternalUserId === 'function') {
-                                      window.median.onesignal.setExternalUserId({ externalId: strMob });
-                                  }
-                                  console.log('[Median Bridge] SUCCESS (attempt ' + medianAttempts + '): linked externalId=' + strMob + ' via window.median.onesignal');
-                                  clearInterval(tagInterval);
-                              } else if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1) {
-                                  console.warn('[Median Bridge] window.median.onesignal NOT available yet (attempt ' + medianAttempts + '). Falling back to median:// iframe scheme.');
+                              const isMedianApp = (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1 || window.median);
+                              
+                              if (isMedianApp) {
                                   const fireIframe = (url) => {
                                       const iframe = document.createElement("IFRAME");
                                       iframe.setAttribute("src", url);
                                       document.documentElement.appendChild(iframe);
                                       iframe.parentNode.removeChild(iframe);
                                   };
-                                  // Fire all known combinations securely
-                                  const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
                                   
+                                  // Force Native Push Permission Prompt
                                   fireIframe('median://onesignal/register');
+                                  fireIframe('gonative://onesignal/register');
+                                  
+                                  // Force External ID
                                   fireIframe('median://onesignal/login?external_id=' + strMob);
                                   fireIframe('median://onesignal/setExternalUserId?externalId=' + strMob);
-                                  fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
-                                  
-                                  fireIframe('gonative://onesignal/register');
                                   fireIframe('gonative://onesignal/login?external_id=' + strMob);
                                   fireIframe('gonative://onesignal/setExternalUserId?externalId=' + strMob);
+                                  
+                                  // Force Tags
+                                  const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
+                                  fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
                                   fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
                                   
-                                  if (medianAttempts > 3) { console.error('[Median Bridge] GAVE UP after 3 attempts. window.median.onesignal never appeared - the native OneSignal plugin is likely not enabled/rebuilt in App Studio.'); clearInterval(tagInterval); }
+                                  if (window.median && window.median.onesignal) {
+                                      window.median.onesignal.tags.set({ mobile: strMob });
+                                      if (typeof window.median.onesignal.register === 'function') window.median.onesignal.register();
+                                      if (typeof window.median.onesignal.login === 'function') window.median.onesignal.login(strMob);
+                                      if (typeof window.median.onesignal.setExternalUserId === 'function') window.median.onesignal.setExternalUserId({ externalId: strMob });
+                                  }
+
+                                  console.log('[Median Bridge] SUCCESS (attempt ' + medianAttempts + '): Fired URL schemes for ' + strMob);
+                                  clearInterval(tagInterval);
                               } else {
-                                  console.warn('[Median Bridge] Not detected as a Median/GoNative app (user agent has neither string) - skipping identity link entirely.');
-                                  clearInterval(tagInterval); // Not Median/GoNative
+                                  console.warn('[Median Bridge] Not detected as a Median/GoNative app - skipping identity link entirely.');
+                                  clearInterval(tagInterval);
                               }
                           } catch(e) { console.error('[Median Bridge] Error in identity-link loop:', e.message); clearInterval(tagInterval); }
                       }, 2000);
