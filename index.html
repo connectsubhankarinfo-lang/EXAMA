@@ -3703,6 +3703,33 @@
                     </div>
                 </div>
 
+                <!-- Section: Notifications -->
+                <div>
+                    <span
+                        class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">Notifications</span>
+
+                    <div
+                        class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden divide-y divide-slate-100">
+                        <button id="settings-sync-push-btn" onclick="window.manualSyncPushId()"
+                            class="w-full flex items-center justify-between p-3.5 hover:bg-slate-50/80 active:bg-slate-100 transition-colors group">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div
+                                    class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm shadow-inner shrink-0 border border-emerald-100 group-hover:scale-105 transition-transform">
+                                    <i class="fa-solid fa-bell"></i>
+                                </div>
+                                <div class="text-left min-w-0">
+                                    <span class="block text-[13px] font-bold text-slate-900 leading-tight">Sync Push
+                                        Notifications</span>
+                                    <span class="block text-[10px] font-medium text-slate-400 mt-0.5">Re-link this
+                                        device if alerts aren't arriving</span>
+                                </div>
+                            </div>
+                            <i
+                                class="fa-solid fa-chevron-right text-xs text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all shrink-0"></i>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Section: Admin Test Mode (Admin Only) -->
                 <div id="settings-test-mode-section" class="hidden">
                     <span
@@ -19564,6 +19591,50 @@ ${textContent ? `
 
                 window.location.hash = 'login';
                 document.getElementById('login-form').reset();
+            };
+
+            // Manual re-sync: lets a logged-in user re-link this device's OneSignal
+            // identity on demand (Settings > Notifications > Sync Push Notifications),
+            // without needing to log out/in. Useful when the automatic link at login
+            // missed the window (native bridge not ready yet, brief network issue, etc).
+            window.manualSyncPushId = async function () {
+                const mob = window.loggedInMobile;
+                if (!mob) {
+                    window.showCustomAlert("Not Logged In", "Please log in again before syncing notifications.", "warning");
+                    return;
+                }
+                const strMob = String(mob);
+                if (typeof window.showLoader === 'function') window.showLoader("Syncing notification ID...");
+
+                // Best-effort only: if the native Median bridge happens to be ready, link it too.
+                // This button does NOT wait on or require it - no bridge dependency.
+                try {
+                    if (window.median && window.median.onesignal) {
+                        window.median.onesignal.login(strMob).catch(function (e) { console.warn('[Manual Sync] native login (best-effort) failed:', e && e.message); });
+                        window.median.onesignal.tags.setTags({ tags: { mobile: strMob } }).catch(function (e) { console.warn('[Manual Sync] native tags.setTags (best-effort) failed:', e && e.message); });
+                    }
+                } catch (e) { /* ignore - purely best-effort */ }
+
+                // Guaranteed path: the OneSignal Web SDK, already loaded on this page. Works
+                // the same whether we're in a browser, a PWA, or inside the Median WebView.
+                if (!window.OneSignalDeferred) {
+                    if (typeof window.hideLoader === 'function') window.hideLoader();
+                    window.showCustomAlert("Unavailable", "OneSignal hasn't finished loading on this page. Refresh and try again.", "warning");
+                    return;
+                }
+
+                window.OneSignalDeferred.push(async function (OneSignal) {
+                    try {
+                        await OneSignal.login(strMob);
+                        await OneSignal.Notifications.requestPermission();
+                        if (typeof window.hideLoader === 'function') window.hideLoader();
+                        window.showCustomAlert("Notifications Linked", "This device is now linked to " + strMob + " for push notifications.", "success");
+                    } catch (e) {
+                        if (typeof window.hideLoader === 'function') window.hideLoader();
+                        console.error('[Manual Sync] OneSignal Web SDK login failed:', e && e.message);
+                        window.showCustomAlert("Sync Failed", "Could not link notifications." + (e && e.message ? (" " + e.message) : ""), "error");
+                    }
+                });
             };
 
             function executeLoginUI(role, mob) {
