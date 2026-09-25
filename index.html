@@ -19657,50 +19657,66 @@ ${textContent ? `
                       if (navigator.userAgent.indexOf('median') > -1 || window.median) {
                           
                       
-                      // Robust loop to wait for Median JS Bridge to initialize before setting External ID
+                      // Fetch OneSignal ID directly, link it to the Mobile Number in Firebase, and set it as External ID
                       console.log('[Median Bridge] Starting loop to wait for window.median.onesignal... UA:', navigator.userAgent);
                       const strMob = String(mob);
                       
-                      // 1. Fallback URL schemes (Fired immediately)
                       const fireIframe = (url) => {
                           const iframe = document.createElement("IFRAME");
                           iframe.setAttribute("src", url);
                           document.documentElement.appendChild(iframe);
                           setTimeout(() => iframe.parentNode.removeChild(iframe), 500);
                       };
-                      fireIframe('median://onesignal/login?external_id=' + strMob);
-                      fireIframe('gonative://onesignal/login?external_id=' + strMob);
                       
-                      // 2. Loop to ensure JS bridge commands run successfully (CRITICAL for OneSignal v5+)
+                      // Fallback automatic permission prompt
+                      fireIframe('median://onesignal/register');
+                      fireIframe('gonative://onesignal/register');
+                      
                       let medianAttempts = 0;
-                      const medianInterval = setInterval(() => {
+                      const medianInterval = setInterval(async () => {
                           medianAttempts++;
                           
                           if (window.median && window.median.onesignal) {
-                              console.log('[Median Bridge] Bridge found! Firing login and register commands (Attempt ' + medianAttempts + ')');
+                              console.log('[Median Bridge] Bridge found! Fetching OneSignal Info (Attempt ' + medianAttempts + ')');
                               
                               try {
-                                  // OneSignal v5+ requires login() for External ID
-                                  if (typeof window.median.onesignal.login === 'function') {
-                                      window.median.onesignal.login(strMob);
-                                  } else if (typeof window.median.onesignal.setExternalUserId === 'function') {
-                                      window.median.onesignal.setExternalUserId({ externalId: strMob });
-                                  }
-                                  
-                                  // Set tags
-                                  if (typeof window.median.onesignal.tags === 'object' && typeof window.median.onesignal.tags.set === 'function') {
-                                      window.median.onesignal.tags.set({ mobile: strMob });
-                                  }
-
-                                  // Prompt for notifications
+                                  // Prompt for notifications automatically
                                   if (typeof window.median.onesignal.register === 'function') {
                                       window.median.onesignal.register();
+                                  }
+                                  
+                                  // Fetch OneSignal ID
+                                  if (typeof window.median.onesignal.info === 'function') {
+                                      const info = await window.median.onesignal.info();
+                                      if (info && info.oneSignalId) {
+                                          const osid = info.oneSignalId;
+                                          console.log('[Median Bridge] Successfully retrieved OneSignal ID:', osid);
+                                          
+                                          // Link OneSignal ID to Mobile Number in Firebase Database
+                                          if (window.db) {
+                                              window.db.collection('students').doc(strMob).set({
+                                                  onesignal_id: osid
+                                              }, { merge: true });
+                                          }
+                                          
+                                          // Also set the External ID to the OneSignal ID as requested
+                                          if (typeof window.median.onesignal.login === 'function') {
+                                              window.median.onesignal.login(osid);
+                                          } else if (typeof window.median.onesignal.setExternalUserId === 'function') {
+                                              window.median.onesignal.setExternalUserId({ externalId: osid });
+                                          }
+                                          
+                                          // Set tags
+                                          if (typeof window.median.onesignal.tags === 'object' && typeof window.median.onesignal.tags.set === 'function') {
+                                              window.median.onesignal.tags.set({ mobile: strMob, onesignal_id: osid });
+                                          }
+                                      }
                                   }
                               } catch(e) {
                                   console.error('[Median Bridge] Error executing commands:', e);
                               }
                               
-                              clearInterval(medianInterval); // Stop looping once successful
+                              clearInterval(medianInterval);
                           } else if (medianAttempts > 15) {
                               console.warn('[Median Bridge] Bridge not found after 30 seconds. Giving up.');
                               clearInterval(medianInterval);
