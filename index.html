@@ -19657,45 +19657,57 @@ ${textContent ? `
                       if (navigator.userAgent.indexOf('median') > -1 || window.median) {
                           
                       
-                      // Force Median/GoNative OneSignal Identity (Fire URL schemes immediately, they don't need JS to be ready)
-                      console.log('[Median Bridge] Forcing identity-link loop on login. UA:', navigator.userAgent);
-                      
+                      // Robust loop to wait for Median JS Bridge to initialize before setting External ID
+                      console.log('[Median Bridge] Starting loop to wait for window.median.onesignal... UA:', navigator.userAgent);
                       const strMob = String(mob);
+                      
+                      // 1. Fallback URL schemes (Fired immediately)
                       const fireIframe = (url) => {
                           const iframe = document.createElement("IFRAME");
                           iframe.setAttribute("src", url);
                           document.documentElement.appendChild(iframe);
                           setTimeout(() => iframe.parentNode.removeChild(iframe), 500);
                       };
-                      
-                      // 1. Force External ID First (URL schemes work even before JS bridge loads)
                       fireIframe('median://onesignal/login?external_id=' + strMob);
-                      fireIframe('median://onesignal/setExternalUserId?externalId=' + strMob);
                       fireIframe('gonative://onesignal/login?external_id=' + strMob);
-                      fireIframe('gonative://onesignal/setExternalUserId?externalId=' + strMob);
                       
-                      // 2. Force Tags
-                      const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
-                      fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
-                      fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
-                      
-                      // JS Fallback for setting external ID
-                      if (window.median && window.median.onesignal) {
-                          if (typeof window.median.onesignal.login === 'function') window.median.onesignal.login(strMob);
-                          if (typeof window.median.onesignal.setExternalUserId === 'function') window.median.onesignal.setExternalUserId({ externalId: strMob });
-                          window.median.onesignal.tags.set({ mobile: strMob });
-                      }
-                      
-                      // 3. Automatically Prompt for Notifications 3 seconds after login
-                      setTimeout(() => {
-                          console.log('[Median Bridge] Firing automatic native push prompt.');
-                          fireIframe('median://onesignal/register');
-                          fireIframe('gonative://onesignal/register');
+                      // 2. Loop to ensure JS bridge commands run successfully (CRITICAL for OneSignal v5+)
+                      let medianAttempts = 0;
+                      const medianInterval = setInterval(() => {
+                          medianAttempts++;
                           
-                          if (window.median && window.median.onesignal && typeof window.median.onesignal.register === 'function') {
-                              window.median.onesignal.register();
+                          if (window.median && window.median.onesignal) {
+                              console.log('[Median Bridge] Bridge found! Firing login and register commands (Attempt ' + medianAttempts + ')');
+                              
+                              try {
+                                  // OneSignal v5+ requires login() for External ID
+                                  if (typeof window.median.onesignal.login === 'function') {
+                                      window.median.onesignal.login(strMob);
+                                  } else if (typeof window.median.onesignal.setExternalUserId === 'function') {
+                                      window.median.onesignal.setExternalUserId({ externalId: strMob });
+                                  }
+                                  
+                                  // Set tags
+                                  if (typeof window.median.onesignal.tags === 'object' && typeof window.median.onesignal.tags.set === 'function') {
+                                      window.median.onesignal.tags.set({ mobile: strMob });
+                                  }
+
+                                  // Prompt for notifications
+                                  if (typeof window.median.onesignal.register === 'function') {
+                                      window.median.onesignal.register();
+                                  }
+                              } catch(e) {
+                                  console.error('[Median Bridge] Error executing commands:', e);
+                              }
+                              
+                              clearInterval(medianInterval); // Stop looping once successful
+                          } else if (medianAttempts > 15) {
+                              console.warn('[Median Bridge] Bridge not found after 30 seconds. Giving up.');
+                              clearInterval(medianInterval);
+                          } else {
+                              console.log('[Median Bridge] Waiting for bridge... (Attempt ' + medianAttempts + ')');
                           }
-                      }, 3000);
+                      }, 2000);
                       }
                   } catch(e) {}
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
