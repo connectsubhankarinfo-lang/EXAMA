@@ -15566,6 +15566,7 @@ ${textContent ? `
                           filters.push({ field: "tag", key: "mobile", relation: "=", value: String(m) });
                       });
                       payload.filters = filters;
+                      payload.include_external_user_ids = finalTargets;
                   } else {
                       payload.included_segments = ["All"];
                   }
@@ -19542,19 +19543,34 @@ ${textContent ? `
                   try {
                       if (navigator.userAgent.indexOf('median') > -1 || window.median) {
                           
-                      // Robust loop for Median OneSignal Tags (Native plugins take a few seconds to initialize)
+                      
+                      // Robust loop for Median/GoNative OneSignal Identity (Native plugins take time to init)
                       let medianAttempts = 0;
                       const tagInterval = setInterval(() => {
                           medianAttempts++;
                           try {
+                              const strMob = String(mob);
                               if (window.median && window.median.onesignal) {
-                                  window.median.onesignal.tags.set({ mobile: String(mob) });
+                                  window.median.onesignal.tags.set({ mobile: strMob });
+                                  window.median.onesignal.setExternalUserId({ externalId: strMob });
                                   clearInterval(tagInterval);
-                              } else if (navigator.userAgent.indexOf('median') > -1) {
-                                  window.location.href = 'median://onesignal/tags/set?tags=' + encodeURIComponent(JSON.stringify({ mobile: String(mob) }));
+                              } else if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1) {
+                                  const fireIframe = (url) => {
+                                      const iframe = document.createElement("IFRAME");
+                                      iframe.setAttribute("src", url);
+                                      document.documentElement.appendChild(iframe);
+                                      iframe.parentNode.removeChild(iframe);
+                                  };
+                                  // Fire all known combinations securely
+                                  const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
+                                  fireIframe('median://onesignal/setExternalUserId?externalId=' + strMob);
+                                  fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
+                                  fireIframe('gonative://onesignal/setExternalUserId?externalId=' + strMob);
+                                  fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
+                                  
                                   if (medianAttempts > 3) clearInterval(tagInterval); // Stop after 3 attempts
                               } else {
-                                  clearInterval(tagInterval); // Not Median
+                                  clearInterval(tagInterval); // Not Median/GoNative
                               }
                           } catch(e) { clearInterval(tagInterval); }
                       }, 2000);
