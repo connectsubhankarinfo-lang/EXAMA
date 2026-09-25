@@ -19541,10 +19541,23 @@ ${textContent ? `
                   window.setupPresence(); requestNotificationPermission();
                   try {
                       if (navigator.userAgent.indexOf('median') > -1 || window.median) {
-                          window.location.href = 'median://onesignal/tags/set?tags=' + encodeURIComponent(JSON.stringify({ mobile: mob }));
-                          if (window.median && window.median.onesignal) {
-                              window.median.onesignal.tags.set({ mobile: mob });
-                          }
+                          
+                      // Robust loop for Median OneSignal Tags (Native plugins take a few seconds to initialize)
+                      let medianAttempts = 0;
+                      const tagInterval = setInterval(() => {
+                          medianAttempts++;
+                          try {
+                              if (window.median && window.median.onesignal) {
+                                  window.median.onesignal.tags.set({ mobile: mob });
+                                  clearInterval(tagInterval);
+                              } else if (navigator.userAgent.indexOf('median') > -1) {
+                                  window.location.href = 'median://onesignal/tags/set?tags=' + encodeURIComponent(JSON.stringify({ mobile: mob }));
+                                  if (medianAttempts > 3) clearInterval(tagInterval); // Stop after 3 attempts
+                              } else {
+                                  clearInterval(tagInterval); // Not Median
+                              }
+                          } catch(e) { clearInterval(tagInterval); }
+                      }, 2000);
                       }
                   } catch(e) {}
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
