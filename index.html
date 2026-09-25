@@ -26,6 +26,66 @@
             }
         };
 
+        // ==========================================
+        // PUSH NOTIFICATION SOFT PROMPT
+        // ==========================================
+        window.showPushPrompt = function() {
+            if (document.getElementById('median-push-prompt')) return; // Already showing
+            
+            const overlay = document.createElement('div');
+            overlay.id = 'median-push-prompt';
+            overlay.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 opacity-0 transition-opacity duration-300';
+            
+            const modal = document.createElement('div');
+            modal.className = 'bg-white rounded-2xl p-6 md:p-8 max-w-sm w-full shadow-2xl transform scale-95 transition-transform duration-300 text-center';
+            
+            modal.innerHTML = `
+                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 mb-2">Enable Notifications</h3>
+                <p class="text-gray-600 mb-6">Never miss important updates, new materials, and chat messages from your classes.</p>
+                
+                <div class="flex flex-col gap-3">
+                    <button id="push-allow-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors">
+                        Allow Notifications
+                    </button>
+                    <button id="push-decline-btn" class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-3 px-4 rounded-xl transition-colors">
+                        Maybe Later
+                    </button>
+                </div>
+            `;
+            
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+            
+            // Animate in
+            requestAnimationFrame(() => {
+                overlay.classList.remove('opacity-0');
+                modal.classList.remove('scale-95');
+            });
+            
+            const closeModal = () => {
+                overlay.classList.add('opacity-0');
+                modal.classList.add('scale-95');
+                setTimeout(() => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 300);
+            };
+            
+            document.getElementById('push-allow-btn').onclick = function() {
+                window.promptMedianPush();
+                closeModal();
+                // Optionally save choice to localStorage so we don't ask every login
+                localStorage.setItem('push_prompt_seen', 'true');
+            };
+            
+            document.getElementById('push-decline-btn').onclick = function() {
+                closeModal();
+                localStorage.setItem('push_prompt_seen', 'true');
+            };
+        };
+
         window.initCustomSelects = function () {
             const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
             selects.forEach(select => {
@@ -19624,15 +19684,12 @@ ${textContent ? `
                                   fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
                                   fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
                                   
-                                  // Note: We delay the auto-prompt by 2 seconds to guarantee OneSignal has 
-                                  // finished processing the new External ID. This solves the race condition!
+                                  // Note: We use the HTML Soft Prompt here. This guarantees the user has to click "Allow", 
+                                  // which legally bypasses all iOS/Android asynchronous dialog blocks!
                                   setTimeout(() => {
-                                      fireIframe('median://onesignal/register');
-                                      fireIframe('gonative://onesignal/register');
-                                      if (window.median && window.median.onesignal && typeof window.median.onesignal.register === 'function') {
-                                          window.median.onesignal.register();
-                                      }
-                                      console.log('[Median Bridge] Fired push permission prompt after delay.');
+                                      // Only show if we haven't already asked them this session, or if you want it every time, just call it.
+                                      if (window.showPushPrompt) window.showPushPrompt();
+                                      console.log('[Median Bridge] Showing HTML Soft Prompt for push permissions.');
                                   }, 2000);
                                   
                                   if (window.median && window.median.onesignal) {
