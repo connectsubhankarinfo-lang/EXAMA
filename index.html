@@ -15566,13 +15566,15 @@ ${textContent ? `
                   }
 
                   if (finalTargets.length > 0 && !finalTargets.includes('All')) {
-                      const filters = [];
-                      finalTargets.forEach((m, index) => {
-                          if (index > 0) filters.push({ operator: "OR" });
-                          filters.push({ field: "tag", key: "mobile", relation: "=", value: String(m) });
-                      });
-                      payload.filters = filters;
-                      payload.include_external_user_ids = finalTargets;
+                      // NOTE: OneSignal's current REST API rejects a request that combines
+                      // "filters" with alias/segment targeting in the same call - only ONE
+                      // targeting method is allowed per message. This used to send BOTH
+                      // filters (tags) AND include_external_user_ids together, which OneSignal
+                      // would reject outright, meaning every targeted push (call/discus/session
+                      // categories) was very likely failing at the API level, silently, every
+                      // single time. include_external_user_ids is also the old/deprecated field
+                      // name; the current one is include_aliases.external_id.
+                      payload.include_aliases = { external_id: finalTargets };
                   } else {
                       payload.included_segments = ["All"];
                   }
