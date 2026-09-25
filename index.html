@@ -19438,19 +19438,35 @@ ${textContent ? `
                 // (the Web SDK) inside the Median app does NOT reach that native SDK, so Median
                 // shows its own permission prompt on launch (before login) and the external_id
                 // Median actually registers stays blank. Fix: use the Median JS Bridge instead.
+                const TEMP_DEBUG_ONESIGNAL = true; // 🔧 set to false (or delete this block) once you're done debugging
+
                 if (typeof median !== 'undefined' && median.onesignal) {
                     // Running inside the Median-wrapped app
                     (async () => {
                         try {
+                            if (TEMP_DEBUG_ONESIGNAL) {
+                                const beforeInfo = await median.onesignal.onesignalInfo();
+                                alert("BEFORE login, mob='" + mob + "': " + JSON.stringify(beforeInfo));
+                            }
+
                             // Only asks the OS for permission if it hasn't already been decided.
                             // NOTE: also go to Median App Studio > Native Plugins > OneSignal and
                             // turn OFF "Auto-register for push notifications" so the app stops
                             // prompting on launch and only prompts here, after login.
                             await median.onesignal.register();
                             await median.onesignal.login(mob); // sets external_id to the mobile number
-                        } catch (e) { console.warn("Median OneSignal login skipped:", e); }
+
+                            if (TEMP_DEBUG_ONESIGNAL) {
+                                const afterInfo = await median.onesignal.onesignalInfo();
+                                alert("AFTER login: " + JSON.stringify(afterInfo));
+                            }
+                        } catch (e) {
+                            console.warn("Median OneSignal login skipped:", e);
+                            if (TEMP_DEBUG_ONESIGNAL) alert("ERROR in median.onesignal: " + e.message);
+                        }
                     })();
                 } else {
+                    if (TEMP_DEBUG_ONESIGNAL) alert("median.onesignal NOT available. typeof median = " + typeof median);
                     // Running in a normal browser (not the Median app) — keep the Web SDK path
                     requestNotificationPermission();
                     if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
