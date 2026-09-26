@@ -5535,6 +5535,23 @@
                             class="fa-solid fa-chevron-right opacity-80 group-hover:translate-x-1 transition-transform"></i>
                     </button>
 
+                    <button onclick="window.location.hash='device-manager'"
+                        class="w-full bg-gradient-to-r from-slate-700 to-slate-900 hover:from-slate-800 hover:to-black text-white p-4 sm:p-5 rounded-[1.5rem] shadow-[0_10px_25px_rgba(15,23,42,0.35)] flex items-center justify-between active:scale-95 transition-all group border border-slate-600">
+                        <div class="flex items-center gap-3">
+                            <div
+                                class="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner">
+                                <i class="fa-solid fa-mobile-screen-button text-xl"></i>
+                            </div>
+                            <div class="text-left">
+                                <h3 class="font-black text-sm sm:text-base leading-tight">Device Manager</h3>
+                                <p class="text-[10px] font-bold text-slate-300 uppercase tracking-widest mt-1">Link
+                                    Devices to Students</p>
+                            </div>
+                        </div>
+                        <i
+                            class="fa-solid fa-chevron-right opacity-80 group-hover:translate-x-1 transition-transform"></i>
+                    </button>
+
                     <div class="flex items-center justify-between px-1 mt-2">
                         <h3 class="font-bold text-gray-900 tracking-tight text-base sm:text-lg break-words">Exam
                             Management</h3>
@@ -5609,6 +5626,39 @@
             <!-- Student List -->
             <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-4 sm:space-y-6 relative">
                 <div id="student-directory-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4"></div>
+            </div>
+        </div>
+        <!-- DEVICE MANAGER VIEW (manual External ID / device-to-student linking) -->
+        <div id="device-manager-view"
+            class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
+            <div
+                class="bg-gray-900/95 backdrop-blur-xl text-white pt-10 sm:pt-12 pb-5 sm:pb-6 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-xl border-b border-gray-800 rounded-b-2xl sm:rounded-b-3xl relative z-10">
+                <button onclick="safeBack()"
+                    class="w-10 h-10 sm:w-12 sm:h-12 shrink-0 flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-full active:scale-90 transition-all border border-gray-700">
+                    <i class="fa-solid fa-arrow-left text-base sm:text-lg"></i>
+                </button>
+                <div class="min-w-0">
+                    <h2 class="text-xl sm:text-2xl font-black tracking-tight drop-shadow-md break-words leading-tight">
+                        Device Manager</h2>
+                    <p
+                        class="text-[9px] sm:text-[11px] text-indigo-400 font-bold tracking-widest mt-0.5 uppercase break-words leading-tight">
+                        Link Devices To Students</p>
+                </div>
+            </div>
+            <!-- Interactive Search Bar -->
+            <div class="px-4 sm:px-5 pt-4 pb-2 relative z-10 bg-[#f8fafc] shrink-0 border-b border-gray-100">
+                <div class="relative w-full max-w-md mx-auto md:mx-0">
+                    <i
+                        class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+                    <input type="text" id="admin-device-search" oninput="window.filterAdminDevices(this.value)"
+                        placeholder="Search by device, student name or mobile..."
+                        class="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all shadow-sm">
+                </div>
+            </div>
+
+            <!-- Device List -->
+            <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-3 sm:space-y-4 relative">
+                <div id="device-manager-list" class="flex flex-col gap-3 sm:gap-4"></div>
             </div>
         </div>
         <!-- 4. ADMIN PROFILE VIEW -->
@@ -9601,7 +9651,7 @@
 
 
             import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-            import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion, enableIndexedDbPersistence, limit, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+            import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion, enableIndexedDbPersistence, limit, getDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
             // 🔥 NEW AUTH IMPORTS
             import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
             import { getDatabase, ref, set, get, push, update, remove, onValue, off, onDisconnect, query as rtdbQuery, orderByChild, limitToLast, endBefore, serverTimestamp as rtdbServerTimestamp, child } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
@@ -9643,7 +9693,7 @@
                 enableIndexedDbPersistence(db).catch((err) => { /* Silently catch cache errors */ });
             }
 
-            window.studentsDB = []; window.peerAudioDrafts = {}; window.annotatedImagesDraft = {}; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = []; window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null; window.videosDB = []; window.activeVideoCategory = 'All';
+            window.studentsDB = []; window.peerAudioDrafts = {}; window.annotatedImagesDraft = {}; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = []; window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null; window.videosDB = []; window.activeVideoCategory = 'All'; window.deviceSubscriptionsDB = [];
 
             // --- WHATSAPP WAVE PLAYER & SPEED CONTROLLER ENGINE ---
 
@@ -15368,7 +15418,8 @@ ${textContent ? `
                     'active-exam-view', 'fitness-view', 'weekly-targets-view',
                     'session-timer-view', 'nova-chat-view', 'video-hub-view',
                     'video-watch-view', 'syllabus-view', 'math-workout-view',
-                    'student-directory-view', 'budget-manager-view', 'budget-track-view'
+                    'student-directory-view', 'budget-manager-view', 'budget-track-view',
+                    'device-manager-view'
                 ];
 
                 // 1. Hide all views and reset the Apple animation class
@@ -15419,6 +15470,9 @@ ${textContent ? `
                         break;
                     case 'student-directory':
                         if (typeof window.renderStudentDirectory === 'function') window.renderStudentDirectory();
+                        break;
+                    case 'device-manager':
+                        if (typeof window.renderDeviceManager === 'function') window.renderDeviceManager();
                         break;
                     case 'chat':
                         window.loadChatData();
@@ -16173,6 +16227,14 @@ ${textContent ? `
                             debouncedRefreshUI();
                         }
                         // Note: Online status is now tracked via RTDB presence, not lastActive field changes
+                    });
+
+                    // 1B. DEVICE SUBSCRIPTIONS (powers Admin > Device Manager manual External ID linking)
+                    onSnapshot(collection(db, window.getCollectionName("deviceSubscriptions")), (snapshot) => {
+                        window.deviceSubscriptionsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        if (window.location.hash.replace('#', '') === 'device-manager' && typeof window.renderDeviceManager === 'function') {
+                            window.renderDeviceManager();
+                        }
                     });
 
                     // RTDB Presence Listener - Merges online status into studentsDB
@@ -19543,6 +19605,102 @@ ${textContent ? `
                 }
             };
 
+            // ==========================================
+            // 📱 DEVICE SUBSCRIPTION REGISTRY
+            // Tracks every OneSignal push Subscription (device/browser) that
+            // ever connects, so Admin > Device Manager can view it and
+            // manually assign/reassign it to a student's External ID
+            // (mobile number) — a fallback for cases where the automatic
+            // OneSignal.login(mob) call above doesn't fire correctly
+            // (e.g. Median/GoNative bridge issues, or a device that opened
+            // the app before ever logging in).
+            // ==========================================
+            window.getDeviceLabel = function (ua) {
+                ua = ua || navigator.userAgent || '';
+                let os = 'Unknown OS';
+                if (/android/i.test(ua)) os = 'Android';
+                else if (/iphone|ipad|ipod/i.test(ua)) os = 'iOS';
+                else if (/windows/i.test(ua)) os = 'Windows';
+                else if (/mac os/i.test(ua)) os = 'macOS';
+                else if (/linux/i.test(ua)) os = 'Linux';
+
+                let browser = 'Browser';
+                if (window.median || /median/i.test(ua)) browser = 'App (Median)';
+                else if (/gonative/i.test(ua)) browser = 'App (GoNative)';
+                else if (/edg\//i.test(ua)) browser = 'Edge';
+                else if (/chrome/i.test(ua) && !/edg\//i.test(ua)) browser = 'Chrome';
+                else if (/firefox/i.test(ua)) browser = 'Firefox';
+                else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = 'Safari';
+
+                return `${browser} on ${os}`;
+            };
+
+            window.registerDeviceSubscription = async function (subId, mobileOverride) {
+                try {
+                    if (!subId || !db) return;
+                    const mobile = (mobileOverride !== undefined) ? mobileOverride : (window.loggedInMobile || null);
+                    await setDoc(doc(db, window.getCollectionName("deviceSubscriptions"), subId), {
+                        subscriptionId: subId,
+                        deviceLabel: window.getDeviceLabel(navigator.userAgent),
+                        userAgent: navigator.userAgent,
+                        linkedMobile: mobile || null,
+                        lastSeen: serverTimestamp()
+                    }, { merge: true });
+                } catch (e) {
+                    console.warn('[Device Registry] Failed to record subscription:', e.message);
+                }
+            };
+
+            // Hook into OneSignal as soon as it's ready, and again any time the
+            // Subscription id is created or changes (e.g. after a reinstall).
+            if (window.OneSignalDeferred) {
+                window.OneSignalDeferred.push(async function (OneSignal) {
+                    try {
+                        const syncSub = () => {
+                            const subId = OneSignal.User && OneSignal.User.PushSubscription ? OneSignal.User.PushSubscription.id : null;
+                            if (subId) window.registerDeviceSubscription(subId);
+                        };
+                        syncSub(); // In case it's already available
+                        if (OneSignal.User && OneSignal.User.PushSubscription && typeof OneSignal.User.PushSubscription.addEventListener === 'function') {
+                            OneSignal.User.PushSubscription.addEventListener('change', syncSub);
+                        }
+                    } catch (e) { console.warn('[Device Registry] OneSignal hook failed:', e.message); }
+                });
+            }
+
+            // Admin: manually (re)assign a device Subscription to a student's mobile number.
+            // Calls your Cloudflare Worker, which holds the OneSignal REST API key and
+            // forwards this to OneSignal's Transfer Subscription API.
+            window.assignDeviceToStudent = async function (subscriptionId, mobile) {
+                if (!subscriptionId) return;
+                const student = mobile ? (window.studentsDB || []).find(s => s.mobile === mobile) : null;
+                const label = mobile ? (student?.name ? `${student.name} (${mobile})` : mobile) : 'Unassigned';
+
+                window.showLoader(`Linking device to ${label}...`);
+                try {
+                    const response = await fetch("https://exama-push-proxy.connect-subhankar-info.workers.dev/link-device", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ subscription_id: subscriptionId, external_id: mobile || null })
+                    });
+                    const responseText = await response.text();
+                    if (!response.ok) throw new Error(responseText || 'The worker rejected the request.');
+
+                    // Reflect the change locally right away (the live listener will confirm it shortly after)
+                    await setDoc(doc(db, window.getCollectionName("deviceSubscriptions"), subscriptionId), {
+                        linkedMobile: mobile || null,
+                        manuallyAssignedAt: serverTimestamp()
+                    }, { merge: true });
+
+                    window.hideLoader();
+                    window.showToast('Device Linked', `This device now receives notifications as ${label}.`, 'success');
+                } catch (e) {
+                    window.hideLoader();
+                    console.error(e);
+                    window.showCustomAlert('Linking Failed', e.message, 'error');
+                }
+            };
+
             // Update Logout to clear Auth Session
             window.logout = async function () {
                 cleanupJitsi();
@@ -19551,7 +19709,7 @@ ${textContent ? `
 
                 // Clear OneSignal External IDs
                 try {
-                    if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { await OneSignal.logout(); }); }
+                    if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function(OneSignal) { const subId = OneSignal.User && OneSignal.User.PushSubscription ? OneSignal.User.PushSubscription.id : null; await OneSignal.logout(); if (subId) window.registerDeviceSubscription(subId, null); }); }
                     if (window.median && window.median.onesignal) {
                         if (typeof window.median.onesignal.logout === 'function') window.median.onesignal.logout();
                         if (typeof window.median.onesignal.removeExternalUserId === 'function') window.median.onesignal.removeExternalUserId();
@@ -19624,7 +19782,7 @@ ${textContent ? `
                       }, 2000);
                       }
                   } catch(e) {}
-                if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
+                if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); const subId = OneSignal.User.PushSubscription ? OneSignal.User.PushSubscription.id : null; if (subId) window.registerDeviceSubscription(subId, mob); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
                 checkUnreadNotices(); updateChatUnreadCount(); refreshUI(); startTimerEngine();
 
                 // Load chat & materials data immediately so unread badges and unapproved
@@ -20567,6 +20725,107 @@ ${textContent ? `
                     }
                 }, window.adminStudentSearchQuery ? 50 : 300); // 🚀 Renders instantly while typing
             };
+
+            // ==========================================
+            // 📱 DEVICE MANAGER (manual External ID linking)
+            // ==========================================
+            window.adminDeviceSearchQuery = '';
+
+            window.filterAdminDevices = function (val) {
+                window.adminDeviceSearchQuery = (val || '').toLowerCase();
+                window.renderDeviceManager();
+            };
+
+            window.renderDeviceManager = function () {
+                const list = document.getElementById('device-manager-list');
+                if (!list) return;
+
+                if (!window.adminDeviceSearchQuery) {
+                    list.innerHTML = window.getSkeletonHTML('list', 5);
+                }
+
+                setTimeout(() => {
+                    // Build the <option> list of students once per render
+                    const studentOptionsHtml = (window.studentsDB || [])
+                        .slice()
+                        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                        .map(s => `<option value="${s.mobile}">${s.name} (${s.mobile})</option>`)
+                        .join('');
+
+                    let devices = (window.deviceSubscriptionsDB || []).slice();
+
+                    // Newest / most recently seen first
+                    devices.sort((a, b) => {
+                        const tA = a.lastSeen && a.lastSeen.toMillis ? a.lastSeen.toMillis() : 0;
+                        const tB = b.lastSeen && b.lastSeen.toMillis ? b.lastSeen.toMillis() : 0;
+                        return tB - tA;
+                    });
+
+                    if (window.adminDeviceSearchQuery) {
+                        const q = window.adminDeviceSearchQuery;
+                        devices = devices.filter(dvc => {
+                            const student = (window.studentsDB || []).find(s => s.mobile === dvc.linkedMobile);
+                            return (dvc.deviceLabel && dvc.deviceLabel.toLowerCase().includes(q)) ||
+                                (dvc.linkedMobile && dvc.linkedMobile.includes(q)) ||
+                                (student && student.name && student.name.toLowerCase().includes(q));
+                        });
+                    }
+
+                    if (devices.length === 0) {
+                        list.innerHTML = `<div class="text-center text-gray-500 font-medium italic p-6 border border-dashed border-gray-300 rounded-2xl w-full">No devices found yet. A device shows up here the first time it opens the app.</div>`;
+                        return;
+                    }
+
+                    let html = '';
+                    devices.forEach(dvc => {
+                        const student = (window.studentsDB || []).find(s => s.mobile === dvc.linkedMobile);
+                        const statusHtml = student
+                            ? `<span class="text-emerald-600"><i class="fa-solid fa-circle-check mr-1"></i>${student.name} (${student.mobile})</span>`
+                            : `<span class="text-amber-600"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Unassigned</span>`;
+                        let lastSeenStr = 'Just now';
+                        try {
+                            if (dvc.lastSeen && dvc.lastSeen.toDate) {
+                                lastSeenStr = dvc.lastSeen.toDate().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                            }
+                        } catch (e) { }
+
+                        html += `
+            <div class="glass-card p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[1.75rem] flex flex-col gap-3 shadow-sm border border-gray-200">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <h4 class="font-bold text-gray-900 text-xs sm:text-sm break-words leading-tight"><i class="fa-solid fa-mobile-screen-button mr-1.5 text-indigo-500"></i>${dvc.deviceLabel || 'Unknown Device'}</h4>
+                        <p class="text-[9px] sm:text-[10px] text-gray-400 font-bold tracking-wide mt-1 break-all">ID: ${dvc.subscriptionId}</p>
+                        <p class="text-[10px] sm:text-[11px] font-bold mt-1.5">${statusHtml}</p>
+                        <p class="text-[9px] sm:text-[10px] text-gray-400 font-semibold mt-1">Last seen: ${lastSeenStr}</p>
+                    </div>
+                </div>
+                <div class="flex gap-2 items-center">
+                    <select id="device-select-${dvc.subscriptionId}" class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-400">
+                        <option value="">Unassigned</option>
+                        ${studentOptionsHtml}
+                    </select>
+                    <button onclick="window.assignDeviceToStudent('${dvc.subscriptionId}', document.getElementById('device-select-${dvc.subscriptionId}').value || null)"
+                        class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl active:scale-95 transition-all shadow-sm">
+                        Save
+                    </button>
+                </div>
+            </div>`;
+                    });
+
+                    list.innerHTML = html;
+                    if (!window.adminDeviceSearchQuery) list.classList.add('fade-in');
+
+                    // Pre-select each dropdown to the currently linked student, and
+                    // re-run the app's custom iOS-style select engine so these new
+                    // <select> elements get the same look as the rest of the app.
+                    devices.forEach(dvc => {
+                        const sel = document.getElementById(`device-select-${dvc.subscriptionId}`);
+                        if (sel) sel.value = dvc.linkedMobile || '';
+                    });
+                    if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+                }, window.adminDeviceSearchQuery ? 50 : 300);
+            };
+
             window.renderAdminDashboard = function () {
                 const examList = document.getElementById('admin-exams-list');
 
