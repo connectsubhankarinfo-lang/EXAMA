@@ -5645,8 +5645,33 @@
                         Link Devices To Students</p>
                 </div>
             </div>
+            <!-- Manual Link Card (no OneSignal dashboard needed) -->
+            <div class="px-4 sm:px-5 pt-4 pb-1 relative z-10 bg-[#f8fafc] shrink-0">
+                <div class="bg-white border border-gray-200 rounded-2xl p-3 sm:p-4 shadow-sm space-y-2.5">
+                    <h3 class="font-black text-gray-900 text-xs sm:text-sm flex items-center gap-1.5">
+                        <i class="fa-solid fa-link text-indigo-500"></i> Manually Link a Device
+                    </h3>
+                    <p class="text-[9px] sm:text-[10px] text-gray-400 font-semibold leading-snug">
+                        Have a Subscription ID from OneSignal Dashboard → Audience → Subscriptions? Paste it here and
+                        pick the student — no need to leave the app.
+                    </p>
+                    <input type="text" id="manual-subscription-id" placeholder="Paste Subscription ID here..."
+                        class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all">
+                    <div class="flex gap-2">
+                        <select id="manual-student-select"
+                            class="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-xs font-bold text-gray-700 outline-none focus:border-indigo-400">
+                            <option value="">Select Student...</option>
+                        </select>
+                        <button onclick="window.manualLinkDevice()"
+                            class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl active:scale-95 transition-all shadow-sm">
+                            Link
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Interactive Search Bar -->
-            <div class="px-4 sm:px-5 pt-4 pb-2 relative z-10 bg-[#f8fafc] shrink-0 border-b border-gray-100">
+            <div class="px-4 sm:px-5 pt-3 pb-2 relative z-10 bg-[#f8fafc] shrink-0 border-b border-gray-100">
                 <div class="relative w-full max-w-md mx-auto md:mx-0">
                     <i
                         class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
@@ -15473,6 +15498,7 @@ ${textContent ? `
                         break;
                     case 'device-manager':
                         if (typeof window.renderDeviceManager === 'function') window.renderDeviceManager();
+                        if (typeof window.populateManualDeviceSelect === 'function') window.populateManualDeviceSelect();
                         break;
                     case 'chat':
                         window.loadChatData();
@@ -20824,6 +20850,41 @@ ${textContent ? `
                     });
                     if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
                 }, window.adminDeviceSearchQuery ? 50 : 300);
+            };
+
+            // Fills the "Manually Link a Device" student dropdown. Called once
+            // when the Device Manager page opens (not on every re-render), so
+            // it doesn't reset whatever the admin is mid-typing.
+            window.populateManualDeviceSelect = function () {
+                const sel = document.getElementById('manual-student-select');
+                if (!sel) return;
+                const optionsHtml = (window.studentsDB || [])
+                    .slice()
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .map(s => `<option value="${s.mobile}">${s.name} (${s.mobile})</option>`)
+                    .join('');
+                sel.innerHTML = '<option value="">Select Student...</option>' + optionsHtml;
+                if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
+            };
+
+            // Handles the "Link" button on the manual entry card: takes whatever
+            // Subscription ID the admin pasted in (found via the OneSignal
+            // dashboard) plus the chosen student, and runs it through the exact
+            // same assignDeviceToStudent() flow as the per-row Save buttons below.
+            window.manualLinkDevice = async function () {
+                const idInput = document.getElementById('manual-subscription-id');
+                const selInput = document.getElementById('manual-student-select');
+                const subId = (idInput?.value || '').trim();
+                const mobile = selInput?.value || '';
+
+                if (!subId) return window.showCustomAlert('Missing Subscription ID', 'Paste the Subscription ID from OneSignal Dashboard \u2192 Audience \u2192 Subscriptions first.', 'warning');
+                if (!mobile) return window.showCustomAlert('Pick a Student', 'Choose which student this device belongs to.', 'warning');
+
+                await window.assignDeviceToStudent(subId, mobile);
+
+                // Reset the card for the next entry
+                if (idInput) idInput.value = '';
+                window.populateManualDeviceSelect();
             };
 
             window.renderAdminDashboard = function () {
