@@ -1975,35 +1975,6 @@
         });
 
         // ==========================================
-        // MEDIAN NATIVE BRIDGE - OneSignal info readback
-        // ==========================================
-        // window.median.onesignal isn't injected the instant this page loads -
-        // the native plugin wires it up asynchronously. Trying to read the
-        // external ID right at page load (window.onload etc.) will usually get
-        // nothing back. Median calls this exact function name automatically,
-        // for you, once the native OneSignal info is actually ready - on every
-        // page load, not just after login. This is the reliable way to confirm
-        // what external ID (if any) is currently attached to this device.
-        window.median_onesignal_info = function (info) {
-            try {
-                console.log('[Median OneSignal Info]', info);
-                window.currentOneSignalExternalId = info && info.externalId ? info.externalId : null;
-                if (window.__medianDebugSet) {
-                    window.__medianDebugSet({
-                        'median-exists': 'yes',
-                        'onesignal-exists': 'yes',
-                        'external-id': window.currentOneSignalExternalId || '(blank)',
-                        'subscribed': info && info.subscription ? String(info.subscription.optedIn) : (info ? String(info.oneSignalSubscribed) : 'unknown'),
-                        'last-log': 'auto-callback fired'
-                    });
-                }
-                if (window.loggedInMobile && window.currentOneSignalExternalId && window.currentOneSignalExternalId !== String(window.loggedInMobile)) {
-                    console.warn('[Median OneSignal Info] Mismatch: logged in as ' + window.loggedInMobile + ' but device externalId is ' + window.currentOneSignalExternalId + '. The identity-link loop in executeLoginUI should correct this shortly.');
-                }
-            } catch (e) { console.warn('median_onesignal_info handler error:', e && e.message); }
-        };
-
-        // ==========================================
         // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
         // ==========================================
         window.activeNativeSelect = null;
@@ -13232,7 +13203,7 @@ ${textContent ? `
                         sendOneSignalPush(`New Notice: ${title}`, "Check the Notice Board for details.", null, {
                             category: 'exam',
                             buttons: [{ id: 'view_notice', text: 'View' }]
-                        }, 'All');
+                        });
                     }
 
                     hideLoader();
@@ -15604,20 +15575,8 @@ ${textContent ? `
                       // single time. include_external_user_ids is also the old/deprecated field
                       // name; the current one is include_aliases.external_id.
                       payload.include_aliases = { external_id: finalTargets };
-                  } else if (targetUsers === 'All' || finalTargets.includes('All')) {
-                      // Broadcast to everyone is only allowed when explicitly requested.
-                      payload.included_segments = ["All"];
                   } else {
-                      // IMPORTANT: previously this branch silently fell back to
-                      // included_segments: ["All"] whenever the target list came back
-                      // empty (e.g. a caller forgot to pass targetUsers, or the value
-                      // it computed - like exam.assignedTo - was empty/undefined). That
-                      // meant a push meant for ONE specific student could accidentally
-                      // broadcast to every single user. Now we skip the send and warn
-                      // instead of guessing, so a missing target shows up as a visible
-                      // console warning during testing rather than a silent mass-blast.
-                      console.warn('[OneSignal] Skipped send - no target resolved and "All" was not explicitly requested:', title, extra);
-                      return;
+                      payload.included_segments = ["All"];
                   }
 
                   if (imageUrl) {
@@ -19628,67 +19587,37 @@ ${textContent ? `
                       const tagInterval = setInterval(() => {
                           medianAttempts++;
                           try {
-                              // NOTE: strMob is the account's unique LOGIN ID (the value stored
-                              // in studentsDB.mobile), not necessarily a dialable phone number.
-                              // If two students ever share one phone, give the second one a
-                              // distinguishing login ID (e.g. "9876543210B") when the admin
-                              // creates their account - that keeps every student's OneSignal
-                              // identity, chats and exam data fully separate.
                               const strMob = String(mob);
                               if (window.median && window.median.onesignal) {
                                   window.median.onesignal.tags.set({ mobile: strMob });
-                                  // Use ONLY the current login() method. Median's own docs treat
-                                  // login() and the legacy setExternalUserId() as two separate
-                                  // migration paths - calling both together on every attempt was
-                                  // firing two competing identity writes per device and is the
-                                  // likely source of the "multiple device" identity errors.
                                   if (typeof window.median.onesignal.login === 'function') {
                                       window.median.onesignal.login(strMob);
-                                  } else if (typeof window.median.onesignal.setExternalUserId === 'function') {
+                                  }
+                                  if (typeof window.median.onesignal.setExternalUserId === 'function') {
                                       window.median.onesignal.setExternalUserId({ externalId: strMob });
                                   }
                                   console.log('[Median Bridge] SUCCESS (attempt ' + medianAttempts + '): linked externalId=' + strMob + ' via window.median.onesignal');
-                                  if (window.__medianDebugSet) window.__medianDebugSet({ 'median-exists': 'yes', 'onesignal-exists': 'yes', 'last-log': 'login(' + strMob + ') called' });
                                   clearInterval(tagInterval);
-
-                                  // Read the identity back so we can CONFIRM it actually stuck,
-                                  // instead of assuming it worked just because login() didn't throw.
-                                  // window.median.onesignal is often injected before the native
-                                  // OneSignal plugin has finished its own init, so this read can
-                                  // still return the previous/empty external id for a moment -
-                                  // that's expected, it settles within a second or two.
-                                  if (typeof window.median.onesignal.onesignalInfo === 'function') {
-                                      window.median.onesignal.onesignalInfo().then(function (info) {
-                                          console.log('[Median Bridge] Confirmed externalId on device:', info && info.externalId);
-                                          if (!info || info.externalId !== strMob) {
-                                              console.warn('[Median Bridge] externalId has not settled yet (expected ' + strMob + ', got ' + (info && info.externalId) + '). This is normal right after login and should resolve shortly.');
-                                          }
-                                      }).catch(function (e) { console.warn('[Median Bridge] Could not read back externalId:', e && e.message); });
-                                  }
                               } else if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1) {
                                   console.warn('[Median Bridge] window.median.onesignal NOT available yet (attempt ' + medianAttempts + '). Falling back to median:// iframe scheme.');
-                                  if (window.__medianDebugSet) window.__medianDebugSet({ 'median-exists': 'no, but UA detected', 'onesignal-exists': 'no - trying URL fallback', 'last-log': 'firing median:// fallback (attempt ' + medianAttempts + ')' });
                                   const fireIframe = (url) => {
                                       const iframe = document.createElement("IFRAME");
                                       iframe.setAttribute("src", url);
                                       document.documentElement.appendChild(iframe);
                                       iframe.parentNode.removeChild(iframe);
                                   };
-                                  // Fire only the current login scheme via iframe fallback too.
+                                  // Fire all known combinations securely
                                   const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
                                   fireIframe('median://onesignal/login?external_id=' + strMob);
+                                  fireIframe('median://onesignal/setExternalUserId?externalId=' + strMob);
                                   fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
                                   fireIframe('gonative://onesignal/login?external_id=' + strMob);
+                                  fireIframe('gonative://onesignal/setExternalUserId?externalId=' + strMob);
                                   fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
                                   
-                                  if (medianAttempts > 3) {
-                                      console.error('[Median Bridge] GAVE UP after 3 attempts. window.median.onesignal never appeared - the native OneSignal plugin is likely not enabled/rebuilt in App Studio.');
-                                      if (window.__medianDebugSet) window.__medianDebugSet({ 'last-log': 'GAVE UP - fired fallback urls, bridge object never appeared. Check OneSignal dashboard now.' });
-                                      clearInterval(tagInterval);
-                                  }
+                                  if (medianAttempts > 3) { console.error('[Median Bridge] GAVE UP after 3 attempts. window.median.onesignal never appeared - the native OneSignal plugin is likely not enabled/rebuilt in App Studio.'); clearInterval(tagInterval); }
                               } else {
                                   console.warn('[Median Bridge] Not detected as a Median/GoNative app (user agent has neither string) - skipping identity link entirely.');
-                                  if (window.__medianDebugSet) window.__medianDebugSet({ 'median-exists': 'no - UA has no median/gonative string either', 'last-log': 'not detected as a Median app at all - are you in a real browser tab?' });
                                   clearInterval(tagInterval); // Not Median/GoNative
                               }
                           } catch(e) { console.error('[Median Bridge] Error in identity-link loop:', e.message); clearInterval(tagInterval); }
@@ -21226,7 +21155,7 @@ ${textContent ? `
                     sendOneSignalPush(title, msg, null, {
                         category: 'exam',
                         buttons: [{ id: 'view_notice', text: 'View' }]
-                    }, exam.assignedTo || ['All']);
+                    });
                     await window.dbSendNotice({ title: title, text: msg, date: window.formatDateDDMMYYYY(), type: 'reset_exam', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
                 }
 
@@ -25736,81 +25665,6 @@ YOUR DIRECTIVES:
             <div class="overflow-y-auto no-scrollbar flex-1 bg-slate-100" id="ios-select-options"></div>
             <div class="pb-8 bg-slate-100"></div>
         </div>
-
-        <!-- ========================================== -->
-        <!-- TEMPORARY DEBUG PANEL - OneSignal/Median identity -->
-        <!-- Remove this whole block once external ID issues are resolved. -->
-        <!-- ========================================== -->
-        <div id="median-debug-panel" style="position:fixed; bottom:12px; right:12px; z-index:999999; width:250px; max-width:88vw; background:rgba(15,23,42,0.94); color:#e2e8f0; font-family:monospace; font-size:11px; border-radius:12px; padding:10px 12px; box-shadow:0 6px 20px rgba(0,0,0,0.35); line-height:1.5;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <strong style="color:#a5b4fc;">OneSignal Debug</strong>
-                <button onclick="document.getElementById('median-debug-panel').style.display='none'" style="background:none; border:none; color:#94a3b8; font-size:14px; line-height:1;">✕</button>
-            </div>
-            <div>window.median: <span id="dbg-median-exists">checking...</span></div>
-            <div>onesignal bridge: <span id="dbg-onesignal-exists">checking...</span></div>
-            <div>login attempts: <span id="dbg-attempts">0</span></div>
-            <div>UA has median/gonative: <span id="dbg-ua-detected">checking...</span></div>
-            <div>externalId (device): <span id="dbg-external-id">not set yet</span></div>
-            <div>subscribed: <span id="dbg-subscribed">unknown</span></div>
-            <div>last log: <span id="dbg-last-log" style="color:#fbbf24;">-</span></div>
-            <div style="margin-top:6px; display:flex; gap:6px;">
-                <button onclick="window.__medianDebugRefresh && window.__medianDebugRefresh()" style="flex:1; background:#4f46e5; color:white; border:none; border-radius:6px; padding:5px 0; font-size:11px;">Refresh</button>
-                <button onclick="window.__medianDebugCopy && window.__medianDebugCopy()" style="flex:1; background:#334155; color:white; border:none; border-radius:6px; padding:5px 0; font-size:11px;">Copy</button>
-            </div>
-        </div>
-        <script>
-            window.__medianDebugSet = function (fields) {
-                try {
-                    Object.keys(fields).forEach(function (key) {
-                        var el = document.getElementById('dbg-' + key);
-                        if (el) el.textContent = fields[key];
-                    });
-                } catch (e) {}
-            };
-
-            window.__medianDebugRefresh = function () {
-                window.__medianDebugSet({
-                    'median-exists': !!window.median ? 'yes' : 'no',
-                    'onesignal-exists': (window.median && window.median.onesignal) ? 'yes' : 'no'
-                });
-                if (window.median && window.median.onesignal && typeof window.median.onesignal.onesignalInfo === 'function') {
-                    window.median.onesignal.onesignalInfo().then(function (info) {
-                        window.__medianDebugSet({
-                            'external-id': (info && info.externalId) ? info.externalId : '(blank)',
-                            'subscribed': info && info.subscription ? String(info.subscription.optedIn) : (info ? String(info.oneSignalSubscribed) : 'unknown'),
-                            'last-log': 'manual refresh ok'
-                        });
-                    }).catch(function (e) {
-                        window.__medianDebugSet({ 'last-log': 'refresh error: ' + (e && e.message) });
-                    });
-                } else {
-                    window.__medianDebugSet({ 'last-log': 'onesignal bridge not available' });
-                }
-            };
-
-            window.__medianDebugCopy = function () {
-                var panel = document.getElementById('median-debug-panel');
-                var text = panel ? panel.innerText : '';
-                try {
-                    navigator.clipboard.writeText(text);
-                    window.__medianDebugSet({ 'last-log': 'copied to clipboard' });
-                } catch (e) {
-                    window.__medianDebugSet({ 'last-log': 'copy failed: ' + e.message });
-                }
-            };
-
-            // Auto refresh a few times after page load to catch the bridge
-            // as it becomes available, without needing to tap Refresh.
-            var __medianDebugTries = 0;
-            window.__medianDebugSet({ 'ua-detected': (/median|gonative/i.test(navigator.userAgent)) ? 'yes' : 'no' });
-            var __medianDebugAuto = setInterval(function () {
-                __medianDebugTries++;
-                window.__medianDebugSet({ attempts: __medianDebugTries });
-                window.__medianDebugRefresh();
-                if (window.median && window.median.onesignal) clearInterval(__medianDebugAuto);
-                if (__medianDebugTries >= 10) clearInterval(__medianDebugAuto);
-            }, 1500);
-        </script>
 </body>
 
 </html>
