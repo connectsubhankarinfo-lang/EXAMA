@@ -1975,6 +1975,26 @@
         });
 
         // ==========================================
+        // MEDIAN NATIVE BRIDGE - OneSignal info readback
+        // ==========================================
+        // window.median.onesignal isn't injected the instant this page loads -
+        // the native plugin wires it up asynchronously. Trying to read the
+        // external ID right at page load (window.onload etc.) will usually get
+        // nothing back. Median calls this exact function name automatically,
+        // for you, once the native OneSignal info is actually ready - on every
+        // page load, not just after login. This is the reliable way to confirm
+        // what external ID (if any) is currently attached to this device.
+        window.median_onesignal_info = function (info) {
+            try {
+                console.log('[Median OneSignal Info]', info);
+                window.currentOneSignalExternalId = info && info.externalId ? info.externalId : null;
+                if (window.loggedInMobile && window.currentOneSignalExternalId && window.currentOneSignalExternalId !== String(window.loggedInMobile)) {
+                    console.warn('[Median OneSignal Info] Mismatch: logged in as ' + window.loggedInMobile + ' but device externalId is ' + window.currentOneSignalExternalId + '. The identity-link loop in executeLoginUI should correct this shortly.');
+                }
+            } catch (e) { console.warn('median_onesignal_info handler error:', e && e.message); }
+        };
+
+        // ==========================================
         // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
         // ==========================================
         window.activeNativeSelect = null;
@@ -13203,7 +13223,7 @@ ${textContent ? `
                         sendOneSignalPush(`New Notice: ${title}`, "Check the Notice Board for details.", null, {
                             category: 'exam',
                             buttons: [{ id: 'view_notice', text: 'View' }]
-                        });
+                        }, 'All');
                     }
 
                     hideLoader();
@@ -15575,8 +15595,20 @@ ${textContent ? `
                       // single time. include_external_user_ids is also the old/deprecated field
                       // name; the current one is include_aliases.external_id.
                       payload.include_aliases = { external_id: finalTargets };
-                  } else {
+                  } else if (targetUsers === 'All' || finalTargets.includes('All')) {
+                      // Broadcast to everyone is only allowed when explicitly requested.
                       payload.included_segments = ["All"];
+                  } else {
+                      // IMPORTANT: previously this branch silently fell back to
+                      // included_segments: ["All"] whenever the target list came back
+                      // empty (e.g. a caller forgot to pass targetUsers, or the value
+                      // it computed - like exam.assignedTo - was empty/undefined). That
+                      // meant a push meant for ONE specific student could accidentally
+                      // broadcast to every single user. Now we skip the send and warn
+                      // instead of guessing, so a missing target shows up as a visible
+                      // console warning during testing rather than a silent mass-blast.
+                      console.warn('[OneSignal] Skipped send - no target resolved and "All" was not explicitly requested:', title, extra);
+                      return;
                   }
 
                   if (imageUrl) {
@@ -19587,17 +19619,42 @@ ${textContent ? `
                       const tagInterval = setInterval(() => {
                           medianAttempts++;
                           try {
+                              // NOTE: strMob is the account's unique LOGIN ID (the value stored
+                              // in studentsDB.mobile), not necessarily a dialable phone number.
+                              // If two students ever share one phone, give the second one a
+                              // distinguishing login ID (e.g. "9876543210B") when the admin
+                              // creates their account - that keeps every student's OneSignal
+                              // identity, chats and exam data fully separate.
                               const strMob = String(mob);
                               if (window.median && window.median.onesignal) {
                                   window.median.onesignal.tags.set({ mobile: strMob });
+                                  // Use ONLY the current login() method. Median's own docs treat
+                                  // login() and the legacy setExternalUserId() as two separate
+                                  // migration paths - calling both together on every attempt was
+                                  // firing two competing identity writes per device and is the
+                                  // likely source of the "multiple device" identity errors.
                                   if (typeof window.median.onesignal.login === 'function') {
                                       window.median.onesignal.login(strMob);
-                                  }
-                                  if (typeof window.median.onesignal.setExternalUserId === 'function') {
+                                  } else if (typeof window.median.onesignal.setExternalUserId === 'function') {
                                       window.median.onesignal.setExternalUserId({ externalId: strMob });
                                   }
                                   console.log('[Median Bridge] SUCCESS (attempt ' + medianAttempts + '): linked externalId=' + strMob + ' via window.median.onesignal');
                                   clearInterval(tagInterval);
+
+                                  // Read the identity back so we can CONFIRM it actually stuck,
+                                  // instead of assuming it worked just because login() didn't throw.
+                                  // window.median.onesignal is often injected before the native
+                                  // OneSignal plugin has finished its own init, so this read can
+                                  // still return the previous/empty external id for a moment -
+                                  // that's expected, it settles within a second or two.
+                                  if (typeof window.median.onesignal.onesignalInfo === 'function') {
+                                      window.median.onesignal.onesignalInfo().then(function (info) {
+                                          console.log('[Median Bridge] Confirmed externalId on device:', info && info.externalId);
+                                          if (!info || info.externalId !== strMob) {
+                                              console.warn('[Median Bridge] externalId has not settled yet (expected ' + strMob + ', got ' + (info && info.externalId) + '). This is normal right after login and should resolve shortly.');
+                                          }
+                                      }).catch(function (e) { console.warn('[Median Bridge] Could not read back externalId:', e && e.message); });
+                                  }
                               } else if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1) {
                                   console.warn('[Median Bridge] window.median.onesignal NOT available yet (attempt ' + medianAttempts + '). Falling back to median:// iframe scheme.');
                                   const fireIframe = (url) => {
@@ -19606,13 +19663,11 @@ ${textContent ? `
                                       document.documentElement.appendChild(iframe);
                                       iframe.parentNode.removeChild(iframe);
                                   };
-                                  // Fire all known combinations securely
+                                  // Fire only the current login scheme via iframe fallback too.
                                   const tagsPayload = encodeURIComponent(JSON.stringify({ mobile: strMob }));
                                   fireIframe('median://onesignal/login?external_id=' + strMob);
-                                  fireIframe('median://onesignal/setExternalUserId?externalId=' + strMob);
                                   fireIframe('median://onesignal/tags/set?tags=' + tagsPayload);
                                   fireIframe('gonative://onesignal/login?external_id=' + strMob);
-                                  fireIframe('gonative://onesignal/setExternalUserId?externalId=' + strMob);
                                   fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
                                   
                                   if (medianAttempts > 3) { console.error('[Median Bridge] GAVE UP after 3 attempts. window.median.onesignal never appeared - the native OneSignal plugin is likely not enabled/rebuilt in App Studio.'); clearInterval(tagInterval); }
@@ -21155,7 +21210,7 @@ ${textContent ? `
                     sendOneSignalPush(title, msg, null, {
                         category: 'exam',
                         buttons: [{ id: 'view_notice', text: 'View' }]
-                    });
+                    }, exam.assignedTo || ['All']);
                     await window.dbSendNotice({ title: title, text: msg, date: window.formatDateDDMMYYYY(), type: 'reset_exam', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
                 }
 
