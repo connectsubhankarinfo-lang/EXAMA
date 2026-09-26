@@ -19667,6 +19667,7 @@ ${textContent ? `
                                   }
                               } else if (navigator.userAgent.indexOf('median') > -1 || navigator.userAgent.indexOf('gonative') > -1) {
                                   console.warn('[Median Bridge] window.median.onesignal NOT available yet (attempt ' + medianAttempts + '). Falling back to median:// iframe scheme.');
+                                  if (window.__medianDebugSet) window.__medianDebugSet({ 'median-exists': 'no, but UA detected', 'onesignal-exists': 'no - trying URL fallback', 'last-log': 'firing median:// fallback (attempt ' + medianAttempts + ')' });
                                   const fireIframe = (url) => {
                                       const iframe = document.createElement("IFRAME");
                                       iframe.setAttribute("src", url);
@@ -19680,9 +19681,14 @@ ${textContent ? `
                                   fireIframe('gonative://onesignal/login?external_id=' + strMob);
                                   fireIframe('gonative://onesignal/tags/set?tags=' + tagsPayload);
                                   
-                                  if (medianAttempts > 3) { console.error('[Median Bridge] GAVE UP after 3 attempts. window.median.onesignal never appeared - the native OneSignal plugin is likely not enabled/rebuilt in App Studio.'); if (window.__medianDebugSet) window.__medianDebugSet({ 'last-log': 'GAVE UP - onesignal bridge missing' }); clearInterval(tagInterval); }
+                                  if (medianAttempts > 3) {
+                                      console.error('[Median Bridge] GAVE UP after 3 attempts. window.median.onesignal never appeared - the native OneSignal plugin is likely not enabled/rebuilt in App Studio.');
+                                      if (window.__medianDebugSet) window.__medianDebugSet({ 'last-log': 'GAVE UP - fired fallback urls, bridge object never appeared. Check OneSignal dashboard now.' });
+                                      clearInterval(tagInterval);
+                                  }
                               } else {
                                   console.warn('[Median Bridge] Not detected as a Median/GoNative app (user agent has neither string) - skipping identity link entirely.');
+                                  if (window.__medianDebugSet) window.__medianDebugSet({ 'median-exists': 'no - UA has no median/gonative string either', 'last-log': 'not detected as a Median app at all - are you in a real browser tab?' });
                                   clearInterval(tagInterval); // Not Median/GoNative
                               }
                           } catch(e) { console.error('[Median Bridge] Error in identity-link loop:', e.message); clearInterval(tagInterval); }
@@ -25743,6 +25749,7 @@ YOUR DIRECTIVES:
             <div>window.median: <span id="dbg-median-exists">checking...</span></div>
             <div>onesignal bridge: <span id="dbg-onesignal-exists">checking...</span></div>
             <div>login attempts: <span id="dbg-attempts">0</span></div>
+            <div>UA has median/gonative: <span id="dbg-ua-detected">checking...</span></div>
             <div>externalId (device): <span id="dbg-external-id">not set yet</span></div>
             <div>subscribed: <span id="dbg-subscribed">unknown</span></div>
             <div>last log: <span id="dbg-last-log" style="color:#fbbf24;">-</span></div>
@@ -25795,6 +25802,7 @@ YOUR DIRECTIVES:
             // Auto refresh a few times after page load to catch the bridge
             // as it becomes available, without needing to tap Refresh.
             var __medianDebugTries = 0;
+            window.__medianDebugSet({ 'ua-detected': (/median|gonative/i.test(navigator.userAgent)) ? 'yes' : 'no' });
             var __medianDebugAuto = setInterval(function () {
                 __medianDebugTries++;
                 window.__medianDebugSet({ attempts: __medianDebugTries });
