@@ -24682,6 +24682,8 @@ YOUR DIRECTIVES:
             window.budgetListenerStarted = false;
 
             window.renderBudgetDashboard = function () {
+                window.budgetsDB = window.budgetsDB || [];
+                window.budgetRoomDB = window.budgetRoomDB || [];
                 const listEl = document.getElementById('budget-transactions-list');
                 const totalBalEl = document.getElementById('budget-total-balance');
                 const totalIncEl = document.getElementById('budget-total-income');
@@ -24920,6 +24922,9 @@ YOUR DIRECTIVES:
                     btnAddStudents.classList.add('hidden');
                 }
 
+                const subtitleEl = document.getElementById('budget-room-subtitle');
+                if (subtitleEl) subtitleEl.textContent = window.budgetRoomName || 'Shared Finances';
+                
                 // Calculate total expense
                 let total = 0;
                 window.budgetRoomDB.forEach(tx => total += Number(tx.amount));
@@ -25017,8 +25022,12 @@ YOUR DIRECTIVES:
             };
 
             window.resetBudgetRoom = async function() {
-                if (!(await window.showCustomConfirm("Confirm", "Delete all room transactions?", "Reset", "Cancel", "danger"))) return;
+                if (!(await window.showCustomConfirm("Create Room", "Start a new Budget Room?", "Create", "Cancel", "info"))) return;
+                const roomName = prompt("Enter a name for the new Budget Room:", "New Room");
+                if (!roomName) return;
+                window.budgetRoomName = roomName;
                 window.budgetRoomDB = [];
+                window.budgetRoomMembers = [];
                 window.renderBudgetRoom();
             };
 
@@ -25078,6 +25087,7 @@ YOUR DIRECTIVES:
                 const endData = {
                     total: total,
                     portion: portion,
+                    roomName: window.budgetRoomName || 'Budget Room',
                     timestamp: Date.now(),
                     active: true
                 };
@@ -25111,18 +25121,22 @@ YOUR DIRECTIVES:
             window.submitRoomPortion = async function() {
                 if(!window.budgetRoomEndedData) return;
                 const portion = window.budgetRoomEndedData.portion;
-                const title = "Budget Room Expense";
+                const title = window.budgetRoomEndedData.roomName || "Budget Room Expense";
+                const methodEl = document.getElementById('budget-room-submit-method');
+                const method = methodEl ? methodEl.value : 'online';
 
                 if (!window.budgetsDB) window.budgetsDB = [];
-                window.budgetsDB.push({
+                const newTx = {
                     id: Date.now().toString(),
                     amount: Number(Math.round(portion)),
                     title: title,
                     type: 'expense',
-                    method: 'online',
+                    method: method,
                     category: 'Shared Room',
                     timestamp: Date.now()
-                });
+                };
+                window.budgetsDB.push(newTx);
+                if (typeof api === 'function') await api("save", { budget: newTx });
                 
                 window.budgetRoomEndedData = null; // Clear local flag
                 
@@ -25804,14 +25818,14 @@ window.saveBudgetTransaction = async function () {
         <div id="budget-room-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
             <div
                 class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
-                <button onclick="window.location.hash = (window.currentRole === 'admin' ? 'admin' : 'budget-manager')"
+                <button onclick="window.safeBack()"
                     class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
                     <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
                 </button>
                 <div class="flex-1 min-w-0">
                     <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 truncate"><i
                             class="fa-solid fa-people-roof"></i> Budget Room</h2>
-                    <p class="text-[10px] sm:text-xs font-bold text-blue-100 uppercase tracking-widest mt-0.5">Shared Finances</p>
+                    <p id="budget-room-subtitle" class="text-[10px] sm:text-xs font-bold text-blue-100 uppercase tracking-widest mt-0.5">Shared Finances</p>
                 </div>
                 <button id="btn-create-budget-room" onclick="window.resetBudgetRoom()"
                     class="hidden w-auto px-3 h-9 sm:h-10 shrink-0 flex items-center justify-center gap-1.5 bg-blue-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-blue-600 font-bold text-xs sm:text-sm">
@@ -25917,9 +25931,16 @@ window.saveBudgetTransaction = async function () {
                 </div>
                 <h3 class="font-black text-2xl text-gray-900 mb-2">Room Ended!</h3>
                 <p class="text-sm font-bold text-gray-500 mb-6">The budget room has been closed. Here is your portion to submit to your personal budget.</p>
-                <div class="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-200">
+                <div class="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
                     <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Your Portion</p>
                     <p class="text-4xl font-black text-gray-900" id="budget-room-portion-amount">₹0</p>
+                </div>
+                <div class="mb-6 text-left">
+                    <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Payment Method</label>
+                    <select id="budget-room-submit-method" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all">
+                        <option value="online">Online / UPI</option>
+                        <option value="cash">Cash</option>
+                    </select>
                 </div>
                 <button onclick="window.submitRoomPortion()"
                     class="w-full bg-gray-900 hover:bg-black text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider">
@@ -25933,7 +25954,7 @@ window.saveBudgetTransaction = async function () {
         <div id="budget-manager-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
             <div
                 class="bg-gradient-to-r from-green-500 to-emerald-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
-                <button onclick="window.location.hash = (window.currentRole === 'admin' ? 'admin' : 'budget-manager')"
+                <button onclick="window.safeBack()"
                     class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
                     <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
                 </button>
