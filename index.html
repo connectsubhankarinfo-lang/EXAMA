@@ -9607,152 +9607,105 @@
             import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
             import { getDatabase, ref, set, get, push, update, remove, onValue, off, onDisconnect, query as rtdbQuery, orderByChild, limitToLast, endBefore, serverTimestamp as rtdbServerTimestamp, child } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
 
- // 👇 put your deployed Worker URL here (no trailing slash)
-    const LINK_URL = "https://os-login.connect-subhankar-info.workers.dev/";
-
-    const MARK = "exama_os_link_mark";           // remembers "<subId>|<mobile>" already linked
+    // ==========================================================================
+    // ONESIGNAL ⇄ STUDENT LINK  (works on Median free plan — no JS bridge needed)
+    // The Worker finds this phone's OneSignal Subscription and sets
+    // External ID = the logged-in mobile number. Logout -> guest_<id>.
+    // ==========================================================================
+    const LINK_URL = "https://os-login.connect-subhankar-info.workers.dev";   // NO trailing slash
+    const SUB_KEY = "exama_os_sub";
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const log = (...a) => console.log("[OS-Link]", ...a);
-    const inApp = () => !!(window.median || window.gonative) || /median|gonative|EXAMA_APP/i.test(navigator.userAgent);
+    const ua = navigator.userAgent;
+    // only inside the installed app (never in Chrome/desktop, where the web SDK already handles it)
+    const inApp = () => /EXAMA_APP|median|gonative/i.test(ua) || /Android.*; wv\)/i.test(ua) || !!(window.median || window.gonative);
 
-    let lastSubId = null, busy = false, nextCheck = 0, lastMobile = null, waiters = [];
+    // The subscription id is remembered in a COOKIE too, because logout() runs localStorage.clear().
+    const getCookie = k => (document.cookie.match(new RegExp("(?:^|; )" + k + "=([^;]*)")) || [])[1] || "";
+    const getSub = () => {
+        let v = getCookie(SUB_KEY);
+        if (!UUID.test(v)) { try { v = localStorage.getItem(SUB_KEY) || ""; } catch (e) { v = ""; } }
+        return UUID.test(v) ? v : "";
+    };
+    const setSub = id => {
+        document.cookie = `${SUB_KEY}=${id}; max-age=63072000; path=/; SameSite=Lax`;
+        try { localStorage.setItem(SUB_KEY, id); } catch (e) {}
+    };
 
-    // ---------- 1. GET THE SUBSCRIPTION ID ----------
-    function pickId(info) {
-        if (typeof info === "string") { try { info = JSON.parse(info); } catch { return null; } }
-        if (!info) return null;
-        log("raw info from app:", JSON.stringify(info));   // <- check this in remote debugging once
-        const c = [info.subscriptionId, info.oneSignalSubscriptionId, info.pushSubscriptionId,
-                   info.oneSignalUserId, info.userId, info.oneSignalId];
-        return c.find(v => typeof v === "string" && UUID.test(v)) || null;
+    // Hints that let the Worker recognise THIS phone among all OneSignal subscriptions
+    async function hints() {
+        const h = { platform: /iPhone|iPad|iPod/.test(ua) ? "ios" : "android", model: "", osVersion: "", lang: navigator.language || "" };
+        try { const d = await navigator.userAgentData.getHighEntropyValues(["model", "platformVersion"]); h.model = d.model || ""; h.osVersion = d.platformVersion || ""; } catch (e) {}
+        const m = /Android\s([\d.]+);\s*([^;)]*)/.exec(ua);
+        if (m) { h.osVersion = h.osVersion || m[1]; const mod = m[2].replace(/\sBuild\/.*/, "").trim(); if (!h.model && mod && mod !== "K") h.model = mod; }
+        return h;
     }
 
-    // Median calls one of these back after median://onesignal/info
-    function onInfo(info) {
-        const id = pickId(info);
-        const w = waiters; waiters = [];
-        w.forEach(f => f(id));
-    }
-    window.median_onesignal_info = onInfo;
-    window.gonative_onesignal_info = onInfo;
-
-    function fireScheme(url) {
-        try {
-            const f = document.createElement("iframe");
-            f.style.display = "none"; f.src = url;
-            document.documentElement.appendChild(f);
-            setTimeout(() => f.remove(), 500);
-        } catch (e) {}
-    }
-
-    function getSubId() {
-        return new Promise(resolve => {
-            let done = false, t;
-            const fin = id => { if (done) return; done = true; clearTimeout(t); resolve(id || null); };
-            t = setTimeout(() => fin(null), 5000);
-
-            if (inApp()) {
-                waiters.push(fin);
-                try {   // newer Median builds expose a promise API
-                    const r = window.median && window.median.onesignal && window.median.onesignal.info && window.median.onesignal.info();
-                    if (r && r.then) r.then(i => fin(pickId(i))).catch(() => {});
-                    else if (r) fin(pickId(r));
-                } catch (e) {}
-                fireScheme("median://onesignal/info");
-                fireScheme("gonative://onesignal/info");
-            } else {
-                // normal browser: use the OneSignal Web SDK
-                window.OneSignalDeferred = window.OneSignalDeferred || [];
-                window.OneSignalDeferred.push(async OS => {
-                    try { fin(OS.User.PushSubscription.id); } catch (e) { fin(null); }
-                });
-            }
-        });
-    }
-
-    // ---------- 2. TALK TO THE WORKER ----------
     async function call(path, payload, user) {
         const idToken = await user.getIdToken();
-        const r = await fetch(LINK_URL + path, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken, ...payload })
-        });
+        const r = await fetch(LINK_URL + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, ...payload }) });
         let data = {}; try { data = await r.json(); } catch (e) {}
-        return { ok: r.ok, status: r.status, data };
+        return { ok: r.ok && !!data.ok, status: r.status, data };
     }
 
+    // Firebase user must be the SAME account the app UI says is logged in
     function session() {
-        let u = null;
-        try { u = getAuth().currentUser; } catch (e) {}
+        let u = null; try { u = getAuth().currentUser; } catch (e) {}
         const m = window.loggedInMobile;
         if (!u || !window.currentRole || !m) return null;
-        // Firebase user must be the SAME account the app UI says is logged in
         if ((u.email || "").toLowerCase() !== `${m}@exama.app`.toLowerCase()) return null;
         return { u, m };
     }
 
-    // ---------- 3. RECONCILER (handles login, auto-login, new device, changed sub id) ----------
-    async function reconcile(force = false) {
-        if (busy) return;
-        const s = session();
-        if (!s) return;
-        if (s.m !== lastMobile) { lastMobile = s.m; nextCheck = 0; }   // different student -> check now
-        if (!force && Date.now() < nextCheck) return;
+    let busy = false, loggingOut = false, nextCheck = 0, lastMobile = null, tries = 0;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+    // Runs after login, after auto-login, on app resume, and every few minutes (self-heals if the link is ever lost)
+    async function reconcile(force) {
+        if (busy || loggingOut || !inApp()) return;
+        const s = session(); if (!s) return;
+        if (s.m !== lastMobile) { lastMobile = s.m; nextCheck = 0; tries = 0; }      // different student -> link now
+        if (!force && Date.now() < nextCheck) return;
         busy = true;
         try {
-            const subId = await getSubId();
-            if (!subId) { nextCheck = Date.now() + 10000; return; }
-            lastSubId = subId;
-
-            const key = `${subId}|${s.m}`;
-            if (localStorage.getItem(MARK) === key) { nextCheck = Date.now() + 60000; return; }
-
-            const res = await call("/link", { subscriptionId: subId }, s.u);
-            const s2 = session();
-            if (res.ok && res.data.ok && s2 && s2.m === s.m) {
-                localStorage.setItem(MARK, key);
-                nextCheck = Date.now() + 60000;
-                log("LINKED", subId, "->", s.m);
-            } else {
-                nextCheck = Date.now() + 15000;
-                log("link failed", res.status, res.data);
-            }
-        } catch (e) {
-            nextCheck = Date.now() + 15000;
-            log("error", e);
-        } finally { busy = false; }
+            const res = await call("/link", { subscriptionId: getSub() || null, hints: await hints() }, s.u);
+            const s2 = session(); if (!s2 || s2.m !== s.m) return;                    // user changed while waiting
+            if (res.ok) {
+                if (res.data.subscriptionId) setSub(res.data.subscriptionId);
+                tries = 0; nextCheck = Date.now() + 5 * 60 * 1000;
+                log("LINKED", res.data.method, res.data.subscriptionId, "->", s.m);
+            } else if (res.data.retry && ++tries < 10) {
+                nextCheck = Date.now() + 8000; log("waiting for this phone's subscription:", res.data.reason);
+            } else { nextCheck = Date.now() + 5 * 60 * 1000; log("link failed", res.status, res.data); }
+        } catch (e) { nextCheck = Date.now() + 30000; log("error", e); }
+        finally { busy = false; }
     }
-
     setInterval(() => reconcile(), 5000);
-    setTimeout(() => reconcile(), 3000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) { nextCheck = 0; reconcile(); } });
-    window.linkPushToStudent = () => reconcile(true);   // manual trigger: linkPushToStudent()
+    setTimeout(() => reconcile(), 2000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) reconcile(); });
+    window.linkPushToStudent = () => reconcile(true);          // manual: run linkPushToStudent() in remote debugging
 
-    // ---------- 4. LOGOUT: unlink device BEFORE the session is destroyed ----------
+    // LOGOUT: hand the device back (guest_<id>) BEFORE the Firebase session is destroyed
     function wrapLogout() {
         const orig = window.logout;
-        if (typeof orig !== "function" || orig.__osWrapped) return typeof orig === "function";
+        if (typeof orig !== "function") return;
+        if (orig.__osWrapped) return;
         const wrapped = async function () {
+            loggingOut = true;
             try {
-                const u = getAuth().currentUser;
-                if (u) {
-                    const id = lastSubId || await getSubId();
-                    if (id) await Promise.race([call("/unlink", { subscriptionId: id }, u), new Promise(r => setTimeout(r, 4000))]);
-                }
+                for (let i = 0; busy && i < 40; i++) await sleep(100);                // let an in-flight link finish first
+                const u = getAuth().currentUser, id = getSub();
+                if (u && id && inApp()) await Promise.race([call("/unlink", { subscriptionId: id }, u), sleep(4000)]);
             } catch (e) { log("unlink error", e); }
-            try { localStorage.removeItem(MARK); } catch (e) {}
-            lastMobile = null;
-            const out = orig.apply(this, arguments);
-            try { await getAuth().signOut(); } catch (e) {}   // your final window.logout never signed Firebase out
+            lastMobile = null; nextCheck = 0; tries = 0;
+            let out; try { out = await orig.apply(this, arguments); } catch (e) { log("logout error", e); }
+            try { await getAuth().signOut(); } catch (e) {}                           // final window.logout never signed Firebase out
+            loggingOut = false;
             return out;
         };
-        wrapped.__osWrapped = true;
-        window.logout = wrapped;
-        return true;
+        wrapped.__osWrapped = true; window.logout = wrapped;
     }
-    if (!wrapLogout()) { const iv = setInterval(() => { if (wrapLogout()) clearInterval(iv); }, 500); }
+    setInterval(wrapLogout, 500);                                                     // also re-wraps if logout is ever redefined
 
             // ==========================================
             // GLOBAL TEST MODE & SANDBOX ENGINE
