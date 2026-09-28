@@ -9752,20 +9752,31 @@
                 <div class="min-w-0"><div class="font-bold text-slate-900 truncate">${esc(a.title)}</div>
                 <div class="text-[11px] text-slate-500">${esc(a.time)} • ${a.repeat === "daily" ? "Every day" : esc(a.date)} • ${a.all ? "All students" : a.targets.length + " student(s)"}</div></div>
                 <div class="flex gap-2 shrink-0">
-                  <button onclick="toggleAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${a.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}">${a.enabled ? "ON" : "OFF"}</button>
-                  <button onclick="deleteAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-600">Delete</button>
+                  ${window.currentRole === 'admin' ? `<button onclick="toggleAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${a.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}">${a.enabled ? "ON" : "OFF"}</button>
+                  <button onclick="deleteAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-600">Delete</button>` : `<span class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${a.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}">${a.enabled ? "ON" : "OFF"}</span>`}
                 </div></div>`).join("") : '<p class="text-slate-400 text-center py-3 text-xs">No alarms yet</p>';
         }
         window.openAlarmManager = async function () {
-            if (window.currentRole !== "admin") return;
             if (window.closeSettingsMenu) window.closeSettingsMenu();
             $("alarm-admin-modal").classList.remove("hidden");
-            $("al-students").innerHTML = students().map(x => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" value="${esc(x.m)}"> ${esc(x.n)} <span class="text-slate-400">${esc(x.m)}</span></label>`).join("");
+            
+            const isAdmin = window.currentRole === "admin";
+            const formDiv = document.querySelector("#alarm-admin-modal .border-t");
+            if(formDiv) formDiv.style.display = isAdmin ? 'block' : 'none';
+
+            if(isAdmin) {
+                $("al-students").innerHTML = students().map(x => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" value="${esc(x.m)}"> ${esc(x.n)} <span class="text-slate-400">${esc(x.m)}</span></label>`).join("");
+            }
             let d = await api("list"); if (!d) return; AL = d.alarms;
-            const all = students().map(x => x.m), cur = all.slice().sort().join();       // keep "All students" alarms in sync with new students
-            const stale = AL.filter(a => a.all && all.length && a.targets.slice().sort().join() !== cur);
-            for (const a of stale) await api("save", { alarm: { ...a, targets: all } });
-            if (stale.length && (d = await api("list"))) AL = d.alarms;
+            
+            if(isAdmin) {
+                const all = students().map(x => x.m), cur = all.slice().sort().join();
+                const stale = AL.filter(a => a.all && all.length && a.targets.slice().sort().join() !== cur);
+                for (const a of stale) await api("save", { alarm: { ...a, targets: all } });
+                if (stale.length && (d = await api("list"))) AL = d.alarms;
+            } else {
+                AL = AL.filter(a => (a.targets && a.targets.includes(window.loggedInMobile)) || a.all);
+            }
             renderAlarms();
         };
         window.closeAlarmManager = () => $("alarm-admin-modal").classList.add("hidden");
@@ -10794,7 +10805,7 @@
                     // Hide Test Mode toggle for students
                     const testModeSectionStudent = document.getElementById('settings-test-mode-section');
                     if (testModeSectionStudent) testModeSectionStudent.classList.add('hidden');
-                    document.getElementById('settings-alarm-section')?.classList.add('hidden');
+                    document.getElementById('settings-alarm-section')?.classList.remove('hidden');
                 }
 
                 // 2. Animate into view
@@ -15559,6 +15570,47 @@ ${textContent ? `
                 await new Promise(r => requestAnimationFrame(r));
                 onSnapshot(query(collection(db, window.getCollectionName("materials")), orderBy("timestamp", "desc"), limit(100)), (snapshot) => {
                     window.materialsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    // ADMIN NOTIFICATION FOR NEW MATERIALS
+                    if (!firstMats && window.currentRole === 'admin') {
+                        snapshot.docChanges().forEach(change => {
+                            if (change.type === 'added') {
+                                const data = change.doc.data();
+                                if (data.isApproved === false) {
+                                    const audio = document.getElementById('notice-board-audio');
+                                    if(audio) audio.play().catch(e => console.log('Audio play failed', e));
+                                    
+                                    const popup = document.createElement('div');
+                                    popup.className = "fixed top-10 sm:top-8 left-1/2 transform -translate-x-1/2 z-[9999] bg-white/95 backdrop-blur-2xl p-4 rounded-[20px] shadow-[0_15px_40px_rgba(0,0,0,0.12)] border border-slate-200 flex flex-col w-[92%] max-w-[340px] transition-all duration-500 pointer-events-auto cursor-default";
+                                    popup.innerHTML = `
+                                        <div class="flex items-center gap-3 mb-3">
+                                            <div class="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm shrink-0">
+                                                <i class="fa-solid fa-file-pdf"></i>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <h4 class="text-sm font-black text-slate-900 leading-tight">New Pending Material</h4>
+                                                <p class="text-[11px] font-medium text-slate-500 truncate mt-0.5">${data.title || "Material submitted"}</p>
+                                            </div>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <button id="btn-approve-${change.doc.id}" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs active:scale-95 transition-all">Approve</button>
+                                            <button id="btn-dismiss-${change.doc.id}" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs active:scale-95 transition-all">Dismiss</button>
+                                        </div>
+                                    `;
+                                    document.body.appendChild(popup);
+                                    
+                                    document.getElementById(`btn-approve-${change.doc.id}`).onclick = function() {
+                                        if(window.toggleMaterialApproval) window.toggleMaterialApproval(change.doc.id, true);
+                                        popup.remove();
+                                    };
+                                    document.getElementById(`btn-dismiss-${change.doc.id}`).onclick = function() {
+                                        popup.remove();
+                                    };
+                                    setTimeout(() => { if(popup.parentNode) popup.remove(); }, 15000);
+                                }
+                            }
+                        });
+                    }
+
                     if (firstMats || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
                         firstMats = false;
                         if (!document.getElementById('materials-view')?.classList.contains('hidden-view')) {
@@ -24804,7 +24856,268 @@ YOUR DIRECTIVES:
                 }, 300);
             };
 
-            window.saveBudgetTransaction = async function () {
+            
+            // --- BUDGET ROOM LOGIC ---
+            window.budgetRoomDB = [];
+            window.budgetRoomMembers = [];
+            window.budgetRoomEndedData = null;
+
+            window.openBudgetRoom = function() {
+                window.location.hash = 'budget-room';
+            };
+
+            window.renderBudgetRoom = function() {
+                const isAdmin = (window.loggedInMobile === window.adminMobile || window.location.hash.includes('admin'));
+                const btnEnd = document.getElementById('btn-end-budget-room');
+                const btnAddStudents = document.getElementById('btn-add-room-students');
+                
+                if (isAdmin) {
+                    btnEnd.classList.remove('hidden');
+                    btnAddStudents.classList.remove('hidden');
+                } else {
+                    btnEnd.classList.add('hidden');
+                    btnAddStudents.classList.add('hidden');
+                }
+
+                // Calculate total expense
+                let total = 0;
+                window.budgetRoomDB.forEach(tx => total += Number(tx.amount));
+                document.getElementById('budget-room-total-expense').textContent = '₹' + total.toLocaleString('en-IN');
+                document.getElementById('room-members-count').textContent = window.budgetRoomMembers.length;
+
+                // Render members avatars
+                const memList = document.getElementById('room-members-list');
+                memList.innerHTML = '';
+                window.budgetRoomMembers.forEach(mobile => {
+                    const stu = (window.studentsDB || []).find(s => s.mobile === mobile);
+                    if (stu) {
+                        const dp = window.getStudentAvatar ? window.getStudentAvatar(stu.mobile, stu.name) : '';
+                        memList.innerHTML += `<img src="${dp}" class="w-8 h-8 rounded-full border border-gray-200 object-cover shadow-sm" title="${stu.name}">`;
+                    }
+                });
+
+                // Render transactions
+                const txList = document.getElementById('budget-room-transactions-list');
+                txList.innerHTML = '';
+                if (window.budgetRoomDB.length === 0) {
+                    txList.innerHTML = '<div class="text-center py-6 text-gray-400 font-bold text-xs">No transactions in this room</div>';
+                } else {
+                    const sortedTxs = [...window.budgetRoomDB].sort((a,b) => b.timestamp - a.timestamp);
+                    sortedTxs.forEach(tx => {
+                        const stu = (window.studentsDB || []).find(s => s.mobile === tx.by);
+                        const dp = stu && window.getStudentAvatar ? window.getStudentAvatar(stu.mobile, stu.name) : '';
+                        txList.innerHTML += `
+                        <div class="bg-white border border-gray-100 p-3 rounded-xl flex items-center gap-3 shadow-sm mb-2">
+                            <img src="${dp}" class="w-10 h-10 rounded-full border border-gray-200 object-cover shrink-0">
+                            <div class="flex-1 min-w-0">
+                                <h4 class="font-bold text-gray-900 text-sm truncate">${tx.title}</h4>
+                                <p class="text-[10px] font-bold text-gray-500">${stu ? stu.name : 'Unknown'}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-black text-red-600">₹${Number(tx.amount).toLocaleString('en-IN')}</p>
+                                <p class="text-[9px] font-bold text-gray-400">${new Date(tx.timestamp).toLocaleDateString()}</p>
+                            </div>
+                        </div>
+                        `;
+                    });
+                }
+            };
+
+            window.openAddRoomTransactionModal = function() {
+                if(!window.budgetRoomMembers.includes(window.loggedInMobile) && !(window.loggedInMobile === window.adminMobile || window.location.hash.includes('admin'))) {
+                    if(window.showToast) window.showToast('You are not in this room', 'error');
+                    return;
+                }
+                const modal = document.getElementById('budget-room-add-modal');
+                const content = document.getElementById('budget-room-add-modal-content');
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                setTimeout(() => {
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                    content.classList.remove('translate-y-full');
+                }, 10);
+            };
+
+            window.closeAddRoomTransactionModal = function() {
+                const modal = document.getElementById('budget-room-add-modal');
+                const content = document.getElementById('budget-room-add-modal-content');
+                content.classList.add('translate-y-full');
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }, 300);
+            };
+
+            window.saveRoomTransaction = async function() {
+                const amount = document.getElementById('budget-room-amount').value;
+                const title = document.getElementById('budget-room-title').value;
+                if (!amount || amount <= 0 || !title.trim()) {
+                    if(window.showToast) window.showToast('Invalid details', 'error');
+                    return;
+                }
+                
+                const tx = {
+                    id: Date.now().toString(),
+                    amount: Number(amount),
+                    title: title.trim(),
+                    by: window.loggedInMobile || 'admin',
+                    timestamp: Date.now()
+                };
+
+                // local mock update
+                window.budgetRoomDB.push(tx);
+                
+                window.closeAddRoomTransactionModal();
+                document.getElementById('budget-room-amount').value = '';
+                document.getElementById('budget-room-title').value = '';
+                if(window.showToast) window.showToast('Added to room', 'success');
+                window.renderBudgetRoom();
+            };
+
+            window.resetBudgetRoom = async function() {
+                if (!(await window.showCustomConfirm("Confirm", "Delete all room transactions?", "Reset", "Cancel", "danger"))) return;
+                window.budgetRoomDB = [];
+                window.renderBudgetRoom();
+            };
+
+            window.openRoomStudentsModal = function() {
+                const list = document.getElementById('budget-room-students-list');
+                list.innerHTML = '';
+                (window.studentsDB || []).forEach(s => {
+                    const checked = window.budgetRoomMembers.includes(s.mobile) ? 'checked' : '';
+                    list.innerHTML += `
+                        <label class="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl cursor-pointer hover:bg-gray-100">
+                            <input type="checkbox" value="${s.mobile}" class="room-student-cb w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" ${checked}>
+                            <img src="${window.getStudentAvatar ? window.getStudentAvatar(s.mobile, s.name) : ''}" class="w-8 h-8 rounded-full">
+                            <span class="font-bold text-sm text-gray-900">${s.name}</span>
+                        </label>
+                    `;
+                });
+                
+                const modal = document.getElementById('budget-room-students-modal');
+                const content = document.getElementById('budget-room-students-modal-content');
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                setTimeout(() => {
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                    content.classList.remove('translate-y-full');
+                }, 10);
+            };
+
+            window.closeRoomStudentsModal = function() {
+                const modal = document.getElementById('budget-room-students-modal');
+                const content = document.getElementById('budget-room-students-modal-content');
+                content.classList.add('translate-y-full');
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }, 300);
+            };
+
+            window.saveRoomStudents = async function() {
+                const cbs = document.querySelectorAll('.room-student-cb:checked');
+                const members = Array.from(cbs).map(cb => cb.value);
+                window.budgetRoomMembers = members;
+                window.closeRoomStudentsModal();
+                if(window.showToast) window.showToast('Members updated', 'success');
+                window.renderBudgetRoom();
+            };
+
+            window.endBudgetRoom = async function() {
+                if (!(await window.showCustomConfirm("End Room", "This will calculate the portion for each member and notify them. Proceed?", "End Room", "Cancel", "danger"))) return;
+                
+                let total = 0;
+                window.budgetRoomDB.forEach(tx => total += Number(tx.amount));
+                let numMembers = window.budgetRoomMembers.length;
+                if(numMembers === 0) numMembers = 1;
+                const portion = total / numMembers;
+                
+                const endData = {
+                    total: total,
+                    portion: portion,
+                    timestamp: Date.now(),
+                    active: true
+                };
+
+                window.budgetRoomEndedData = endData;
+                window.budgetRoomDB = [];
+                window.budgetRoomMembers = [];
+                window.checkRoomEnded(); // Trigger check locally
+
+                if(window.showToast) window.showToast('Room ended successfully!', 'success');
+                window.renderBudgetRoom();
+            };
+
+            window.checkRoomEnded = function() {
+                if(window.budgetRoomEndedData && window.budgetRoomEndedData.active) {
+                    const portionStr = '₹' + Math.round(window.budgetRoomEndedData.portion).toLocaleString('en-IN');
+                    document.getElementById('budget-room-portion-amount').textContent = portionStr;
+                    
+                    const modal = document.getElementById('budget-room-ended-modal');
+                    const content = document.getElementById('budget-room-ended-modal-content');
+                    modal.classList.remove('hidden');
+                    modal.classList.add('flex');
+                    setTimeout(() => {
+                        modal.classList.remove('opacity-0', 'pointer-events-none');
+                        content.classList.remove('scale-95');
+                    }, 10);
+                }
+            };
+
+            window.submitRoomPortion = async function() {
+                if(!window.budgetRoomEndedData) return;
+                const portion = window.budgetRoomEndedData.portion;
+                const title = "Budget Room Expense";
+
+                if (!window.budgetsDB) window.budgetsDB = [];
+                window.budgetsDB.push({
+                    id: Date.now().toString(),
+                    amount: Number(Math.round(portion)),
+                    title: title,
+                    type: 'expense',
+                    method: 'online',
+                    category: 'Shared Room',
+                    timestamp: Date.now()
+                });
+                
+                window.budgetRoomEndedData = null; // Clear local flag
+                
+                const modal = document.getElementById('budget-room-ended-modal');
+                const content = document.getElementById('budget-room-ended-modal-content');
+                content.classList.add('scale-95');
+                modal.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }, 300);
+
+                if(window.showToast) window.showToast('Added to personal budget!', 'success');
+                if(window.renderBudgetDashboard) window.renderBudgetDashboard();
+            };
+
+            // Trigger setup when navigating to the budget view
+            window.addEventListener('hashchange', () => {
+                if (window.location.hash.includes('budget-room')) {
+                    // Render Budget Room View
+                    window.renderBudgetRoom();
+                    // Setup classes to hide others and show this one
+                    document.querySelectorAll('.app-view, .hidden-view').forEach(el => {
+                        el.classList.remove('active-view');
+                        el.style.display = 'none';
+                    });
+                    const v = document.getElementById('budget-room-view');
+                    if(v) {
+                        v.classList.add('active-view');
+                        v.style.display = 'flex';
+                    }
+                    window.checkRoomEnded(); // On launch check
+                }
+            });
+
+
+window.saveBudgetTransaction = async function () {
                 const amount = document.getElementById('budget-amount').value;
                 const title = document.getElementById('budget-title').value;
                 const type = document.querySelector('input[name="budget-type"]:checked').value;
@@ -25442,7 +25755,138 @@ YOUR DIRECTIVES:
             </div>
         </div>
         <!-- ============================================== -->
-        <!-- BUDGET MANAGER VIEW -->
+        
+        <!-- ============================================== -->
+        <!-- BUDGET ROOM VIEW -->
+        <!-- ============================================== -->
+        <div id="budget-room-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
+            <div
+                class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+                <button onclick="window.safeBack()"
+                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+                    <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
+                </button>
+                <div class="flex-1 min-w-0">
+                    <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 truncate"><i
+                            class="fa-solid fa-people-roof"></i> Budget Room</h2>
+                    <p class="text-[10px] sm:text-xs font-bold text-blue-100 uppercase tracking-widest mt-0.5">Shared Finances</p>
+                </div>
+                <button onclick="window.resetBudgetRoom()"
+                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-blue-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-600">
+                    <i class="fa-solid fa-rotate-left text-sm sm:text-base"></i>
+                </button>
+                <button id="btn-end-budget-room" onclick="window.endBudgetRoom()"
+                    class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-red-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-700">
+                    <i class="fa-solid fa-power-off text-sm sm:text-base"></i>
+                </button>
+                <button id="btn-add-room-students" onclick="window.openRoomStudentsModal()"
+                    class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-white/40">
+                    <i class="fa-solid fa-user-plus text-sm sm:text-base"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 sm:p-5 relative z-0 pb-24">
+                <div class="relative overflow-hidden rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/80 backdrop-blur-3xl transform-gpu mb-4 sm:mb-5 font-sans"
+                    style="background: rgba(255, 255, 255, 0.75);">
+                    <div class="absolute -top-10 -left-10 w-48 h-48 bg-blue-300/20 rounded-full blur-[40px] pointer-events-none"></div>
+                    <div class="absolute -bottom-10 -right-10 w-48 h-48 bg-indigo-300/20 rounded-full blur-[40px] pointer-events-none"></div>
+                    <div class="relative z-10 p-5">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-blue-900 text-base uppercase">ROOM BALANCE</h3>
+                        </div>
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="text-3xl font-black text-gray-900" id="budget-room-total-expense">₹0</div>
+                        </div>
+                        <div class="text-xs font-bold text-gray-500 mb-2">Members (<span id="room-members-count">0</span>)</div>
+                        <div id="room-members-list" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+
+                <h3 class="font-black text-gray-900 mb-3 px-1 tracking-tight text-sm uppercase">Room Transactions</h3>
+                <div id="budget-room-transactions-list" class="space-y-2.5"></div>
+            </div>
+
+            <button onclick="window.openAddRoomTransactionModal()"
+                class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl active:scale-90 transition-transform z-50 group border border-blue-400">
+                <i class="fa-solid fa-plus text-xl group-hover:rotate-90 transition-transform duration-300"></i>
+            </button>
+        </div>
+
+        <div id="budget-room-add-modal"
+            class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end justify-center transition-opacity p-0 sm:items-center sm:p-4 opacity-0 pointer-events-none">
+            <div id="budget-room-add-modal-content"
+                class="bg-white w-full sm:w-[450px] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col transform translate-y-full transition-transform duration-300 overflow-hidden">
+                <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 class="font-black text-gray-900 text-lg">Add Room Transaction</h3>
+                    <button onclick="window.closeAddRoomTransactionModal()"
+                        class="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-900 active:scale-95 transition-all shadow-sm"><i
+                            class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="p-5 space-y-4">
+                    <div>
+                        <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Amount (₹)</label>
+                        <input type="number" id="budget-room-amount"
+                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-lg font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            placeholder="0">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Title / Note</label>
+                        <input type="text" id="budget-room-title"
+                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
+                            placeholder="E.g., Groceries, Pizza">
+                    </div>
+                </div>
+                <div class="p-5 border-t border-gray-100 bg-white">
+                    <button onclick="window.saveRoomTransaction()"
+                        class="w-full bg-gray-900 hover:bg-black text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-check"></i> Save Transaction
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="budget-room-students-modal"
+            class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end justify-center transition-opacity p-0 sm:items-center sm:p-4 opacity-0 pointer-events-none">
+            <div id="budget-room-students-modal-content"
+                class="bg-white w-full sm:w-[450px] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[80vh] transform translate-y-full transition-transform duration-300 overflow-hidden">
+                <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                    <h3 class="font-black text-gray-900 text-lg">Manage Room Students</h3>
+                    <button onclick="window.closeRoomStudentsModal()"
+                        class="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-900 active:scale-95 transition-all shadow-sm"><i
+                            class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="p-5 overflow-y-auto flex-1 space-y-2" id="budget-room-students-list">
+                    <!-- Checkboxes injected here -->
+                </div>
+                <div class="p-5 border-t border-gray-100 bg-white">
+                    <button onclick="window.saveRoomStudents()"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-check"></i> Save Members
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="budget-room-ended-modal"
+            class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex items-center justify-center transition-opacity p-4 opacity-0 pointer-events-none">
+            <div id="budget-room-ended-modal-content" class="bg-white w-full sm:w-[400px] rounded-3xl shadow-2xl p-6 text-center transform scale-95 transition-transform duration-300">
+                <div class="w-20 h-20 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-4 text-red-500 text-4xl">
+                    <i class="fa-solid fa-flag-checkered"></i>
+                </div>
+                <h3 class="font-black text-2xl text-gray-900 mb-2">Room Ended!</h3>
+                <p class="text-sm font-bold text-gray-500 mb-6">The budget room has been closed. Here is your portion to submit to your personal budget.</p>
+                <div class="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-200">
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Your Portion</p>
+                    <p class="text-4xl font-black text-gray-900" id="budget-room-portion-amount">₹0</p>
+                </div>
+                <button onclick="window.submitRoomPortion()"
+                    class="w-full bg-gray-900 hover:bg-black text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider">
+                    Submit to My Budget
+                </button>
+            </div>
+        </div>
+
+<!-- BUDGET MANAGER VIEW -->
         <!-- ============================================== -->
         <div id="budget-manager-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
             <div
@@ -25457,7 +25901,12 @@ YOUR DIRECTIVES:
                     <p class="text-[10px] sm:text-xs font-bold text-green-100 uppercase tracking-widest mt-0.5">Manage
                         Your Finances</p>
                 </div>
-                <button onclick="window.resetStudentBudget()"
+                
+                <button onclick="window.location.hash='budget-room'"
+                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-blue-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-blue-600" title="Budget Room">
+                    <i class="fa-solid fa-people-roof text-sm sm:text-base"></i>
+                </button>
+<button onclick="window.resetStudentBudget()"
                     class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-green-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-600">
                     <i class="fa-solid fa-rotate-left text-sm sm:text-base"></i>
                 </button>
