@@ -3047,6 +3047,8 @@
               #whiteboard-view>div:first-child,
                 #budget-manager-view>div:first-child,
                 #budget-track-view>div:first-child,
+                #budget-room-view>div:first-child,
+                #budget-room-detail-view>div:first-child,
         #pdf-modal-header,
               #evaluation-modal>div:first-child,
                  #peer-eval-room-modal>div:first-child,
@@ -3102,6 +3104,8 @@
                 html.is-tablet.is-landscape #whiteboard-view>div:first-child,
                 html.is-tablet.is-landscape #budget-manager-view>div:first-child,
                 html.is-tablet.is-landscape #budget-track-view>div:first-child,
+                html.is-tablet.is-landscape #budget-room-view>div:first-child,
+                html.is-tablet.is-landscape #budget-room-detail-view>div:first-child,
                 html.is-tablet.is-landscape #pdf-modal-header,
                 html.is-tablet.is-landscape #evaluation-modal>div:first-child,
                 html.is-tablet.is-landscape #peer-eval-room-modal>div:first-child,
@@ -3141,6 +3145,8 @@
                 html.is-tablet.is-portrait #whiteboard-view>div:first-child,
                 html.is-tablet.is-portrait #budget-manager-view>div:first-child,
                 html.is-tablet.is-portrait #budget-track-view>div:first-child,
+                html.is-tablet.is-portrait #budget-room-view>div:first-child,
+                html.is-tablet.is-portrait #budget-room-detail-view>div:first-child,
                 html.is-tablet.is-portrait #pdf-modal-header,
                 html.is-tablet.is-portrait #evaluation-modal>div:first-child,
                 html.is-tablet.is-portrait #peer-eval-room-modal>div:first-child,
@@ -3704,18 +3710,24 @@
                 </div>
 
                 <!-- Section: Budget Room (Admin Only) -->
-                <div id="settings-budget-room-section" class="hidden">
-                    <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">Management</span>
-                    <div class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden mb-6">
-                        <button onclick="window.location.hash='budget-room'; closeSettingsMenu();" class="w-full flex items-center justify-between p-3.5 hover:bg-emerald-50/50 active:bg-emerald-50 transition-colors">
+                <div id="settings-room-section" class="hidden">
+                    <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">Budget</span>
+                    <div class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                        <button onclick="closeSettingsMenu(); window.location.hash='budget-room'" class="w-full flex items-center justify-between p-3.5 hover:bg-emerald-50/50 active:bg-emerald-50 transition-colors">
                             <div class="flex items-center gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm border border-emerald-100 shrink-0"><i class="fa-solid fa-people-roof"></i></div>
+                                <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm border border-emerald-100 shrink-0"><i class="fa-solid fa-door-open"></i></div>
                                 <div class="text-left min-w-0"><span class="block text-[13px] font-bold text-slate-900 leading-tight">Budget Room</span>
-                                    <span class="block text-[10px] font-medium text-slate-400 mt-0.5">Manage budget rooms</span></div>
+                                    <span class="block text-[10px] font-medium text-slate-400 mt-0.5">Create &amp; manage shared rooms</span></div>
                             </div>
                             <i class="fa-solid fa-chevron-right text-slate-300 text-xs"></i>
                         </button>
                     </div>
+                </div>
+
+                <!-- Section: My Alarms (Students, only when the admin enables it) -->
+                <div id="settings-my-alarms-section" class="hidden">
+                    <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">My Alarms</span>
+                    <div id="settings-my-alarms-list" class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden divide-y divide-slate-100"></div>
                 </div>
 
                 <!-- Section: Alarms (Admin Only) -->
@@ -9761,50 +9773,28 @@
         }
 
         // ---------------- ADMIN: manage alarms ----------------
+        window.__alarmsList = async () => { const d = await api("list"); return d ? d.alarms : null; };
         function renderAlarms() {
+            if (window.__mirrorAlarms) window.__mirrorAlarms(AL);
             $("alarm-list").innerHTML = AL.length ? AL.slice().sort((a, b) => a.time.localeCompare(b.time)).map(a => `
               <div class="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
                 <div class="min-w-0"><div class="font-bold text-slate-900 truncate">${esc(a.title)}</div>
                 <div class="text-[11px] text-slate-500">${esc(a.time)} • ${a.repeat === "daily" ? "Every day" : esc(a.date)} • ${a.all ? "All students" : a.targets.length + " student(s)"}</div></div>
                 <div class="flex gap-2 shrink-0">
-                  ${window.currentRole === 'admin' ? `<button onclick="toggleAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${a.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}">${a.enabled ? "ON" : "OFF"}</button>
-                  <button onclick="deleteAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-600">Delete</button>` : `<span class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${a.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}">${a.enabled ? "ON" : "OFF"}</span>`}
+                  <button onclick="toggleAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${a.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}">${a.enabled ? "ON" : "OFF"}</button>
+                  <button onclick="deleteAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-600">Delete</button>
                 </div></div>`).join("") : '<p class="text-slate-400 text-center py-3 text-xs">No alarms yet</p>';
         }
         window.openAlarmManager = async function () {
+            if (window.currentRole !== "admin") return;
             if (window.closeSettingsMenu) window.closeSettingsMenu();
             $("alarm-admin-modal").classList.remove("hidden");
-            
-            const isAdmin = window.currentRole === "admin";
-            const formDiv = document.querySelector("#alarm-admin-modal .border-t");
-            if(formDiv) formDiv.style.display = isAdmin ? 'block' : 'none';
-
-            if (!isAdmin) {
-                if (window.rtdb && window.firebaseDatabase) {
-                    const { ref, get } = window.firebaseDatabase;
-                    try {
-                        const snapshot = await get(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'));
-                        if (snapshot.exists()) {
-                            AL = snapshot.val() || [];
-                        } else {
-                            AL = [];
-                        }
-                    } catch(e) { AL = []; }
-                }
-                AL = AL.filter(a => (a.targets && a.targets.includes(window.loggedInMobile)) || a.all);
-                renderAlarms();
-                return;
-            }
-
             $("al-students").innerHTML = students().map(x => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" value="${esc(x.m)}"> ${esc(x.n)} <span class="text-slate-400">${esc(x.m)}</span></label>`).join("");
             let d = await api("list"); if (!d) return; AL = d.alarms;
-            
-            const all = students().map(x => x.m), cur = all.slice().sort().join();
+            const all = students().map(x => x.m), cur = all.slice().sort().join();       // keep "All students" alarms in sync with new students
             const stale = AL.filter(a => a.all && all.length && a.targets.slice().sort().join() !== cur);
             for (const a of stale) await api("save", { alarm: { ...a, targets: all } });
             if (stale.length && (d = await api("list"))) AL = d.alarms;
-            
-            if (window.rtdb && window.firebaseDatabase) { const { ref, set } = window.firebaseDatabase; set(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'), AL); }
             renderAlarms();
         };
         window.closeAlarmManager = () => $("alarm-admin-modal").classList.add("hidden");
@@ -9816,12 +9806,11 @@
             if (!targets.length) return toast("Alarms", "Choose at least one student.", "error");
             const d = await api("save", { alarm: { title, time, repeat, date, all, targets, enabled: true } }); if (!d) return;
             AL = d.alarms; renderAlarms(); $("al-title").value = ""; toast("Alarm added", title + " • " + time, "success");
-            if (window.rtdb && window.firebaseDatabase) { const { ref, set } = window.firebaseDatabase; set(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'), AL); }
         };
-        window.toggleAlarm = async function (id) { const a = AL.find(x => x.id === id); if (!a) return; const d = await api("save", { alarm: { ...a, enabled: !a.enabled } }); if (d) { AL = d.alarms; renderAlarms(); if (window.rtdb && window.firebaseDatabase) { const { ref, set } = window.firebaseDatabase; set(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'), AL); } } };
+        window.toggleAlarm = async function (id) { const a = AL.find(x => x.id === id); if (!a) return; const d = await api("save", { alarm: { ...a, enabled: !a.enabled } }); if (d) { AL = d.alarms; renderAlarms(); } };
         window.deleteAlarm = async function (id) {
             if (!(await window.showCustomConfirm("Delete Alarm", "Delete this alarm?", "Delete", "Cancel", "info"))) return;
-            const d = await api("delete", { id }); if (d) { AL = d.alarms; renderAlarms(); if (window.rtdb && window.firebaseDatabase) { const { ref, set } = window.firebaseDatabase; set(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'), AL); } }
+            const d = await api("delete", { id }); if (d) { AL = d.alarms; renderAlarms(); }
         };
 
         // ---------------- STUDENT: ringing screen (Snooze = 1 min, "Alarm I know" = stop) ----------------
@@ -10823,7 +10812,7 @@
                     const testModeSection = document.getElementById('settings-test-mode-section');
                     if (testModeSection) testModeSection.classList.remove('hidden');
                     document.getElementById('settings-alarm-section')?.classList.remove('hidden');
-                    document.getElementById('settings-budget-room-section')?.classList.remove('hidden');
+                    document.getElementById('settings-room-section')?.classList.remove('hidden');
                     window.syncTestModeUI();
                 } else {
                     const student = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
@@ -10835,8 +10824,11 @@
                     // Hide Test Mode toggle for students
                     const testModeSectionStudent = document.getElementById('settings-test-mode-section');
                     if (testModeSectionStudent) testModeSectionStudent.classList.add('hidden');
-                    document.getElementById('settings-alarm-section')?.classList.remove('hidden');
+                    document.getElementById('settings-alarm-section')?.classList.add('hidden');
+                    document.getElementById('settings-room-section')?.classList.add('hidden');
                 }
+
+                if (window.renderStudentAlarmSidebar) window.renderStudentAlarmSidebar();
 
                 // 2. Animate into view
                 overlay.classList.remove('hidden');
@@ -15600,47 +15592,6 @@ ${textContent ? `
                 await new Promise(r => requestAnimationFrame(r));
                 onSnapshot(query(collection(db, window.getCollectionName("materials")), orderBy("timestamp", "desc"), limit(100)), (snapshot) => {
                     window.materialsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    // ADMIN NOTIFICATION FOR NEW MATERIALS
-                    if (!firstMats && window.currentRole === 'admin') {
-                        snapshot.docChanges().forEach(change => {
-                            if (change.type === 'added') {
-                                const data = change.doc.data();
-                                if (data.isApproved === false) {
-                                    const audio = document.getElementById('notice-board-audio');
-                                    if(audio) audio.play().catch(e => console.log('Audio play failed', e));
-                                    
-                                    const popup = document.createElement('div');
-                                    popup.className = "fixed top-10 sm:top-8 left-1/2 transform -translate-x-1/2 z-[9999] bg-white/95 backdrop-blur-2xl p-4 rounded-[20px] shadow-[0_15px_40px_rgba(0,0,0,0.12)] border border-slate-200 flex flex-col w-[92%] max-w-[340px] transition-all duration-500 pointer-events-auto cursor-default";
-                                    popup.innerHTML = `
-                                        <div class="flex items-center gap-3 mb-3">
-                                            <div class="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm shrink-0">
-                                                <i class="fa-solid fa-file-pdf"></i>
-                                            </div>
-                                            <div class="flex-1 min-w-0">
-                                                <h4 class="text-sm font-black text-slate-900 leading-tight">New Pending Material</h4>
-                                                <p class="text-[11px] font-medium text-slate-500 truncate mt-0.5">${data.title || "Material submitted"}</p>
-                                            </div>
-                                        </div>
-                                        <div class="flex gap-2">
-                                            <button id="btn-approve-${change.doc.id}" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs active:scale-95 transition-all">Approve</button>
-                                            <button id="btn-dismiss-${change.doc.id}" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs active:scale-95 transition-all">Dismiss</button>
-                                        </div>
-                                    `;
-                                    document.body.appendChild(popup);
-                                    
-                                    document.getElementById(`btn-approve-${change.doc.id}`).onclick = function() {
-                                        if(window.toggleMaterialApproval) window.toggleMaterialApproval(change.doc.id, true);
-                                        popup.remove();
-                                    };
-                                    document.getElementById(`btn-dismiss-${change.doc.id}`).onclick = function() {
-                                        popup.remove();
-                                    };
-                                    setTimeout(() => { if(popup.parentNode) popup.remove(); }, 15000);
-                                }
-                            }
-                        });
-                    }
-
                     if (firstMats || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
                         firstMats = false;
                         if (!document.getElementById('materials-view')?.classList.contains('hidden-view')) {
@@ -15669,7 +15620,8 @@ ${textContent ? `
                     'active-exam-view', 'fitness-view', 'weekly-targets-view',
                     'session-timer-view', 'nova-chat-view', 'video-hub-view',
                     'video-watch-view', 'syllabus-view', 'math-workout-view',
-                    'student-directory-view', 'budget-manager-view', 'budget-track-view', 'budget-room-view'
+                    'student-directory-view', 'budget-manager-view', 'budget-track-view',
+                    'budget-room-view', 'budget-room-detail-view'
                 ];
 
                 // 1. Hide all views and reset the Apple animation class
@@ -15739,12 +15691,6 @@ ${textContent ? `
                         }
                         if (typeof renderNotices === 'function') renderNotices();
                         break;
-                    case 'budget-manager':
-                        if (typeof window.renderBudgetDashboard === 'function') window.renderBudgetDashboard();
-                        break;
-                    case 'budget-room':
-                        if (typeof window.renderBudgetRoom === 'function') window.renderBudgetRoom();
-                        break;
                     case 'session-timer':
                         if (typeof renderSessionTimer === 'function') renderSessionTimer();
                         break;
@@ -15812,6 +15758,8 @@ ${textContent ? `
                         }
                         break;
                     case 'budget-manager':
+                    case 'budget-room':
+                    case 'budget-room-detail':
                     case 'nova-chat':
                     case 'watch-video':
                     case 'budget-track':
@@ -15951,6 +15899,13 @@ ${textContent ? `
                     // check this console.log to see the real shape of "data" - then
                     // adjust the line below if actionId is coming through differently.
                     const actionId = data.actionId || data.action_id || data.buttonId || data.actionSelected || (data.additionalData && data.additionalData.actionSelected) || (data.action && data.action.actionId) || null;
+
+                    if (data.materialId) {
+                        if (actionId === 'approve_material') window.approveMaterialFromPush(data.materialId);
+                        else window.location.hash = 'materials';
+                        return;
+                    }
+                    if (data.roomId) { window.location.hash = 'budget-room'; return; }
 
                     if (data.pushCategory === 'call') {
                         if (actionId === 'call_decline') {
@@ -16755,7 +16710,7 @@ ${textContent ? `
                     window.noticesDB.unshift({ id: Math.random().toString(), ...obj, readBy: [] }); renderNotices(); checkUnreadNotices();
                 }
             }
-            window.dbSendMaterial = async function (obj) { if (isFirebaseConfigured) await addDoc(collection(db, window.getCollectionName("materials")), obj); else { window.materialsDB.unshift({ id: Math.random().toString(), ...obj }); renderStudyMaterials(); } }
+            window.dbSendMaterial = async function (obj) { if (isFirebaseConfigured) { const __ref = await addDoc(collection(db, window.getCollectionName("materials")), obj); return __ref && __ref.id; } else { window.materialsDB.unshift({ id: Math.random().toString(), ...obj }); renderStudyMaterials(); } }
             window.dbSendFitnessLog = async function (obj) { if (isFirebaseConfigured) await addDoc(collection(db, window.getCollectionName("fitness_logs")), obj); else { window.fitnessDB.unshift({ id: Math.random().toString(), ...obj }); renderFitnessMonitor(); } }
             window.dbSubmitResult = async function (obj) {
                 if (isFirebaseConfigured) {
@@ -17012,7 +16967,7 @@ ${textContent ? `
                     const isAdmin = window.currentRole === 'admin';
                     const uploaderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (isAdmin ? 'EXAMA' : 'Student');
 
-                    await window.dbSendMaterial({
+                    const __newMatId = await window.dbSendMaterial({
                         subject,
                         topic,
                         title,
@@ -17050,7 +17005,7 @@ ${textContent ? `
                     } else {
                         window.showCustomAlert("Submitted", "Material uploaded! It is pending Admin approval.", "success");
                         // Tell the admin (by External ID) that a student is waiting for approval
-                        if (typeof sendOneSignalPush === "function") sendOneSignalPush("Material Awaiting Approval", `${uploaderName} submitted "${title}"` + ([subject, topic].filter(Boolean).length ? ` in ${[subject, topic].filter(Boolean).join(" • ")}` : "") + ".", null, { category: "exam", buttons: [{ id: "view_notice", text: "View" }] }, ["9475757821"]);
+                        if (typeof sendOneSignalPush === "function") sendOneSignalPush("Material Awaiting Approval", `${uploaderName} submitted "${title}"` + ([subject, topic].filter(Boolean).length ? ` in ${[subject, topic].filter(Boolean).join(" • ")}` : "") + ".", null, { category: "exam", buttons: [{ id: "approve_material", text: "Approve" }, { id: "view_notice", text: "View" }], data: { materialId: __newMatId || "" } }, ["9475757821"]);
                     }
                     renderStudyMaterials();
                 } catch (e) {
@@ -19896,7 +19851,7 @@ ${textContent ? `
                     setTimeout(() => window.enforceFitnessAbsence(), 2500);
                 }
 
-                if (window.location.hash.replace('#', '') !== role && !['chat', 'notices', 'leaderboard', 'target-calc', 'exam-analysis', 'materials', 'fitness', 'active-exam', 'budget-manager', 'budget-track'].includes(window.location.hash.replace('#', ''))) { window.location.hash = role; } else { handleHashChange(); }
+                if (window.location.hash.replace('#', '') !== role && !['chat', 'notices', 'leaderboard', 'target-calc', 'exam-analysis', 'materials', 'fitness', 'active-exam', 'budget-manager', 'budget-track', 'budget-room', 'budget-room-detail'].includes(window.location.hash.replace('#', ''))) { window.location.hash = role; } else { handleHashChange(); }
 
                 if (role === 'student') {
                     const curStu = window.studentsDB.find(s => s.mobile === mob);
@@ -24682,8 +24637,6 @@ YOUR DIRECTIVES:
             window.budgetListenerStarted = false;
 
             window.renderBudgetDashboard = function () {
-                window.budgetsDB = window.budgetsDB || [];
-                window.budgetRoomDB = window.budgetRoomDB || [];
                 const listEl = document.getElementById('budget-transactions-list');
                 const totalBalEl = document.getElementById('budget-total-balance');
                 const totalIncEl = document.getElementById('budget-total-income');
@@ -24894,286 +24847,7 @@ YOUR DIRECTIVES:
                 }, 300);
             };
 
-            
-            // --- BUDGET ROOM LOGIC ---
-            window.budgetRoomDB = [];
-            window.budgetRoomMembers = [];
-            window.budgetRoomEndedData = null;
-
-            window.openBudgetRoom = function() {
-                window.location.hash = 'budget-room';
-            };
-
-            window.renderBudgetRoom = function() {
-                const isAdmin = (window.currentRole === 'admin' || window.loggedInMobile === window.adminMobile);
-                const btnEnd = document.getElementById('btn-end-budget-room');
-                const btnCreate = document.getElementById('btn-create-budget-room');
-                const btnAddStudents = document.getElementById('btn-add-room-students');
-                
-                if (isAdmin) {
-                    btnEnd.classList.remove('hidden');
-                    if(btnCreate) btnCreate.classList.remove('hidden');
-                    if(btnCreate) btnCreate.classList.add('flex');
-                    btnAddStudents.classList.remove('hidden');
-                } else {
-                    btnEnd.classList.add('hidden');
-                    if(btnCreate) btnCreate.classList.add('hidden');
-                    if(btnCreate) btnCreate.classList.remove('flex');
-                    btnAddStudents.classList.add('hidden');
-                }
-
-                const subtitleEl = document.getElementById('budget-room-subtitle');
-                if (subtitleEl) subtitleEl.textContent = window.budgetRoomName || 'Shared Finances';
-                
-                // Calculate total expense
-                let total = 0;
-                window.budgetRoomDB.forEach(tx => total += Number(tx.amount));
-                document.getElementById('budget-room-total-expense').textContent = '₹' + total.toLocaleString('en-IN');
-                document.getElementById('room-members-count').textContent = window.budgetRoomMembers.length;
-
-                // Render members avatars
-                const memList = document.getElementById('room-members-list');
-                memList.innerHTML = '';
-                window.budgetRoomMembers.forEach(mobile => {
-                    const stu = (window.studentsDB || []).find(s => s.mobile === mobile);
-                    if (stu) {
-                        const dp = window.getStudentAvatar ? window.getStudentAvatar(stu.mobile, stu.name) : '';
-                        memList.innerHTML += `<img src="${dp}" class="w-8 h-8 rounded-full border border-gray-200 object-cover shadow-sm" title="${stu.name}">`;
-                    }
-                });
-
-                // Render transactions
-                const txList = document.getElementById('budget-room-transactions-list');
-                txList.innerHTML = '';
-                if (window.budgetRoomDB.length === 0) {
-                    txList.innerHTML = '<div class="text-center py-6 text-gray-400 font-bold text-xs">No transactions in this room</div>';
-                } else {
-                    const sortedTxs = [...window.budgetRoomDB].sort((a,b) => b.timestamp - a.timestamp);
-                    sortedTxs.forEach(tx => {
-                        const stu = (window.studentsDB || []).find(s => s.mobile === tx.by);
-                        const dp = stu && window.getStudentAvatar ? window.getStudentAvatar(stu.mobile, stu.name) : '';
-                        txList.innerHTML += `
-                        <div class="bg-white border border-gray-100 p-3 rounded-xl flex items-center gap-3 shadow-sm mb-2">
-                            <img src="${dp}" class="w-10 h-10 rounded-full border border-gray-200 object-cover shrink-0">
-                            <div class="flex-1 min-w-0">
-                                <h4 class="font-bold text-gray-900 text-sm truncate">${tx.title}</h4>
-                                <p class="text-[10px] font-bold text-gray-500">${stu ? stu.name : 'Unknown'}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="font-black text-red-600">₹${Number(tx.amount).toLocaleString('en-IN')}</p>
-                                <p class="text-[9px] font-bold text-gray-400">${new Date(tx.timestamp).toLocaleDateString()}</p>
-                            </div>
-                        </div>
-                        `;
-                    });
-                }
-            };
-
-            window.openAddRoomTransactionModal = function() {
-                if(!window.budgetRoomMembers.includes(window.loggedInMobile) && !(window.loggedInMobile === window.adminMobile || window.location.hash.includes('admin'))) {
-                    if(window.showToast) window.showToast('You are not in this room', 'error');
-                    return;
-                }
-                const modal = document.getElementById('budget-room-add-modal');
-                const content = document.getElementById('budget-room-add-modal-content');
-                modal.classList.remove('hidden');
-                modal.classList.add('flex');
-                setTimeout(() => {
-                    modal.classList.remove('opacity-0', 'pointer-events-none');
-                    content.classList.remove('translate-y-full');
-                }, 10);
-            };
-
-            window.closeAddRoomTransactionModal = function() {
-                const modal = document.getElementById('budget-room-add-modal');
-                const content = document.getElementById('budget-room-add-modal-content');
-                content.classList.add('translate-y-full');
-                modal.classList.add('opacity-0', 'pointer-events-none');
-                setTimeout(() => {
-                    modal.classList.add('hidden');
-                    modal.classList.remove('flex');
-                }, 300);
-            };
-
-            window.saveRoomTransaction = async function() {
-                const amount = document.getElementById('budget-room-amount').value;
-                const title = document.getElementById('budget-room-title').value;
-                if (!amount || amount <= 0 || !title.trim()) {
-                    if(window.showToast) window.showToast('Invalid details', 'error');
-                    return;
-                }
-                
-                const tx = {
-                    id: Date.now().toString(),
-                    amount: Number(amount),
-                    title: title.trim(),
-                    by: window.loggedInMobile || 'admin',
-                    timestamp: Date.now()
-                };
-
-                // local mock update
-                window.budgetRoomDB.push(tx);
-                
-                window.closeAddRoomTransactionModal();
-                document.getElementById('budget-room-amount').value = '';
-                document.getElementById('budget-room-title').value = '';
-                if(window.showToast) window.showToast('Added to room', 'success');
-                window.renderBudgetRoom();
-            };
-
-            window.resetBudgetRoom = async function() {
-                if (!(await window.showCustomConfirm("Create Room", "Start a new Budget Room?", "Create", "Cancel", "info"))) return;
-                const roomName = prompt("Enter a name for the new Budget Room:", "New Room");
-                if (!roomName) return;
-                window.budgetRoomName = roomName;
-                window.budgetRoomDB = [];
-                window.budgetRoomMembers = [];
-                window.renderBudgetRoom();
-            };
-
-            window.openRoomStudentsModal = function() {
-                const list = document.getElementById('budget-room-students-list');
-                list.innerHTML = '';
-                (window.studentsDB || []).forEach(s => {
-                    const checked = window.budgetRoomMembers.includes(s.mobile) ? 'checked' : '';
-                    list.innerHTML += `
-                        <label class="flex items-center gap-3 p-3 bg-gray-50 border border-gray-100 rounded-xl cursor-pointer hover:bg-gray-100">
-                            <input type="checkbox" value="${s.mobile}" class="room-student-cb w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" ${checked}>
-                            <img src="${window.getStudentAvatar ? window.getStudentAvatar(s.mobile, s.name) : ''}" class="w-8 h-8 rounded-full">
-                            <span class="font-bold text-sm text-gray-900">${s.name}</span>
-                        </label>
-                    `;
-                });
-                
-                const modal = document.getElementById('budget-room-students-modal');
-                const content = document.getElementById('budget-room-students-modal-content');
-                modal.classList.remove('hidden');
-                modal.classList.add('flex');
-                setTimeout(() => {
-                    modal.classList.remove('opacity-0', 'pointer-events-none');
-                    content.classList.remove('translate-y-full');
-                }, 10);
-            };
-
-            window.closeRoomStudentsModal = function() {
-                const modal = document.getElementById('budget-room-students-modal');
-                const content = document.getElementById('budget-room-students-modal-content');
-                content.classList.add('translate-y-full');
-                modal.classList.add('opacity-0', 'pointer-events-none');
-                setTimeout(() => {
-                    modal.classList.add('hidden');
-                    modal.classList.remove('flex');
-                }, 300);
-            };
-
-            window.saveRoomStudents = async function() {
-                const cbs = document.querySelectorAll('.room-student-cb:checked');
-                const members = Array.from(cbs).map(cb => cb.value);
-                window.budgetRoomMembers = members;
-                window.closeRoomStudentsModal();
-                if(window.showToast) window.showToast('Members updated', 'success');
-                window.renderBudgetRoom();
-            };
-
-            window.endBudgetRoom = async function() {
-                if (!(await window.showCustomConfirm("End Room", "This will calculate the portion for each member and notify them. Proceed?", "End Room", "Cancel", "danger"))) return;
-                
-                let total = 0;
-                window.budgetRoomDB.forEach(tx => total += Number(tx.amount));
-                let numMembers = window.budgetRoomMembers.length;
-                if(numMembers === 0) numMembers = 1;
-                const portion = total / numMembers;
-                
-                const endData = {
-                    total: total,
-                    portion: portion,
-                    roomName: window.budgetRoomName || 'Budget Room',
-                    timestamp: Date.now(),
-                    active: true
-                };
-
-                window.budgetRoomEndedData = endData;
-                window.budgetRoomDB = [];
-                window.budgetRoomMembers = [];
-                window.checkRoomEnded(); // Trigger check locally
-
-                if(window.showToast) window.showToast('Room ended successfully!', 'success');
-                window.renderBudgetRoom();
-            };
-
-            window.checkRoomEnded = function() {
-                if (window.currentRole === 'admin') return;
-                if(window.budgetRoomEndedData && window.budgetRoomEndedData.active) {
-                    const portionStr = '₹' + Math.round(window.budgetRoomEndedData.portion).toLocaleString('en-IN');
-                    document.getElementById('budget-room-portion-amount').textContent = portionStr;
-                    
-                    const modal = document.getElementById('budget-room-ended-modal');
-                    const content = document.getElementById('budget-room-ended-modal-content');
-                    modal.classList.remove('hidden');
-                    modal.classList.add('flex');
-                    setTimeout(() => {
-                        modal.classList.remove('opacity-0', 'pointer-events-none');
-                        content.classList.remove('scale-95');
-                    }, 10);
-                }
-            };
-
-            window.submitRoomPortion = async function() {
-                if(!window.budgetRoomEndedData) return;
-                const portion = window.budgetRoomEndedData.portion;
-                const title = window.budgetRoomEndedData.roomName || "Budget Room Expense";
-                const methodEl = document.getElementById('budget-room-submit-method');
-                const method = methodEl ? methodEl.value : 'online';
-
-                if (!window.budgetsDB) window.budgetsDB = [];
-                const newTx = {
-                    id: Date.now().toString(),
-                    amount: Number(Math.round(portion)),
-                    title: title,
-                    type: 'expense',
-                    method: method,
-                    category: 'Shared Room',
-                    timestamp: Date.now()
-                };
-                window.budgetsDB.push(newTx);
-                if (typeof api === 'function') await api("save", { budget: newTx });
-                
-                window.budgetRoomEndedData = null; // Clear local flag
-                
-                const modal = document.getElementById('budget-room-ended-modal');
-                const content = document.getElementById('budget-room-ended-modal-content');
-                content.classList.add('scale-95');
-                modal.classList.add('opacity-0', 'pointer-events-none');
-                setTimeout(() => {
-                    modal.classList.add('hidden');
-                    modal.classList.remove('flex');
-                }, 300);
-
-                if(window.showToast) window.showToast('Added to personal budget!', 'success');
-                if(window.renderBudgetDashboard) window.renderBudgetDashboard();
-            };
-
-            // Trigger setup when navigating to the budget view
-            window.addEventListener('hashchange', () => {
-                if (window.location.hash.includes('budget-room')) {
-                    // Render Budget Room View
-                    window.renderBudgetRoom();
-                    // Setup classes to hide others and show this one
-                    document.querySelectorAll('.app-view, .hidden-view').forEach(el => {
-                        el.classList.remove('active-view');
-                        el.style.display = 'none';
-                    });
-                    const v = document.getElementById('budget-room-view');
-                    if(v) {
-                        v.classList.add('active-view');
-                        v.style.display = 'flex';
-                    }
-                    window.checkRoomEnded(); // On launch check
-                }
-            });
-
-
-window.saveBudgetTransaction = async function () {
+            window.saveBudgetTransaction = async function () {
                 const amount = document.getElementById('budget-amount').value;
                 const title = document.getElementById('budget-title').value;
                 const type = document.querySelector('input[name="budget-type"]:checked').value;
@@ -25332,6 +25006,628 @@ window.saveBudgetTransaction = async function () {
                 }
             });
 
+            // ==============================================
+            // BUDGET ROOM  (shared budget for a group of students)
+            // Firestore:  budget_rooms/{roomId}                 -> room + settlement + submitted map
+            //             budget_rooms/{roomId}/transactions/*  -> room transactions
+            // ==============================================
+            (function () {
+                const $ = id => document.getElementById(id);
+                const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                const inr = n => '₹' + (Number(n) || 0).toLocaleString('en-IN');
+                const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+                const toast = (t, m, k) => { if (window.showToast) window.showToast(t, m || '', k || 'info'); };
+                const sleep = ms => new Promise(r => setTimeout(r, ms));
+                const ROOMS = 'budget_rooms';
+
+                const R = window.budgetRoomCtx = {
+                    uid: null, retryAt: 0, unsubs: {}, rooms: [], byId: {},
+                    currentId: null, txs: [], txUnsub: null, filter: 'all', limit: 6,
+                    adding: false, opening: false, editingId: null, readOnly: false,
+                    settleId: null, dismissed: new Set(), cleaning: new Set(), synced: new Set(),
+                    alarmShow: false, alarms: []
+                };
+
+                // ---------- identity helpers ----------
+                const isAdmin = () => window.currentRole === 'admin';
+                const myId = () => isAdmin() ? 'admin' : String(window.loggedInMobile || '');
+                const nameOf = m => {
+                    if (m === 'admin') return 'EXAMA Admin';
+                    const s = (window.studentsDB || []).find(x => String(x.mobile) === String(m));
+                    return (s && s.name) || String(m);
+                };
+                const dp = m => window.getStudentAvatar ? window.getStudentAvatar(m === 'admin' ? 'admin' : m, nameOf(m)) : '';
+                const myName = () => isAdmin() ? 'EXAMA Admin' : nameOf(myId());
+                const studentList = () => (window.studentsDB || []).filter(s => s && s.mobile && String(s.mobile) !== 'admin' && String(s.mobile) !== String(isAdmin() ? window.loggedInMobile : ''));
+                const membersOf = room => ((room && room.members) || []).map(String);
+                const curRoom = () => R.byId[R.currentId] || null;
+                const isEnded = room => !!room && room.status === 'ended';
+                const submittedCount = room => membersOf(room).filter(m => room.submitted && room.submitted[m]).length;
+
+                const stack = (mobiles, max) => {
+                    max = max || 4;
+                    const shown = mobiles.slice(0, max), extra = mobiles.length - shown.length;
+                    return `<div class="flex items-center">${shown.map((m, i) => `<img src="${esc(dp(m))}" alt="" class="w-6 h-6 rounded-full object-cover border-2 border-white bg-white shadow-sm ${i ? '-ml-2' : ''}">`).join('')}${extra > 0 ? `<span class="-ml-2 w-6 h-6 rounded-full bg-gray-100 border-2 border-white text-[9px] font-black text-gray-500 flex items-center justify-center">+${extra}</span>` : ''}</div>`;
+                };
+
+                // ---------- listeners ----------
+                function stopAll() {
+                    Object.values(R.unsubs).forEach(u => { try { u(); } catch (e) { } });
+                    R.unsubs = {};
+                    if (R.txUnsub) { try { R.txUnsub(); } catch (e) { } R.txUnsub = null; }
+                }
+
+                function ensureListeners() {
+                    const role = window.currentRole, mob = String(window.loggedInMobile || '');
+                    const uid = role ? role + ':' + mob : null;
+                    if (uid === R.uid) return;
+                    if (uid && Date.now() < R.retryAt) return;
+                    stopAll();
+                    R.uid = uid; R.rooms = []; R.byId = {}; R.txs = []; R.currentId = null;
+                    R.alarmShow = false; R.alarms = [];
+                    window.renderStudentAlarmSidebar && window.renderStudentAlarmSidebar();
+                    if (!uid || typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured) return;
+
+                    const fail = (what) => (err) => {
+                        console.warn('[BudgetRoom] ' + what + ' listener failed:', err && err.message);
+                        R.retryAt = Date.now() + 30000; stopAll(); R.uid = null;
+                    };
+
+                    const q = role === 'admin'
+                        ? query(collection(db, ROOMS))
+                        : query(collection(db, ROOMS), where('members', 'array-contains', mob));
+                    R.unsubs.rooms = onSnapshot(q, snap => {
+                        R.rooms = []; R.byId = {};
+                        snap.forEach(d => { const o = { id: d.id, ...d.data() }; R.rooms.push(o); R.byId[o.id] = o; });
+                        R.rooms.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+                        const h = window.location.hash.replace('#', '');
+                        if (h === 'budget-room') window.renderBudgetRoomHub();
+                        if (R.currentId) {
+                            if (!R.byId[R.currentId]) { roomGone(); } else if (h === 'budget-room-detail') window.renderRoomDetail();
+                        }
+                        afterRoomsChanged();
+                    }, fail('rooms'));
+
+                    // Alarm visibility flag (admin edits it, students read it)
+                    R.unsubs.alarmFlag = onSnapshot(doc(db, 'app_settings', 'alarms'), s => {
+                        R.alarmShow = !!(s.exists() && s.data().showToStudents);
+                        const cb = $('al-show-students'); if (cb) cb.checked = R.alarmShow;
+                        window.renderStudentAlarmSidebar && window.renderStudentAlarmSidebar();
+                    }, () => { });
+                    if (role === 'student') {
+                        R.unsubs.alarmMine = onSnapshot(doc(db, 'alarm_mirror', mob), s => {
+                            R.alarms = (s.exists() && Array.isArray(s.data().alarms)) ? s.data().alarms : [];
+                            window.renderStudentAlarmSidebar && window.renderStudentAlarmSidebar();
+                        }, () => { });
+                    }
+                }
+
+                function roomGone() {
+                    if (R.txUnsub) { try { R.txUnsub(); } catch (e) { } R.txUnsub = null; }
+                    R.currentId = null; R.txs = [];
+                    const h = window.location.hash.replace('#', '');
+                    if (h === 'budget-room-detail' || (h === 'budget-track' && typeof window.__trackSource === 'function')) {
+                        toast('Room closed', 'This Budget Room is no longer available.', 'info');
+                        window.__trackSource = null;
+                        window.location.hash = 'budget-room';
+                    }
+                }
+
+                function afterRoomsChanged() {
+                    // 1) delete data of rooms that are ended and fully submitted
+                    R.rooms.forEach(r => {
+                        if (isEnded(r) && membersOf(r).length && submittedCount(r) >= membersOf(r).length) cleanupRoom(r.id);
+                    });
+                    // 2) students: popup for ended rooms they haven't submitted yet
+                    if (!isAdmin()) {
+                        const modalOpen = $('room-settle-modal') && !$('room-settle-modal').classList.contains('hidden');
+                        if (!modalOpen) {
+                            const pending = R.rooms.find(r => isEnded(r) && membersOf(r).includes(myId()) && !(r.submitted && r.submitted[myId()]) && !R.dismissed.has(r.id));
+                            if (pending) showSettle(pending);
+                        } else {
+                            const cur = R.byId[R.settleId];
+                            if (!cur || (cur.submitted && cur.submitted[myId()])) closeSettle();
+                        }
+                    } else {
+                        // 3) admin: rooms created with "All students" keep up with newly registered students
+                        R.rooms.forEach(r => {
+                            if (!r.allStudents || isEnded(r)) return;
+                            const all = studentList().map(s => String(s.mobile));
+                            const missing = all.filter(m => !membersOf(r).includes(m));
+                            const key = r.id + ':' + missing.join(',');
+                            if (missing.length && all.length && !R.synced.has(key)) {
+                                R.synced.add(key);
+                                updateDoc(doc(db, ROOMS, r.id), { members: [...new Set([...membersOf(r), ...missing])] }).catch(() => { });
+                            }
+                        });
+                    }
+                }
+
+                async function cleanupRoom(id) {
+                    if (R.cleaning.has(id)) return;
+                    R.cleaning.add(id);
+                    try {
+                        const snap = await getDocs(collection(db, ROOMS, id, 'transactions'));
+                        let batch = writeBatch(db), n = 0;
+                        for (const d of snap.docs) {
+                            batch.delete(d.ref);
+                            if (++n % 400 === 0) { await batch.commit(); batch = writeBatch(db); }
+                        }
+                        await batch.commit();
+                        await deleteDoc(doc(db, ROOMS, id));
+                    } catch (e) { console.warn('[BudgetRoom] cleanup failed', e); R.cleaning.delete(id); }
+                }
+
+                // ---------- hub ----------
+                window.renderBudgetRoomHub = function () {
+                    const el = $('room-hub-list'); if (!el) return;
+                    const fab = $('room-create-fab');
+                    if (fab) { fab.classList.toggle('hidden', !isAdmin()); fab.classList.toggle('flex', isAdmin()); }
+                    if (!R.rooms.length) {
+                        el.innerHTML = `<div class="text-center p-8 text-gray-400 font-bold bg-white rounded-2xl border border-gray-100 shadow-sm mt-4"><i class="fa-solid fa-door-open text-4xl mb-3 opacity-40"></i><p>${isAdmin() ? 'No rooms yet. Tap + to create one.' : 'You have not been added to any room yet.'}</p></div>`;
+                        return;
+                    }
+                    el.innerHTML = R.rooms.map(r => {
+                        const ms = membersOf(r), ended = isEnded(r);
+                        let chip = '<span class="bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">Active</span>';
+                        if (ended) {
+                            if (isAdmin()) chip = `<span class="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">Ended • ${submittedCount(r)}/${ms.length} submitted</span>`;
+                            else if (r.submitted && r.submitted[myId()]) chip = '<span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">Submitted</span>';
+                            else chip = '<span class="bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse">Submit your portion</span>';
+                        }
+                        return `<div onclick="window.openBudgetRoom('${r.id}')" class="bg-white p-4 rounded-2xl shadow-[0_2px_10px_rgb(0,0,0,0.03)] border border-gray-100/70 active:scale-[0.98] transition-transform cursor-pointer">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0"><p class="font-black text-gray-900 text-[15px] truncate flex items-center gap-2"><i class="fa-solid fa-door-open text-emerald-500 text-sm"></i>${esc(r.name || 'Budget Room')}</p>
+                                <p class="text-[10px] font-bold text-gray-400 mt-1 uppercase tracking-wider">${ms.length} student${ms.length === 1 ? '' : 's'}</p></div>
+                                <div class="flex items-center gap-2 shrink-0">${chip}${isAdmin() ? `<button onclick="event.stopPropagation();window.deleteBudgetRoom('${r.id}')" class="w-7 h-7 rounded-full bg-gray-50 text-gray-300 hover:text-red-500 flex items-center justify-center"><i class="fa-solid fa-trash text-[11px]"></i></button>` : ''}</div>
+                            </div>
+                            <div class="mt-3">${stack(ms, 6)}</div>
+                        </div>`;
+                    }).join('');
+                };
+
+                window.openBudgetRoom = function (id) {
+                    if (!R.byId[id]) return;
+                    R.currentId = id; R.txs = []; R.filter = 'all'; R.limit = 6;
+                    if (R.txUnsub) { try { R.txUnsub(); } catch (e) { } }
+                    R.txUnsub = onSnapshot(collection(db, ROOMS, id, 'transactions'), snap => {
+                        R.txs = []; snap.forEach(d => R.txs.push({ id: d.id, ...d.data() }));
+                        const h = window.location.hash.replace('#', '');
+                        if (h === 'budget-room-detail') window.renderRoomDetail();
+                        if (h === 'budget-track' && typeof window.__trackSource === 'function' && window.renderBudgetTrackView) window.renderBudgetTrackView();
+                    }, err => { console.warn('[BudgetRoom] tx listener', err); toast('Room', 'Could not load room transactions.', 'error'); });
+                    window.filterBudgetRoom('all', true);
+                    window.location.hash = 'budget-room-detail';
+                };
+
+                // ---------- detail ----------
+                window.filterBudgetRoom = function (type, silent) {
+                    R.filter = type; R.limit = 6;
+                    ['all', 'income', 'expense'].forEach(t => {
+                        const b = $('room-filter-' + t); if (!b) return;
+                        b.className = t === type
+                            ? 'shrink-0 px-4 py-1.5 bg-gray-900 text-white rounded-full text-xs font-bold tracking-wide transition-all shadow-md'
+                            : 'shrink-0 px-4 py-1.5 bg-white text-gray-600 rounded-full text-xs font-bold tracking-wide transition-all shadow-sm border border-gray-200';
+                    });
+                    if (!silent) window.renderRoomDetail();
+                };
+
+                window.renderRoomDetail = function () {
+                    const room = curRoom(); if (!room) return;
+                    const ended = isEnded(room), admin = isAdmin(), ms = membersOf(room);
+                    $('room-title').textContent = room.name || 'Budget Room';
+                    $('room-subtitle').textContent = ended ? 'Room ended' : 'Shared Budget • ' + ms.length + ' students';
+                    $('room-member-count').textContent = ms.length;
+                    $('room-members-strip').innerHTML = stack(ms, 4);
+                    ['room-btn-reset', 'room-btn-end'].forEach(id => {
+                        const b = $(id); const show = admin && !ended;
+                        b.classList.toggle('hidden', !show); b.classList.toggle('flex', show);
+                    });
+                    const fab = $('room-fab'); if (fab) fab.classList.toggle('hidden', ended);
+
+                    // Ended banner
+                    const bn = $('room-ended-banner');
+                    if (ended) {
+                        let inner;
+                        if (admin) inner = `<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex items-center gap-3"><i class="fa-solid fa-flag-checkered text-amber-500 text-xl"></i><div class="min-w-0"><p class="text-sm font-black text-amber-800">Room ended</p><p class="text-[11px] font-bold text-amber-700/80">${submittedCount(room)} of ${ms.length} students submitted. Room data is deleted automatically once everyone submits.</p></div></div>`;
+                        else if (room.submitted && room.submitted[myId()]) inner = `<div class="bg-green-50 border border-green-200 rounded-2xl p-3.5 flex items-center gap-3"><i class="fa-solid fa-circle-check text-green-500 text-xl"></i><p class="text-sm font-black text-green-800">You have submitted your portion.</p></div>`;
+                        else inner = `<div class="bg-red-50 border border-red-200 rounded-2xl p-3.5 flex items-center justify-between gap-3"><div class="min-w-0"><p class="text-sm font-black text-red-700">Room ended</p><p class="text-[11px] font-bold text-red-600/80">Submit your portion to add it to your Budget Manager.</p></div><button onclick="window.openSettle('${room.id}')" class="shrink-0 bg-red-600 text-white px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider active:scale-95">Submit</button></div>`;
+                        bn.innerHTML = inner; bn.classList.remove('hidden');
+                    } else { bn.classList.add('hidden'); bn.innerHTML = ''; }
+
+                    // Totals (same logic as Budget Manager)
+                    const weekAgo = Date.now() - 604800000;
+                    let inc = 0, exp = 0, wInc = 0, wExp = 0, online = 0, cash = 0;
+                    R.txs.forEach(tx => {
+                        const a = Number(tx.amount) || 0, isInc = tx.type === 'income';
+                        if (isInc) { inc += a; if (tx.timestamp >= weekAgo) wInc += a; } else { exp += a; if (tx.timestamp >= weekAgo) wExp += a; }
+                        const sg = isInc ? 1 : -1;
+                        if (tx.method === 'online') online += sg * a; else if (tx.method === 'cash') cash += sg * a;
+                    });
+                    const bal = inc - exp;
+                    const be = $('room-balance'); be.textContent = inr(bal);
+                    be.className = 'text-3xl font-black ' + (bal >= 0 ? 'text-gray-900' : 'text-red-600');
+                    $('room-online-balance').textContent = inr(online);
+                    $('room-cash-balance').textContent = inr(cash);
+                    $('room-total-income').textContent = inr(wInc);
+                    $('room-total-expense').textContent = inr(wExp);
+                    $('room-lifetime-income').textContent = inr(inc);
+                    $('room-lifetime-expense').textContent = inr(exp);
+
+                    // List
+                    let list = [...R.txs].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    if (R.filter !== 'all') list = list.filter(t => t.type === R.filter);
+                    const el = $('room-transactions-list');
+                    if (!list.length) {
+                        el.innerHTML = '<div class="text-center p-6 text-gray-400 font-bold bg-white rounded-2xl border border-gray-100 shadow-sm mt-4"><i class="fa-solid fa-receipt text-3xl mb-2 opacity-50"></i><p>No transactions found</p></div>';
+                        return;
+                    }
+                    let html = '';
+                    list.slice(0, R.limit).forEach(tx => {
+                        const isInc = tx.type === 'income';
+                        const color = isInc ? 'text-green-600' : 'text-red-600';
+                        const icon = isInc ? 'fa-arrow-down' : 'fa-arrow-up';
+                        const mIcon = tx.method === 'online' ? 'fa-building-columns' : 'fa-money-bill';
+                        const by = tx.by || '', byName = tx.byName || nameOf(by);
+                        const date = new Date(tx.timestamp).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        const canDel = !ended && (admin || by === myId());
+                        const to = (tx.type === 'transfer' && tx.transferTo) ? `<p class="text-[9px] font-bold text-blue-500 mt-0.5 truncate"><i class="fa-solid fa-arrow-right"></i> ${esc(nameOf(tx.transferTo))}</p>` : '';
+                        html += `<div class="bg-white p-3.5 rounded-2xl shadow-[0_2px_10px_rgb(0,0,0,0.02)] border border-gray-100/60 flex justify-between items-center active:scale-[0.98] transition-transform group hover:border-gray-200">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div class="relative shrink-0">
+                                    <img src="${esc(dp(by))}" alt="DP" class="w-10 h-10 rounded-2xl object-cover border-[3px] ${isInc ? 'border-green-100' : 'border-red-100'} shadow-sm bg-white">
+                                    <span class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full ${isInc ? 'bg-green-500' : 'bg-red-500'} text-white flex items-center justify-center text-[7px] border-2 border-white"><i class="fa-solid ${icon}"></i></span>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="font-black text-gray-900 text-sm leading-tight truncate">${esc(tx.title || 'Transaction')}</p>
+                                    <p class="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-wider truncate">${esc(byName)} • <i class="fa-solid ${mIcon} mr-0.5"></i> ${esc(tx.method)} • ${date}</p>
+                                    ${to}
+                                </div>
+                            </div>
+                            <div class="text-right flex flex-col items-end shrink-0 pl-2">
+                                <p class="font-black ${color} text-[15px] leading-tight">${isInc ? '+' : '-'}₹${esc(tx.amount)}</p>
+                                ${canDel ? `<button onclick="window.deleteRoomTransaction('${tx.id}')" class="text-[9px] font-bold text-gray-300 hover:text-red-500 uppercase tracking-widest mt-1.5 transition-colors flex items-center gap-1 bg-gray-50 px-2 py-0.5 rounded-md opacity-0 group-hover:opacity-100"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+                            </div>
+                        </div>`;
+                    });
+                    if (R.limit < list.length) html += '<div id="room-scroll-trigger" class="flex justify-center mt-2 w-full h-12 items-center"><i class="fa-solid fa-circle-notch fa-spin text-emerald-500 text-lg"></i></div>';
+                    el.innerHTML = html;
+                    const trig = $('room-scroll-trigger');
+                    if (trig) {
+                        const ob = new IntersectionObserver(en => { if (en[0].isIntersecting) { ob.disconnect(); R.limit += 6; window.renderRoomDetail(); } }, { threshold: 0.1 });
+                        ob.observe(trig);
+                    }
+                };
+
+                // ---------- add transaction (re-uses the Budget Manager modal) ----------
+                const origOpenAdd = window.openAddTransactionModal;
+                const origCloseAdd = window.closeAddTransactionModal;
+                const origSaveTx = window.saveBudgetTransaction;
+                const setAddTitle = t => { const h = document.querySelector('#budget-add-modal-content h3'); if (h) h.textContent = t; };
+
+                window.openRoomAddTransaction = function () {
+                    const room = curRoom(); if (!room || isEnded(room)) return;
+                    R.opening = true; window.openAddTransactionModal();
+                };
+                window.openAddTransactionModal = function () {
+                    const room = R.opening;
+                    R.adding = !!room; R.opening = false;
+                    origOpenAdd.apply(this, arguments);
+                    if (room) {
+                        setAddTitle('Add Room Transaction');
+                        const sel = $('budget-transfer-to');
+                        if (sel) {
+                            sel.innerHTML = '<option value="">Select a student...</option>';
+                            membersOf(curRoom()).filter(m => m !== myId()).forEach(m => { sel.innerHTML += `<option value="${esc(m)}">${esc(nameOf(m))}</option>`; });
+                            sel.dispatchEvent(new Event('change'));
+                        }
+                    } else setAddTitle('Add Transaction');
+                };
+                window.closeAddTransactionModal = function () {
+                    R.adding = false;
+                    origCloseAdd.apply(this, arguments);
+                };
+                window.saveBudgetTransaction = function () {
+                    if (R.adding) return window.saveRoomTransaction();
+                    return origSaveTx.apply(this, arguments);
+                };
+
+                window.saveRoomTransaction = async function () {
+                    const room = curRoom(); if (!room || isEnded(room)) return;
+                    const amount = $('budget-amount').value, title = $('budget-title').value;
+                    const type = document.querySelector('input[name="budget-type"]:checked').value;
+                    const method = document.querySelector('input[name="budget-method"]:checked').value;
+                    let category = null, transferTo = null;
+                    if (type === 'transfer') {
+                        transferTo = $('budget-transfer-to').value;
+                        if (!transferTo) return toast('Notice', 'Please select a student to transfer to!', 'error');
+                    } else category = $('budget-category').value;
+                    if (!amount || Number(amount) <= 0 || !title.trim()) return toast('Notice', 'Please enter valid details!', 'error');
+
+                    const btn = document.querySelector('#budget-add-modal button[onclick="window.saveBudgetTransaction()"]');
+                    if (btn) { btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...'; btn.disabled = true; }
+                    try {
+                        await addDoc(collection(db, ROOMS, room.id, 'transactions'), {
+                            amount: Number(amount), title: title.trim(), type, method, category, transferTo,
+                            by: myId(), byName: myName(), timestamp: Date.now()
+                        });
+                        if (type === 'transfer') {
+                            await addDoc(collection(db, window.getCollectionName('students'), transferTo, 'budget'), {
+                                amount: Number(amount), title: `Transfer from ${room.name} (Room)`, type: 'income',
+                                method, category: 'Transfer', timestamp: Date.now()
+                            });
+                        }
+                        window.closeAddTransactionModal();
+                        $('budget-amount').value = ''; $('budget-title').value = '';
+                        toast('Saved', 'Room transaction added.', 'success');
+                    } catch (e) {
+                        console.error('Room tx save error', e);
+                        toast('Error', 'Error saving transaction', 'error');
+                    } finally {
+                        if (btn) { btn.innerHTML = '<i class="fa-solid fa-check"></i> Save Transaction'; btn.disabled = false; }
+                    }
+                };
+
+                window.deleteRoomTransaction = async function (id) {
+                    const room = curRoom(); if (!room || isEnded(room)) return;
+                    if (!(await window.showCustomConfirm('Confirm', 'Delete this transaction?', 'Delete', 'Cancel', 'danger'))) return;
+                    try { await deleteDoc(doc(db, ROOMS, room.id, 'transactions', id)); toast('Deleted', 'Transaction deleted!', 'success'); }
+                    catch (e) { console.error(e); toast('Error', 'Error deleting', 'error'); }
+                };
+
+                // ---------- reset (admin) ----------
+                window.resetBudgetRoom = async function () {
+                    const room = curRoom(); if (!room || !isAdmin() || isEnded(room)) return;
+                    if (!(await window.showCustomConfirm('Reset Room?', `Permanently delete ALL transactions in "${room.name}"?`, 'Yes, Reset', 'Cancel', 'error'))) return;
+                    try {
+                        const snap = await getDocs(collection(db, ROOMS, room.id, 'transactions'));
+                        let batch = writeBatch(db), n = 0;
+                        for (const d of snap.docs) { batch.delete(d.ref); if (++n % 400 === 0) { await batch.commit(); batch = writeBatch(db); } }
+                        await batch.commit();
+                        toast('Room reset', 'All room transactions were deleted.', 'success');
+                    } catch (e) { console.error(e); toast('Error', 'Error resetting room', 'error'); }
+                };
+
+                // ---------- END (admin): split among students ----------
+                window.endBudgetRoom = async function () {
+                    const room = curRoom(); if (!room || !isAdmin() || isEnded(room)) return;
+                    const ms = membersOf(room);
+                    if (!ms.length) return toast('Notice', 'This room has no students.', 'error');
+                    if (!(await window.showCustomConfirm('End Room?', `"${room.name}" will be locked and its total will be divided equally among ${ms.length} student${ms.length === 1 ? '' : 's'}. Each student will be asked to submit their portion.`, 'End Room', 'Cancel', 'error'))) return;
+
+                    let inc = 0, exp = 0;
+                    const exps = [];
+                    [...R.txs].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)).forEach(tx => {
+                        const a = Number(tx.amount) || 0;
+                        if (tx.type === 'income') inc += a;
+                        else { exp += a; exps.push({ title: String(tx.title || 'Expense').slice(0, 60), amount: a, byName: String(tx.byName || nameOf(tx.by)).slice(0, 40), method: tx.method || '', timestamp: tx.timestamp || 0 }); }
+                    });
+                    const perHead = r2((exp - inc) / ms.length);   // > 0 : each student pays, < 0 : each student gets back
+                    try {
+                        await updateDoc(doc(db, ROOMS, room.id), {
+                            status: 'ended', endedAt: Date.now(),
+                            settlement: { totalIncome: r2(inc), totalExpense: r2(exp), perHead, memberCount: ms.length, expenses: exps.slice(-150), truncated: exps.length > 150 }
+                        });
+                        toast('Room ended', 'Students have been asked to submit their portion.', 'success');
+                        if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Budget Room ended', `"${room.name}" has ended. Please submit your portion.`, null, { category: 'exam', buttons: [{ id: 'open_room', text: 'Submit' }], data: { roomId: room.id } }, ms);
+                    } catch (e) { console.error(e); toast('Error', 'Could not end the room.', 'error'); }
+                };
+
+                // ---------- settle popup (students) ----------
+                function showSettle(room) {
+                    const s = room.settlement || {}, per = Number(s.perHead) || 0;
+                    R.settleId = room.id;
+                    $('room-settle-name').textContent = room.name || '';
+                    $('room-settle-exp').textContent = inr(s.totalExpense);
+                    $('room-settle-inc').textContent = inr(s.totalIncome);
+                    $('room-settle-count').textContent = s.memberCount || membersOf(room).length;
+                    const ex = s.expenses || [];
+                    $('room-settle-list').innerHTML = ex.length ? ex.map(e => `<div class="flex items-center justify-between gap-2 px-3 py-2"><div class="min-w-0"><p class="text-xs font-black text-gray-800 truncate">${esc(e.title)}</p><p class="text-[9px] font-bold text-gray-400 truncate">${esc(e.byName)}</p></div><p class="text-xs font-black text-red-600 shrink-0">₹${esc(e.amount)}</p></div>`).join('') + (s.truncated ? '<p class="text-[10px] text-center text-gray-400 py-1.5 font-bold">Showing latest 150 expenses</p>' : '') : '<p class="text-xs text-center text-gray-400 py-3 font-bold">No expenses</p>';
+                    $('room-settle-label').textContent = per > 0 ? 'Your portion to pay' : per < 0 ? 'Your portion to get back' : 'Nothing to pay';
+                    $('room-settle-amount').textContent = inr(Math.abs(per));
+                    const m = $('room-settle-modal'); m.classList.remove('hidden'); m.classList.add('flex');
+                }
+                function closeSettle() { const m = $('room-settle-modal'); if (m) { m.classList.add('hidden'); m.classList.remove('flex'); } R.settleId = null; }
+                window.openSettle = function (id) { const r = R.byId[id]; if (r && isEnded(r) && !isAdmin()) { R.dismissed.delete(id); showSettle(r); } };
+                window.dismissRoomSettle = function () { if (R.settleId) R.dismissed.add(R.settleId); closeSettle(); };
+
+                window.submitRoomShare = async function () {
+                    const room = R.byId[R.settleId]; if (!room || isAdmin()) return;
+                    const btn = $('room-settle-submit');
+                    const method = (document.querySelector('input[name="room-settle-method"]:checked') || {}).value || 'online';
+                    const per = Number((room.settlement || {}).perHead) || 0, amt = Math.abs(per);
+                    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting...';
+                    try {
+                        const me = myId();
+                        if (amt > 0) {
+                            // fixed doc id => submitting twice can never create a duplicate expense
+                            await setDoc(doc(db, window.getCollectionName('students'), me, 'budget', 'room_' + room.id), {
+                                amount: amt, title: `Budget Room: ${room.name}`, type: per > 0 ? 'expense' : 'income',
+                                method, category: 'Budget Room', roomId: room.id, timestamp: Date.now()
+                            });
+                        }
+                        await setDoc(doc(db, ROOMS, room.id), { submitted: { [me]: { at: Date.now(), method } } }, { merge: true });
+                        closeSettle();
+                        toast('Submitted', amt > 0 ? 'Your portion was added to your Budget Manager.' : 'Thanks, all done!', 'success');
+                    } catch (e) { console.error(e); toast('Error', 'Could not submit. Please try again.', 'error'); }
+                    finally { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-check"></i> Submit My Portion'; }
+                };
+
+                // ---------- create / edit / members ----------
+                function renderStudentPicker(selected, readOnly) {
+                    const list = readOnly ? membersOf(curRoom()).map(m => ({ mobile: m, name: nameOf(m) })) : studentList();
+                    $('room-student-list').innerHTML = list.length ? list.map(s => `<label class="flex items-center gap-3 px-3 py-2.5 ${readOnly ? '' : 'cursor-pointer hover:bg-gray-50'}">
+                        <img src="${esc(dp(String(s.mobile)))}" class="w-8 h-8 rounded-full object-cover border border-gray-200 bg-white" alt="">
+                        <span class="flex-1 min-w-0"><span class="block text-sm font-bold text-gray-800 truncate">${esc(s.name || s.mobile)}</span><span class="block text-[10px] font-bold text-gray-400">${esc(s.mobile)}</span></span>
+                        ${readOnly ? '' : `<input type="checkbox" class="room-stu-cb accent-emerald-600 w-4 h-4" value="${esc(s.mobile)}" ${selected.includes(String(s.mobile)) ? 'checked' : ''} onchange="window.syncRoomAllToggle()">`}
+                    </label>`).join('') : '<p class="text-xs text-center text-gray-400 py-4 font-bold">No students found</p>';
+                }
+                window.syncRoomAllToggle = function () {
+                    const cbs = [...document.querySelectorAll('.room-stu-cb')];
+                    $('room-all-toggle').checked = cbs.length > 0 && cbs.every(c => c.checked);
+                };
+                window.toggleRoomAll = function (on) { document.querySelectorAll('.room-stu-cb').forEach(c => c.checked = on); };
+
+                window.openRoomManage = function (id) {
+                    if (!isAdmin()) return;
+                    R.editingId = id; R.readOnly = false;
+                    const room = id ? R.byId[id] : null;
+                    $('room-manage-title').textContent = room ? 'Edit Room' : 'New Budget Room';
+                    $('room-manage-save-label').textContent = room ? 'Save Changes' : 'Create Room';
+                    $('room-name-wrap').classList.remove('hidden'); $('room-all-wrap').classList.remove('hidden'); $('room-manage-footer').classList.remove('hidden');
+                    $('room-name-input').value = room ? (room.name || '') : '';
+                    renderStudentPicker(room ? membersOf(room) : [], false);
+                    $('room-all-toggle').checked = !!(room && room.allStudents);
+                    if (room && room.allStudents) window.toggleRoomAll(true); else window.syncRoomAllToggle();
+                    const m = $('room-manage-modal'); m.classList.remove('hidden'); m.classList.add('flex');
+                };
+                window.openRoomMembers = function () {
+                    const room = curRoom(); if (!room) return;
+                    if (isAdmin() && !isEnded(room)) return window.openRoomManage(room.id);
+                    R.readOnly = true;
+                    $('room-manage-title').textContent = 'Room Members';
+                    $('room-name-wrap').classList.add('hidden'); $('room-all-wrap').classList.add('hidden'); $('room-manage-footer').classList.add('hidden');
+                    renderStudentPicker([], true);
+                    const m = $('room-manage-modal'); m.classList.remove('hidden'); m.classList.add('flex');
+                };
+                window.closeRoomManage = function () { const m = $('room-manage-modal'); m.classList.add('hidden'); m.classList.remove('flex'); };
+
+                window.saveRoomManage = async function () {
+                    if (!isAdmin()) return;
+                    const name = ($('room-name-input').value || '').trim() || 'Budget Room';
+                    const members = [...document.querySelectorAll('.room-stu-cb:checked')].map(c => String(c.value));
+                    const allStudents = $('room-all-toggle').checked;
+                    if (!members.length) return toast('Notice', 'Select at least one student.', 'error');
+                    try {
+                        if (R.editingId) {
+                            const old = membersOf(R.byId[R.editingId]);
+                            await updateDoc(doc(db, ROOMS, R.editingId), { name, members, allStudents });
+                            const added = members.filter(m => !old.includes(m));
+                            if (added.length && typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', buttons: [{ id: 'open_room', text: 'Open' }], data: { roomId: R.editingId } }, added);
+                            toast('Saved', 'Room updated.', 'success');
+                        } else {
+                            await addDoc(collection(db, ROOMS), { name, members, allStudents, status: 'active', createdAt: Date.now(), createdBy: 'admin' });
+                            if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', buttons: [{ id: 'open_room', text: 'Open' }], data: { roomId: 'new' } }, members);
+                            toast('Room created', `"${name}" is ready.`, 'success');
+                        }
+                        window.closeRoomManage();
+                    } catch (e) { console.error(e); toast('Error', 'Could not save the room.', 'error'); }
+                };
+
+                window.deleteBudgetRoom = async function (id) {
+                    const room = R.byId[id]; if (!room || !isAdmin()) return;
+                    const extra = isEnded(room) && submittedCount(room) < membersOf(room).length ? ' Some students have not submitted their portion yet.' : '';
+                    if (!(await window.showCustomConfirm('Delete Room?', `Permanently delete "${room.name}" and all its data?${extra}`, 'Delete', 'Cancel', 'error'))) return;
+                    await cleanupRoom(id);
+                    toast('Deleted', 'Room deleted.', 'success');
+                };
+
+                // ---------- Track (re-uses the Budget Manager track screen) ----------
+                window.openBudgetTrack = function (fromRoom) {
+                    window.__trackSource = fromRoom ? () => R.txs : null;
+                    const h = document.querySelector('#budget-track-view h2');
+                    if (h) h.innerHTML = '<i class="fa-solid fa-chart-pie"></i> ' + (fromRoom ? 'Room Track' : 'Track Budget');
+                    window.location.hash = 'budget-track';
+                };
+                window.__roomTxByChip = function (tx) {
+                    if (!tx || !tx.by) return '';
+                    return `<span class="flex items-center gap-1 min-w-0"><img src="${esc(dp(tx.by))}" class="w-4 h-4 rounded-full object-cover border border-gray-200" alt=""><span class="text-[9px] font-bold text-gray-500 truncate max-w-[80px]">${esc(tx.byName || nameOf(tx.by))}</span></span>`;
+                };
+
+                // ---------- routing ----------
+                window.addEventListener('hashchange', () => {
+                    const h = window.location.hash.replace('#', '');
+                    if (h === 'budget-room') {
+                        if (R.txUnsub) { try { R.txUnsub(); } catch (e) { } R.txUnsub = null; }
+                        R.currentId = null; R.txs = []; window.__trackSource = null;
+                        window.renderBudgetRoomHub();
+                    } else if (h === 'budget-room-detail') {
+                        if (!R.currentId || !R.byId[R.currentId]) { history.replaceState(null, '', '#budget-room'); window.handleHashChange(); window.renderBudgetRoomHub(); return; }
+                        window.renderRoomDetail();
+                    } else if (h === 'budget-track') {
+                        /* keep the room loaded while tracking */
+                    } else if (R.currentId) {
+                        if (R.txUnsub) { try { R.txUnsub(); } catch (e) { } R.txUnsub = null; }
+                        R.currentId = null; R.txs = []; window.__trackSource = null;
+                    }
+                });
+
+                // Start / restart listeners whenever the logged-in user changes (works with the app's existing login flow)
+                setInterval(ensureListeners, 2000);
+                setTimeout(ensureListeners, 500);
+            })();
+
+            // ==============================================
+            // ADMIN -> STUDENT SIDEBAR ALARMS (students only ever see THEIR OWN alarms)
+            // Admin alarms live on the worker; a per-student copy is mirrored to alarm_mirror/{mobile}
+            // and each student only reads their own document.
+            // ==============================================
+            (function () {
+                const $ = id => document.getElementById(id);
+                const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                const cache = {};
+
+                window.__mirrorAlarms = function (alarms) {
+                    if (window.currentRole !== 'admin' || typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured) return;
+                    (window.studentsDB || []).forEach(s => {
+                        const m = String(s.mobile || ''); if (!m || m === 'admin') return;
+                        const mine = (alarms || []).filter(a => (a.targets || []).map(String).includes(m))
+                            .map(a => ({ id: a.id, title: a.title, time: a.time, repeat: a.repeat, date: a.date || '', enabled: !!a.enabled }));
+                        const key = JSON.stringify(mine);
+                        if (cache[m] === key) return;
+                        cache[m] = key;
+                        setDoc(doc(db, 'alarm_mirror', m), { alarms: mine, updatedAt: Date.now() }).catch(e => { delete cache[m]; console.warn('[Alarms] mirror failed', e && e.message); });
+                    });
+                };
+
+                window.setAlarmSidebarVisibility = async function (on) {
+                    if (window.currentRole !== 'admin') return;
+                    try {
+                        await setDoc(doc(db, 'app_settings', 'alarms'), { showToStudents: !!on }, { merge: true });
+                        if (on && window.__alarmsList) { const list = await window.__alarmsList(); if (list) window.__mirrorAlarms(list); }
+                        if (window.showToast) window.showToast('Alarms', on ? 'Students can now see their own alarms in their sidebar.' : 'Alarms hidden from the student sidebar.', 'success');
+                    } catch (e) {
+                        console.error(e);
+                        const cb = $('al-show-students'); if (cb) cb.checked = !on;
+                        if (window.showToast) window.showToast('Alarms', 'Could not update this setting.', 'error');
+                    }
+                };
+
+                window.renderStudentAlarmSidebar = function () {
+                    const sec = $('settings-my-alarms-section'); if (!sec) return;
+                    const ctx = window.budgetRoomCtx || {};
+                    const show = window.currentRole === 'student' && !!ctx.alarmShow;
+                    sec.classList.toggle('hidden', !show);
+                    if (!show) return;
+                    const list = (ctx.alarms || []).slice().sort((a, b) => String(a.time).localeCompare(String(b.time)));
+                    $('settings-my-alarms-list').innerHTML = list.length ? list.map(a => `<div class="flex items-center justify-between gap-2 p-3.5">
+                        <div class="flex items-center gap-3 min-w-0"><div class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm border border-amber-100 shrink-0"><i class="fa-solid fa-bell"></i></div>
+                        <div class="min-w-0"><span class="block text-[13px] font-bold text-slate-900 leading-tight truncate">${esc(a.title)}</span><span class="block text-[10px] font-medium text-slate-400 mt-0.5">${esc(a.time)} • ${a.repeat === 'daily' ? 'Every day' : esc(a.date)}</span></div></div>
+                        <span class="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold ${a.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}">${a.enabled ? 'ON' : 'OFF'}</span></div>`).join('')
+                        : '<p class="text-[11px] font-semibold text-slate-400 text-center py-4">No alarms assigned to you</p>';
+                };
+            })();
+
+            // ==============================================
+            // ADMIN: approve a pending material straight from the push notification
+            // ==============================================
+            window.approveMaterialFromPush = async function (id) {
+                const toast = (t, m, k) => window.showToast && window.showToast(t, m || '', k || 'info');
+                for (let i = 0; i < 40 && window.currentRole !== 'admin'; i++) await new Promise(r => setTimeout(r, 500));
+                if (window.currentRole !== 'admin') return toast('Approve', 'Please log in as admin to approve.', 'error');
+                try {
+                    const ref = doc(db, window.getCollectionName('materials'), id);
+                    const snap = await getDoc(ref);
+                    if (!snap.exists()) return toast('Approve', 'This material no longer exists.', 'info');
+                    const m = snap.data();
+                    if (m.isApproved !== false) return toast('Approve', 'Already approved.', 'info');
+                    await updateDoc(ref, { isApproved: true });
+                    toast('Approved', `"${m.title || 'Material'}" is now live for everyone.`, 'success');
+                    if (window.pushToStudents) window.pushToStudents('New Study Material: ' + (m.title || ''), [m.subject, m.topic].filter(Boolean).join(' • ') || 'Check the Material Hub.');
+                    if (window.renderStudyMaterials) try { window.renderStudyMaterials(); } catch (e) { }
+                } catch (e) { console.error(e); toast('Approve', 'Could not approve: ' + e.message, 'error'); }
+            };
+
             // Budget Track Logic
             window.trackTimeFilter = 'this_week';
             let budgetPieChartInstance = null;
@@ -25378,7 +25674,7 @@ window.saveBudgetTransaction = async function () {
                 const searchQuery = (document.getElementById('track-search').value || '').toLowerCase();
                 const sortType = document.getElementById('track-sort').value;
 
-                let txs = [...(window.budgetsDB || [])];
+                let txs = [...((typeof window.__trackSource === 'function' ? window.__trackSource() : window.budgetsDB) || [])];
 
                 // Filter by time
                 const now = new Date();
@@ -25469,6 +25765,7 @@ window.saveBudgetTransaction = async function () {
                                 <div class="flex items-center gap-2 mt-1">
                                     <p class="text-[10px] font-bold text-gray-400">${new Date(tx.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
                                     ${catStr}
+                                    ${window.__roomTxByChip ? window.__roomTxByChip(tx) : ''}
                                 </div>
                             </div>
                             <div class="text-right shrink-0">
@@ -25811,145 +26108,7 @@ window.saveBudgetTransaction = async function () {
             </div>
         </div>
         <!-- ============================================== -->
-        
-        <!-- ============================================== -->
-        <!-- BUDGET ROOM VIEW -->
-        <!-- ============================================== -->
-        <div id="budget-room-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
-            <div
-                class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
-                <button onclick="window.safeBack()"
-                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
-                    <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
-                </button>
-                <div class="flex-1 min-w-0">
-                    <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 truncate"><i
-                            class="fa-solid fa-people-roof"></i> Budget Room</h2>
-                    <p id="budget-room-subtitle" class="text-[10px] sm:text-xs font-bold text-blue-100 uppercase tracking-widest mt-0.5">Shared Finances</p>
-                </div>
-                <button id="btn-create-budget-room" onclick="window.resetBudgetRoom()"
-                    class="hidden w-auto px-3 h-9 sm:h-10 shrink-0 flex items-center justify-center gap-1.5 bg-blue-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-blue-600 font-bold text-xs sm:text-sm">
-                    <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Create Room</span>
-                </button>
-                <button id="btn-end-budget-room" onclick="window.endBudgetRoom()"
-                    class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-red-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-700">
-                    <i class="fa-solid fa-power-off text-sm sm:text-base"></i>
-                </button>
-                <button id="btn-add-room-students" onclick="window.openRoomStudentsModal()"
-                    class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-white/40">
-                    <i class="fa-solid fa-user-plus text-sm sm:text-base"></i>
-                </button>
-            </div>
-
-            <div class="flex-1 overflow-y-auto p-4 sm:p-5 relative z-0 pb-24">
-                <div class="relative overflow-hidden rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/80 backdrop-blur-3xl transform-gpu mb-4 sm:mb-5 font-sans"
-                    style="background: rgba(255, 255, 255, 0.75);">
-                    <div class="absolute -top-10 -left-10 w-48 h-48 bg-blue-300/20 rounded-full blur-[40px] pointer-events-none"></div>
-                    <div class="absolute -bottom-10 -right-10 w-48 h-48 bg-indigo-300/20 rounded-full blur-[40px] pointer-events-none"></div>
-                    <div class="relative z-10 p-5">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="font-bold text-blue-900 text-base uppercase">ROOM BALANCE</h3>
-                        </div>
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="text-3xl font-black text-gray-900" id="budget-room-total-expense">₹0</div>
-                        </div>
-                        <div class="text-xs font-bold text-gray-500 mb-2">Members (<span id="room-members-count">0</span>)</div>
-                        <div id="room-members-list" class="flex flex-wrap gap-2"></div>
-                    </div>
-                </div>
-
-                <h3 class="font-black text-gray-900 mb-3 px-1 tracking-tight text-sm uppercase">Room Transactions</h3>
-                <div id="budget-room-transactions-list" class="space-y-2.5"></div>
-            </div>
-
-            <button onclick="window.openAddRoomTransactionModal()"
-                class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center shadow-xl active:scale-90 transition-transform z-50 group border border-blue-400">
-                <i class="fa-solid fa-plus text-xl group-hover:rotate-90 transition-transform duration-300"></i>
-            </button>
-        </div>
-
-        <div id="budget-room-add-modal"
-            class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end justify-center transition-opacity p-0 sm:items-center sm:p-4 opacity-0 pointer-events-none">
-            <div id="budget-room-add-modal-content"
-                class="bg-white w-full sm:w-[450px] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col transform translate-y-full transition-transform duration-300 overflow-hidden">
-                <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                    <h3 class="font-black text-gray-900 text-lg">Add Room Transaction</h3>
-                    <button onclick="window.closeAddRoomTransactionModal()"
-                        class="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-900 active:scale-95 transition-all shadow-sm"><i
-                            class="fa-solid fa-xmark"></i></button>
-                </div>
-                <div class="p-5 space-y-4">
-                    <div>
-                        <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Amount (₹)</label>
-                        <input type="number" id="budget-room-amount"
-                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-lg font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
-                            placeholder="0">
-                    </div>
-                    <div>
-                        <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Title / Note</label>
-                        <input type="text" id="budget-room-title"
-                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all"
-                            placeholder="E.g., Groceries, Pizza">
-                    </div>
-                </div>
-                <div class="p-5 border-t border-gray-100 bg-white">
-                    <button onclick="window.saveRoomTransaction()"
-                        class="w-full bg-gray-900 hover:bg-black text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-check"></i> Save Transaction
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div id="budget-room-students-modal"
-            class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end justify-center transition-opacity p-0 sm:items-center sm:p-4 opacity-0 pointer-events-none">
-            <div id="budget-room-students-modal-content"
-                class="bg-white w-full sm:w-[450px] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[80vh] transform translate-y-full transition-transform duration-300 overflow-hidden">
-                <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                    <h3 class="font-black text-gray-900 text-lg">Manage Room Students</h3>
-                    <button onclick="window.closeRoomStudentsModal()"
-                        class="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-900 active:scale-95 transition-all shadow-sm"><i
-                            class="fa-solid fa-xmark"></i></button>
-                </div>
-                <div class="p-5 overflow-y-auto flex-1 space-y-2" id="budget-room-students-list">
-                    <!-- Checkboxes injected here -->
-                </div>
-                <div class="p-5 border-t border-gray-100 bg-white">
-                    <button onclick="window.saveRoomStudents()"
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-check"></i> Save Members
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div id="budget-room-ended-modal"
-            class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex items-center justify-center transition-opacity p-4 opacity-0 pointer-events-none">
-            <div id="budget-room-ended-modal-content" class="bg-white w-full sm:w-[400px] rounded-3xl shadow-2xl p-6 text-center transform scale-95 transition-transform duration-300">
-                <div class="w-20 h-20 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-4 text-red-500 text-4xl">
-                    <i class="fa-solid fa-flag-checkered"></i>
-                </div>
-                <h3 class="font-black text-2xl text-gray-900 mb-2">Room Ended!</h3>
-                <p class="text-sm font-bold text-gray-500 mb-6">The budget room has been closed. Here is your portion to submit to your personal budget.</p>
-                <div class="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
-                    <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Your Portion</p>
-                    <p class="text-4xl font-black text-gray-900" id="budget-room-portion-amount">₹0</p>
-                </div>
-                <div class="mb-6 text-left">
-                    <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Payment Method</label>
-                    <select id="budget-room-submit-method" class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all">
-                        <option value="online">Online / UPI</option>
-                        <option value="cash">Cash</option>
-                    </select>
-                </div>
-                <button onclick="window.submitRoomPortion()"
-                    class="w-full bg-gray-900 hover:bg-black text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider">
-                    Submit to My Budget
-                </button>
-            </div>
-        </div>
-
-<!-- BUDGET MANAGER VIEW -->
+        <!-- BUDGET MANAGER VIEW -->
         <!-- ============================================== -->
         <div id="budget-manager-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
             <div
@@ -25964,12 +26123,11 @@ window.saveBudgetTransaction = async function () {
                     <p class="text-[10px] sm:text-xs font-bold text-green-100 uppercase tracking-widest mt-0.5">Manage
                         Your Finances</p>
                 </div>
-                
-                <button onclick="window.location.hash='budget-room'"
-                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-blue-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-blue-600" title="Budget Room">
-                    <i class="fa-solid fa-people-roof text-sm sm:text-base"></i>
+                <button onclick="window.location.hash='budget-room'" title="Budget Room"
+                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-white/30">
+                    <i class="fa-solid fa-door-open text-sm sm:text-base"></i>
                 </button>
-<button onclick="window.resetStudentBudget()"
+                <button onclick="window.resetStudentBudget()"
                     class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-green-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-600">
                     <i class="fa-solid fa-rotate-left text-sm sm:text-base"></i>
                 </button>
@@ -25988,7 +26146,7 @@ window.saveBudgetTransaction = async function () {
                     <div class="relative z-10 p-5">
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="font-bold text-green-900 text-base">MY BALANCE</h3>
-                            <button onclick="window.location.hash='budget-track'"
+                            <button onclick="window.openBudgetTrack(false)"
                                 class="bg-white/80 text-green-700 px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm border border-green-200 hover:bg-white transition-all">
                                 <i class="fa-solid fa-chart-pie"></i> Track
                             </button>
@@ -26183,6 +26341,238 @@ window.saveBudgetTransaction = async function () {
             </div>
         </div>
 
+        <!-- ============================================== -->
+        <!-- BUDGET ROOM : HUB (list of rooms) -->
+        <!-- ============================================== -->
+        <div id="budget-room-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[85] flex flex-col slide-left">
+            <div
+                class="bg-gradient-to-r from-green-500 to-emerald-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+                <button onclick="window.safeBack()"
+                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+                    <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
+                </button>
+                <div class="flex-1 min-w-0">
+                    <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 truncate"><i
+                            class="fa-solid fa-door-open"></i> Budget Room</h2>
+                    <p class="text-[10px] sm:text-xs font-bold text-green-100 uppercase tracking-widest mt-0.5">Shared
+                        Group Budgets</p>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 sm:p-5 relative z-0 pb-24">
+                <div id="room-hub-list" class="space-y-3"></div>
+            </div>
+            <button id="room-create-fab" onclick="window.openRoomManage(null)"
+                class="hidden fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full items-center justify-center shadow-xl active:scale-90 transition-transform z-50 group border border-green-400">
+                <i class="fa-solid fa-plus text-xl group-hover:rotate-90 transition-transform duration-300"></i>
+            </button>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- BUDGET ROOM : DETAIL (same interface as Budget Manager) -->
+        <!-- ============================================== -->
+        <div id="budget-room-detail-view"
+            class="hidden-view absolute inset-0 bg-[#f8fafc] z-[86] flex flex-col slide-left">
+            <div
+                class="bg-gradient-to-r from-green-500 to-emerald-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+                <button onclick="window.safeBack()"
+                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
+                    <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
+                </button>
+                <div class="flex-1 min-w-0">
+                    <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 truncate"><i
+                            class="fa-solid fa-door-open"></i> <span id="room-title" class="truncate">Budget Room</span>
+                    </h2>
+                    <p id="room-subtitle"
+                        class="text-[10px] sm:text-xs font-bold text-green-100 uppercase tracking-widest mt-0.5 truncate">
+                        Shared Budget</p>
+                </div>
+                <!-- Admin only: reset + end (symbol only) -->
+                <button id="room-btn-reset" onclick="window.resetBudgetRoom()" title="Reset room"
+                    class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 items-center justify-center bg-green-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-600">
+                    <i class="fa-solid fa-rotate-left text-sm sm:text-base"></i>
+                </button>
+                <button id="room-btn-end" onclick="window.endBudgetRoom()" title="End room"
+                    class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 items-center justify-center bg-red-500 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-600 border border-red-300/60">
+                    <i class="fa-solid fa-power-off text-sm sm:text-base"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 sm:p-5 relative z-0 pb-24">
+                <!-- Ended banner -->
+                <div id="room-ended-banner" class="hidden mb-4"></div>
+
+                <!-- Summary Card -->
+                <div class="relative overflow-hidden rounded-[24px] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/80 backdrop-blur-3xl transform-gpu mb-4 sm:mb-5 font-sans"
+                    style="background: rgba(255, 255, 255, 0.75);">
+                    <div class="absolute -top-10 -left-10 w-48 h-48 bg-green-300/20 rounded-full blur-[40px] pointer-events-none"></div>
+                    <div class="absolute -bottom-10 -right-10 w-48 h-48 bg-emerald-300/20 rounded-full blur-[40px] pointer-events-none"></div>
+                    <div class="relative z-10 p-5">
+                        <div class="flex justify-between items-center mb-4 gap-2">
+                            <h3 class="font-bold text-green-900 text-base">ROOM BALANCE</h3>
+                            <div class="flex items-center gap-2">
+                                <button onclick="window.openRoomMembers()"
+                                    class="bg-white/80 text-green-700 px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm border border-green-200 hover:bg-white transition-all">
+                                    <i class="fa-solid fa-users"></i> <span id="room-member-count">0</span>
+                                </button>
+                                <button onclick="window.openBudgetTrack(true)"
+                                    class="bg-white/80 text-green-700 px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-sm border border-green-200 hover:bg-white transition-all">
+                                    <i class="fa-solid fa-chart-pie"></i> Track
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="text-3xl font-black text-gray-900" id="room-balance">₹0</div>
+                            <div id="room-members-strip"></div>
+                        </div>
+
+                        <div class="flex justify-center mb-4 sm:mb-5">
+                            <div
+                                class="inline-flex items-center bg-white/60 backdrop-blur-md rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-white/80 px-1.5 py-1.5 transition-transform hover:scale-105 duration-300">
+                                <div class="flex items-center gap-2 px-3 sm:px-4 py-1.5" title="Online Balance">
+                                    <div class="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-sm">
+                                        <i class="fa-solid fa-mobile text-white text-[10px] sm:text-[11px]"></i>
+                                    </div>
+                                    <span id="room-online-balance" class="text-sm sm:text-base font-black text-gray-900 tracking-tight">₹0</span>
+                                </div>
+                                <div class="w-0.5 h-6 bg-gradient-to-b from-transparent via-gray-200 to-transparent mx-1"></div>
+                                <div class="flex items-center gap-2 px-3 sm:px-4 py-1.5" title="Cash Balance">
+                                    <div class="w-6 h-6 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-sm">
+                                        <i class="fa-solid fa-wallet text-white text-[10px] sm:text-[11px]"></i>
+                                    </div>
+                                    <span id="room-cash-balance" class="text-sm sm:text-base font-black text-gray-900 tracking-tight">₹0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-green-50 rounded-xl p-3 border border-green-100 shadow-sm">
+                                <p class="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-down"></i> Weekly Income</p>
+                                <p class="text-lg font-black text-green-700 leading-none mb-1.5" id="room-total-income">₹0</p>
+                                <div class="border-t border-green-200/50 mt-1.5 pt-1.5 flex justify-between items-center">
+                                    <span class="text-[9px] font-bold text-green-600/80 uppercase">Life time</span>
+                                    <span class="text-[11px] font-black text-green-700" id="room-lifetime-income">₹0</span>
+                                </div>
+                            </div>
+                            <div class="bg-red-50 rounded-xl p-3 border border-red-100 shadow-sm">
+                                <p class="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1"><i class="fa-solid fa-arrow-up"></i> Weekly Expense</p>
+                                <p class="text-lg font-black text-red-700 leading-none mb-1.5" id="room-total-expense">₹0</p>
+                                <div class="border-t border-red-200/50 mt-1.5 pt-1.5 flex justify-between items-center">
+                                    <span class="text-[9px] font-bold text-red-600/80 uppercase">Life time</span>
+                                    <span class="text-[11px] font-black text-red-700" id="room-lifetime-expense">₹0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="flex gap-2 mb-4 overflow-x-auto no-scrollbar py-1">
+                    <button onclick="window.filterBudgetRoom('all')" id="room-filter-all"
+                        class="shrink-0 px-4 py-1.5 bg-gray-900 text-white rounded-full text-xs font-bold tracking-wide transition-all shadow-md">All</button>
+                    <button onclick="window.filterBudgetRoom('income')" id="room-filter-income"
+                        class="shrink-0 px-4 py-1.5 bg-white text-gray-600 rounded-full text-xs font-bold tracking-wide transition-all shadow-sm border border-gray-200">Income</button>
+                    <button onclick="window.filterBudgetRoom('expense')" id="room-filter-expense"
+                        class="shrink-0 px-4 py-1.5 bg-white text-gray-600 rounded-full text-xs font-bold tracking-wide transition-all shadow-sm border border-gray-200">Expense</button>
+                </div>
+
+                <h3 class="font-black text-gray-900 mb-3 px-1 tracking-tight text-sm uppercase">Recent Transactions</h3>
+                <div id="room-transactions-list" class="space-y-2.5"></div>
+            </div>
+
+            <button id="room-fab" onclick="window.openRoomAddTransaction()"
+                class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full flex items-center justify-center shadow-xl active:scale-90 transition-transform z-50 group hover:shadow-green-500/30 border border-green-400">
+                <i class="fa-solid fa-plus text-xl group-hover:rotate-90 transition-transform duration-300"></i>
+            </button>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- BUDGET ROOM : Create / Edit / Members modal -->
+        <!-- ============================================== -->
+        <div id="room-manage-modal"
+            class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] items-end justify-center sm:items-center sm:p-4">
+            <div class="bg-white w-full sm:w-[450px] max-h-[92vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+                <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+                    <h3 id="room-manage-title" class="font-black text-gray-900 text-lg">New Budget Room</h3>
+                    <button onclick="window.closeRoomManage()"
+                        class="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-900 active:scale-95 transition-all shadow-sm"><i
+                            class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="p-5 space-y-4 overflow-y-auto">
+                    <div id="room-name-wrap">
+                        <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Room Name</label>
+                        <input type="text" id="room-name-input" maxlength="40" placeholder="E.g., Goa Trip, Hostel Mess"
+                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-all">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-[11px] font-black text-gray-700 uppercase tracking-wider">Students</label>
+                            <label id="room-all-wrap" class="flex items-center gap-2 text-[11px] font-bold text-gray-600 cursor-pointer">
+                                <input type="checkbox" id="room-all-toggle" onchange="window.toggleRoomAll(this.checked)" class="accent-emerald-600 w-4 h-4">
+                                All students
+                            </label>
+                        </div>
+                        <div id="room-student-list" class="max-h-64 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100"></div>
+                    </div>
+                </div>
+                <div id="room-manage-footer" class="p-5 border-t border-gray-100 bg-white shrink-0">
+                    <button onclick="window.saveRoomManage()"
+                        class="w-full bg-gray-900 hover:bg-black text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-check"></i> <span id="room-manage-save-label">Create Room</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- BUDGET ROOM : "Room ended" popup (students) -->
+        <!-- ============================================== -->
+        <div id="room-settle-modal"
+            class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[9990] items-center justify-center p-4">
+            <div class="bg-white w-full max-w-[420px] max-h-[92vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+                <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-5 text-center shrink-0">
+                    <div class="w-12 h-12 mx-auto rounded-full bg-white/20 flex items-center justify-center mb-2"><i class="fa-solid fa-flag-checkered text-xl"></i></div>
+                    <h3 class="font-black text-lg leading-tight">Room Ended</h3>
+                    <p id="room-settle-name" class="text-xs font-bold text-green-100 mt-1 truncate"></p>
+                </div>
+                <div class="p-5 space-y-4 overflow-y-auto">
+                    <p class="text-sm font-bold text-gray-600 text-center">The admin has ended this room. Please submit your portion to add it to your Budget Manager.</p>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-red-50 border border-red-100 rounded-xl p-2"><p class="text-[9px] font-bold text-red-500 uppercase">Expense</p><p id="room-settle-exp" class="text-sm font-black text-red-700">₹0</p></div>
+                        <div class="bg-green-50 border border-green-100 rounded-xl p-2"><p class="text-[9px] font-bold text-green-600 uppercase">Income</p><p id="room-settle-inc" class="text-sm font-black text-green-700">₹0</p></div>
+                        <div class="bg-gray-50 border border-gray-200 rounded-xl p-2"><p class="text-[9px] font-bold text-gray-500 uppercase">Students</p><p id="room-settle-count" class="text-sm font-black text-gray-800">0</p></div>
+                    </div>
+                    <div>
+                        <p class="text-[11px] font-black text-gray-700 uppercase tracking-wider mb-2">Expenses</p>
+                        <div id="room-settle-list" class="max-h-40 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100 bg-white"></div>
+                    </div>
+                    <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-center">
+                        <p id="room-settle-label" class="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Your portion</p>
+                        <p id="room-settle-amount" class="text-3xl font-black text-gray-900 mt-1">₹0</p>
+                    </div>
+                    <div>
+                        <p class="text-[11px] font-black text-gray-700 uppercase tracking-wider mb-1.5">Save this in my Budget Manager as</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="cursor-pointer">
+                                <input type="radio" name="room-settle-method" value="online" class="peer hidden" checked>
+                                <div class="peer-checked:bg-indigo-50 peer-checked:border-indigo-500 peer-checked:text-indigo-700 flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-500 transition-all"><i class="fa-solid fa-building-columns"></i> Online</div>
+                            </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="room-settle-method" value="cash" class="peer hidden">
+                                <div class="peer-checked:bg-amber-50 peer-checked:border-amber-500 peer-checked:text-amber-700 flex items-center justify-center gap-2 py-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-500 transition-all"><i class="fa-solid fa-money-bill"></i> Offline</div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-5 border-t border-gray-100 bg-white shrink-0 space-y-2">
+                    <button id="room-settle-submit" onclick="window.submitRoomShare()"
+                        class="w-full bg-gray-900 hover:bg-black text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-check"></i> Submit My Portion
+                    </button>
+                    <button onclick="window.dismissRoomSettle()" class="w-full text-xs font-bold text-gray-400 py-1.5">Later</button>
+                </div>
+            </div>
+        </div>
+
         <!-- NEW: Track Transactions View -->
         <div id="budget-track-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[90] flex flex-col">
             <div
@@ -26357,6 +26747,11 @@ window.saveBudgetTransaction = async function () {
   <div class="bg-white w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-4 space-y-3 shadow-2xl">
     <div class="flex items-center justify-between"><h3 class="font-black text-lg text-slate-900"><i class="fa-solid fa-bell text-amber-500"></i> Alarms</h3>
       <button onclick="closeAlarmManager()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button></div>
+    <label class="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3 cursor-pointer">
+      <span class="min-w-0"><span class="block text-[13px] font-bold text-slate-900 leading-tight">Show alarms in student sidebar</span>
+      <span class="block text-[10px] font-medium text-slate-500 mt-0.5">Each student only sees their own alarms</span></span>
+      <input id="al-show-students" type="checkbox" onchange="setAlarmSidebarVisibility(this.checked)" class="accent-amber-600 w-5 h-5 shrink-0">
+    </label>
     <div id="alarm-list" class="space-y-2 text-sm"></div>
     <div class="border-t border-slate-200 pt-3 space-y-2 text-sm">
       <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">New alarm (India time)</p>
@@ -26378,7 +26773,7 @@ window.saveBudgetTransaction = async function () {
   <div id="ar-time" class="text-5xl font-black mt-4"></div>
   <div id="ar-title" class="text-xl font-bold mt-2 max-w-xs break-words"></div>
   <button onclick="alarmSnooze()" class="mt-10 w-full max-w-xs py-3.5 rounded-2xl bg-white/15 border border-white/30 font-bold active:scale-95">Snooze 1 min</button>
-  <button onclick="alarmAck()" class="mt-3 w-full max-w-xs py-4 rounded-2xl bg-emerald-500 font-black text-lg active:scale-95">I know</button>
+  <button onclick="alarmAck()" class="mt-3 w-full max-w-xs py-4 rounded-2xl bg-emerald-500 font-black text-lg active:scale-95">Alarm I know</button>
 </div>
 </body>
 
