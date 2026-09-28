@@ -3703,6 +3703,21 @@
                     </div>
                 </div>
 
+                <!-- Section: Budget Room (Admin Only) -->
+                <div id="settings-budget-room-section" class="hidden">
+                    <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">Management</span>
+                    <div class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden mb-6">
+                        <button onclick="window.location.hash='budget-manager'; closeSettingsMenu();" class="w-full flex items-center justify-between p-3.5 hover:bg-emerald-50/50 active:bg-emerald-50 transition-colors">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm border border-emerald-100 shrink-0"><i class="fa-solid fa-people-roof"></i></div>
+                                <div class="text-left min-w-0"><span class="block text-[13px] font-bold text-slate-900 leading-tight">Budget Manager</span>
+                                    <span class="block text-[10px] font-medium text-slate-400 mt-0.5">Manage budget and rooms</span></div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-slate-300 text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Section: Alarms (Admin Only) -->
                 <div id="settings-alarm-section" class="hidden">
                     <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">Alarms</span>
@@ -9764,19 +9779,32 @@
             const formDiv = document.querySelector("#alarm-admin-modal .border-t");
             if(formDiv) formDiv.style.display = isAdmin ? 'block' : 'none';
 
-            if(isAdmin) {
-                $("al-students").innerHTML = students().map(x => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" value="${esc(x.m)}"> ${esc(x.n)} <span class="text-slate-400">${esc(x.m)}</span></label>`).join("");
+            if (!isAdmin) {
+                if (window.rtdb && window.firebaseDatabase) {
+                    const { ref, get } = window.firebaseDatabase;
+                    try {
+                        const snapshot = await get(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'));
+                        if (snapshot.exists()) {
+                            AL = snapshot.val() || [];
+                        } else {
+                            AL = [];
+                        }
+                    } catch(e) { AL = []; }
+                }
+                AL = AL.filter(a => (a.targets && a.targets.includes(window.loggedInMobile)) || a.all);
+                renderAlarms();
+                return;
             }
+
+            $("al-students").innerHTML = students().map(x => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" value="${esc(x.m)}"> ${esc(x.n)} <span class="text-slate-400">${esc(x.m)}</span></label>`).join("");
             let d = await api("list"); if (!d) return; AL = d.alarms;
             
-            if(isAdmin) {
-                const all = students().map(x => x.m), cur = all.slice().sort().join();
-                const stale = AL.filter(a => a.all && all.length && a.targets.slice().sort().join() !== cur);
-                for (const a of stale) await api("save", { alarm: { ...a, targets: all } });
-                if (stale.length && (d = await api("list"))) AL = d.alarms;
-            } else {
-                AL = AL.filter(a => (a.targets && a.targets.includes(window.loggedInMobile)) || a.all);
-            }
+            const all = students().map(x => x.m), cur = all.slice().sort().join();
+            const stale = AL.filter(a => a.all && all.length && a.targets.slice().sort().join() !== cur);
+            for (const a of stale) await api("save", { alarm: { ...a, targets: all } });
+            if (stale.length && (d = await api("list"))) AL = d.alarms;
+            
+            if (window.rtdb && window.firebaseDatabase) { const { ref, set } = window.firebaseDatabase; set(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'), AL); }
             renderAlarms();
         };
         window.closeAlarmManager = () => $("alarm-admin-modal").classList.add("hidden");
@@ -9788,11 +9816,12 @@
             if (!targets.length) return toast("Alarms", "Choose at least one student.", "error");
             const d = await api("save", { alarm: { title, time, repeat, date, all, targets, enabled: true } }); if (!d) return;
             AL = d.alarms; renderAlarms(); $("al-title").value = ""; toast("Alarm added", title + " • " + time, "success");
+            if (window.rtdb && window.firebaseDatabase) { const { ref, set } = window.firebaseDatabase; set(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'), AL); }
         };
-        window.toggleAlarm = async function (id) { const a = AL.find(x => x.id === id); if (!a) return; const d = await api("save", { alarm: { ...a, enabled: !a.enabled } }); if (d) { AL = d.alarms; renderAlarms(); } };
+        window.toggleAlarm = async function (id) { const a = AL.find(x => x.id === id); if (!a) return; const d = await api("save", { alarm: { ...a, enabled: !a.enabled } }); if (d) { AL = d.alarms; renderAlarms(); if (window.rtdb && window.firebaseDatabase) { const { ref, set } = window.firebaseDatabase; set(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'), AL); } } };
         window.deleteAlarm = async function (id) {
             if (!(await window.showCustomConfirm("Delete Alarm", "Delete this alarm?", "Delete", "Cancel", "info"))) return;
-            const d = await api("delete", { id }); if (d) { AL = d.alarms; renderAlarms(); }
+            const d = await api("delete", { id }); if (d) { AL = d.alarms; renderAlarms(); if (window.rtdb && window.firebaseDatabase) { const { ref, set } = window.firebaseDatabase; set(ref(window.rtdb, window.isGlobalTestMode ? 'test_alarms' : 'alarms'), AL); } }
         };
 
         // ---------------- STUDENT: ringing screen (Snooze = 1 min, "Alarm I know" = stop) ----------------
@@ -10794,6 +10823,7 @@
                     const testModeSection = document.getElementById('settings-test-mode-section');
                     if (testModeSection) testModeSection.classList.remove('hidden');
                     document.getElementById('settings-alarm-section')?.classList.remove('hidden');
+                    document.getElementById('settings-budget-room-section')?.classList.remove('hidden');
                     window.syncTestModeUI();
                 } else {
                     const student = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
@@ -25762,7 +25792,7 @@ window.saveBudgetTransaction = async function () {
         <div id="budget-room-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
             <div
                 class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
-                <button onclick="window.safeBack()"
+                <button onclick="window.location.hash='budget-manager'"
                     class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
                     <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
                 </button>
@@ -25891,7 +25921,7 @@ window.saveBudgetTransaction = async function () {
         <div id="budget-manager-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
             <div
                 class="bg-gradient-to-r from-green-500 to-emerald-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
-                <button onclick="window.safeBack()"
+                <button onclick="window.location.hash='budget-manager'"
                     class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
                     <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
                 </button>
