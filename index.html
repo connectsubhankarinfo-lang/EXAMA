@@ -25486,17 +25486,17 @@ YOUR DIRECTIVES:
                     if (!(await window.showCustomConfirm('End Room?', `"${room.name}" will be locked and its total will be divided equally among ${ms.length} student${ms.length === 1 ? '' : 's'}. Each student will be asked to submit their portion.`, 'End Room', 'Cancel', 'error'))) return;
 
                     let inc = 0, exp = 0;
-                    const exps = [];
+                    const exps = [], spentBy = {};
                     [...R.txs].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)).forEach(tx => {
                         const a = Number(tx.amount) || 0;
                         if (tx.type === 'income') inc += a;
-                        else { exp += a; exps.push({ title: String(tx.title || 'Expense').slice(0, 60), amount: a, byName: String(tx.byName || nameOf(tx.by)).slice(0, 40), method: tx.method || '', timestamp: tx.timestamp || 0 }); }
+                        else { exp += a; spentBy[String(tx.by)] = r2((spentBy[String(tx.by)] || 0) + a); exps.push({ title: String(tx.title || 'Expense').slice(0, 60), amount: a, by: String(tx.by || ''), byName: String(tx.byName || nameOf(tx.by)).slice(0, 40), method: tx.method || '', timestamp: tx.timestamp || 0 }); }
                     });
-                    const perHead = r2((exp - inc) / ms.length);   // > 0 : each student pays, < 0 : each student gets back
+                    const perHead = r2(exp / ms.length);   // expenses only - income is NOT counted in each student's portion
                     try {
                         await updateDoc(doc(db, ROOMS, room.id), {
                             status: 'ended', endedAt: Date.now(),
-                            settlement: { totalIncome: r2(inc), totalExpense: r2(exp), perHead, memberCount: ms.length, expenses: exps.slice(-150), truncated: exps.length > 150 }
+                            settlement: { totalIncome: r2(inc), totalExpense: r2(exp), perHead, spentBy, memberCount: ms.length, expenses: exps.slice(-150), truncated: exps.length > 150 }
                         });
                         toast('Room ended', 'Students have been asked to submit their portion.', 'success');
                         if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Budget Room ended', `"${room.name}" has ended. Please submit your portion.`, null, { category: 'exam', buttons: [{ id: 'open_room', text: 'Submit' }], data: { roomId: room.id } }, ms);
@@ -25504,16 +25504,28 @@ YOUR DIRECTIVES:
                 };
 
                 // ---------- settle popup (students) ----------
+                // Portion is based on EXPENSES ONLY (also fixes rooms ended before this change)
+                function settlePer(room) {
+                    const s = room.settlement || {};
+                    const n = Number(s.memberCount) || membersOf(room).length || 1;
+                    return s.totalExpense != null ? r2((Number(s.totalExpense) || 0) / n) : (Number(s.perHead) || 0);
+                }
+                // How much THIS student spent in the room
+                function mySpent(room) {
+                    const s = room.settlement || {}, me = myId();
+                    if (s.spentBy && s.spentBy[me] != null) return Number(s.spentBy[me]) || 0;
+                    return (s.expenses || []).filter(e => (e.by ? String(e.by) === me : e.byName === myName())).reduce((t, e) => t + (Number(e.amount) || 0), 0);
+                }
                 function showSettle(room) {
-                    const s = room.settlement || {}, per = Number(s.perHead) || 0;
+                    const s = room.settlement || {}, per = settlePer(room);
                     R.settleId = room.id;
                     $('room-settle-name').textContent = room.name || '';
                     $('room-settle-exp').textContent = inr(s.totalExpense);
-                    $('room-settle-inc').textContent = inr(s.totalIncome);
+                    $('room-settle-inc').textContent = inr(mySpent(room));
                     $('room-settle-count').textContent = s.memberCount || membersOf(room).length;
                     const ex = s.expenses || [];
                     $('room-settle-list').innerHTML = ex.length ? ex.map(e => `<div class="flex items-center justify-between gap-2 px-3 py-2"><div class="min-w-0"><p class="text-xs font-black text-gray-800 truncate">${esc(e.title)}</p><p class="text-[9px] font-bold text-gray-400 truncate">${esc(e.byName)}</p></div><p class="text-xs font-black text-red-600 shrink-0">₹${esc(e.amount)}</p></div>`).join('') + (s.truncated ? '<p class="text-[10px] text-center text-gray-400 py-1.5 font-bold">Showing latest 150 expenses</p>' : '') : '<p class="text-xs text-center text-gray-400 py-3 font-bold">No expenses</p>';
-                    $('room-settle-label').textContent = per > 0 ? 'Your portion to pay' : per < 0 ? 'Your portion to get back' : 'Nothing to pay';
+                    $('room-settle-label').textContent = per > 0 ? 'Your portion to pay' : 'Nothing to pay';
                     $('room-settle-amount').textContent = inr(Math.abs(per));
                     const m = $('room-settle-modal'); m.classList.remove('hidden'); m.classList.add('flex');
                 }
@@ -25525,7 +25537,7 @@ YOUR DIRECTIVES:
                     const room = R.byId[R.settleId]; if (!room || isAdmin()) return;
                     const btn = $('room-settle-submit');
                     const method = (document.querySelector('input[name="room-settle-method"]:checked') || {}).value || 'online';
-                    const per = Number((room.settlement || {}).perHead) || 0, amt = Math.abs(per);
+                    const per = settlePer(room), amt = Math.abs(per);
                     btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Submitting...';
                     try {
                         const me = myId();
@@ -26617,15 +26629,15 @@ YOUR DIRECTIVES:
             class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[9990] items-center justify-center p-4">
             <div class="bg-white w-full max-w-[420px] max-h-[92vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
                 <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-5 text-center shrink-0">
-                    <div class="w-12 h-12 mx-auto rounded-full bg-white/20 flex items-center justify-center mb-2"><i class="fa-solid fa-flag-checkered text-xl"></i></div>
+                    <div class="w-12 h-12 mx-auto rounded-full bg-white/20 flex items-center justify-center mb-2"><i class="fa-solid fa-hourglass-end text-xl"></i></div>
                     <h3 class="font-black text-lg leading-tight">Room Ended</h3>
                     <p id="room-settle-name" class="text-xs font-bold text-green-100 mt-1 truncate"></p>
                 </div>
                 <div class="p-5 space-y-4 overflow-y-auto">
                     <p class="text-sm font-bold text-gray-600 text-center">The admin has ended this room. Please submit your portion to add it to your Budget Manager.</p>
                     <div class="grid grid-cols-3 gap-2 text-center">
-                        <div class="bg-red-50 border border-red-100 rounded-xl p-2"><p class="text-[9px] font-bold text-red-500 uppercase">Expense</p><p id="room-settle-exp" class="text-sm font-black text-red-700">₹0</p></div>
-                        <div class="bg-green-50 border border-green-100 rounded-xl p-2"><p class="text-[9px] font-bold text-green-600 uppercase">Income</p><p id="room-settle-inc" class="text-sm font-black text-green-700">₹0</p></div>
+                        <div class="bg-red-50 border border-red-100 rounded-xl p-2"><p class="text-[9px] font-bold text-red-500 uppercase">Room Spent</p><p id="room-settle-exp" class="text-sm font-black text-red-700">₹0</p></div>
+                        <div class="bg-green-50 border border-green-100 rounded-xl p-2"><p class="text-[9px] font-bold text-green-600 uppercase">You Spent</p><p id="room-settle-inc" class="text-sm font-black text-green-700">₹0</p></div>
                         <div class="bg-gray-50 border border-gray-200 rounded-xl p-2"><p class="text-[9px] font-bold text-gray-500 uppercase">Students</p><p id="room-settle-count" class="text-sm font-black text-gray-800">0</p></div>
                     </div>
                     <div>
