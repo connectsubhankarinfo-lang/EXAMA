@@ -9700,7 +9700,8 @@ html.is-tablet .wac-top{padding-top:max(4rem,env(safe-area-inset-top))}
     // External ID = the logged-in mobile number. Logout -> guest_<id>.
     // ==========================================================================
     const LINK_URL = "https://os-login.connect-subhankar-info.workers.dev";   // NO trailing slash
-    const SUB_KEY = "exama_os_sub";
+    const SUB_KEY = "exama_os_sub2";        // bumped: forgets any subscription id that an older build may have bound to the WRONG phone
+    const DEV_KEY = "exama_os_device";      // random id that identifies THIS phone/install (survives logout, sent to the Worker)
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const log = (...a) => console.log("[OS-Link]", ...a);
     const ua = navigator.userAgent;
@@ -9713,6 +9714,17 @@ html.is-tablet .wac-top{padding-top:max(4rem,env(safe-area-inset-top))}
         let v = getCookie(SUB_KEY);
         if (!UUID.test(v)) { try { v = localStorage.getItem(SUB_KEY) || ""; } catch (e) { v = ""; } }
         return UUID.test(v) ? v : "";
+    };
+    const getDevice = () => {
+        let v = getCookie(DEV_KEY);
+        if (!UUID.test(v)) { try { v = localStorage.getItem(DEV_KEY) || ""; } catch (e) { v = ""; } }
+        if (!UUID.test(v)) {
+            try { v = crypto.randomUUID(); }
+            catch (e) { v = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }); }
+        }
+        document.cookie = `${DEV_KEY}=${v}; max-age=63072000; path=/; SameSite=Lax`;
+        try { localStorage.setItem(DEV_KEY, v); } catch (e) {}
+        return v;
     };
     const setSub = id => {
         document.cookie = `${SUB_KEY}=${id}; max-age=63072000; path=/; SameSite=Lax`;
@@ -9730,7 +9742,7 @@ html.is-tablet .wac-top{padding-top:max(4rem,env(safe-area-inset-top))}
 
     async function call(path, payload, user) {
         const idToken = await user.getIdToken();
-        const r = await fetch(LINK_URL + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, ...payload }) });
+        const r = await fetch(LINK_URL + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, deviceId: getDevice(), ...payload }) });
         let data = {}; try { data = await r.json(); } catch (e) {}
         return { ok: r.ok && !!data.ok, status: r.status, data };
     }
@@ -9782,7 +9794,7 @@ html.is-tablet .wac-top{padding-top:max(4rem,env(safe-area-inset-top))}
             try {
                 for (let i = 0; busy && i < 40; i++) await sleep(100);                // let an in-flight link finish first
                 const u = getAuth().currentUser, id = getSub();
-                if (u && id && inApp()) await Promise.race([call("/unlink", { subscriptionId: id }, u), sleep(4000)]);
+                if (u && inApp()) await Promise.race([call("/unlink", { subscriptionId: id || null }, u), sleep(4000)]);
             } catch (e) { log("unlink error", e); }
             lastMobile = null; nextCheck = 0; tries = 0;
             let out; try { out = await orig.apply(this, arguments); } catch (e) { log("logout error", e); }
