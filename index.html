@@ -2,6 +2,26 @@
 <html lang="en">
 
 <head>
+<script>
+/* Notification deep link: remember where a tapped push wants to go, before the router rewrites the hash. */
+(function () {
+    var OK = ['chat', 'notices', 'materials', 'budget-room', 'student', 'admin'];
+    try { var h0 = (location.hash || '').replace('#', ''); if (OK.indexOf(h0) !== -1) window.__pendingOpen = h0; } catch (e) { }
+    // go to a screen now if logged in, otherwise as soon as login has finished
+    window.__goTo = function (h) {
+        if (window.currentRole) { if (location.hash.replace('#', '') !== h) location.hash = h; }
+        else window.__pendingOpen = h;
+    };
+    var tries = 0, timer = setInterval(function () {
+        tries++;
+        if (tries > 100) return clearInterval(timer);            // give up after ~30s
+        if (window.__pendingOpen && window.currentRole) {
+            var h = window.__pendingOpen; window.__pendingOpen = null; clearInterval(timer);
+            setTimeout(function () { try { location.hash = h; } catch (e) { } }, 1200);
+        }
+    }, 300);
+})();
+</script>
 <script>window.getOtherStudentsMobiles = function() { return (window.studentsDB || []).map(s => s.mobile).filter(m => m !== window.loggedInMobile); };</script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
@@ -9762,7 +9782,7 @@
         // Same sound/channel as the Notice Board ('exam'), addressed to students' External IDs only (no admin)
         window.pushToStudents = function (title, msg) {
             const t = students().map(x => x.m);
-            if (t.length && typeof sendOneSignalPush === "function") sendOneSignalPush(title, msg, null, { category: "exam", buttons: [{ id: "view_notice", text: "View" }] }, t);
+            if (t.length && typeof sendOneSignalPush === "function") sendOneSignalPush(title, msg, null, { category: "exam" }, t);
         };
 
         async function api(op, payload) {
@@ -10289,8 +10309,7 @@
 
                     await window.dbSendChat(chatPayload);
                     if (typeof sendOneSignalPush === 'function') sendOneSignalPush(`New ${isDoc ? 'Document' : 'Photo'} from ${senderName}`, "Tap to view in Discus.", null, {
-                        category: 'discus',
-                        buttons: [{ id: 'discus_reply', text: 'Reply' }, { id: 'discus_close', text: 'Close' }]
+                        category: 'discus'
                     });
                     if (typeof window.markChatAsRead === 'function') window.markChatAsRead();
                     if (typeof window.cancelChatReply === 'function') window.cancelChatReply();
@@ -12142,8 +12161,7 @@
                     const senderName = window.currentRole === 'student' ? window.studentsDB.find(s => s.mobile === window.loggedInMobile).name : 'EXAMA';
                     await window.dbSendChat({ text: '', audioUrl: base64Audio, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
                     sendOneSignalPush(`New Voice Note from ${senderName}`, "Tap to listen in Discus.", null, {
-                        category: 'discus',
-                        buttons: [{ id: 'discus_reply', text: 'Reply' }, { id: 'discus_close', text: 'Close' }]
+                        category: 'discus'
                     });
                     window.markChatAsRead();
                     cancelAudioRecord();
@@ -12270,8 +12288,7 @@
                         const senderName = window.currentRole === 'student' ? window.studentsDB.find(s => s.mobile === window.loggedInMobile).name : 'EXAMA';
                         await window.dbSendChat({ text: '', imgUrls: urls, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
                         sendOneSignalPush(`New Photo from ${senderName}`, "Tap to view in Discus.", null, {
-                            category: 'discus',
-                            buttons: [{ id: 'discus_reply', text: 'Reply' }, { id: 'discus_close', text: 'Close' }]
+                            category: 'discus'
                         }); window.markChatAsRead(); cancelChatReply();
                     }
                     hideLoader(); event.target.value = '';
@@ -12296,8 +12313,7 @@
                 // Send to Firebase - will update local chatDB and call renderChat() for immediate UI update
                 await window.dbSendChat(msgObj);
                 sendOneSignalPush(`New Message from ${senderName}`, text, null, {
-                    category: 'discus',
-                    buttons: [{ id: 'discus_reply', text: 'Reply' }, { id: 'discus_close', text: 'Close' }]
+                    category: 'discus'
                 });
                 window.markChatAsRead();
                 cancelChatReply();
@@ -12439,8 +12455,7 @@
                 });
 
                 sendOneSignalPush(`Performance Card Shared`, `${senderName} shared their Exam Performance.`, null, {
-                    category: 'discus',
-                    buttons: [{ id: 'discus_reply', text: 'Reply' }, { id: 'discus_close', text: 'Close' }]
+                    category: 'discus'
                 });
                 window.markChatAsRead();
                 cancelChatReply();
@@ -13469,8 +13484,7 @@ ${textContent ? `
 
                     if (typeof sendOneSignalPush === 'function') {
                         sendOneSignalPush(`New Notice: ${title}`, "Check the Notice Board for details.", null, {
-                            category: 'exam',
-                            buttons: [{ id: 'view_notice', text: 'View' }]
+                            category: 'exam'
                         });
                     }
 
@@ -15818,7 +15832,7 @@ ${textContent ? `
             async function sendOneSignalPush(title, message, imageUrl = null, extra = {}, targetUsers = null) {
                   if (window.isGlobalTestMode) { console.log('[TEST MODE] Push suppressed:', title, message); return; }
                   const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106";
-                  const { category = null, buttons = null, data = null } = extra || {};
+                  const { category = null, data = null } = extra || {};
                   
                   if (!targetUsers && typeof window.getOtherStudentsMobiles === 'function') {
                       if (['discus', 'call', 'session'].includes(category)) {
@@ -15867,9 +15881,19 @@ ${textContent ? `
                       }
                   }
 
-                  if (Array.isArray(buttons) && buttons.length) {
-                      payload.buttons = buttons.slice(0, 3);
-                  }
+                  // No action buttons: tapping a notification simply OPENS the right screen through
+                  // Median's native "targetUrl" - no JavaScript bridge needed.
+                  let openHash = null;
+                  if (data && data.roomId) openHash = 'budget-room';
+                  else if (data && data.materialId) openHash = 'materials';
+                  else if (data && data.p2p) openHash = 'student';
+                  else if (category === 'call' || category === 'discus') openHash = 'chat';
+                  else if (category === 'exam') openHash = 'notices';
+                  let targetUrl = null;
+                  try {
+                      const L = window.location;
+                      if (openHash && /^https?:$/.test(L.protocol) && !/^(localhost|127\.|192\.168\.)/.test(L.hostname)) targetUrl = L.origin + L.pathname + '#' + openHash;
+                  } catch (e) { }
 
                   // A "call" push is only useful for ~45s - after that the caller has
                   // either hung up or someone else answered. Without a ttl, OneSignal
@@ -15881,6 +15905,7 @@ ${textContent ? `
 
                   if (data || category) {
                       payload.data = Object.assign({ pushCategory: category || 'general' }, data || {});
+                      if (targetUrl) payload.data.targetUrl = targetUrl;
                   }
 
                   const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
@@ -15908,59 +15933,21 @@ ${textContent ? `
                 console.log('[Push Opened] raw data ->', JSON.stringify(data));
                 if (data && data.pushCategory === 'alarm') { if (window.__alarmPushOpened) window.__alarmPushOpened(data); return; }
                 if (!data) return;
+                // Push-only-opens: go to the screen named in targetUrl (waits for login on a cold start)
+                if (data.targetUrl) {
+                    const i = String(data.targetUrl).indexOf('#');
+                    if (i > -1 && window.__goTo) { window.__goTo(String(data.targetUrl).slice(i + 1)); return; }
+                }
+                // Fallback for any push that has no targetUrl: just open the matching screen.
                 try {
-                    // NOTE: OneSignal's native SDKs deliver the tapped button's id as
-                    // "actionId". Median's public docs don't confirm the exact key name
-                    // they forward it under, so this checks a few likely names. After
-                    // you rebuild the app, tap each button on a real device once and
-                    // check this console.log to see the real shape of "data" - then
-                    // adjust the line below if actionId is coming through differently.
-                    const actionId = data.actionId || data.action_id || data.buttonId || data.actionSelected || (data.additionalData && data.additionalData.actionSelected) || (data.action && data.action.actionId) || null;
-
-                    if (data.materialId) {
-                        if (actionId === 'approve_material') window.approveMaterialFromPush(data.materialId);
-                        else window.location.hash = 'materials';
-                        return;
-                    }
-                    if (data.roomId) { window.location.hash = 'budget-room'; return; }
-
-                    if (data.pushCategory === 'call') {
-                        if (actionId === 'call_decline') {
-                            // Declined: just clear any local popup state, do NOT navigate.
-                            if (typeof window.declineIncomingCall === 'function') window.declineIncomingCall();
-                            return;
-                        }
-                        // Accepted, or the user tapped the notification body itself.
-                        window.location.hash = 'chat';
-                        if (actionId === 'call_accept') {
-                            setTimeout(function () {
-                                // Give the Firebase listeners a beat to attach after a cold
-                                // start, then double check the call wasn't already hung up.
-                                if (typeof window.isDiscusCallLive === 'function' && !window.isDiscusCallLive({ timestamp: data.timestamp || Date.now() })) {
-                                    if (typeof showToast === 'function') showToast("Call Ended", "This call already ended before you joined.", "info");
-                                    return;
-                                }
-                                if (data.callType === 'audio') { if (typeof window.startDiscusAudioCall === 'function') window.startDiscusAudioCall(true); }
-                                else { if (typeof window.startDiscusVideoCall === 'function') window.startDiscusVideoCall(true); }
-                            }, 1200);
-                        }
-                        // If it was a plain body tap (no actionId), we only open Discus
-                        // chat - the "ongoing call" card there lets them join manually.
-                        return;
-                    }
-
-                    if (data.pushCategory === 'discus') {
-                        if (actionId === 'discus_close') return; // Just dismiss, no navigation
-                        window.location.hash = 'chat'; // Reply tap, or plain body tap
-                        return;
-                    }
-
-                    if (data.pushCategory === 'exam') {
-                        window.location.hash = 'notices'; // View button, or plain body tap
-                        return;
-                    }
-                    // 'session' category pushes intentionally do nothing extra here -
-                    // they only needed the custom sound, per your request.
+                    let h = null;
+                    if (data.roomId) h = 'budget-room';
+                    else if (data.materialId) h = 'materials';
+                    else if (data.p2p) h = 'student';
+                    else if (data.pushCategory === 'call' || data.pushCategory === 'discus') h = 'chat';
+                    else if (data.pushCategory === 'exam') h = 'notices';
+                    // 'session' pushes only need the custom sound - nothing to open.
+                    if (h && window.__goTo) window.__goTo(h);
                 } catch (e) { console.warn('median_onesignal_push_opened error:', e); }
             };
 
@@ -17045,7 +17032,7 @@ ${textContent ? `
                     } else {
                         window.showCustomAlert("Submitted", "Material uploaded! It is pending Admin approval.", "success");
                         // Tell the admin (by External ID) that a student is waiting for approval
-                        if (typeof sendOneSignalPush === "function") sendOneSignalPush("Material Awaiting Approval", `${uploaderName} submitted "${title}"` + ([subject, topic].filter(Boolean).length ? ` in ${[subject, topic].filter(Boolean).join(" • ")}` : "") + ".", null, { category: "exam", buttons: [{ id: "approve_material", text: "Approve" }, { id: "view_notice", text: "View" }], data: { materialId: __newMatId || "" } }, ["9475757821"]);
+                        if (typeof sendOneSignalPush === "function") sendOneSignalPush("Material Awaiting Approval", `${uploaderName} submitted "${title}"` + ([subject, topic].filter(Boolean).length ? ` in ${[subject, topic].filter(Boolean).join(" • ")}` : "") + ".", null, { category: "exam", data: { materialId: __newMatId || "" } }, ["9475757821"]);
                     }
                     renderStudyMaterials();
                 } catch (e) {
@@ -21194,7 +21181,7 @@ ${textContent ? `
                 };
 
                 await window.dbSubmitExam(payload);
-                sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`, null, { category: 'exam', buttons: [{ id: 'view_notice', text: 'View' }] }, typeof assignedTo !== 'undefined' ? assignedTo : null);
+                sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}.`, null, { category: 'exam' }, typeof assignedTo !== 'undefined' ? assignedTo : null);
                 await window.dbSendNotice({ title: `New Exam: ${examName}`, text: `A new exam has been scheduled for ${examDate}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard!`, date: window.formatDateDDMMYYYY(), type: 'new_exam', timestamp: Date.now(), assignedTo: assignedTo });
 
                 document.getElementById('admin-exam-info').value = '';
@@ -21411,8 +21398,7 @@ ${textContent ? `
                     const title = `Exam Reset: ${exam.name}`;
                     const msg = `The admin has fully reset "${exam.name}". All previous submissions have been cleared. You MUST re-upload your Q&A materials to unlock the exam again!`;
                     sendOneSignalPush(title, msg, null, {
-                        category: 'exam',
-                        buttons: [{ id: 'view_notice', text: 'View' }]
+                        category: 'exam'
                     });
                     await window.dbSendNotice({ title: title, text: msg, date: window.formatDateDDMMYYYY(), type: 'reset_exam', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
                 }
@@ -21510,7 +21496,7 @@ ${textContent ? `
                 await window.dbSendNotice({ title: exam.name, text: `The exam "${exam.name}" has officially ended. Pending evaluations were auto-graded to their max portion marks, and lazy evaluators/absentees were marked ABSENT. Question papers are now available in the Material Hub.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
 
                 if (exam) {
-                    sendOneSignalPush("Exam Ended", `"${exam.name}" has ended. Results & question papers are now available.`, null, { category: 'exam', buttons: [{ id: 'view_notice', text: 'View' }] }, exam.assignedTo);
+                    sendOneSignalPush("Exam Ended", `"${exam.name}" has ended. Results & question papers are now available.`, null, { category: 'exam' }, exam.assignedTo);
                 }
 
                 hideLoader();
@@ -21557,7 +21543,7 @@ ${textContent ? `
                 const ex = window.examsDB.find(e => e.id === id);
                 window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 });
                 window.showToast("Exam Started", "The exam is now live for all students.", "success");
-                if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`, null, { category: 'exam', buttons: [{ id: 'view_notice', text: 'View' }] }, ex.assignedTo);
+                if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`, null, { category: 'exam' }, ex.assignedTo);
             }
             window.pauseGlobalExam = async function (id) {
                 const ex = window.examsDB.find(e => e.id === id); if (!ex) return;
@@ -22767,7 +22753,6 @@ window.chatJitsiApi.addEventListener('videoConferenceLeft', async () => {
                     await window.dbSendChat({ type: 'call_log', callType: 'video', text: "Video Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
                       sendOneSignalPush(`🎥 Incoming Video Call`, `${senderName} started a live video call in Discus Community.`, null, {
                         category: 'call',
-                        buttons: [{ id: 'call_accept', text: 'Accept' }, { id: 'call_decline', text: 'Decline' }],
                         data: { callType: 'video' }
                     }, window.getOtherStudentsMobiles());
                 }
@@ -22794,7 +22779,6 @@ window.chatJitsiApi.addEventListener('videoConferenceLeft', async () => {
                     await window.dbSendChat({ type: 'call_log', callType: 'audio', text: "Audio Call", mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: null });
                       sendOneSignalPush(`📞 Incoming Audio Call`, `${senderName} started a live audio call in Discus Community.`, null, {
                         category: 'call',
-                        buttons: [{ id: 'call_accept', text: 'Accept' }, { id: 'call_decline', text: 'Decline' }],
                         data: { callType: 'audio' }
                     }, window.getOtherStudentsMobiles());
                 }
@@ -25444,7 +25428,7 @@ YOUR DIRECTIVES:
                                 else head = `${who} transferred ${amt} to ${nameOf(transferTo)}`;
                                 const detail = [title.trim(), category].filter(Boolean).join(' • ');
                                 sendOneSignalPush(head, `${detail ? detail + ' • ' : ''}${room.name}`, null,
-                                    { category: 'exam', buttons: [{ id: 'open_room', text: 'Open' }], data: { roomId: room.id } }, others);
+                                    { category: 'exam', data: { roomId: room.id } }, others);
                             }
                         } catch (pe) { console.warn('Budget push failed', pe); }
                         window.closeAddTransactionModal();
@@ -25499,7 +25483,7 @@ YOUR DIRECTIVES:
                             settlement: { totalIncome: r2(inc), totalExpense: r2(exp), perHead, spentBy, memberCount: ms.length, expenses: exps.slice(-150), truncated: exps.length > 150 }
                         });
                         toast('Room ended', 'Students have been asked to submit their portion.', 'success');
-                        if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Budget Room ended', `"${room.name}" has ended. Please submit your portion.`, null, { category: 'exam', buttons: [{ id: 'open_room', text: 'Submit' }], data: { roomId: room.id } }, ms);
+                        if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Budget Room ended', `"${room.name}" has ended. Please submit your portion.`, null, { category: 'exam', data: { roomId: room.id } }, ms);
                     } catch (e) { console.error(e); toast('Error', 'Could not end the room.', 'error'); }
                 };
 
@@ -25605,11 +25589,11 @@ YOUR DIRECTIVES:
                             const old = membersOf(R.byId[R.editingId]);
                             await updateDoc(doc(db, ROOMS, R.editingId), { name, members, allStudents });
                             const added = members.filter(m => !old.includes(m));
-                            if (added.length && typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', buttons: [{ id: 'open_room', text: 'Open' }], data: { roomId: R.editingId } }, added);
+                            if (added.length && typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: R.editingId } }, added);
                             toast('Saved', 'Room updated.', 'success');
                         } else {
                             await addDoc(collection(db, ROOMS), { name, members, allStudents, status: 'active', createdAt: Date.now(), createdBy: 'admin' });
-                            if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', buttons: [{ id: 'open_room', text: 'Open' }], data: { roomId: 'new' } }, members);
+                            if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: 'new' } }, members);
                             toast('Room created', `"${name}" is ready.`, 'success');
                         }
                         window.closeRoomManage();
