@@ -3707,11 +3707,11 @@
                 <div id="settings-budget-room-section" class="hidden">
                     <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">Management</span>
                     <div class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden mb-6">
-                        <button onclick="window.location.hash='budget-manager'; closeSettingsMenu();" class="w-full flex items-center justify-between p-3.5 hover:bg-emerald-50/50 active:bg-emerald-50 transition-colors">
+                        <button onclick="window.location.hash='budget-room'; closeSettingsMenu();" class="w-full flex items-center justify-between p-3.5 hover:bg-emerald-50/50 active:bg-emerald-50 transition-colors">
                             <div class="flex items-center gap-3 min-w-0">
                                 <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm border border-emerald-100 shrink-0"><i class="fa-solid fa-people-roof"></i></div>
-                                <div class="text-left min-w-0"><span class="block text-[13px] font-bold text-slate-900 leading-tight">Budget Manager</span>
-                                    <span class="block text-[10px] font-medium text-slate-400 mt-0.5">Manage budget and rooms</span></div>
+                                <div class="text-left min-w-0"><span class="block text-[13px] font-bold text-slate-900 leading-tight">Budget Room</span>
+                                    <span class="block text-[10px] font-medium text-slate-400 mt-0.5">Manage budget rooms</span></div>
                             </div>
                             <i class="fa-solid fa-chevron-right text-slate-300 text-xs"></i>
                         </button>
@@ -15669,7 +15669,7 @@ ${textContent ? `
                     'active-exam-view', 'fitness-view', 'weekly-targets-view',
                     'session-timer-view', 'nova-chat-view', 'video-hub-view',
                     'video-watch-view', 'syllabus-view', 'math-workout-view',
-                    'student-directory-view', 'budget-manager-view', 'budget-track-view'
+                    'student-directory-view', 'budget-manager-view', 'budget-track-view', 'budget-room-view'
                 ];
 
                 // 1. Hide all views and reset the Apple animation class
@@ -24897,15 +24897,20 @@ YOUR DIRECTIVES:
             };
 
             window.renderBudgetRoom = function() {
-                const isAdmin = (window.loggedInMobile === window.adminMobile || window.location.hash.includes('admin'));
+                const isAdmin = (window.currentRole === 'admin' || window.loggedInMobile === window.adminMobile);
                 const btnEnd = document.getElementById('btn-end-budget-room');
+                const btnCreate = document.getElementById('btn-create-budget-room');
                 const btnAddStudents = document.getElementById('btn-add-room-students');
                 
                 if (isAdmin) {
                     btnEnd.classList.remove('hidden');
+                    if(btnCreate) btnCreate.classList.remove('hidden');
+                    if(btnCreate) btnCreate.classList.add('flex');
                     btnAddStudents.classList.remove('hidden');
                 } else {
                     btnEnd.classList.add('hidden');
+                    if(btnCreate) btnCreate.classList.add('hidden');
+                    if(btnCreate) btnCreate.classList.remove('flex');
                     btnAddStudents.classList.add('hidden');
                 }
 
@@ -25081,6 +25086,7 @@ YOUR DIRECTIVES:
             };
 
             window.checkRoomEnded = function() {
+                if (window.currentRole === 'admin') return;
                 if(window.budgetRoomEndedData && window.budgetRoomEndedData.active) {
                     const portionStr = '₹' + Math.round(window.budgetRoomEndedData.portion).toLocaleString('en-IN');
                     document.getElementById('budget-room-portion-amount').textContent = portionStr;
@@ -25792,7 +25798,7 @@ window.saveBudgetTransaction = async function () {
         <div id="budget-room-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
             <div
                 class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
-                <button onclick="window.location.hash='budget-manager'"
+                <button onclick="window.location.hash = (window.currentRole === 'admin' ? 'admin' : 'budget-manager')"
                     class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
                     <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
                 </button>
@@ -25801,9 +25807,9 @@ window.saveBudgetTransaction = async function () {
                             class="fa-solid fa-people-roof"></i> Budget Room</h2>
                     <p class="text-[10px] sm:text-xs font-bold text-blue-100 uppercase tracking-widest mt-0.5">Shared Finances</p>
                 </div>
-                <button onclick="window.resetBudgetRoom()"
-                    class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-blue-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-600">
-                    <i class="fa-solid fa-rotate-left text-sm sm:text-base"></i>
+                <button id="btn-create-budget-room" onclick="window.resetBudgetRoom()"
+                    class="hidden w-auto px-3 h-9 sm:h-10 shrink-0 flex items-center justify-center gap-1.5 bg-blue-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-blue-600 font-bold text-xs sm:text-sm">
+                    <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Create Room</span>
                 </button>
                 <button id="btn-end-budget-room" onclick="window.endBudgetRoom()"
                     class="hidden w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-red-500/90 text-white rounded-full active:scale-90 transition-all shadow-sm hover:bg-red-700">
@@ -25921,7 +25927,7 @@ window.saveBudgetTransaction = async function () {
         <div id="budget-manager-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
             <div
                 class="bg-gradient-to-r from-green-500 to-emerald-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
-                <button onclick="window.location.hash='budget-manager'"
+                <button onclick="window.location.hash = (window.currentRole === 'admin' ? 'admin' : 'budget-manager')"
                     class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all">
                     <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
                 </button>
