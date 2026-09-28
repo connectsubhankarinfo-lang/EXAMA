@@ -3703,6 +3703,21 @@
                     </div>
                 </div>
 
+                <!-- Section: Alarms (Admin Only) -->
+                <div id="settings-alarm-section" class="hidden">
+                    <span class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 mb-2 block">Alarms</span>
+                    <div class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
+                        <button onclick="openAlarmManager()" class="w-full flex items-center justify-between p-3.5 hover:bg-amber-50/50 active:bg-amber-50 transition-colors">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm border border-amber-100 shrink-0"><i class="fa-solid fa-bell"></i></div>
+                                <div class="text-left min-w-0"><span class="block text-[13px] font-bold text-slate-900 leading-tight">Alarms</span>
+                                    <span class="block text-[10px] font-medium text-slate-400 mt-0.5">Schedule alarms for students</span></div>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-slate-300 text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Section: Admin Test Mode (Admin Only) -->
                 <div id="settings-test-mode-section" class="hidden">
                     <span
@@ -9707,6 +9722,107 @@
     }
     setInterval(wrapLogout, 500);                                                     // also re-wraps if logout is ever redefined
 
+    // ==========================================================================
+    // PUSH TO STUDENTS ONLY (lectures / materials) + ALARMS
+    // ==========================================================================
+    (function () {
+        const $ = id => document.getElementById(id);
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        const students = () => (window.studentsDB || []).map(s => ({ m: String(s.mobile), n: s.name || String(s.mobile) }));
+        const toast = (t, m, k) => window.showToast && window.showToast(t, m, k || "info");
+        let AL = [], ring = null, tone = null;
+
+        // Same sound/channel as the Notice Board ('exam'), addressed to students' External IDs only (no admin)
+        window.pushToStudents = function (title, msg) {
+            const t = students().map(x => x.m);
+            if (t.length && typeof sendOneSignalPush === "function") sendOneSignalPush(title, msg, null, { category: "exam", buttons: [{ id: "view_notice", text: "View" }] }, t);
+        };
+
+        async function api(op, payload) {
+            const s = session(); if (!s) { toast("Alarms", "Please log in again.", "error"); return null; }
+            const r = await call("/alarm/" + op, payload || {}, s.u);
+            if (!r.ok) { toast("Alarm error", (r.data && r.data.error) || ("HTTP " + r.status), "error"); return null; }
+            return r.data;
+        }
+
+        // ---------------- ADMIN: manage alarms ----------------
+        function renderAlarms() {
+            $("alarm-list").innerHTML = AL.length ? AL.slice().sort((a, b) => a.time.localeCompare(b.time)).map(a => `
+              <div class="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <div class="min-w-0"><div class="font-bold text-slate-900 truncate">${esc(a.title)}</div>
+                <div class="text-[11px] text-slate-500">${esc(a.time)} • ${a.repeat === "daily" ? "Every day" : esc(a.date)} • ${a.all ? "All students" : a.targets.length + " student(s)"}</div></div>
+                <div class="flex gap-2 shrink-0">
+                  <button onclick="toggleAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${a.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}">${a.enabled ? "ON" : "OFF"}</button>
+                  <button onclick="deleteAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-600">Delete</button>
+                </div></div>`).join("") : '<p class="text-slate-400 text-center py-3 text-xs">No alarms yet</p>';
+        }
+        window.openAlarmManager = async function () {
+            if (window.currentRole !== "admin") return;
+            if (window.closeSettingsMenu) window.closeSettingsMenu();
+            $("alarm-admin-modal").classList.remove("hidden");
+            $("al-students").innerHTML = students().map(x => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" value="${esc(x.m)}"> ${esc(x.n)} <span class="text-slate-400">${esc(x.m)}</span></label>`).join("");
+            let d = await api("list"); if (!d) return; AL = d.alarms;
+            const all = students().map(x => x.m), cur = all.slice().sort().join();       // keep "All students" alarms in sync with new students
+            const stale = AL.filter(a => a.all && all.length && a.targets.slice().sort().join() !== cur);
+            for (const a of stale) await api("save", { alarm: { ...a, targets: all } });
+            if (stale.length && (d = await api("list"))) AL = d.alarms;
+            renderAlarms();
+        };
+        window.closeAlarmManager = () => $("alarm-admin-modal").classList.add("hidden");
+        window.saveAlarm = async function () {
+            const title = $("al-title").value.trim(), time = $("al-time").value, repeat = $("al-repeat").value, date = $("al-date").value, all = $("al-target").value === "all";
+            const targets = all ? students().map(x => x.m) : [...$("al-students").querySelectorAll("input:checked")].map(i => i.value);
+            if (!title || !time) return toast("Alarms", "Enter a title and a time.", "error");
+            if (repeat === "date" && !date) return toast("Alarms", "Pick a date.", "error");
+            if (!targets.length) return toast("Alarms", "Choose at least one student.", "error");
+            const d = await api("save", { alarm: { title, time, repeat, date, all, targets, enabled: true } }); if (!d) return;
+            AL = d.alarms; renderAlarms(); $("al-title").value = ""; toast("Alarm added", title + " • " + time, "success");
+        };
+        window.toggleAlarm = async function (id) { const a = AL.find(x => x.id === id); if (!a) return; const d = await api("save", { alarm: { ...a, enabled: !a.enabled } }); if (d) { AL = d.alarms; renderAlarms(); } };
+        window.deleteAlarm = async function (id) {
+            if (!(await window.showCustomConfirm("Delete Alarm", "Delete this alarm?", "Delete", "Cancel", "info"))) return;
+            const d = await api("delete", { id }); if (d) { AL = d.alarms; renderAlarms(); }
+        };
+
+        // ---------------- STUDENT: ringing screen (Snooze = 1 min, "Alarm I know" = stop) ----------------
+        function stopTone() { if (tone) { clearInterval(tone.iv); clearInterval(tone.vb); try { tone.C.close(); } catch (e) {} tone = null; } }
+        function startTone() {
+            stopTone();
+            try {
+                const C = new (window.AudioContext || window.webkitAudioContext)();
+                const beep = () => { const o = C.createOscillator(), g = C.createGain(); o.frequency.value = 880; g.gain.value = 0.25; o.connect(g); g.connect(C.destination); o.start(); o.stop(C.currentTime + 0.25); };
+                beep(); tone = { C, iv: setInterval(beep, 700), vb: setInterval(() => navigator.vibrate && navigator.vibrate(400), 1000) };
+            } catch (e) {}
+        }
+        function showRing(r) {
+            if (ring && ring.key === r.key) return;
+            ring = r; $("ar-time").textContent = r.time; $("ar-title").textContent = r.title;
+            $("alarm-ring").classList.remove("hidden"); startTone();
+        }
+        function hideRing() { ring = null; stopTone(); $("alarm-ring").classList.add("hidden"); }
+        async function act(op, key) { const s = session(); hideRing(); if (s) await call("/alarm/" + op, { key }, s.u); }
+        window.alarmSnooze = () => ring && act("snooze", ring.key);
+        window.alarmAck = () => ring && act("ack", ring.key);
+
+        async function poll() {
+            if (window.currentRole !== "student" || ring || document.hidden) return;
+            const s = session(); if (!s) return;
+            try { const r = await call("/alarm/ringing", {}, s.u); if (r.ok && r.data.rings.length) showRing(r.data.rings[0]); } catch (e) {}
+        }
+        setInterval(poll, 60000);
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(poll, 800); });
+        setTimeout(poll, 4000);
+
+        // Called from median_onesignal_push_opened when an alarm notification (or one of its buttons) is tapped
+        window.__alarmPushOpened = async function (data) {
+            const a = data.actionId || data.action_id || data.buttonId || data.actionSelected || (data.additionalData && data.additionalData.actionSelected) || (data.action && data.action.actionId) || null;
+            const s = session(), key = data.ringKey;
+            if (s && key && a === "alarm_snooze") { await call("/alarm/snooze", { key }, s.u); hideRing(); }
+            else if (s && key && a === "alarm_ack") { await call("/alarm/ack", { key }, s.u); hideRing(); }
+            else setTimeout(poll, 500);
+        };
+    })();
+
             // ==========================================
             // GLOBAL TEST MODE & SANDBOX ENGINE
             // ==========================================
@@ -10666,6 +10782,7 @@
                     // Show Test Mode toggle for admin
                     const testModeSection = document.getElementById('settings-test-mode-section');
                     if (testModeSection) testModeSection.classList.remove('hidden');
+                    document.getElementById('settings-alarm-section')?.classList.remove('hidden');
                     window.syncTestModeUI();
                 } else {
                     const student = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
@@ -10677,6 +10794,7 @@
                     // Hide Test Mode toggle for students
                     const testModeSectionStudent = document.getElementById('settings-test-mode-section');
                     if (testModeSectionStudent) testModeSectionStudent.classList.add('hidden');
+                    document.getElementById('settings-alarm-section')?.classList.add('hidden');
                 }
 
                 // 2. Animate into view
@@ -13742,6 +13860,7 @@ ${textContent ? `
                         // Upload all videos to Firebase Database simultaneously 
                         const uploadPromises = payloads.map(p => addDoc(collection(db, window.getCollectionName("videos")), p));
                         await Promise.all(uploadPromises);
+                        window.pushToStudents(payloads.length === 1 ? `New Lecture: ${payloads[0].title}` : `${payloads.length} New Lectures Added`, [payloads[0].subject, payloads[0].topic].filter(Boolean).join(' • ') || 'Open Lectures to watch.');
                     } else {
                         if (!window.videosDB) window.videosDB = [];
                         payloads.forEach(p => window.videosDB.push({ id: Math.random().toString(), ...p }));
@@ -15720,7 +15839,7 @@ ${textContent ? `
                       // TEMP DEBUG: show why OneSignal/proxy refused the push (remove this block when push works)
                       try {
                           let j = {}; try { j = JSON.parse(responseText); } catch (e) {}
-                          if ((!response.ok || !j.id) && !/not subscribed/i.test(responseText)) window.showToast("Push not created (" + response.status + ")", String(responseText).slice(0, 220), "error");
+                          if ((!response.ok || !j.id) && !/not subscribed|no subscribers|no recipients|invalid_aliases|invalid_external_user_ids/i.test(responseText)) window.showToast("Push not created (" + response.status + ")", String(responseText).slice(0, 220), "error");
                       } catch (e) {}
                       if (!response.ok) throw new Error("Push blocked or failed: " + responseText);
                   }
@@ -15734,6 +15853,7 @@ ${textContent ? `
             // ==========================================
             window.median_onesignal_push_opened = function (data) {
                 console.log('[Push Opened] raw data ->', JSON.stringify(data));
+                if (data && data.pushCategory === 'alarm') { if (window.__alarmPushOpened) window.__alarmPushOpened(data); return; }
                 if (!data) return;
                 try {
                     // NOTE: OneSignal's native SDKs deliver the tapped button's id as
@@ -16838,8 +16958,11 @@ ${textContent ? `
 
                     if (isAdmin) {
                         window.showToast("Success", "Material Published Successfully!", "success");
+                        window.pushToStudents("New Study Material: " + title, [subject, topic].filter(Boolean).join(" • ") || "Check the Material Hub.");
                     } else {
                         window.showCustomAlert("Submitted", "Material uploaded! It is pending Admin approval.", "success");
+                        // Tell the admin (by External ID) that a student is waiting for approval
+                        if (typeof sendOneSignalPush === "function") sendOneSignalPush("Material Awaiting Approval", `${uploaderName} submitted "${title}"` + ([subject, topic].filter(Boolean).length ? ` in ${[subject, topic].filter(Boolean).join(" • ")}` : "") + ".", null, { category: "exam", buttons: [{ id: "view_notice", text: "View" }] }, ["9475757821"]);
                     }
                     renderStudyMaterials();
                 } catch (e) {
@@ -16951,6 +17074,7 @@ ${textContent ? `
                     }
                     window.hideLoader();
                     window.showToast("Success", approveStatus ? "Material is now live for everyone." : "Material hidden.", "success");
+                    if (approveStatus) { const pm = (window.materialsDB || []).find(x => x.id === id); if (pm) window.pushToStudents("New Study Material: " + (pm.title || ""), [pm.subject, pm.topic].filter(Boolean).join(" • ") || "Check the Material Hub."); }
                     window.renderStudyMaterials();
                 } catch (e) {
                     window.hideLoader();
@@ -25716,6 +25840,34 @@ YOUR DIRECTIVES:
             <div class="overflow-y-auto no-scrollbar flex-1 bg-slate-100" id="ios-select-options"></div>
             <div class="pb-8 bg-slate-100"></div>
         </div>
+<!-- ===== ALARMS: admin manager ===== -->
+<div id="alarm-admin-modal" class="hidden fixed inset-0 z-[9998] bg-black/50 flex items-end sm:items-center justify-center sm:p-4">
+  <div class="bg-white w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-4 space-y-3 shadow-2xl">
+    <div class="flex items-center justify-between"><h3 class="font-black text-lg text-slate-900"><i class="fa-solid fa-bell text-amber-500"></i> Alarms</h3>
+      <button onclick="closeAlarmManager()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button></div>
+    <div id="alarm-list" class="space-y-2 text-sm"></div>
+    <div class="border-t border-slate-200 pt-3 space-y-2 text-sm">
+      <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">New alarm (India time)</p>
+      <input id="al-title" placeholder="Alarm title" maxlength="60" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+      <input id="al-time" type="time" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+      <select id="al-repeat" onchange="document.getElementById('al-date').classList.toggle('hidden', this.value!=='date')" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+        <option value="daily">Every day</option><option value="date">Specific date</option></select>
+      <input id="al-date" type="date" class="hidden w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+      <select id="al-target" onchange="document.getElementById('al-students').classList.toggle('hidden', this.value!=='some')" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+        <option value="all">All students</option><option value="some">Specific students</option></select>
+      <div id="al-students" class="hidden max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1"></div>
+      <button onclick="saveAlarm()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-black active:scale-95">Add Alarm</button>
+    </div>
+  </div>
+</div>
+<!-- ===== ALARMS: student ringing screen ===== -->
+<div id="alarm-ring" class="hidden fixed inset-0 z-[10000] bg-slate-900/95 flex flex-col items-center justify-center text-center p-6 text-white">
+  <div class="text-6xl animate-bounce">⏰</div>
+  <div id="ar-time" class="text-5xl font-black mt-4"></div>
+  <div id="ar-title" class="text-xl font-bold mt-2 max-w-xs break-words"></div>
+  <button onclick="alarmSnooze()" class="mt-10 w-full max-w-xs py-3.5 rounded-2xl bg-white/15 border border-white/30 font-bold active:scale-95">Snooze 1 min</button>
+  <button onclick="alarmAck()" class="mt-3 w-full max-w-xs py-4 rounded-2xl bg-emerald-500 font-black text-lg active:scale-95">Alarm I know</button>
+</div>
 </body>
 
 </html>
