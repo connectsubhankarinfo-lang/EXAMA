@@ -11538,14 +11538,23 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 tempCanvas.height = rpCanvas.height;
                 const tCtx = tempCanvas.getContext('2d');
 
-                // 2. Draw the base exam paper image first
-                tCtx.drawImage(bgImg, 0, 0, tempCanvas.width, tempCanvas.height);
+                let mergedDataUrl;
+                try {
+                    // 2. Draw the base exam paper image first
+                    tCtx.drawImage(bgImg, 0, 0, tempCanvas.width, tempCanvas.height);
 
-                // 3. Draw your red pen annotations on top of it
-                tCtx.drawImage(rpCanvas, 0, 0);
+                    // 3. Draw your red pen annotations on top of it
+                    tCtx.drawImage(rpCanvas, 0, 0);
 
-                // 4. Extract the flattened/merged image (Using JPEG to save storage space)
-                const mergedDataUrl = tempCanvas.toDataURL("image/jpeg", 0.9);
+                    // 4. Extract the flattened/merged image (Using JPEG to save storage space)
+                    mergedDataUrl = tempCanvas.toDataURL("image/jpeg", 0.9);
+                } catch (err) {
+                    // Tainted canvas: the image host did not allow this paper to be exported. Keep the editor open.
+                    console.warn('Red pen export blocked (tainted canvas)', err);
+                    if (typeof window.hideLoader === 'function') window.hideLoader();
+                    if (typeof window.showToast === 'function') window.showToast('Cannot save marks', 'This paper image is blocked by its host (CORS). Close and reopen the paper, then try again.', 'error');
+                    return;
+                }
 
                 const scriptId = window.currentAnnotationData.scriptId;
                 const idx = window.currentAnnotationData.index;
@@ -11647,8 +11656,8 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     if (rpDone) return;
                     rpFinish();
                     console.warn('Red pen image timed out');
-                    if (typeof window.showToast === 'function') window.showToast('Paper image is slow to load. Close and try again.', 'error');
-                }, 15000);
+                    if (typeof window.showToast === 'function') window.showToast('Slow image', 'Paper image is slow to load. Close and try again.', 'error');
+                }, 40000);
 
                 bgImg.onload = function () {
                     const w = bgImg.width || bgImg.naturalWidth, h = bgImg.height || bgImg.naturalHeight;
@@ -11666,28 +11675,55 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 };
 
                 // If the CORS/blob copy fails to decode, retry once straight from the URL without the CORS flag
+                bgImg.setAttribute('crossorigin', 'anonymous');
                 bgImg.onerror = function () {
                     if (!rpRetried) {
                         rpRetried = true;
-                        console.warn('Red pen image failed, retrying direct without CORS');
+                        console.warn('Red pen image failed, retrying direct without CORS (marks may not be saveable)');
                         bgImg.removeAttribute('crossorigin');
                         bgImg.src = imgSrc;
                         return;
                     }
                     rpFinish();
-                    if (typeof window.showToast === 'function') window.showToast('Could not load this paper image.', 'error');
+                    if (typeof window.showToast === 'function') window.showToast('Image error', 'Could not load this paper image.', 'error');
                 };
 
-                try {
-                    const ctrl = new AbortController();
-                    const ft = setTimeout(() => ctrl.abort(), 10000);
-                    const response = await fetch(imgSrc, { mode: 'cors', signal: ctrl.signal });
-                    clearTimeout(ft);
-                    if (!response.ok) throw new Error('HTTP ' + response.status);
-                    const blob = await response.blob();
-                    bgImg.src = URL.createObjectURL(blob);
-                } catch (e) {
-                    console.warn("CORS fetch failed, falling back to direct src", e);
+                // Get a CORS-clean copy so the canvas can be exported. A copy cached from a plain <img> has no CORS headers, so bypass the cache.
+                const rpLoadClean = async () => {
+                    const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+                    const blobOf = async (u, opts) => { const r = await withTimeout(fetch(u, opts), 8000); if (!r.ok) throw new Error('HTTP ' + r.status); return URL.createObjectURL(await r.blob()); };
+                    const m = String(imgSrc).match(/(?:\/d\/|[?&]id=)([\w-]{20,})/);
+                    const driveId = m && m[1];
+                    // 1) plain CORS fetch, bypassing the cache copy that has no CORS headers
+                    try { return await blobOf(imgSrc, { mode: 'cors', cache: 'reload' }); } catch (e) { console.warn('CORS fetch failed', e); }
+                    if (driveId) {
+                        // 2) Google's image CDN
+                        try { return await blobOf('https://lh3.googleusercontent.com/d/' + driveId + '=w2000', { mode: 'cors' }); } catch (e) { console.warn('lh3 fetch failed', e); }
+                        // 3) ask the EXAMA Apps Script to hand the file over (doGet action=image)
+                        try {
+                            const r = await withTimeout(fetch(window.EXAMA_DRIVE_API + '?action=image&id=' + encodeURIComponent(driveId)), 20000);
+                            const j = await r.json();
+                            if (j && j.success && j.base64) {
+                                const bin = atob(j.base64), arr = new Uint8Array(bin.length);
+                                for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                                return URL.createObjectURL(new Blob([arr], { type: j.mimeType || 'image/jpeg' }));
+                            }
+                        } catch (e) { console.warn('Apps Script image proxy failed', e); }
+                    }
+                    // 4) fresh CORS image request with a cache-buster
+                    try {
+                        const u = imgSrc + (imgSrc.indexOf('?') > -1 ? '&' : '?') + 'cors=' + Date.now();
+                        await new Promise((res, rej) => { const t = new Image(); t.crossOrigin = 'anonymous'; t.onload = res; t.onerror = rej; t.src = u; });
+                        return u;
+                    } catch (e) { console.warn('CORS image request failed', e); }
+                    return null;
+                };
+                const clean = /^(data|blob):/.test(imgSrc) ? imgSrc : await rpLoadClean();
+                if (clean) {
+                    bgImg.src = clean;
+                } else {
+                    console.warn('No CORS-clean copy available, loading direct (saving marks may be blocked)');
+                    bgImg.removeAttribute('crossorigin');
                     bgImg.src = imgSrc;
                 }
             };
@@ -25439,6 +25475,14 @@ YOUR DIRECTIVES:
             };
 
 
+            // Marked (red-pen) paper -> Google Drive through the EXAMA Apps Script, folder alias 'annotation'
+            window.uploadAnnotationToDrive = async function (dataUrl, scriptId, idx) {
+                const bin = atob(String(dataUrl).split(',')[1]), arr = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                const file = new File([arr], `annotation_${scriptId}_p${idx + 1}_${Date.now()}.jpg`, { type: 'image/jpeg' });
+                return await window.uploadFileToDrive(file, 'annotation', true);
+            };
+
             window.submitPeerMarks = async function (scriptId, solverMobile, examId, btnElement) {
                 const marksInput = document.getElementById(`marks-${scriptId}`);
                 if (!marksInput) return window.showCustomAlert("Notice", "Marks input not found!", "info");
@@ -25472,6 +25516,21 @@ YOUR DIRECTIVES:
                                 finalImages.push(String(url));
                             }
                         });
+                    }
+
+                    // 1b. Send marked papers to Google Drive ('annotation') and keep only the link in Firestore
+                    const pendingIdx = finalImages.map((u, i) => (/^data:/.test(u) ? i : -1)).filter(i => i >= 0);
+                    if (pendingIdx.length) {
+                        let doneCount = 0;
+                        window.showLoader(`Uploading marked paper 0/${pendingIdx.length}...`);
+                        await Promise.all(pendingIdx.map(async (i) => {
+                            const driveUrl = String(await window.uploadAnnotationToDrive(finalImages[i], scriptId, i));
+                            finalImages[i] = driveUrl;
+                            if (window.annotatedImagesDraft && window.annotatedImagesDraft[scriptId]) window.annotatedImagesDraft[scriptId][i] = driveUrl; // a retry won't upload twice
+                            doneCount++;
+                            window.showLoader(`Uploading marked paper ${doneCount}/${pendingIdx.length}...`);
+                        }));
+                        window.showLoader("Saving Evaluation...");
                     }
 
                     // 2. Build the Payload
@@ -25520,7 +25579,7 @@ YOUR DIRECTIVES:
                 } catch (err) {
                     console.error("Submission error:", err);
                     window.hideLoader();
-                    window.showCustomAlert("Notice", "Firebase rejected the save: " + err.message, "info");
+                    window.showCustomAlert("Notice", "Could not save the evaluation: " + err.message, "info");
                     if (btnElement) {
                         btnElement.disabled = false;
                         btnElement.innerHTML = `Submit`;
