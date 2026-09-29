@@ -3294,7 +3294,7 @@ button:active{transform:scale(.96);transition-duration:.12s}
 .ar-row{display:flex;gap:10px}.ar-back{background:rgba(255,255,255,.16);flex:1}.ar-off{background:#30d158;color:#04210d;flex:1.4}
 .ar-shake{animation:arShake .4s}@keyframes arShake{0%,100%{translate:0}20%{translate:-10px}40%{translate:9px}60%{translate:-6px}80%{translate:4px}}
 /* ===== DISCUS: background, smoothness, animated reactions ===== */
-.chat-bg{background-color:#eef1fb!important;background-image:none!important}
+/* chat-bg intentionally left to its original WhatsApp-style dot wallpaper (see line ~2548) */
 #chat-messages{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 @keyframes msgIn{from{opacity:0;translate:0 14px;scale:.92}to{opacity:1;translate:0 0;scale:1}}
 #chat-messages>.msg-in{animation:msgIn .45s var(--ios) backwards}
@@ -6951,7 +6951,7 @@ button:active{transform:scale(.96);transition-duration:.12s}
 
                             <!-- Popup Menu -->
                             <div id="chat-attach-menu"
-                                class="hidden absolute bottom-full left-0 mb-3 bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] p-2 flex-col gap-1 w-40 z-50 transform transition-all duration-200 origin-bottom-left">
+                                class="hidden chat-bg absolute bottom-full left-0 mb-3 backdrop-blur-xl rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] border border-black/5 p-2 flex-col gap-1 w-40 z-50 transform transition-all duration-200 origin-bottom-left">
                                 <button type="button"
                                     onclick="document.getElementById('chat-img-input').click(); window.toggleChatAttachMenu();"
                                     class="flex items-center gap-3 p-2.5 hover:bg-blue-50 rounded-xl transition-colors text-left group w-full">
@@ -16342,12 +16342,12 @@ ${textContent ? `
 
                   // Cosmetic action buttons (all of them just open the screen above).
                   let pushButtons = null;
-                  if (category === 'call') pushButtons = [{ id: 'accept', text: 'Accept' }, { id: 'decline', text: 'Decline' }];
+                  if (category === 'call') pushButtons = [{ id: 'accept', text: 'Accept' }];
                   else if (data && data.p2p === 'question_set') pushButtons = [{ id: 'attempt', text: 'Attempt' }];
                   else if (data && data.p2p === 'answer_script') pushButtons = [{ id: 'evaluate', text: 'Evaluate' }];
                   else if (data && data.materialId) pushButtons = [{ id: 'review', text: 'Review' }];
                   else if (data && data.roomId) pushButtons = [{ id: 'open', text: 'Open' }];
-                  else if (category === 'discus') pushButtons = [{ id: 'view', text: 'View' }];
+                  else if (category === 'discus') pushButtons = [{ id: 'reply', text: 'Reply' }];
                   else if (category === 'exam') pushButtons = [{ id: 'view', text: 'View' }];
                   if (pushButtons) payload.buttons = pushButtons;
 
@@ -17374,12 +17374,16 @@ ${textContent ? `
                         window.peerMaterialsDB.push({ id: Math.random().toString(), ...data });
                     }
 
-                    // Push: tell the other students taking this peer exam that a new question set is ready
-                    // (same sound as the Notice Board = 'exam' channel). Only those students, nobody else.
+                    // Push: tell the OTHER students assigned to this exam that a new question set is ready
+                    // (same sound as the Notice Board = 'exam' channel). Was targeting previous uploaders
+                    // only, which is almost always empty on the very first upload - it barely ever fired.
                     try {
-                        const others = [...new Set((window.peerMaterialsDB || []).filter(m => m.examId === examId && m.mobile !== window.loggedInMobile).map(m => String(m.mobile)))];
+                        const exObj = (window.examsDB || []).find(e => e.id === examId);
+                        const assigned = (exObj && exObj.assignedTo && !exObj.assignedTo.includes('All'))
+                            ? exObj.assignedTo.map(String)
+                            : (window.studentsDB || []).map(s => String(s.mobile));
+                        const others = [...new Set(assigned)].filter(m => m !== String(window.loggedInMobile));
                         if (others.length && typeof sendOneSignalPush === 'function') {
-                            const exObj = (window.examsDB || []).find(e => e.id === examId);
                             const upName = (window.studentsDB.find(s => s.mobile === window.loggedInMobile) || {}).name || 'A peer';
                             sendOneSignalPush('New Question Set Available', `${upName} uploaded a question set${exObj && exObj.name ? ' for "' + exObj.name + '"' : ''}. Tap to attempt it.`, null, { category: 'exam', data: { p2p: 'question_set', examId } }, others);
                         }
@@ -26194,8 +26198,8 @@ YOUR DIRECTIVES:
                             if (added.length && typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: R.editingId } }, added);
                             toast('Saved', 'Room updated.', 'success');
                         } else {
-                            await addDoc(collection(db, ROOMS), { name, members, allStudents, status: 'active', createdAt: Date.now(), createdBy: 'admin' });
-                            if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: 'new' } }, members);
+                            const newRoomRef = await addDoc(collection(db, ROOMS), { name, members, allStudents, status: 'active', createdAt: Date.now(), createdBy: 'admin' });
+                            if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: newRoomRef.id } }, members);
                             toast('Room created', `"${name}" is ready.`, 'success');
                         }
                         window.closeRoomManage();
