@@ -16604,7 +16604,7 @@ ${textContent ? `
                   // will queue it and deliver it to anyone who was offline the moment
                   // they reconnect, even hours later, ringing them for a dead call.
                   if (category === 'call') {
-                      payload.ttl = 45;
+                      payload.ttl = 60;
                   }
 
                   if (data || category) {
@@ -17357,6 +17357,11 @@ ${textContent ? `
                     });
 
                     // 16. ACTIVE CALLS
+                    // Use Firebase's server clock for call timing: each phone's own clock can differ by many seconds,
+                    // which made a freshly-started call look "old" on the other phone and cut its ringing short.
+                    window._serverOffset = window._serverOffset || 0;
+                    window.serverNow = function () { return Date.now() + (window._serverOffset || 0); };
+                    try { onValue(ref(window.rtdb, '.info/serverTimeOffset'), (snap) => { window._serverOffset = Number(snap.val()) || 0; }); } catch (e) { }
                     await new Promise(r => requestAnimationFrame(r));
                     onValue(ref(window.rtdb, (window.isGlobalTestMode ? 'test_active_calls' : 'active_calls') + '/discus_call'), (snapshot) => {
                           if (snapshot.exists()) {
@@ -17368,7 +17373,7 @@ ${textContent ? `
                                   try { window.showToast('Call ended', 'The call has ended.', 'info'); } catch (e) { }
                                   window.closeDiscusVideoCall();
                               }
-                            const now = Date.now();
+                            const now = (window.serverNow ? window.serverNow() : Date.now());
                             const callKey = String(callData.callerMobile) + '_' + String(callData.timestamp);
                             const isInitial = !window._callListenerPrimed; window._callListenerPrimed = true;
                             const age = now - (callData.timestamp || 0);
@@ -17376,7 +17381,7 @@ ${textContent ? `
                             // opening the app only counts if the call is really fresh (a call left as "ringing"
                             // in the database must never ring again on every launch), and each call rings once.
                             const isNewLive = !isInitial && window._lastSeenCallKey !== callKey;
-                            const isFreshOnLoad = isInitial && age > -10000 && age < 30000;
+                            const isFreshOnLoad = isInitial && age > -15000 && age < 50000;
                             const showingThis = window._incomingCallKey === callKey && window.currentIncomingCall;
                             window._lastSeenCallKey = callKey;
                             if (callData.status === 'ringing' && callData.callerMobile !== window.loggedInMobile && showingThis) {
@@ -23435,22 +23440,22 @@ ${textContent ? `
                 if (!callData) return false;
                 if (live && live.status === 'ended') return false;
                 if (!callData.timestamp) return true;
-                return (Date.now() - callData.timestamp) < 45000;
+                return ((window.serverNow ? window.serverNow() : Date.now()) - callData.timestamp) < 60000;
             };
 
             window.showIncomingCallPopup = function (callData) {
                 // never show / ring for a call that already ended or is stale
                 if (!callData || callData.status === 'ended') return;
-                if (callData.timestamp && (Date.now() - callData.timestamp) > 45000) return;
+                if (callData.timestamp && ((window.serverNow ? window.serverNow() : Date.now()) - callData.timestamp) > 60000) return;
                 window.currentIncomingCall = callData; document.getElementById('incoming-caller-name').innerText = callData.callerName || 'Peer Student';
                 const isVideo = callData.callType === 'video'; document.getElementById('incoming-call-type-text').innerText = isVideo ? "Incoming Video Call" : "Incoming Audio Call"; document.getElementById('incoming-call-icon').className = isVideo ? "fa-solid fa-video animate-pulse" : "fa-solid fa-phone-volume animate-pulse";
                 document.getElementById('incoming-call-modal').classList.remove('hidden-view'); startRingtone(); if (window.wacDecorateIncoming) window.wacDecorateIncoming(callData);
                 const key = String(callData.callerMobile) + '_' + String(callData.timestamp);
                 window._incomingCallKey = key; window.markCallHandled(key);
-                const age = Math.max(0, Date.now() - (callData.timestamp || Date.now()));
+                const nowS = (window.serverNow ? window.serverNow() : Date.now()); const age = Math.max(0, nowS - (callData.timestamp || nowS));
                 window._incomingCallTimer = setTimeout(() => {
                     if (window._incomingCallKey === key && window.currentIncomingCall) window.declineIncomingCall();
-                }, Math.min(30000, Math.max(5000, 30000 - age)));
+                }, Math.min(45000, Math.max(20000, 45000 - age)));
             };
 
             window.acceptIncomingCall = function () {
@@ -23677,7 +23682,7 @@ ${textContent ? `
                     const name = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'EXAMA' : 'Student');
                     // Remember exactly which call this is (its Firebase timestamp), so that ending THIS
                     // call later can never accidentally end a brand-new call someone starts moments after.
-                    const myCallTs = isAnswering ? ((window.globalDiscusCallState && window.globalDiscusCallState.timestamp) || null) : Date.now();
+                    const myCallTs = isAnswering ? ((window.globalDiscusCallState && window.globalDiscusCallState.timestamp) || null) : (window.serverNow ? window.serverNow() : Date.now());
                     const st = WAC.st = { kind, mode: kind, name, isCaller: !isAnswering, ringing: !isAnswering, joined: false, startedAt: 0, remote: new Map(), selfId: null, speaker: null, muted: false, camOff: !(wantVideo && perm.video), api: null, callTimestamp: myCallTs };
                     WAC.host();
                     const modal = $w('discus-video-modal'), container = $w('discus-jitsi-container');
@@ -23692,7 +23697,7 @@ ${textContent ? `
                         WAC.startRingback();
                         const callPayload = { callerMobile: window.loggedInMobile, callerName: name, callType: kind, status: 'ringing', timestamp: myCallTs };
                         if (isFirebaseConfigured) { const callsPath = window.isGlobalTestMode ? 'test_active_calls' : 'active_calls'; await set(ref(window.rtdb, `${callsPath}/discus_call`), callPayload); }
-                        await window.dbSendChat({ type: 'call_log', callType: kind, text: wantVideo ? 'Video Call' : 'Audio Call', mobile: window.loggedInMobile, name, timestamp: Date.now(), replyTo: null });
+                        await window.dbSendChat({ type: 'call_log', callType: kind, text: wantVideo ? 'Video Call' : 'Audio Call', mobile: window.loggedInMobile, name, timestamp: myCallTs, replyTo: null });
                         sendOneSignalPush(wantVideo ? '🎥 Incoming Video Call' : '📞 Incoming Audio Call', `${name} started a live ${wantVideo ? 'video' : 'audio'} call in Discus Community.`, null, { category: 'call', data: { callType: kind } }, window.getOtherStudentsMobiles());
                     }
                 } catch (e) { console.warn('Call start failed:', e); if (!WAC.active) WAC.setFull(false); }
