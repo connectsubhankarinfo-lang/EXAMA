@@ -13408,11 +13408,8 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                             const joinAction = isVideo ? 'window.startDiscusVideoCall(true)' : 'window.startDiscusAudioCall(true)';
 
                             let isCallActive = false;
-                            if (window.globalDiscusCallState && window.globalDiscusCallState.status === 'ringing') {
-                                if (Math.abs(window.globalDiscusCallState.timestamp - msg.timestamp) < 60000) {
-                                    isCallActive = true;
-                                }
-                            }
+                            const gcs = window.globalDiscusCallState;
+                            if (gcs && window.callIsLive && window.callIsLive(gcs) && Math.abs((gcs.timestamp || 0) - (msg.timestamp || 0)) < 2000) isCallActive = true;
                             
                             if (isCallActive) {
                                 callLogHtml = `
@@ -17365,37 +17362,16 @@ ${textContent ? `
                     try { onValue(ref(window.rtdb, '.info/serverTimeOffset'), (snap) => { window._serverOffset = Number(snap.val()) || 0; }); } catch (e) { }
                     await new Promise(r => requestAnimationFrame(r));
                     onValue(ref(window.rtdb, (window.isGlobalTestMode ? 'test_active_calls' : 'active_calls') + '/discus_call'), (snapshot) => {
-                          if (snapshot.exists()) {
-                              const callData = snapshot.val();
-                              window.globalDiscusCallState = callData;
-                              if (typeof window.renderChat === 'function') window.renderChat();
-                              // call was ended by the last person -> close it here too, instantly
-                              if (callData.status === 'ended' && window.WAC && window.WAC.active && window.WAC.st && window.WAC.st.callTimestamp === callData.timestamp && window.WAC.st.joined && !window.WAC.closing && (window.WAC.st.startedAt || !window.WAC.st.isCaller)) {
-                                  try { window.showToast('Call ended', 'The call has ended.', 'info'); } catch (e) { }
-                                  window.closeDiscusVideoCall();
-                              }
-                            const now = (window.serverNow ? window.serverNow() : Date.now());
-                            const callKey = String(callData.callerMobile) + '_' + String(callData.timestamp);
-                            const isInitial = !window._callListenerPrimed; window._callListenerPrimed = true;
-                            const age = now - (callData.timestamp || 0);
-                            // A NEW call arriving while the app is open is trusted. The very first snapshot after
-                            // opening the app only counts if the call is really fresh (a call left as "ringing"
-                            // in the database must never ring again on every launch), and each call rings once.
-                            const isNewLive = !isInitial && window._lastSeenCallKey !== callKey;
-                            const isFreshOnLoad = isInitial && age > -15000 && age < 50000;
-                            const showingThis = window._incomingCallKey === callKey && window.currentIncomingCall;
-                            window._lastSeenCallKey = callKey;
-                            if (callData.status === 'ringing' && callData.callerMobile !== window.loggedInMobile && showingThis) {
-                                  /* already showing this call - leave it alone */
-                              } else if (callData.status === 'ringing' && callData.callerMobile !== window.loggedInMobile && !window.hasHandledCall(callKey) && (isNewLive || isFreshOnLoad)) {
-                                  window.showIncomingCallPopup(callData);
-                              } else {
-                                  if (window.currentIncomingCall && window.currentIncomingCall.callerMobile === callData.callerMobile) {
-                                      if (typeof window.declineIncomingCall === 'function') window.declineIncomingCall();
-                                  }
-                              }
-                        }
+                        const cd = snapshot.exists() ? snapshot.val() : null;
+                        window.globalDiscusCallState = cd;
+                        try { if (window.WAC && window.WAC.onSignal) window.WAC.onSignal(cd); } catch (e) { console.warn('call signal', e); }
+                        try { window.callRefreshChatCard(); } catch (e) { }
+                        try { window.callMaybeRing(cd); } catch (e) { console.warn('call ring', e); }
                     });
+                    // slow clock: expires stale "Tap to join" cards, retries resuming a call after a reload
+                    if (!window._callCardTimer) window._callCardTimer = setInterval(() => {
+                        try { window.callRefreshChatCard(); if (window.WAC && window.WAC.tryResume) window.WAC.tryResume(window.globalDiscusCallState); } catch (e) { }
+                    }, 3000);
 
                     await new Promise(r => setTimeout(r, 800));
                 } else {
@@ -23431,54 +23407,91 @@ ${textContent ? `
                 if (el) { try { el.pause(); el.currentTime = 0; } catch (e) {} }
             }
 
-            // A call is only considered "still live" if Firebase's real-time state agrees:
-            // status is still 'ringing'/'active' (not 'ended') AND it started recently.
-            // This is what stops a stale push notification - one that only reached the
-            // device late, after the caller already hung up - from dropping someone into
-            // an empty Jitsi room. 45s matches the OneSignal ttl set on call pushes below.
-            window.isDiscusCallLive = function (callData) {
-                const live = window.globalDiscusCallState;
-                if (!callData) return false;
-                if (live && live.status === 'ended') return false;
-                if (!callData.timestamp) return true;
-                return ((window.serverNow ? window.serverNow() : Date.now()) - callData.timestamp) < 60000;
+            // ==========================================================
+            // CALL SIGNALING HELPERS (shared by listener, chat card, popup and engine)
+            // The call record in Firebase is the ONE source of truth:
+            //   discus_call = { callerMobile, callerName, callType, status:'ringing'|'ended', timestamp,
+            //                   answeredAt, participants:{ <mobile>:{ name, ts(heartbeat), joinedAt, left } } }
+            // A person is "in the call" while their heartbeat is fresh and they have not tapped End.
+            // Media problems, pushes, page reloads or a phone that blinks NEVER end the call for anyone.
+            // ==========================================================
+            const CE = { HB: 4000, STALE: 20000, ALONE: 30000, RING: 45000, GIVEUP: 90000, RESUME: 45000 };
+            const cNow = () => (window.serverNow ? window.serverNow() : Date.now());
+            const cPath = () => (window.isGlobalTestMode ? 'test_active_calls' : 'active_calls') + '/discus_call';
+            const cRef = (sub) => ref(window.rtdb, cPath() + (sub ? '/' + sub : ''));
+            const cMe = () => String(window.loggedInMobile || '').replace(/[.#$\[\]\/]/g, '');
+            const cTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+            window.callParticipants = function (cd) {
+                const p = cd && cd.participants;
+                if (!p || typeof p !== 'object') return [];
+                return Object.keys(p).map(m => Object.assign({ mobile: m }, p[m] || {}));
+            };
+            window.callPeers = function (cd, me) {
+                const now = cNow();
+                return window.callParticipants(cd).filter(p => p.mobile !== me && !p.left && (now - (p.ts || 0)) < CE.STALE);
+            };
+            window.callIsLive = function (cd) {
+                if (!cd || cd.status === 'ended' || !cd.timestamp) return false;
+                const now = cNow();
+                if (window.callParticipants(cd).some(p => !p.left && (now - (p.ts || 0)) < CE.STALE)) return true;
+                return (now - cd.timestamp) < 8000;
+            };
+            window.isDiscusCallLive = function (cd) { return window.callIsLive(cd && window.globalDiscusCallState && window.globalDiscusCallState.timestamp === cd.timestamp ? window.globalDiscusCallState : cd); };
+
+            window.callRefreshChatCard = function () {
+                const cd = window.globalDiscusCallState;
+                const sig = cd ? [cd.timestamp, cd.status, window.callIsLive(cd) ? 1 : 0].join(':') : 'none';
+                if (sig === window._callSig) return;
+                window._callSig = sig;
+                if (typeof window.renderChat === 'function') window.renderChat();
             };
 
+            window.dismissIncomingCall = function () {
+                stopRingtone();
+                const m = document.getElementById('incoming-call-modal'); if (m) m.classList.add('hidden-view');
+                window.currentIncomingCall = null; window._incomingCallKey = null;
+            };
+            window.declineIncomingCall = function () { window.dismissIncomingCall(); };
+
             window.showIncomingCallPopup = function (callData) {
-                // never show / ring for a call that already ended or is stale
-                if (!callData || callData.status === 'ended') return;
-                if (window.WAC && window.WAC.active) return;   // already in a call: never ring over it
-                if (callData.timestamp && ((window.serverNow ? window.serverNow() : Date.now()) - callData.timestamp) > 60000) return;
+                if (!callData || !window.callIsLive(callData)) return;
+                if (window.WAC && window.WAC.active) return;
                 window.currentIncomingCall = callData; document.getElementById('incoming-caller-name').innerText = callData.callerName || 'Peer Student';
                 const isVideo = callData.callType === 'video'; document.getElementById('incoming-call-type-text').innerText = isVideo ? "Incoming Video Call" : "Incoming Audio Call"; document.getElementById('incoming-call-icon').className = isVideo ? "fa-solid fa-video animate-pulse" : "fa-solid fa-phone-volume animate-pulse";
                 document.getElementById('incoming-call-modal').classList.remove('hidden-view'); startRingtone(); if (window.wacDecorateIncoming) window.wacDecorateIncoming(callData);
                 const key = String(callData.callerMobile) + '_' + String(callData.timestamp);
                 window._incomingCallKey = key; window.markCallHandled(key);
-                const nowS = (window.serverNow ? window.serverNow() : Date.now()); const age = Math.max(0, nowS - (callData.timestamp || nowS));
-                window._incomingCallTimer = setTimeout(() => {
-                    if (window._incomingCallKey === key && window.currentIncomingCall) window.declineIncomingCall();
-                }, Math.min(45000, Math.max(20000, 45000 - age)));
+                const age = Math.max(0, cNow() - (callData.timestamp || cNow()));
+                window._incomingCallTimer = setTimeout(() => { if (window._incomingCallKey === key) window.dismissIncomingCall(); }, Math.max(5000, CE.RING - age));
+            };
+
+            // decides, on every change of the call record, whether THIS phone should ring
+            window.callMaybeRing = function (cd) {
+                const me = cMe();
+                if (!cd) { if (window.currentIncomingCall) window.dismissIncomingCall(); return; }
+                const key = String(cd.callerMobile) + '_' + String(cd.timestamp);
+                const live = window.callIsLive(cd);
+                const mine = !!(me && cd.participants && cd.participants[me]);
+                if (window.currentIncomingCall) {
+                    if (window._incomingCallKey === key) { if (!live || mine) window.dismissIncomingCall(); return; }
+                    window.dismissIncomingCall();
+                }
+                if (!me || !window.currentRole || !live || mine || String(cd.callerMobile) === me) return;
+                if (window.WAC && (window.WAC.active || window.WAC.busy)) return;
+                const age = cNow() - cd.timestamp;
+                if (age < -15000 || age > CE.RING) return;
+                if (window.hasHandledCall(key)) return;
+                window.showIncomingCallPopup(cd);
             };
 
             window.acceptIncomingCall = function () {
                 stopRingtone();
-                document.getElementById('incoming-call-modal').classList.add('hidden-view');
-
-                if (window.currentIncomingCall) {
-                    const call = window.currentIncomingCall;
-                    window.currentIncomingCall = null;
-                    if (!window.isDiscusCallLive(call)) {
-                        window.location.hash = 'chat';
-                        if (typeof showToast === 'function') showToast("Call Ended", "This call already ended before you joined.", "info");
-                        return;
-                    }
-                    window.location.hash = 'chat';
-                    if (call.callType === 'video') window.startDiscusVideoCall(true);
-                    else window.startDiscusAudioCall(true);
-                }
+                const m = document.getElementById('incoming-call-modal'); if (m) m.classList.add('hidden-view');
+                const call = window.currentIncomingCall; window.currentIncomingCall = null;
+                if (!call) return;
+                window.location.hash = 'chat';
+                if (call.callType === 'video') window.startDiscusVideoCall(true); else window.startDiscusAudioCall(true);
             };
-
-            window.declineIncomingCall = function () { stopRingtone(); document.getElementById('incoming-call-modal').classList.add('hidden-view'); window.currentIncomingCall = null; };
 
             // ==========================================================
             // WHATSAPP-STYLE CALL ENGINE (Discus audio + video calls)
@@ -23520,24 +23533,30 @@ ${textContent ? `
 
             WAC.host = function () { const app = $w('app'); ['discus-video-modal', 'wac-banner'].forEach(id => { const el = $w(id); if (app && el && el.parentElement !== app) app.appendChild(el); }); };
             WAC.statusText = function () {
-                const st = WAC.st; if (st.reconnecting || !st.joined) return st.everJoined ? 'Reconnecting…' : 'Connecting…';
-                if (!st.remote.size) return st.ringing ? 'Ringing…' : (st.startedAt ? 'Reconnecting…' : 'Waiting for others…');
-                return wFmt(Date.now() - st.startedAt);
+                const st = WAC.st; if (!st) return '';
+                if (st.media !== 'up') return st.everConnected ? 'Reconnecting…' : 'Connecting…';
+                if (!st.peers.length) return st.ringing ? 'Ringing…' : 'Waiting for others…';
+                return wFmt(cNow() - (st.startedAt || cNow()));
             };
-            WAC.tick = function () { if (!WAC.st) return; const t = WAC.statusText(); const a = $w('wac-status'), b = $w('wac-banner-time'); if (a) a.textContent = t; if (b) b.textContent = t; };
+            WAC.tick = function () {
+                const st = WAC.st; if (!st) return;
+                const t = WAC.statusText(), a = $w('wac-status'), b = $w('wac-banner-time'), n = $w('wac-name');
+                if (a) a.textContent = t; if (b) b.textContent = t;
+                if (n) n.textContent = st.peers.length === 1 ? (st.peers[0].name || 'Student') : (st.peers.length > 1 ? 'Group call · ' + (st.peers.length + 1) : 'Discus Community Call');
+            };
             WAC.renderStage = function () {
                 const st = WAC.st, el = $w('wac-stage'); if (!st || !el) return;
-                const rem = [...st.remote.values()];
+                const rem = st.peers || [];
                 let tiles;
                 if (!rem.length) tiles = [{ id: 'x', name: '', dp: WAC_LOGO, pulse: 1 }];
-                else if (rem.length === 1) tiles = [{ id: rem[0].id, name: rem[0].name, dp: wDp(rem[0].name) }];
-                else tiles = rem.map(r => ({ id: r.id, name: r.name, dp: wDp(r.name) })).concat([{ id: 'me', name: 'You', dp: wDp(st.name) }]);
+                else if (rem.length === 1) tiles = [{ id: rem[0].mobile, name: rem[0].name || 'Student', dp: wDp(rem[0].name) }];
+                else tiles = rem.map(r => ({ id: r.mobile, name: r.name || 'Student', dp: wDp(r.name) })).concat([{ id: 'me', name: 'You', dp: wDp(st.name) }]);
                 const size = tiles.length === 1 ? 150 : tiles.length <= 4 ? 108 : 78;
                 el.innerHTML = tiles.map(t => {
-                    const sp = st.speaker && (t.id === st.speaker || (t.id === 'me' && st.speaker === st.selfId));
+                    const sp = st.speakerName && (t.id === 'me' ? st.speakerName === '__me' : st.speakerName === t.name);
                     return `<div class="wac-tile ${sp ? 'wac-speaking' : ''} ${t.pulse ? 'wac-pulse' : ''}" style="--w:${size + 20}px">${wAv(t.name || 'Discus', t.dp, size)}${t.name ? `<span class="nm">${wEsc(t.name)}</span>` : ''}</div>`;
                 }).join('');
-                const n = $w('wac-count-n'); if (n) n.textContent = st.remote.size + 1;
+                const n = $w('wac-count-n'); if (n) n.textContent = rem.length + 1;
             };
             WAC.syncBtns = function () {
                 const st = WAC.st; if (!st) return;
@@ -23606,58 +23625,21 @@ ${textContent ? `
                 } catch (e) { }
             };
             WAC.stopRingback = function () { const r = WAC.ring; if (!r) return; clearInterval(r.iv); clearTimeout(r.to); try { r.ctx.close(); } catch (e) { } WAC.ring = null; };
-            WAC.onRemoteChange = function () {
-                const st = WAC.st; if (!st) return;
-                if (st.remote.size && !st.startedAt) { st.startedAt = Date.now(); st.ringing = false; WAC.stopRingback(); }
-                WAC.renderStage(); WAC.tick();
-            };
-            WAC.attach = function (api) {
-                const st = WAC.st, on = (n, f) => api.addEventListener(n, (ev) => { if (WAC.st === st) f(ev); });
-                on('videoConferenceJoined', (e) => {
-                    st.joined = true; st.everJoined = true; st.reconnecting = false; st.rejoins = 0; clearTimeout(st.connTimer); st.selfId = e && e.id; $w('wac-splash').classList.add('wac-gone'); WAC.renderStage(); WAC.tick(); WAC.poke();
-                    // Joined a room nobody is in -> close cleanly instead of sitting alone. BUT: Jitsi's own
-                    // media/bridge negotiation can legitimately take longer than a few seconds (mobile
-                    // networks especially), and the caller's "participantJoined" event on this side can
-                    // arrive after that - the old 12s cutoff was disconnecting calls that HAD genuinely been
-                    // answered, right after acceptance. Now: wait longer, and only actually hang up if the
-                    // shared call record confirms the caller ended it - not just because nobody has shown
-                    // up in this device's Jitsi feed yet.
-                    if (!st.isCaller) st.emptyTimer = setTimeout(() => {
-                        if (WAC.st !== st || st.remote.size || st.startedAt) return;
-                        const live = window.globalDiscusCallState;
-                        if (live && live.status !== 'ended') return; // caller likely still connecting - keep waiting, don't hang up
-                        wToast('Call ended', 'This call already ended before you joined.'); window.closeDiscusVideoCall();
-                    }, 25000);
-                });
-                on('participantJoined', (p) => { if (!p || !p.id) return; clearTimeout(st.aloneTimer); window._discusRemoteParticipants.add(p.id); st.remote.set(p.id, { id: p.id, name: p.displayName || 'Student' }); WAC.onRemoteChange(); });
-                on('participantLeft', (p) => {
-                    if (!p || !p.id) return;
-                    window._discusRemoteParticipants.delete(p.id); st.remote.delete(p.id); WAC.onRemoteChange();
-                    // Everyone else has left a call that had actually connected -> end it for the last person too,
-                    // instead of leaving them sitting alone in an otherwise-empty meeting.
-                    if (WAC.st === st && !st.remote.size && st.startedAt) {
-                        clearTimeout(st.aloneTimer);
-                        st.aloneTimer = setTimeout(() => { if (WAC.st === st && !st.remote.size) { wToast('Call ended', 'Everyone else has left the call.'); window.closeDiscusVideoCall(); } }, 20000);
-                    }
-                });
-                on('displayNameChange', (p) => { const r = p && st.remote.get(p.id); if (r) { r.name = p.displayname || p.displayName || r.name; WAC.renderStage(); } });
-                on('dominantSpeakerChanged', (p) => { st.speaker = p && p.id; WAC.renderStage(); });
-                on('audioMuteStatusChanged', (p) => { st.muted = !!(p && p.muted); WAC.syncBtns(); });
-                on('videoMuteStatusChanged', (p) => { st.camOff = !!(p && p.muted); WAC.syncBtns(); });
-                on('screenSharingStatusChanged', (e) => { st.sharing = !!(e && e.on); $w('discus-video-modal').classList.toggle('wac-sharing', st.sharing); WAC.syncBtns(); });
-                on('contentSharingParticipantsChanged', (e) => { const ids = (e && (e.data || e.participants)) || []; st.remoteShare = ids.some(id => id !== st.selfId); WAC.applyView(); });
-                on('errorOccurred', (e) => { try { console.warn('Jitsi errorOccurred', e); } catch (x) { } const er = e && e.error, m = er && (er.message || er.name); if (!st.errShown2) { st.errShown2 = 1; wToast('Call error', m ? String(m).slice(0, 140) : 'The call service reported an error.'); } });
-                on('micError', () => { if (!st.errShown) { st.errShown = 1; wToast('Microphone problem', 'Check that another app is not using your microphone.'); } });
-                on('cameraError', () => { if (!st.errShown) { st.errShown = 1; wToast('Camera problem', 'Could not start your camera.'); } });
-                on('videoConferenceLeft', () => { if (st.everJoined) WAC.rejoin(st); else window.closeDiscusVideoCall(); });
-                on('readyToClose', () => { if (st.everJoined) WAC.rejoin(st); else window.closeDiscusVideoCall(); });
-            };
-            WAC.options = function (container, name, video) {
+            // ==========================================================
+            // CALL ENGINE v2
+            //  - signaling (Firebase) owns the call: who is in it, who left, when it ends
+            //  - Jitsi is ONLY the audio/video pipe; when the pipe drops it silently reconnects
+            //  - the call ends ONLY when: you tap End, nobody answers (45s), everyone else has been gone 30s,
+            //    or the pipe cannot be restored for 90s
+            //  - a page reload / WebView restart resumes the call (session kept in localStorage)
+            // ==========================================================
+            WAC.options = function (container, st) {
+                const video = st.mode === 'video' && !st.camOff;
                 return {
                     roomName: WAC_ROOM, parentNode: container, width: '100%', height: '100%',
                     configOverwrite: {
                         prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, disableDeepLinking: true,
-                        enableWelcomePage: false, enableClosePage: false, startWithAudioMuted: false, startWithVideoMuted: !video,
+                        enableWelcomePage: false, enableClosePage: false, startWithAudioMuted: !!st.muted, startWithVideoMuted: !video,
                         toolbarButtons: [], notifications: [], disableJoinLeaveSounds: true, disableIncomingMessageSound: true,
                         hideConferenceSubject: true, hideConferenceTimer: true, hideParticipantsStats: true, hideDisplayName: true,
                         disableModeratorIndicator: true, disableReactions: true, disablePolls: true, disableInviteFunctions: true,
@@ -23671,133 +23653,255 @@ ${textContent ? `
                         SHOW_POWERED_BY: false, SHOW_PROMOTIONAL_CLOSE_PAGE: false, MOBILE_APP_PROMO: false, HIDE_INVITE_MORE_HEADER: true,
                         DISABLE_JOIN_LEAVE_NOTIFICATIONS: true, VIDEO_QUALITY_LABEL_DISABLED: true, DEFAULT_BACKGROUND: '#000000'
                     },
-                    userInfo: { displayName: name }
+                    userInfo: { displayName: st.name }
                 };
             };
-            // A dropped connection (push arriving, app briefly paused, network blip) never ends the call by itself:
-            // show "Reconnecting..." and quietly rejoin the same room. Ends only via End button, the other side
-            // really hanging up (shared record = ended), or after 6 failed tries.
-            WAC.rejoin = function (st) {
-                if (WAC.st !== st || WAC.closing) return;
-                const live = window.globalDiscusCallState;
-                if (live && live.status === 'ended' && live.timestamp === st.callTimestamp) return window.closeDiscusVideoCall();
-                st.rejoins = (st.rejoins || 0) + 1;
-                if (st.rejoins > 6) { wToast('Call ended', 'Connection lost.'); return window.closeDiscusVideoCall(); }
-                st.reconnecting = true; st.joined = false; st.remote.clear(); WAC.renderStage(); WAC.tick();
-                clearTimeout(st.rejoinTimer);
-                st.rejoinTimer = setTimeout(() => {
-                    if (WAC.st !== st || WAC.closing) return;
-                    try { st.api && st.api.dispose(); } catch (e) { }
-                    const c = $w('discus-jitsi-container'); if (c) c.innerHTML = '';
-                    window._discusRemoteParticipants = new Set();
-                    try {
-                        const api = st.api = window.chatJitsiApi = new window.JitsiMeetExternalAPI('8x8.vc', WAC.options(c, st.name, st.kind === 'video' && !st.camOff));
-                        try { api.executeCommand('join'); } catch (e) { }
-                        WAC.attach(api);
-                        clearTimeout(st.connTimer); st.connTimer = setTimeout(() => { if (WAC.st === st && !st.joined) WAC.rejoin(st); }, 20000);
-                    } catch (e) { WAC.rejoin(st); }
-                }, Math.min(1000 * st.rejoins, 5000));
+
+            // ---- media pipe (Jitsi) -------------------------------------------------
+            WAC.attach = function (api, st) {
+                const on = (n, f) => api.addEventListener(n, (ev) => {
+                    if (WAC.st !== st || st.api !== api || st.ended) return;
+                    try { f(ev); } catch (e) { console.warn('call event', n, e); }
+                });
+                on('videoConferenceJoined', (e) => {
+                    st.media = 'up'; st.joined = true; st.everConnected = true; st.attempt = 0; st.mediaSince = 0; st.selfId = e && e.id;
+                    $w('wac-splash').classList.add('wac-gone'); WAC.renderStage(); WAC.tick(); WAC.poke();
+                });
+                on('participantJoined', (p) => { if (p && p.id) st.remote.set(p.id, { id: p.id, name: p.displayName || '' }); });
+                on('participantLeft', (p) => { if (p && p.id) st.remote.delete(p.id); });
+                on('displayNameChange', (p) => { const r = p && st.remote.get(p.id); if (r) r.name = p.displayname || p.displayName || r.name; });
+                on('dominantSpeakerChanged', (p) => {
+                    const id = p && p.id, nm = id === st.selfId ? '__me' : ((st.remote.get(id) || {}).name || '');
+                    if (st.speakerName !== nm) { st.speakerName = nm; WAC.renderStage(); }
+                });
+                on('audioMuteStatusChanged', (p) => { st.muted = !!(p && p.muted); WAC.syncBtns(); });
+                on('videoMuteStatusChanged', (p) => { st.camOff = !!(p && p.muted); WAC.syncBtns(); });
+                on('screenSharingStatusChanged', (e) => { st.sharing = !!(e && e.on); $w('discus-video-modal').classList.toggle('wac-sharing', st.sharing); WAC.syncBtns(); });
+                on('contentSharingParticipantsChanged', (e) => { const ids = (e && (e.data || e.participants)) || []; st.remoteShare = ids.some(id => id !== st.selfId); WAC.applyView(); });
+                on('errorOccurred', (e) => {
+                    const er = e && e.error, m = er && (er.message || er.name);
+                    if (!st.errShown2) { st.errShown2 = 1; wToast('Call error', m ? String(m).slice(0, 140) : 'The call service reported an error.'); }
+                    if (er && er.isFatal) WAC.mediaDown(st);
+                });
+                on('micError', () => { if (!st.errShown) { st.errShown = 1; wToast('Microphone problem', 'Check that another app is not using your microphone.'); } });
+                on('cameraError', () => { if (!st.errShown) { st.errShown = 1; wToast('Camera problem', 'Could not start your camera.'); } });
+                // the pipe closing is NOT the call ending: reconnect quietly
+                on('videoConferenceLeft', () => WAC.mediaDown(st));
+                on('readyToClose', () => WAC.mediaDown(st));
             };
-            WAC.start = async function (kind, isAnswering) {
-                if (WAC.active) { WAC.restore(); return; }
+            WAC.mediaDown = function (st) {
+                if (WAC.st !== st || st.ended) return;
+                st.media = 'down'; st.joined = false; st.mediaSince = st.mediaSince || cNow();
+                WAC.tick(); WAC.scheduleReconnect();
+            };
+            WAC.scheduleReconnect = function (delay) {
+                const st = WAC.st; if (!st || st.ended || st.reconTimer) return;
+                st.attempt = (st.attempt || 0) + 1;
+                st.reconTimer = setTimeout(() => { st.reconTimer = 0; WAC.mediaConnect(); }, delay != null ? delay : Math.min(1000 * st.attempt, 5000));
+            };
+            WAC.mediaConnect = function () {
+                const st = WAC.st; if (!st || st.ended) return;
+                clearTimeout(st.reconTimer); st.reconTimer = 0;
+                st.media = 'connecting'; st.joined = false; st.mediaTry = cNow(); st.mediaSince = st.mediaSince || cNow();
+                try { if (st.api) st.api.dispose(); } catch (e) { }
+                const c = $w('discus-jitsi-container'); if (c) c.innerHTML = '';
+                st.remote = new Map();
+                let api;
+                try { api = st.api = window.chatJitsiApi = new window.JitsiMeetExternalAPI('8x8.vc', WAC.options(c, st)); }
+                catch (e) { console.warn('Jitsi start failed', e); st.media = 'down'; WAC.scheduleReconnect(); return; }
+                try { api.executeCommand('join'); } catch (e) { }
+                WAC.attach(api, st);
+                WAC.tick();
+            };
+
+            // ---- signaling: heartbeat + watcher ------------------------------------
+            WAC.heartbeat = function () {
+                const st = WAC.st; if (!st || st.ended || typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured) return;
+                const cd = window.globalDiscusCallState;
+                if (cd && cd.timestamp === st.callTimestamp && cd.status !== 'ended') { try { set(cRef('participants/' + st.me + '/ts'), cNow()).catch(() => { }); } catch (e) { } }
+            };
+            WAC.watch = function () {
+                const st = WAC.st; if (!st || st.ended || WAC.closing) return;
+                const now = cNow();
+                if (st.media === 'connecting' && st.mediaTry && now - st.mediaTry > 20000) WAC.mediaDown(st);          // never sit on "Connecting…"
+                if (st.media !== 'up' && st.mediaSince && now - st.mediaSince > CE.GIVEUP) return WAC.end('lost');
+                if (typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured) return;
+                const cd = window.globalDiscusCallState;
+                if (!cd) { if (now - st.t0 > 8000) return WAC.end('remote'); return; }
+                if (cd.timestamp !== st.callTimestamp) { if (cd.timestamp > st.callTimestamp) return WAC.end('remote'); return; }
+                if (cd.status === 'ended') return WAC.end('remote');
+                const peers = window.callPeers(cd, st.me);
+                const sig = peers.map(p => p.mobile + '|' + (p.name || '')).join(',');
+                st.peers = peers;
+                if (sig !== st.peerSig) { st.peerSig = sig; WAC.renderStage(); WAC.tick(); }
+                if (peers.length) {
+                    st.aloneSince = 0;
+                    if (!st.hadPeer) {
+                        st.hadPeer = true; st.ringing = false; WAC.stopRingback();
+                        if (!st.startedAt) st.startedAt = cd.answeredAt || now;
+                    }
+                    if (!st.startedAt) st.startedAt = cd.answeredAt || now;
+                    if (st.isCaller && !cd.answeredAt && !st.answeredWritten) { st.answeredWritten = 1; try { set(cRef('answeredAt'), now).catch(() => { }); } catch (e) { } }
+                } else if (!st.hadPeer) {
+                    if (now - st.callTimestamp > CE.RING) return WAC.end(st.isCaller ? 'noanswer' : 'remote');
+                } else {
+                    st.aloneSince = st.aloneSince || now;                       // everyone else dropped: give them time to come back
+                    if (now - st.aloneSince > CE.ALONE) return WAC.end('alone');
+                }
+            };
+            WAC.onSignal = function (cd) { try { WAC.tryResume(cd); } catch (e) { console.warn('resume', e); } WAC.watch(); };
+            WAC.wake = function () {
+                const st = WAC.st; if (!st || st.ended) return;
+                WAC.heartbeat(); WAC.watch(); WAC.lockScreen();
+                if (WAC.st === st && st.media === 'down' && !st.reconTimer) WAC.scheduleReconnect(200);
+            };
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') WAC.wake(); });
+            window.addEventListener('online', () => WAC.wake());
+            window.addEventListener('pageshow', () => WAC.wake());
+            window.addEventListener('focus', () => WAC.wake());
+
+            // ---- resume after a page reload / WebView restart -----------------------
+            WAC.tryResume = function (cd) {
+                if (WAC.st || WAC.busy || WAC.closing) return;
+                let s = null; try { s = JSON.parse(localStorage.getItem('exama_call_session') || 'null'); } catch (e) { }
+                if (!s) return;
+                const me = cMe(); if (!me || !window.currentRole || !cd) return;      // wait until logged in and the record is loaded
+                const drop = () => { try { localStorage.removeItem('exama_call_session'); } catch (e) { } };
+                if (s.mobile !== me) return drop();
+                const mine = cd.participants && cd.participants[me];
+                const ok = cd.timestamp === s.id && cd.status !== 'ended' && mine && !mine.left && (cNow() - (mine.ts || 0)) < CE.RESUME && window.callIsLive(cd);
+                if (!ok) return drop();
+                WAC.start(s.kind, true, cd);
+            };
+
+            // ---- start / join / resume ---------------------------------------------
+            WAC.start = async function (kind, isAnswering, resume) {
+                if (WAC.active) { if (!resume) WAC.restore(); return; }
                 if (WAC.busy) return;
-                if (!window.JitsiMeetExternalAPI) return wToast('Calls unavailable', 'Could not load the call service. Check your internet and try again.');
+                if (!window.JitsiMeetExternalAPI) { if (!resume) wToast('Calls unavailable', 'Could not load the call service. Check your internet and try again.'); return; }
                 WAC.busy = true;
-                WAC.setFull(true);          // must run inside the tap, before any await
+                if (!resume) WAC.setFull(true);          // must run inside the tap, before any await
                 try {
                     const wantVideo = kind === 'video';
-                    const perm = await wPrewarm(wantVideo);
-                    if (!perm.audio) { WAC.busy = false; WAC.setFull(false); return wToast('Microphone blocked', 'Allow microphone access for this app in your phone settings to make calls.'); }
-                    if (wantVideo && !perm.video) wToast('Camera unavailable', 'Joining with your camera off.');
-                    const name = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'EXAMA' : 'Student');
-                    // Remember exactly which call this is (its Firebase timestamp), so that ending THIS
-                    // call later can never accidentally end a brand-new call someone starts moments after.
-                    const myCallTs = isAnswering ? ((window.globalDiscusCallState && window.globalDiscusCallState.timestamp) || null) : (window.serverNow ? window.serverNow() : Date.now());
-                    const st = WAC.st = { kind, mode: kind, name, isCaller: !isAnswering, ringing: !isAnswering, joined: false, startedAt: 0, remote: new Map(), selfId: null, speaker: null, muted: false, camOff: !(wantVideo && perm.video), api: null, callTimestamp: myCallTs };
+                    const perm = resume ? { audio: true, video: wantVideo } : await wPrewarm(wantVideo);
+                    if (!perm.audio) { WAC.setFull(false); return wToast('Microphone blocked', 'Allow microphone access for this app in your phone settings to make calls.'); }
+                    if (wantVideo && !perm.video && !resume) wToast('Camera unavailable', 'Joining with your camera off.');
+                    const me = cMe();
+                    const name = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile)?.name || (window.currentRole === 'admin' ? 'EXAMA' : 'Student');
+                    const useFb = typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured;
+                    let cd = null, created = false;
+                    const t0 = cNow();
+                    if (!useFb) {
+                        cd = { callerMobile: me, callerName: name, callType: kind, status: 'ringing', timestamp: t0, participants: {} }; created = !isAnswering;
+                    } else if (resume) {
+                        const prev = (resume.participants || {})[me] || {};
+                        cd = Object.assign({}, resume, { participants: Object.assign({}, resume.participants || {}, { [me]: { name, ts: t0, joinedAt: prev.joinedAt || t0 } }) });
+                        set(cRef('participants/' + me), { name, ts: t0, joinedAt: prev.joinedAt || t0 }).catch(() => { });
+                    } else if (isAnswering) {
+                        const snap = await cTimeout(get(cRef()), 8000).catch(() => null);
+                        const cur = snap && snap.val();
+                        if (!cur || !window.callIsLive(cur)) { WAC.setFull(false); return wToast('Call ended', 'This call already ended before you joined.'); }
+                        cd = Object.assign({}, cur, { participants: Object.assign({}, cur.participants || {}, { [me]: { name, ts: t0, joinedAt: t0 } }) });
+                        set(cRef('participants/' + me), { name, ts: t0, joinedAt: t0 }).catch(() => { });
+                    } else {
+                        // start a call - or, if one is already live, simply join it (one community call at a time)
+                        const id = t0;
+                        const res = await cTimeout(runTransaction(cRef(), (cur) => {
+                            const t = cNow();
+                            if (cur && window.callIsLive(cur)) {
+                                const c = Object.assign({}, cur); c.participants = Object.assign({}, cur.participants || {}); c.participants[me] = { name, ts: t, joinedAt: t };
+                                return c;
+                            }
+                            return { callerMobile: me, callerName: name, callType: kind, status: 'ringing', timestamp: id, participants: { [me]: { name, ts: t, joinedAt: t } } };
+                        }), 8000).catch(() => null);
+                        cd = res && res.snapshot && res.snapshot.val();
+                        if (!cd) { WAC.setFull(false); return wToast('No connection', 'Could not start the call. Check your internet and try again.'); }
+                        created = cd.timestamp === id;
+                    }
+                    window.globalDiscusCallState = cd;
+
+                    const st = WAC.st = {
+                        kind, mode: kind, name, me, isCaller: created || (!!resume && String(cd.callerMobile) === me), ringing: created,
+                        media: 'connecting', joined: false, everConnected: false, hadPeer: !!resume, peers: window.callPeers(cd, me), peerSig: null,
+                        remote: new Map(), selfId: null, speakerName: '', muted: false, camOff: !(wantVideo && perm.video), api: null,
+                        callTimestamp: cd.timestamp, startedAt: resume ? (cd.answeredAt || t0) : (cd.answeredAt || 0), t0, attempt: 0, mediaSince: t0, ended: false
+                    };
+                    if (resume) st.aloneSince = t0;
                     WAC.host();
                     const modal = $w('discus-video-modal'), container = $w('discus-jitsi-container');
                     container.innerHTML = ''; if (window.chatJitsiApi) { try { window.chatJitsiApi.dispose(); } catch (e) { } window.chatJitsiApi = null; }
                     modal.dataset.mode = kind; modal.classList.remove('hidden-view', 'wac-min', 'wac-ui-hidden'); $w('wac-splash').classList.remove('wac-gone'); $w('wac-banner').classList.remove('wac-show');
                     WAC.active = true; WAC.minimized = false; WAC.renderStage(); WAC.syncBtns(); WAC.tick();
-                    window._discusRemoteParticipants = new Set();
-                    const api = st.api = window.chatJitsiApi = new window.JitsiMeetExternalAPI('8x8.vc', WAC.options(container, name, wantVideo && perm.video));
-                    try { api.executeCommand('join'); } catch (e) { }
-                    WAC.attach(api); st.tick = setInterval(WAC.tick, 1000); WAC.lockScreen(); WAC.poke();
-                    st.connTimer = setTimeout(() => { if (WAC.st === st && !st.joined) WAC.rejoin(st); }, 20000);
-                    if (!isAnswering) {
+                    WAC.mediaConnect();
+                    st.tick = setInterval(WAC.tick, 1000); st.wt = setInterval(WAC.watch, 2000); st.hb = setInterval(WAC.heartbeat, CE.HB);
+                    WAC.lockScreen(); WAC.poke();
+                    try { localStorage.setItem('exama_call_session', JSON.stringify({ id: st.callTimestamp, kind, mobile: me })); } catch (e) { }
+                    if (created) {
                         WAC.startRingback();
-                        const callPayload = { callerMobile: window.loggedInMobile, callerName: name, callType: kind, status: 'ringing', timestamp: myCallTs };
-                        if (isFirebaseConfigured) { const callsPath = window.isGlobalTestMode ? 'test_active_calls' : 'active_calls'; await set(ref(window.rtdb, `${callsPath}/discus_call`), callPayload); }
-                        await window.dbSendChat({ type: 'call_log', callType: kind, text: wantVideo ? 'Video Call' : 'Audio Call', mobile: window.loggedInMobile, name, timestamp: myCallTs, replyTo: null });
-                        sendOneSignalPush(wantVideo ? '🎥 Incoming Video Call' : '📞 Incoming Audio Call', `${name} started a live ${wantVideo ? 'video' : 'audio'} call in Discus Community.`, null, { category: 'call', data: { callType: kind } }, window.getOtherStudentsMobiles());
+                        try { sendOneSignalPush(wantVideo ? '🎥 Incoming Video Call' : '📞 Incoming Audio Call', `${name} started a live ${wantVideo ? 'video' : 'audio'} call in Discus Community.`, null, { category: 'call', data: { callType: kind } }, window.getOtherStudentsMobiles()); } catch (e) { console.warn('call push', e); }
+                        try { await window.dbSendChat({ type: 'call_log', callType: kind, text: wantVideo ? 'Video Call' : 'Audio Call', mobile: window.loggedInMobile, name, timestamp: st.callTimestamp, replyTo: null }); } catch (e) { console.warn('call log', e); }
                     }
+                    WAC.watch();
                 } catch (e) { console.warn('Call start failed:', e); if (!WAC.active) WAC.setFull(false); }
-                WAC.busy = false;
+                finally { WAC.busy = false; }
             };
+
+            // ---- end (only ever called for the reasons listed at the top) ------------
+            WAC.end = async function (reason) {
+                if (WAC.closing || !WAC.st) return; WAC.closing = true;
+                const st = WAC.st;
+                try {
+                    st.ended = true;
+                    clearInterval(st.tick); clearInterval(st.wt); clearInterval(st.hb); clearTimeout(st.reconTimer); clearTimeout(st.uiTimer);
+                    stopRingtone(); WAC.stopRingback(); WAC.unlockScreen();
+                    try { localStorage.removeItem('exama_call_session'); } catch (e) { }
+                    const api = st.api, cd = window.globalDiscusCallState, me = st.me;
+                    const sameCall = !!cd && cd.timestamp === st.callTimestamp;
+                    const othersLeft = sameCall ? window.callPeers(cd, me).length > 0 : false;
+
+                    // 1) hang up on screen instantly
+                    const modal = $w('discus-video-modal'); modal.classList.add('hidden-view'); modal.classList.remove('wac-min', 'wac-sharing');
+                    $w('wac-banner').classList.remove('wac-show'); WAC.setFull(false);
+                    WAC.active = false; WAC.minimized = false; WAC.st = null; window.chatJitsiApi = null;
+
+                    // 2) chat card shows "Call ended" instantly if I was the last one
+                    if (sameCall && !othersLeft && reason !== 'remote') {
+                        window.globalDiscusCallState = Object.assign({}, cd, { status: 'ended' });
+                        try { window.callRefreshChatCard(); } catch (e) { }
+                    }
+                    const msg = { noanswer: ['No answer', 'Nobody joined the call.'], alone: ['Call ended', 'Everyone else has left the call.'], lost: ['Call ended', 'Connection lost.'], remote: ['Call ended', 'The call has ended.'] }[reason];
+                    if (msg) wToast(msg[0], msg[1]);
+
+                    // 3) close the media pipe
+                    if (api) {
+                        try { api.executeCommand('hangup'); } catch (e) { }
+                        setTimeout(() => { try { api.dispose(); } catch (e) { } if (!WAC.active) { const c = $w('discus-jitsi-container'); if (c) c.innerHTML = ''; } }, 400);
+                    } else { const c = $w('discus-jitsi-container'); if (c) c.innerHTML = ''; }
+
+                    // 4) tell everyone else: I left (and, if I was the last one, the call is over)
+                    if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && sameCall && reason !== 'remote') {
+                        await cTimeout(runTransaction(cRef(), (cur) => {
+                            if (!cur || cur.timestamp !== st.callTimestamp) return cur;
+                            const c = Object.assign({}, cur), now = cNow();
+                            c.participants = Object.assign({}, cur.participants || {});
+                            c.participants[me] = Object.assign({}, c.participants[me] || {}, { left: true, ts: now });
+                            const anyOther = Object.keys(c.participants).some(m => m !== me && c.participants[m] && !c.participants[m].left && (now - (c.participants[m].ts || 0)) < CE.STALE);
+                            if (!anyOther) { c.status = 'ended'; c.endedAt = now; }
+                            return c;
+                        }), 8000).catch(() => { });
+                    }
+                } finally { WAC.closing = false; WAC.busy = false; }
+            };
+
             window.wacDecorateIncoming = function (d) {
                 const p = (window.studentsDB || []).find(s => s.mobile === d.callerMobile), name = d.callerName || (p && p.name) || 'Peer Student';
                 const av = $w('incoming-caller-avatar'); if (av) { av.style.background = wColor(name); av.innerHTML = `<span>${wEsc(wInit(name))}</span>${p && p.dpUrl ? `<img src="${wEsc(p.dpUrl)}" alt="" onerror="this.remove()">` : ''}`; }
                 const ic = $w('incoming-accept-icon'); if (ic) ic.className = d.callType === 'video' ? 'fa-solid fa-video' : 'fa-solid fa-phone';
             };
-
             (function () { const m = $w('discus-video-modal'); if (m) new MutationObserver(() => { if (m.classList.contains('hidden-view')) { try { window.AppFS && window.AppFS.release('call'); } catch (e) { } } }).observe(m, { attributes: true, attributeFilter: ['class'] }); })();
             window.startDiscusVideoCall = function (isAnswering = false) { return WAC.start('video', isAnswering); };
             window.startDiscusAudioCall = function (isAnswering = false) { return WAC.start('audio', isAnswering); };
-
-            window.closeDiscusVideoCall = async function () {
-                if (WAC.closing || !WAC.st) return; WAC.closing = true;
-                try {
-                    stopRingtone(); WAC.stopRingback(); WAC.unlockScreen();
-                    const st = WAC.st; if (st) { clearInterval(st.tick); clearTimeout(st.uiTimer); clearTimeout(st.emptyTimer); clearTimeout(st.aloneTimer); clearTimeout(st.rejoinTimer); clearTimeout(st.connTimer); }
-                    const myCallTs = st && st.callTimestamp;
-                    const api = (st && st.api) || window.chatJitsiApi;
-                    // nobody else left in the room = I am the last person
-                    const wasLastPerson0 = st ? st.remote.size === 0 : ((window._discusRemoteParticipants instanceof Set) ? window._discusRemoteParticipants.size === 0 : true);
-
-                    // Only the caller (or someone who really got connected) may end the shared call.
-                    // An answerer who never saw anyone (join glitch / early hang-up) must not kill the caller's call.
-                    const wasLastPerson = wasLastPerson0 && (!st || st.isCaller || !!st.startedAt);
-                    // 1) Show "Call ended" in the chat INSTANTLY on this device (before any network work)
-                    if (wasLastPerson && myCallTs) {
-                        const cur = window.globalDiscusCallState;
-                        if (!cur || cur.timestamp === myCallTs) {
-                            window.globalDiscusCallState = Object.assign({}, cur || { timestamp: myCallTs }, { status: 'ended' });
-                            if (typeof window.renderChat === 'function') { try { window.renderChat(); } catch (e) { } }
-                        }
-                    }
-
-                    // 2) Tell the shared call record it ended -> every other phone flips its chat card to "Call ended" in real time
-                    let endWrite = null;
-                    if (wasLastPerson && typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
-                        const callsPath = window.isGlobalTestMode ? 'test_active_calls' : 'active_calls';
-                        const nodeRef = ref(window.rtdb, callsPath + '/discus_call');
-                        endWrite = myCallTs
-                            ? runTransaction(nodeRef, current => {
-                                // only end THIS call's record; a newer call keeps running
-                                if (!current || current.timestamp !== myCallTs) return current;
-                                return Object.assign({}, current, { status: 'ended', endedAt: Date.now() });
-                            })
-                            : set(ref(window.rtdb, callsPath + '/discus_call/status'), 'ended');
-                        endWrite = endWrite.catch(() => { });
-                    }
-
-                    // 3) Hang up instantly on screen
-                    const modal = $w('discus-video-modal'); modal.classList.add('hidden-view'); modal.classList.remove('wac-min');
-                    $w('wac-banner').classList.remove('wac-show'); modal.classList.remove('wac-sharing'); WAC.setFull(false);
-                    WAC.active = false; WAC.minimized = false; WAC.st = null; window.chatJitsiApi = null;
-
-                    // 4) Close the meeting on the Jitsi side too. Last person: try to end the conference for everyone, then hang up.
-                    if (api) {
-                        if (wasLastPerson) { try { api.executeCommand('endConference'); } catch (e) { } }
-                        try { api.executeCommand('hangup'); } catch (e) { }
-                        setTimeout(() => {
-                            try { api.dispose(); } catch (e) { }
-                            if (!WAC.active) { const c = $w('discus-jitsi-container'); if (c) c.innerHTML = ''; }
-                        }, 400);
-                    } else { $w('discus-jitsi-container').innerHTML = ''; }
-                    if (endWrite) await endWrite;
-                } finally { WAC.closing = false; WAC.busy = false; }
-            };
+            window.closeDiscusVideoCall = function () { return WAC.end('user'); };
             // ==========================================
             // CUSTOM MATERIAL READER ENGINE (PDF.js)
             // Correct togglePdfFullscreen & closeCustomPDFViewer below.
