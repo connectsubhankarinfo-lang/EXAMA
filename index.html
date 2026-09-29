@@ -10364,6 +10364,14 @@ html #admin-login-view>button{top:calc(max(env(safe-area-inset-top,0px),44px) + 
             if (!targets.length) return toast("Alarms", "Choose at least one student.", "error");
             const d = await api("save", { alarm: { title, time, repeat, date, all, targets, enabled: true } }); if (!d) return;
             AL = d.alarms; renderAlarms(); $("al-title").value = ""; toast("Alarm added", title + " • " + (window.tpFmt ? window.tpFmt(time) : time), "success");
+            // Push to ONLY the students this alarm is for: one request, one channel = the Notice Board tune ('exam')
+            try {
+                const who = [...new Set(targets.map(String))].filter(m => m && m !== "admin" && m !== "9475757821" && m !== String(window.loggedInMobile));
+                if (who.length && typeof sendOneSignalPush === "function") {
+                    const when = repeat === "daily" ? "Every day" : (date ? date.split("-").reverse().join("-") : "");
+                    sendOneSignalPush("⏰ New alarm: " + title, "Set for " + (window.tpFmt ? window.tpFmt(time) : time) + (when ? " • " + when : ""), null, { category: "exam", data: { noNav: 1, alarmCreated: 1 } }, who);
+                }
+            } catch (e) { console.warn("[Alarms] push failed", e && e.message); }
         };
         window.toggleAlarm = async function (id) { const a = AL.find(x => x.id === id); if (!a) return; const d = await api("save", { alarm: { ...a, enabled: !a.enabled } }); if (d) { AL = d.alarms; renderAlarms(); } };
         window.deleteAlarm = async function (id) {
@@ -16471,6 +16479,7 @@ ${textContent ? `
                   else if (data && data.p2p) openHash = 'student';
                   else if (category === 'call' || category === 'discus') openHash = 'chat';
                   else if (category === 'exam') openHash = 'notices';
+                  if (data && data.noNav) openHash = null;
                   let targetUrl = null;
                   try {
                       const L = window.location;
@@ -16485,7 +16494,7 @@ ${textContent ? `
                   else if (data && data.materialId) pushButtons = [{ id: 'review', text: 'Review' }];
                   else if (data && data.roomId) pushButtons = [{ id: 'open', text: 'Open' }];
                   else if (category === 'discus') pushButtons = [{ id: 'reply', text: 'Reply' }];
-                  else if (category === 'exam') pushButtons = [{ id: 'view', text: 'View' }];
+                  else if (category === 'exam' && !(data && data.noNav)) pushButtons = [{ id: 'view', text: 'View' }];
                   if (pushButtons) payload.buttons = pushButtons;
 
                   // A "call" push is only useful for ~45s - after that the caller has
@@ -16526,6 +16535,7 @@ ${textContent ? `
                 console.log('[Push Opened] raw data ->', JSON.stringify(data));
                 if (data && data.pushCategory === 'alarm') { if (window.__alarmPushOpened) window.__alarmPushOpened(data); return; }
                 if (!data) return;
+                if (data.noNav) return;   // e.g. "new alarm" push: just opens the app
                 // Push-only-opens: go to the screen named in targetUrl (waits for login on a cold start)
                 if (data.targetUrl) {
                     const i = String(data.targetUrl).indexOf('#');
