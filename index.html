@@ -3319,6 +3319,23 @@ button:active{transform:scale(.96);transition-duration:.12s}
 .rx-badge-pop{animation:badgePop .55s cubic-bezier(.34,1.56,.64,1)}
 .rx-fly{position:fixed;z-index:2147483000;pointer-events:none;animation:rxFly ease-out forwards;will-change:transform,opacity}
 @keyframes rxFly{0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.25)}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) rotate(var(--rot)) scale(.9)}}
+
+/* ===== DISCUS: WhatsApp-style typing indicator ===== */
+.typing-dots{display:inline-flex;align-items:center;gap:3px;height:12px;flex-shrink:0}
+.typing-dots i{display:block;width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.4;animation:typing-bounce 1.2s infinite ease-in-out}
+.typing-dots i:nth-child(2){animation-delay:.15s}
+.typing-dots i:nth-child(3){animation-delay:.3s}
+@keyframes typing-bounce{0%,60%,100%{transform:translateY(0);opacity:.35}30%{transform:translateY(-3px);opacity:1}}
+#chat-online-count{min-width:0}
+#chat-online-count .truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chat-typing-bubble{display:none;align-items:center;gap:6px;padding:2px 14px 4px;flex-shrink:0;pointer-events:none;position:relative;z-index:5}
+#chat-typing-bubble.show{display:flex}
+#chat-typing-bubble .typing-avatars{display:flex}
+#chat-typing-bubble .typing-avatars img{width:24px;height:24px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-sizing:border-box}
+#chat-typing-bubble .typing-avatars img+img{margin-left:-8px}
+#chat-typing-bubble .typing-bubble{background:#fff;color:#8696a0;border-radius:16px 16px 16px 4px;padding:9px 12px;box-shadow:0 1px 1px rgba(11,20,26,.13)}
+#chat-typing-bubble .typing-name{font-size:11px;font-weight:600;color:#54656f;background:rgba(255,255,255,.78);padding:2px 8px;border-radius:10px}
+@media (prefers-reduced-motion:reduce){.typing-dots i{animation:none;opacity:.7}}
 </style>
 <style id="login-glass">
 /* ===== LOGIN: colourful animated iOS glassmorphism ===== */
@@ -7033,6 +7050,8 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 });
             </script>
 
+            <div id="chat-typing-bubble" aria-live="polite"></div>
+
             <div id="chat-input-bar" class="w-full bg-transparent p-2 flex flex-col shrink-0 relative md:rounded-b-[2.5rem]">
 
 
@@ -7206,6 +7225,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     <button id="wac-b-vid" class="wac-btn wac-a-only" onclick="WAC.upgradeToVideo()" aria-label="Switch to video"><i class="fa-solid fa-video"></i></button>
                     <button id="wac-b-cam" class="wac-btn wac-v-only" onclick="WAC.toggleCam()" aria-label="Camera"><i class="fa-solid fa-video"></i></button>
                     <button class="wac-btn wac-v-only" onclick="WAC.flip()" aria-label="Flip camera"><i class="fa-solid fa-camera-rotate"></i></button>
+                    <button id="wac-b-layout" class="wac-btn" onclick="WAC.toggleLayout()" aria-label="Change layout"><i class="fa-solid fa-border-all"></i></button>
                     <button id="wac-b-share" class="wac-btn" onclick="WAC.toggleShare()" aria-label="Share screen"><i class="fa-solid fa-display"></i></button>
                     <button id="wac-b-mic" class="wac-btn" onclick="WAC.toggleMic()" aria-label="Mute"><i class="fa-solid fa-microphone"></i></button>
                     <button class="wac-btn wac-end" onclick="closeDiscusVideoCall()" aria-label="End call"><i class="fa-solid fa-phone"></i></button>
@@ -13277,8 +13297,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
 
                 const isAdminView = window.currentRole === 'admin';
                 const now = Date.now();
-                const activeStudentsCount = window.studentsDB.filter(s => s.lastActive && (now - s.lastActive < 20000)).length || 1;
-                document.getElementById('chat-online-count').innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shadow-[0_0_5px_rgba(74,222,128,0.8)]"></span>Online (${activeStudentsCount})`;
+                if (window.updateChatHeaderStatus) window.updateChatHeaderStatus();
 
                 let shouldScroll = false;
 
@@ -17058,29 +17077,176 @@ ${textContent ? `
                 }, 3500);
             };
 
-            // === RTDB PRESENCE SYSTEM (replaces 1s Firestore polling) ===
-            window.setupPresence = function () {
-                if (!window.loggedInMobile || window.currentRole !== 'student') return;
-                if (window._presenceSetup) return; // Prevent duplicate setup
-                window._presenceSetup = true;
-                const rtdbInstance = window.rtdb;
-                const presPath = window.isGlobalTestMode ? 'test_presence' : 'presence';
-                const presenceRef = ref(rtdbInstance, `${presPath}/${window.loggedInMobile}`);
-                const connectedRef = ref(rtdbInstance, '.info/connected');
-                onValue(connectedRef, (snap) => {
-                    if (snap.val() === true) {
-                        const presData = { online: true, lastActive: rtdbServerTimestamp() };
-                        onDisconnect(presenceRef).set({ online: false, lastActive: rtdbServerTimestamp() });
-                        set(presenceRef, presData);
+            // === RTDB PRESENCE + WHATSAPP-STYLE TYPING (Discus) ===
+            // presence/{mobile} = { online, lastActive }   typing/{mobile} = { name, ts }
+            (function () {
+                const HEARTBEAT_MS = 25000, PRESENCE_STALE_MS = 90000;
+                const TYPING_IDLE_MS = 3000, TYPING_REFRESH_MS = 2500, TYPING_STALE_MS = 7000;
+                const path = (name) => (window.isGlobalTestMode ? 'test_' : '') + name;
+                const refFor = (name, mob) => ref(window.rtdb, `${path(name)}/${mob}`);
+                const srvNow = () => Date.now() + (window._rtdbOffset || 0); // server-corrected clock
+                const firstName = (n) => String(n || 'Someone').trim().split(/\s+/)[0];
+                const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                const chatVisible = () => { const v = document.getElementById('community-chat-view'); return !!v && !v.classList.contains('hidden-view'); };
+
+                window.presenceDB = {}; window.typingDB = {}; window._rtdbOffset = 0;
+                let cleanups = [], heartbeat = null, activeMobile = null;
+                let typingActive = false, typingSentAt = 0, typingTimer = null;
+
+                function announceOnline(mob) {
+                    set(refFor('presence', mob), { online: true, lastActive: rtdbServerTimestamp() }).catch(() => { });
+                }
+
+                // ---------- ONLINE COUNT ----------
+                window.getOnlineCount = function () {
+                    const now = srvNow(), me = window.loggedInMobile;
+                    let n = 0, meCounted = false;
+                    Object.keys(window.presenceDB || {}).forEach((mob) => {
+                        const p = window.presenceDB[mob];
+                        if (!p || p.online !== true) return;
+                        // ghost guard: a heartbeat older than ~3 missed beats means the device is gone
+                        if (typeof p.lastActive === 'number' && now - p.lastActive > PRESENCE_STALE_MS) return;
+                        n++; if (mob === me) meCounted = true;
+                    });
+                    return (meCounted || !me) ? n : n + 1; // I am obviously online
+                };
+
+                // ---------- TYPING (read side) ----------
+                function getTypers() {
+                    const now = srvNow(), me = window.loggedInMobile, out = [];
+                    Object.keys(window.typingDB || {}).forEach((m) => {
+                        const v = window.typingDB[m];
+                        if (m === me || !v) return;
+                        if (typeof v.ts === 'number' && now - v.ts > TYPING_STALE_MS) return;
+                        out.push({ mobile: m, name: v.name || 'Someone' });
+                    });
+                    return out;
+                }
+                function typingLabel(t) {
+                    if (t.length === 1) return `${firstName(t[0].name)} is typing…`;
+                    if (t.length === 2) return `${firstName(t[0].name)} and ${firstName(t[1].name)} are typing…`;
+                    return `${t.length} people are typing…`;
+                }
+
+                let lastHeader = '', lastBubbleKey = '';
+                function renderBubble(typers) {
+                    const box = document.getElementById('chat-typing-bubble');
+                    if (!box) return;
+                    const key = typers.map((t) => t.mobile).join(',');
+                    if (key === lastBubbleKey) return;
+                    lastBubbleKey = key;
+                    if (!typers.length) { box.classList.remove('show'); box.innerHTML = ''; return; }
+                    const list = document.getElementById('chat-messages');
+                    const stick = !!list && (list.scrollHeight - list.scrollTop - list.clientHeight < 90);
+                    let avatars = '';
+                    typers.slice(0, 3).forEach((t) => {
+                        let dp = ''; try { dp = window.getStudentAvatar(t.mobile, t.name); } catch (e) { }
+                        avatars += `<img src="${esc(dp)}" alt="">`;
+                    });
+                    box.innerHTML = `<div class="typing-avatars">${avatars}</div><div class="typing-bubble"><span class="typing-dots"><i></i><i></i><i></i></span></div><span class="typing-name">${esc(typingLabel(typers))}</span>`;
+                    box.classList.add('show');
+                    if (stick && list) list.scrollTop = list.scrollHeight; // keep newest message in view
+                }
+
+                // Header line: "Rahul is typing…" while someone types, otherwise "Online (N)"
+                window.updateChatHeaderStatus = function () {
+                    const el = document.getElementById('chat-online-count');
+                    if (!el) return;
+                    const typers = getTypers();
+                    const html = typers.length
+                        ? `<span class="typing-dots"><i></i><i></i><i></i></span><span class="truncate">${esc(typingLabel(typers))}</span>`
+                        : `<span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shadow-[0_0_5px_rgba(74,222,128,0.8)]"></span>Online (${window.getOnlineCount()})`;
+                    if (html !== lastHeader) { el.innerHTML = html; lastHeader = html; }
+                    renderBubble(typers);
+                };
+
+                // ---------- TYPING (write side) ----------
+                function myName() {
+                    if (window.currentRole === 'admin') return 'EXAMA';
+                    const s = (window.studentsDB || []).find((x) => x.mobile === window.loggedInMobile);
+                    return (s && s.name) || 'Someone';
+                }
+                function announceTyping() {
+                    const mob = activeMobile;
+                    if (!mob || !window.rtdb) return;
+                    const now = Date.now();
+                    if (!typingActive || now - typingSentAt > TYPING_REFRESH_MS) { // throttled: 1 write / 2.5s
+                        const tRef = refFor('typing', mob);
+                        if (!typingActive) onDisconnect(tRef).remove().catch(() => { }); // never stuck "typing"
+                        set(tRef, { name: myName(), ts: rtdbServerTimestamp() }).catch(() => { });
+                        typingActive = true; typingSentAt = now;
                     }
-                });
-                // Update presence every 30s (instead of 1s) as a heartbeat for RTDB
-                setInterval(() => {
-                    if (window.loggedInMobile && window.currentRole === 'student') {
-                        set(ref(rtdbInstance, `${presPath}/${window.loggedInMobile}`), { online: true, lastActive: rtdbServerTimestamp() });
-                    }
-                }, 30000);
-            };
+                    clearTimeout(typingTimer);
+                    typingTimer = setTimeout(() => stopTyping(), TYPING_IDLE_MS);
+                }
+                function stopTyping(mob) {
+                    mob = mob || activeMobile;
+                    clearTimeout(typingTimer);
+                    if (!typingActive || !mob) { typingActive = false; return; }
+                    typingActive = false; typingSentAt = 0;
+                    remove(refFor('typing', mob)).catch(() => { });
+                }
+
+                const input = document.getElementById('chat-input');
+                if (input) {
+                    input.addEventListener('input', () => { input.value.trim() ? announceTyping() : stopTyping(); });
+                    input.addEventListener('blur', () => stopTyping());
+                }
+                const origSend = window.sendChatMessage;
+                if (typeof origSend === 'function') {
+                    window.sendChatMessage = function () { stopTyping(); return origSend.apply(this, arguments); };
+                }
+
+                // ---------- LIFECYCLE ----------
+                window.setupPresence = function () {
+                    const mob = window.loggedInMobile;
+                    if (!mob || !window.currentRole || !window.rtdb) return;
+                    if (activeMobile === mob) return;      // already running for this account
+                    window.teardownPresence();             // account switched without a reload
+                    activeMobile = mob;
+                    const pRef = refFor('presence', mob);
+                    const warn = (what) => (err) => console.warn(`[discus] ${what} blocked - check RTDB rules:`, err && err.message);
+
+                    cleanups.push(onValue(ref(window.rtdb, '.info/serverTimeOffset'), (s) => { window._rtdbOffset = s.val() || 0; }));
+                    cleanups.push(onValue(ref(window.rtdb, '.info/connected'), (snap) => {
+                        if (snap.val() !== true) return;
+                        onDisconnect(pRef).set({ online: false, lastActive: rtdbServerTimestamp() })
+                            .then(() => announceOnline(mob)).catch(warn('presence write'));
+                    }));
+                    heartbeat = setInterval(() => { if (window.loggedInMobile === mob) announceOnline(mob); }, HEARTBEAT_MS);
+
+                    const onVis = () => { if (!document.hidden) announceOnline(mob); else stopTyping(); };
+                    document.addEventListener('visibilitychange', onVis);
+                    cleanups.push(() => document.removeEventListener('visibilitychange', onVis));
+
+                    cleanups.push(onValue(ref(window.rtdb, path('presence')), (snap) => {
+                        window.presenceDB = snap.val() || {};
+                        window.updateChatHeaderStatus();
+                    }, warn('presence read')));
+                    cleanups.push(onValue(ref(window.rtdb, path('typing')), (snap) => {
+                        window.typingDB = snap.val() || {};
+                        window.updateChatHeaderStatus();
+                    }, warn('typing read')));
+
+                    // re-evaluate so stale ghosts / stuck typers expire even when no DB event arrives
+                    const tick = setInterval(() => { if (chatVisible()) window.updateChatHeaderStatus(); }, 2000);
+                    cleanups.push(() => clearInterval(tick));
+                };
+
+                window.teardownPresence = function () {
+                    if (!activeMobile) return;
+                    const mob = activeMobile;
+                    stopTyping(mob);
+                    activeMobile = null;
+                    cleanups.forEach((fn) => { try { fn(); } catch (e) { } });
+                    cleanups = []; clearInterval(heartbeat);
+                    try {
+                        onDisconnect(refFor('presence', mob)).cancel();
+                        set(refFor('presence', mob), { online: false, lastActive: rtdbServerTimestamp() }).catch(() => { });
+                    } catch (e) { }
+                    window.presenceDB = {}; window.typingDB = {}; lastHeader = ''; lastBubbleKey = '';
+                };
+            })();
             // Legacy compatibility shim
             window.updatePresence = function () { /* No-op: presence handled by RTDB onDisconnect */ };
 
@@ -17153,20 +17319,7 @@ ${textContent ? `
                         // Note: Online status is now tracked via RTDB presence, not lastActive field changes
                     });
 
-                    // RTDB Presence Listener - Merges online status into studentsDB
-                    const presPath = window.isGlobalTestMode ? 'test_presence' : 'presence';
-                    onValue(ref(window.rtdb, presPath), (presSnap) => {
-                        const presenceData = presSnap.val() || {};
-                        window.studentsDB.forEach(s => {
-                            const key = s.mobile || s.id;
-                            const p = presenceData[key];
-                            if (p) {
-                                s.lastActive = p.lastActive;
-                                s._online = p.online === true;
-                            }
-                        });
-                        if (!document.getElementById('community-chat-view')?.classList.contains('hidden-view')) renderChat();
-                    });
+                    // Presence + typing listeners now live in setupPresence() (started after login)
 
                     // 2. EXAMS (Core Data)
                     let firstExams = true;
@@ -20570,6 +20723,7 @@ ${textContent ? `
 
             // Update Logout to clear Auth Session
             window.logout = async function () {
+                if (window.teardownPresence) window.teardownPresence();
                 cleanupJitsi();
                 localStorage.clear();
                 if (globalTimerInterval) clearInterval(globalTimerInterval);
@@ -20680,6 +20834,7 @@ ${textContent ? `
             }
 
             window.logout = function () {
+                if (window.teardownPresence) window.teardownPresence();
                 cleanupJitsi(); localStorage.clear(); if (globalTimerInterval) clearInterval(globalTimerInterval);
                 window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null;
                 window.location.hash = 'login'; document.getElementById('login-form').reset();
@@ -23554,7 +23709,8 @@ ${textContent ? `
                 const size = tiles.length === 1 ? 150 : tiles.length <= 4 ? 108 : 78;
                 el.innerHTML = tiles.map(t => {
                     const sp = st.speakerName && (t.id === 'me' ? st.speakerName === '__me' : st.speakerName === t.name);
-                    return `<div class="wac-tile ${sp ? 'wac-speaking' : ''} ${t.pulse ? 'wac-pulse' : ''}" style="--w:${size + 20}px">${wAv(t.name || 'Discus', t.dp, size)}${t.name ? `<span class="nm">${wEsc(t.name)}</span>` : ''}</div>`;
+                    const m = t.id === 'me' ? st.muted : Array.from(st.remote ? st.remote.values() : []).some(r => r.name === t.name && r.muted);
+                    return `<div class="wac-tile ${sp ? 'wac-speaking' : ''} ${t.pulse ? 'wac-pulse' : ''}" style="--w:${size + 20}px">${wAv(t.name || 'Discus', t.dp, size)}${t.name ? `<span class="nm">${wEsc(t.name)}</span>` : ''}${m ? `<div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.65); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px;"><i class="fa-solid fa-microphone-slash"></i></div>` : ''}</div>`;
                 }).join('');
                 const n = $w('wac-count-n'); if (n) n.textContent = rem.length + 1;
             };
@@ -23607,6 +23763,10 @@ ${textContent ? `
                 const st = WAC.st; if (!st) return;
                 if (!st.sharing && !WAC.canShare()) return wToast('Screen share not available', 'Phones and app wrappers do not let web apps share the screen. It works in Chrome, Edge or Safari on a computer.');
                 try { st.api.executeCommand('toggleShareScreen'); } catch (e) { }
+            };
+            WAC.toggleLayout = function () {
+                const st = WAC.st; if (!st) return;
+                try { st.api.executeCommand('toggleTileView'); } catch (e) { }
             };
             // audio call switches to the video layout while ANOTHER person shares their screen, so it can be seen
             WAC.applyView = function () { const st = WAC.st, m = $w('discus-video-modal'); if (st && m) m.dataset.mode = (st.mode === 'video' || st.remoteShare) ? 'video' : 'audio'; };
@@ -23674,7 +23834,13 @@ ${textContent ? `
                     const id = p && p.id, nm = id === st.selfId ? '__me' : ((st.remote.get(id) || {}).name || '');
                     if (st.speakerName !== nm) { st.speakerName = nm; WAC.renderStage(); }
                 });
-                on('audioMuteStatusChanged', (p) => { st.muted = !!(p && p.muted); WAC.syncBtns(); });
+                on('audioMuteStatusChanged', (p) => { 
+                    if (p && p.id && p.id !== st.selfId) {
+                        const r = st.remote.get(p.id); if (r) { r.muted = !!p.muted; WAC.renderStage(); }
+                    } else {
+                        st.muted = !!(p && p.muted); WAC.syncBtns(); WAC.renderStage();
+                    }
+                });
                 on('videoMuteStatusChanged', (p) => { st.camOff = !!(p && p.muted); WAC.syncBtns(); });
                 on('screenSharingStatusChanged', (e) => { st.sharing = !!(e && e.on); $w('discus-video-modal').classList.toggle('wac-sharing', st.sharing); WAC.syncBtns(); });
                 on('contentSharingParticipantsChanged', (e) => { const ids = (e && (e.data || e.participants)) || []; st.remoteShare = ids.some(id => id !== st.selfId); WAC.applyView(); });
