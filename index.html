@@ -12,9 +12,12 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 /* Notification deep link: remember where a tapped push wants to go, before the router rewrites the hash. */
 (function () {
     var OK = ['chat', 'notices', 'materials', 'budget-room', 'student', 'admin'];
+    var __strip = function () { if (/~\d+$/.test(location.hash)) { try { history.replaceState(null, '', location.hash.replace(/~\d+$/, '')); } catch (e) { } } };
+    __strip(); window.addEventListener('hashchange', __strip);
     try { var h0 = (location.hash || '').replace('#', ''); if (OK.indexOf(h0) !== -1) window.__pendingOpen = h0; } catch (e) { }
     // go to a screen now if logged in, otherwise as soon as login has finished
     window.__goTo = function (h) {
+        h = String(h).replace(/~\d+$/, '');
         if (window.currentRole) { if (location.hash.replace('#', '') !== h) location.hash = h; }
         else window.__pendingOpen = h;
     };
@@ -16585,7 +16588,7 @@ ${textContent ? `
                   let targetUrl = null;
                   try {
                       const L = window.location;
-                      if (openHash && /^https?:$/.test(L.protocol) && !/^(localhost|127\.|192\.168\.)/.test(L.hostname)) targetUrl = L.origin + L.pathname + '#' + openHash;
+                      if (openHash && /^https?:$/.test(L.protocol) && !/^(localhost|127\.|192\.168\.)/.test(L.hostname)) targetUrl = L.origin + L.pathname + '#' + openHash + '~' + Date.now();
                   } catch (e) { }
 
                   // Cosmetic action buttons (all of them just open the screen above).
@@ -16635,6 +16638,7 @@ ${textContent ? `
             // ==========================================
             window.median_onesignal_push_opened = function (data) {
                 console.log('[Push Opened] raw data ->', JSON.stringify(data));
+                try { if (window.WAC && window.WAC.active && data) { if (data.pushCategory === 'call') return; if (!data.noNav && data.pushCategory !== 'alarm') window.WAC.minimize(); } } catch (e) { }
                 if (data && data.pushCategory === 'alarm') { if (window.__alarmPushOpened) window.__alarmPushOpened(data); return; }
                 if (!data) return;
                 if (data.noNav) return;   // e.g. "new alarm" push: just opens the app
@@ -23446,6 +23450,7 @@ ${textContent ? `
             window.showIncomingCallPopup = function (callData) {
                 // never show / ring for a call that already ended or is stale
                 if (!callData || callData.status === 'ended') return;
+                if (window.WAC && (window.WAC.active || window.WAC.busy)) return;   // already in a call: never ring over it
                 if (callData.timestamp && ((window.serverNow ? window.serverNow() : Date.now()) - callData.timestamp) > 60000) return;
                 window.currentIncomingCall = callData; document.getElementById('incoming-caller-name').innerText = callData.callerName || 'Peer Student';
                 const isVideo = callData.callType === 'video'; document.getElementById('incoming-call-type-text').innerText = isVideo ? "Incoming Video Call" : "Incoming Audio Call"; document.getElementById('incoming-call-icon').className = isVideo ? "fa-solid fa-video animate-pulse" : "fa-solid fa-phone-volume animate-pulse";
@@ -23514,8 +23519,8 @@ ${textContent ? `
 
             WAC.host = function () { const app = $w('app'); ['discus-video-modal', 'wac-banner'].forEach(id => { const el = $w(id); if (app && el && el.parentElement !== app) app.appendChild(el); }); };
             WAC.statusText = function () {
-                const st = WAC.st; if (!st.joined) return 'Connecting…';
-                if (!st.remote.size) return st.ringing ? 'Ringing…' : 'Waiting for others…';
+                const st = WAC.st; if (st.reconnecting || !st.joined) return st.startedAt ? 'Reconnecting…' : 'Connecting…';
+                if (!st.remote.size) return st.ringing ? 'Ringing…' : (st.startedAt ? 'Reconnecting…' : 'Waiting for others…');
                 return wFmt(Date.now() - st.startedAt);
             };
             WAC.tick = function () { if (!WAC.st) return; const t = WAC.statusText(); const a = $w('wac-status'), b = $w('wac-banner-time'); if (a) a.textContent = t; if (b) b.textContent = t; };
@@ -23606,9 +23611,9 @@ ${textContent ? `
                 WAC.renderStage(); WAC.tick();
             };
             WAC.attach = function (api) {
-                const st = WAC.st, on = (n, f) => api.addEventListener(n, f);
+                const st = WAC.st, on = (n, f) => api.addEventListener(n, (ev) => { if (WAC.st === st && st.api === api) f(ev); });
                 on('videoConferenceJoined', (e) => {
-                    st.joined = true; st.selfId = e && e.id; $w('wac-splash').classList.add('wac-gone'); WAC.renderStage(); WAC.tick(); WAC.poke();
+                    st.joined = true; st.reconnecting = false; st.rejoins = 0; st.selfId = e && e.id; $w('wac-splash').classList.add('wac-gone'); WAC.renderStage(); WAC.tick(); WAC.poke();
                     // Joined a room nobody is in -> close cleanly instead of sitting alone. BUT: Jitsi's own
                     // media/bridge negotiation can legitimately take longer than a few seconds (mobile
                     // networks especially), and the caller's "participantJoined" event on this side can
@@ -23623,15 +23628,15 @@ ${textContent ? `
                         wToast('Call ended', 'This call already ended before you joined.'); window.closeDiscusVideoCall();
                     }, 25000);
                 });
-                on('participantJoined', (p) => { if (!p || !p.id) return; window._discusRemoteParticipants.add(p.id); st.remote.set(p.id, { id: p.id, name: p.displayName || 'Student' }); WAC.onRemoteChange(); });
+                on('participantJoined', (p) => { if (!p || !p.id) return; clearTimeout(st.aloneTimer); window._discusRemoteParticipants.add(p.id); st.remote.set(p.id, { id: p.id, name: p.displayName || 'Student' }); WAC.onRemoteChange(); });
                 on('participantLeft', (p) => {
                     if (!p || !p.id) return;
                     window._discusRemoteParticipants.delete(p.id); st.remote.delete(p.id); WAC.onRemoteChange();
                     // Everyone else has left a call that had actually connected -> end it for the last person too,
                     // instead of leaving them sitting alone in an otherwise-empty meeting.
                     if (WAC.st === st && !st.remote.size && st.startedAt) {
-                        wToast('Call ended', 'Everyone else has left the call.');
-                        window.closeDiscusVideoCall();
+                        clearTimeout(st.aloneTimer);
+                        st.aloneTimer = setTimeout(() => { if (WAC.st === st && !st.remote.size) { wToast('Call ended', 'Everyone else has left the call.'); window.closeDiscusVideoCall(); } }, 20000);
                     }
                 });
                 on('displayNameChange', (p) => { const r = p && st.remote.get(p.id); if (r) { r.name = p.displayname || p.displayName || r.name; WAC.renderStage(); } });
@@ -23643,8 +23648,8 @@ ${textContent ? `
                 on('errorOccurred', (e) => { try { console.warn('Jitsi errorOccurred', e); } catch (x) { } const er = e && e.error, m = er && (er.message || er.name); if (!st.errShown2) { st.errShown2 = 1; wToast('Call error', m ? String(m).slice(0, 140) : 'The call service reported an error.'); } });
                 on('micError', () => { if (!st.errShown) { st.errShown = 1; wToast('Microphone problem', 'Check that another app is not using your microphone.'); } });
                 on('cameraError', () => { if (!st.errShown) { st.errShown = 1; wToast('Camera problem', 'Could not start your camera.'); } });
-                on('videoConferenceLeft', () => { if (WAC.st === st && typeof window.closeDiscusVideoCall === 'function') window.closeDiscusVideoCall(); });
-                on('readyToClose', () => { if (WAC.st === st && typeof window.closeDiscusVideoCall === 'function') window.closeDiscusVideoCall(); });
+                on('videoConferenceLeft', () => WAC.rejoin(st));
+                on('readyToClose', () => WAC.rejoin(st));
             };
             WAC.options = function (container, name, video) {
                 return {
@@ -23667,6 +23672,29 @@ ${textContent ? `
                     },
                     userInfo: { displayName: name }
                 };
+            };
+            // WhatsApp-style: a dropped connection (push arriving, app briefly paused, network blip) NEVER ends the call.
+            // We show "Reconnecting..." and quietly rejoin the same room. Only the End button, an explicit hang-up by the
+            // other side (shared record = ended), or ~6 failed retries end it.
+            WAC.rejoin = function (st) {
+                if (WAC.st !== st || WAC.closing) return;
+                const live = window.globalDiscusCallState;
+                if (live && live.status === 'ended' && live.timestamp === st.callTimestamp) return window.closeDiscusVideoCall();
+                st.rejoins = (st.rejoins || 0) + 1;
+                if (st.rejoins > 6) { wToast('Call ended', 'Connection lost.'); return window.closeDiscusVideoCall(); }
+                st.reconnecting = true; st.joined = false; st.remote.clear(); WAC.renderStage(); WAC.tick();
+                clearTimeout(st.rejoinTimer);
+                st.rejoinTimer = setTimeout(() => {
+                    if (WAC.st !== st || WAC.closing) return;
+                    try { st.api && st.api.dispose(); } catch (e) { }
+                    const c = $w('discus-jitsi-container'); if (c) c.innerHTML = '';
+                    window._discusRemoteParticipants = new Set();
+                    try {
+                        const api = st.api = window.chatJitsiApi = new window.JitsiMeetExternalAPI('8x8.vc', WAC.options(c, st.name, st.kind === 'video' && !st.camOff));
+                        try { api.executeCommand('join'); } catch (e) { }
+                        WAC.attach(api);
+                    } catch (e) { WAC.rejoin(st); }
+                }, Math.min(1000 * st.rejoins, 5000));
             };
             WAC.start = async function (kind, isAnswering) {
                 if (WAC.active) { WAC.restore(); return; }
@@ -23717,7 +23745,7 @@ ${textContent ? `
                 if (WAC.closing || !WAC.st) return; WAC.closing = true;
                 try {
                     stopRingtone(); WAC.stopRingback(); WAC.unlockScreen();
-                    const st = WAC.st; if (st) { clearInterval(st.tick); clearTimeout(st.uiTimer); clearTimeout(st.emptyTimer); }
+                    const st = WAC.st; if (st) { clearInterval(st.tick); clearTimeout(st.uiTimer); clearTimeout(st.emptyTimer); clearTimeout(st.aloneTimer); clearTimeout(st.rejoinTimer); }
                     const myCallTs = st && st.callTimestamp;
                     const api = (st && st.api) || window.chatJitsiApi;
                     // nobody else left in the room = I am the last person
