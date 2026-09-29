@@ -12,12 +12,9 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 /* Notification deep link: remember where a tapped push wants to go, before the router rewrites the hash. */
 (function () {
     var OK = ['chat', 'notices', 'materials', 'budget-room', 'student', 'admin'];
-    var __strip = function () { if (/~\d+$/.test(location.hash)) { try { history.replaceState(null, '', location.hash.replace(/~\d+$/, '')); } catch (e) { } } };
-    __strip(); window.addEventListener('hashchange', __strip);
     try { var h0 = (location.hash || '').replace('#', ''); if (OK.indexOf(h0) !== -1) window.__pendingOpen = h0; } catch (e) { }
     // go to a screen now if logged in, otherwise as soon as login has finished
     window.__goTo = function (h) {
-        h = String(h).replace(/~\d+$/, '');
         if (window.currentRole) { if (location.hash.replace('#', '') !== h) location.hash = h; }
         else window.__pendingOpen = h;
     };
@@ -16588,7 +16585,7 @@ ${textContent ? `
                   let targetUrl = null;
                   try {
                       const L = window.location;
-                      if (openHash && /^https?:$/.test(L.protocol) && !/^(localhost|127\.|192\.168\.)/.test(L.hostname)) targetUrl = L.origin + L.pathname + '#' + openHash + '~' + Date.now();
+                      if (openHash && /^https?:$/.test(L.protocol) && !/^(localhost|127\.|192\.168\.)/.test(L.hostname)) targetUrl = L.origin + L.pathname + '#' + openHash;
                   } catch (e) { }
 
                   // Cosmetic action buttons (all of them just open the screen above).
@@ -23450,7 +23447,7 @@ ${textContent ? `
             window.showIncomingCallPopup = function (callData) {
                 // never show / ring for a call that already ended or is stale
                 if (!callData || callData.status === 'ended') return;
-                if (window.WAC && (window.WAC.active || window.WAC.busy)) return;   // already in a call: never ring over it
+                if (window.WAC && window.WAC.active) return;   // already in a call: never ring over it
                 if (callData.timestamp && ((window.serverNow ? window.serverNow() : Date.now()) - callData.timestamp) > 60000) return;
                 window.currentIncomingCall = callData; document.getElementById('incoming-caller-name').innerText = callData.callerName || 'Peer Student';
                 const isVideo = callData.callType === 'video'; document.getElementById('incoming-call-type-text').innerText = isVideo ? "Incoming Video Call" : "Incoming Audio Call"; document.getElementById('incoming-call-icon').className = isVideo ? "fa-solid fa-video animate-pulse" : "fa-solid fa-phone-volume animate-pulse";
@@ -23502,6 +23499,10 @@ ${textContent ? `
             // Ask for mic/camera ONCE, up-front, from the app itself (so the OS prompt appears before the
             // call screen instead of inside the call). Result decides whether we can join with camera.
             async function wPrewarm(video) {
+                const dflt = { audio: true, video: !!video };
+                return Promise.race([wPrewarm0(video), new Promise(r => setTimeout(() => r(dflt), 10000))]);
+            }
+            async function wPrewarm0(video) {
                 const out = { audio: true, video: !!video };
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return out;
                 try {
@@ -23519,7 +23520,7 @@ ${textContent ? `
 
             WAC.host = function () { const app = $w('app'); ['discus-video-modal', 'wac-banner'].forEach(id => { const el = $w(id); if (app && el && el.parentElement !== app) app.appendChild(el); }); };
             WAC.statusText = function () {
-                const st = WAC.st; if (st.reconnecting || !st.joined) return st.startedAt ? 'Reconnecting…' : 'Connecting…';
+                const st = WAC.st; if (st.reconnecting || !st.joined) return st.everJoined ? 'Reconnecting…' : 'Connecting…';
                 if (!st.remote.size) return st.ringing ? 'Ringing…' : (st.startedAt ? 'Reconnecting…' : 'Waiting for others…');
                 return wFmt(Date.now() - st.startedAt);
             };
@@ -23611,9 +23612,9 @@ ${textContent ? `
                 WAC.renderStage(); WAC.tick();
             };
             WAC.attach = function (api) {
-                const st = WAC.st, on = (n, f) => api.addEventListener(n, (ev) => { if (WAC.st === st && st.api === api) f(ev); });
+                const st = WAC.st, on = (n, f) => api.addEventListener(n, (ev) => { if (WAC.st === st) f(ev); });
                 on('videoConferenceJoined', (e) => {
-                    st.joined = true; st.reconnecting = false; st.rejoins = 0; st.selfId = e && e.id; $w('wac-splash').classList.add('wac-gone'); WAC.renderStage(); WAC.tick(); WAC.poke();
+                    st.joined = true; st.everJoined = true; st.reconnecting = false; st.rejoins = 0; clearTimeout(st.connTimer); st.selfId = e && e.id; $w('wac-splash').classList.add('wac-gone'); WAC.renderStage(); WAC.tick(); WAC.poke();
                     // Joined a room nobody is in -> close cleanly instead of sitting alone. BUT: Jitsi's own
                     // media/bridge negotiation can legitimately take longer than a few seconds (mobile
                     // networks especially), and the caller's "participantJoined" event on this side can
@@ -23648,8 +23649,8 @@ ${textContent ? `
                 on('errorOccurred', (e) => { try { console.warn('Jitsi errorOccurred', e); } catch (x) { } const er = e && e.error, m = er && (er.message || er.name); if (!st.errShown2) { st.errShown2 = 1; wToast('Call error', m ? String(m).slice(0, 140) : 'The call service reported an error.'); } });
                 on('micError', () => { if (!st.errShown) { st.errShown = 1; wToast('Microphone problem', 'Check that another app is not using your microphone.'); } });
                 on('cameraError', () => { if (!st.errShown) { st.errShown = 1; wToast('Camera problem', 'Could not start your camera.'); } });
-                on('videoConferenceLeft', () => WAC.rejoin(st));
-                on('readyToClose', () => WAC.rejoin(st));
+                on('videoConferenceLeft', () => { if (st.everJoined) WAC.rejoin(st); else window.closeDiscusVideoCall(); });
+                on('readyToClose', () => { if (st.everJoined) WAC.rejoin(st); else window.closeDiscusVideoCall(); });
             };
             WAC.options = function (container, name, video) {
                 return {
@@ -23673,9 +23674,9 @@ ${textContent ? `
                     userInfo: { displayName: name }
                 };
             };
-            // WhatsApp-style: a dropped connection (push arriving, app briefly paused, network blip) NEVER ends the call.
-            // We show "Reconnecting..." and quietly rejoin the same room. Only the End button, an explicit hang-up by the
-            // other side (shared record = ended), or ~6 failed retries end it.
+            // A dropped connection (push arriving, app briefly paused, network blip) never ends the call by itself:
+            // show "Reconnecting..." and quietly rejoin the same room. Ends only via End button, the other side
+            // really hanging up (shared record = ended), or after 6 failed tries.
             WAC.rejoin = function (st) {
                 if (WAC.st !== st || WAC.closing) return;
                 const live = window.globalDiscusCallState;
@@ -23693,6 +23694,7 @@ ${textContent ? `
                         const api = st.api = window.chatJitsiApi = new window.JitsiMeetExternalAPI('8x8.vc', WAC.options(c, st.name, st.kind === 'video' && !st.camOff));
                         try { api.executeCommand('join'); } catch (e) { }
                         WAC.attach(api);
+                        clearTimeout(st.connTimer); st.connTimer = setTimeout(() => { if (WAC.st === st && !st.joined) WAC.rejoin(st); }, 20000);
                     } catch (e) { WAC.rejoin(st); }
                 }, Math.min(1000 * st.rejoins, 5000));
             };
@@ -23721,6 +23723,7 @@ ${textContent ? `
                     const api = st.api = window.chatJitsiApi = new window.JitsiMeetExternalAPI('8x8.vc', WAC.options(container, name, wantVideo && perm.video));
                     try { api.executeCommand('join'); } catch (e) { }
                     WAC.attach(api); st.tick = setInterval(WAC.tick, 1000); WAC.lockScreen(); WAC.poke();
+                    st.connTimer = setTimeout(() => { if (WAC.st === st && !st.joined) WAC.rejoin(st); }, 20000);
                     if (!isAnswering) {
                         WAC.startRingback();
                         const callPayload = { callerMobile: window.loggedInMobile, callerName: name, callType: kind, status: 'ringing', timestamp: myCallTs };
@@ -23745,7 +23748,7 @@ ${textContent ? `
                 if (WAC.closing || !WAC.st) return; WAC.closing = true;
                 try {
                     stopRingtone(); WAC.stopRingback(); WAC.unlockScreen();
-                    const st = WAC.st; if (st) { clearInterval(st.tick); clearTimeout(st.uiTimer); clearTimeout(st.emptyTimer); clearTimeout(st.aloneTimer); clearTimeout(st.rejoinTimer); }
+                    const st = WAC.st; if (st) { clearInterval(st.tick); clearTimeout(st.uiTimer); clearTimeout(st.emptyTimer); clearTimeout(st.aloneTimer); clearTimeout(st.rejoinTimer); clearTimeout(st.connTimer); }
                     const myCallTs = st && st.callTimestamp;
                     const api = (st && st.api) || window.chatJitsiApi;
                     // nobody else left in the room = I am the last person
