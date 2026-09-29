@@ -16322,8 +16322,12 @@ ${textContent ? `
                       }
                   }
 
-                  // No action buttons: tapping a notification simply OPENS the right screen through
-                  // Median's native "targetUrl" - no JavaScript bridge needed.
+                  // Tapping the notification (or any of its buttons below) OPENS the right screen
+                  // through Median's native "targetUrl" - no JavaScript bridge needed. Median can't
+                  // tell WHICH button was tapped, so the buttons are a native look only: every one of
+                  // them leads to the same screen as tapping the notification itself. For a call, that
+                  // screen is the real in-app Accept/Decline popup, so "Decline" still ends up somewhere
+                  // truthful - it just takes one extra tap instead of acting instantly from the tray.
                   let openHash = null;
                   if (data && data.roomId) openHash = 'budget-room';
                   else if (data && data.materialId) openHash = 'materials';
@@ -16335,6 +16339,17 @@ ${textContent ? `
                       const L = window.location;
                       if (openHash && /^https?:$/.test(L.protocol) && !/^(localhost|127\.|192\.168\.)/.test(L.hostname)) targetUrl = L.origin + L.pathname + '#' + openHash;
                   } catch (e) { }
+
+                  // Cosmetic action buttons (all of them just open the screen above).
+                  let pushButtons = null;
+                  if (category === 'call') pushButtons = [{ id: 'accept', text: 'Accept' }, { id: 'decline', text: 'Decline' }];
+                  else if (data && data.p2p === 'question_set') pushButtons = [{ id: 'attempt', text: 'Attempt' }];
+                  else if (data && data.p2p === 'answer_script') pushButtons = [{ id: 'evaluate', text: 'Evaluate' }];
+                  else if (data && data.materialId) pushButtons = [{ id: 'review', text: 'Review' }];
+                  else if (data && data.roomId) pushButtons = [{ id: 'open', text: 'Open' }];
+                  else if (category === 'discus') pushButtons = [{ id: 'view', text: 'View' }];
+                  else if (category === 'exam') pushButtons = [{ id: 'view', text: 'View' }];
+                  if (pushButtons) payload.buttons = pushButtons;
 
                   // A "call" push is only useful for ~45s - after that the caller has
                   // either hung up or someone else answered. Without a ttl, OneSignal
