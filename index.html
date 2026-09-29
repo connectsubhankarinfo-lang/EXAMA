@@ -30,160 +30,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 </script>
 <script>window.getOtherStudentsMobiles = function() { return (window.studentsDB || []).map(s => s.mobile).filter(m => m !== window.loggedInMobile); };</script>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- SortableJS for Drag and Drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js">
@@ -2156,160 +2003,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 
 
     <!-- 8x8 Jitsi API Integration -->
-    <script src="https://8x8.vc/vpaas-magic-cookie-9ae60bbf9a9d41bf821cd8122e49a08f/external_api.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
+    <script src="https://8x8.vc/vpaas-magic-cookie-9ae60bbf9a9d41bf821cd8122e49a08f/external_api.js"></script>
 
 
     <meta name="theme-color" content="transparent">
@@ -2957,6 +2651,8 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 .wac-media{position:absolute;inset:0;background:#000}.wac-media iframe{width:100%!important;height:100%!important;border:0}
 .wac-audio{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:radial-gradient(120% 80% at 50% 0%,#14544b 0%,#0b2b28 40%,#0b141a 100%)}
 #discus-video-modal[data-mode="audio"] .wac-audio{display:flex}
+.wac-wm{position:absolute;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 104px);height:26px;width:auto;opacity:.2;z-index:3;pointer-events:none;user-select:none;-webkit-user-drag:none}
+#discus-video-modal[data-mode="audio"] .wac-wm{display:none}
 #discus-video-modal[data-mode="audio"] .wac-splash,#discus-video-modal[data-mode="audio"] .wac-tap{display:none}
 #discus-video-modal[data-mode="audio"] .wac-v-only,#discus-video-modal[data-mode="video"] .wac-a-only{display:none}
 .wac-stage{display:flex;flex-wrap:wrap;gap:22px 16px;justify-content:center;align-items:flex-start;padding:0 16px;margin-top:-6vh;max-width:100%}
@@ -7242,6 +6938,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
             <div id="discus-video-modal" class="hidden-view wac-root" data-mode="video">
                 <div style="display:none" aria-hidden="true"></div>
                 <div id="discus-jitsi-container" class="wac-media"></div>
+                <img class="wac-wm" src="https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/header%20logo.png?raw=true" alt="" draggable="false">
                 <div class="wac-audio"><div id="wac-stage" class="wac-stage"></div></div>
                 <div id="wac-splash" class="wac-splash">
                     <div class="wac-av" style="width:120px;height:120px"><img src="https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/lets%20crack%20it.jpeg?raw=true" alt=""></div>
@@ -13191,8 +12888,8 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
 
                 const lb = getOverallLeaderboard();
                 const myExamData = lb.find(s => String(s.mobile) === String(window.loggedInMobile));
-                const examRank = (myExamData && myExamData.avg > 0) ? `☸ ${[...lb].sort((a, b) => b.avg - a.avg).findIndex(s => String(s.mobile) === String(window.loggedInMobile)) + 1}` : '☸ -';
-                const wkExamRank = (myExamData && myExamData.weeklyAvg > 0) ? `☸ ${[...lb].sort((a, b) => b.weeklyAvg - a.weeklyAvg).findIndex(s => String(s.mobile) === String(window.loggedInMobile)) + 1}` : '☸ -';
+                const examRank = (myExamData && myExamData.avg > 0) ? `☸ ${window.rankExamLb(lb, false).findIndex(s => String(s.mobile) === String(window.loggedInMobile)) + 1}` : '☸ -';
+                const wkExamRank = (myExamData && myExamData.weeklyAvg > 0) ? `☸ ${window.rankExamLb(lb, true).findIndex(s => String(s.mobile) === String(window.loggedInMobile)) + 1}` : '☸ -';
 
                 // 2. Fitness Metrics & Ranks
                 const myLogs = window.fitnessDB.filter(l => String(l.mobile) === String(window.loggedInMobile));
@@ -19544,6 +19241,11 @@ ${textContent ? `
             }
 
             // --- 2. EXAM (SCORE) LEADERBOARD ENGINE ---
+            // Rank order for the Score leaderboard: 80% marks (avg %) + 20% participation (exams given / exams held).
+            window.rankExamLb = function (lb, weekly) {
+                const k = weekly ? 'weeklyRankScore' : 'rankScore', g = weekly ? 'weeklyGiven' : 'given', a = weekly ? 'weeklyAvg' : 'avg';
+                return [...lb].sort((x, y) => (y[k] - x[k]) || (y[a] - x[a]) || (y[g] - x[g]) || String(x.name).localeCompare(String(y.name)));
+            };
             function getOverallLeaderboard() {
                 const studentData = {};
                 const { mondayMs, sundayMs } = window.getWeeklyRange();
@@ -19556,13 +19258,15 @@ ${textContent ? `
                 };
 
                 // Initialize all students
-                window.studentsDB.forEach(s => studentData[s.mobile] = { mobile: s.mobile, name: s.name, totalPerc: 0, count: 0, weeklyPerc: 0, weeklyCount: 0 });
+                window.studentsDB.forEach(s => studentData[s.mobile] = { mobile: s.mobile, name: s.name, totalPerc: 0, count: 0, weeklyPerc: 0, weeklyCount: 0, given: 0, weeklyGiven: 0 });
 
                 getComputedResults().forEach(r => {
                     if (studentData[r.mobile]) {
                         // Add to total average
                         studentData[r.mobile].totalPerc += r.percentage;
                         studentData[r.mobile].count += 1;
+                        const wasGiven = !r.isVirtual && r.status !== 'ABSENT';
+                        if (wasGiven) studentData[r.mobile].given += 1;
 
                         // Find exam date and check if it belongs to this week
                         const exam = window.examsDB.find(e => e.id === r.examId);
@@ -19571,6 +19275,7 @@ ${textContent ? `
                             if (examTime >= mondayMs && examTime <= sundayMs) {
                                 studentData[r.mobile].weeklyPerc += r.percentage;
                                 studentData[r.mobile].weeklyCount += 1;
+                                if (wasGiven) studentData[r.mobile].weeklyGiven += 1;
                             }
                         }
                     }
@@ -19581,10 +19286,14 @@ ${textContent ? `
                     avg: s.count > 0 ? parseFloat((s.totalPerc / s.count).toFixed(1)) : 0,
                     weeklyAvg: s.weeklyCount > 0 ? parseFloat((s.weeklyPerc / s.weeklyCount).toFixed(1)) : 0,
                     count: s.count,
-                    weeklyCount: s.weeklyCount
+                    weeklyCount: s.weeklyCount,
+                    given: s.given,
+                    weeklyGiven: s.weeklyGiven,
+                    rankScore: parseFloat((0.8 * (s.count > 0 ? s.totalPerc / s.count : 0) + 0.2 * (s.count > 0 ? Math.min(100, s.given / s.count * 100) : 0)).toFixed(2)),
+                    weeklyRankScore: parseFloat((0.8 * (s.weeklyCount > 0 ? s.weeklyPerc / s.weeklyCount : 0) + 0.2 * (s.weeklyCount > 0 ? Math.min(100, s.weeklyGiven / s.weeklyCount * 100) : 0)).toFixed(2))
                 }));
 
-                return leaderboard;
+                return window.rankExamLb(leaderboard, false);   // already in overall rank order (fixes findIndex-based ranks elsewhere)
             }
 
             // --- 3. TARGET (WEEKLY TASKS) LEADERBOARD ENGINE ---
@@ -19739,12 +19448,13 @@ ${textContent ? `
                     // --- UNIFIED DATA PREPARATION ---
                     if (window.lbMainTab === 'score') {
                         const lb = getOverallLeaderboard();
-                        sortedList = window.lbSubTab === 'weekly' ? [...lb].sort((a, b) => b.weeklyAvg - a.weeklyAvg) : [...lb].sort((a, b) => b.avg - a.avg);
+                        sortedList = window.rankExamLb(lb, window.lbSubTab === 'weekly');
                         sortedList = sortedList.map(s => ({
                             ...s,
                             primaryVal: window.lbSubTab === 'weekly' ? s.weeklyAvg : s.avg,
                             primaryUnit: '%',
                             subLabel: window.lbSubTab === 'weekly' ? 'Weekly Avg' : 'Total Avg',
+                            scoreSub: (() => { const n = window.lbSubTab === 'weekly' ? s.weeklyGiven : s.given; return `<i class="fa-solid fa-file-pen"></i> ${n} Exam${n === 1 ? '' : 's'}`; })(),
                             secondaryVal: window.lbSubTab === 'weekly' ? `Total Avg: ${s.avg}%` : `Wk Avg: ${s.weeklyAvg}%`
                         }));
                     }
@@ -19847,6 +19557,7 @@ ${textContent ? `
                 <!-- 3. SCORE COLUMN (No View text or Arrow) -->
                 <div class="text-right shrink-0 relative z-10 flex flex-col justify-center items-end pr-2 sm:pr-3">
                     <p class="text-[26px] sm:text-[30px] font-black text-gray-900 leading-none tracking-tighter group-hover:scale-[1.15] group-hover:-translate-x-1 transition-all duration-500 ease-out origin-right">${s.primaryVal}<span class="text-[12px] sm:text-[14px] text-gray-400 font-bold ml-0.5 tracking-normal group-hover:${theme.text} transition-colors duration-300">${s.primaryUnit}</span></p>
+                    ${s.scoreSub ? `<p class="text-[9px] sm:text-[10px] font-bold text-gray-400 mt-1 tracking-wide whitespace-nowrap">${s.scoreSub}</p>` : ''}
                 </div>
             </div>`;
                     });
@@ -21591,8 +21302,8 @@ ${textContent ? `
 
                     // Stats are populated below after all leaderboard calculations with correct dark-theme colors
                     const lb = getOverallLeaderboard();
-                    const weeklySortedExam = [...lb].sort((a, b) => b.weeklyAvg - a.weeklyAvg);
-                    const totalSortedExam = [...lb].sort((a, b) => b.avg - a.avg);
+                    const weeklySortedExam = window.rankExamLb(lb, true);
+                    const totalSortedExam = window.rankExamLb(lb, false);
                     const myWkExamRank = weeklySortedExam.findIndex(s => s.mobile === window.loggedInMobile);
                     const myTotExamRank = totalSortedExam.findIndex(s => s.mobile === window.loggedInMobile);
                     // Exam rank stats populated below with correct dark-theme colors
@@ -23684,7 +23395,7 @@ ${textContent ? `
             // A person is "in the call" while their heartbeat is fresh and they have not tapped End.
             // Media problems, pushes, page reloads or a phone that blinks NEVER end the call for anyone.
             // ==========================================================
-            const CE = { HB: 4000, STALE: 20000, ALONE: 30000, RING: 45000, GIVEUP: 90000, RESUME: 45000 };
+            const CE = { HB: 4000, STALE: 45000, ALONE: 30000, RING: 45000, GIVEUP: 90000, RESUME: 60000 };
             const cNow = () => (window.serverNow ? window.serverNow() : Date.now());
             const cPath = () => (window.isGlobalTestMode ? 'test_active_calls' : 'active_calls') + '/discus_call';
             const cRef = (sub) => ref(window.rtdb, cPath() + (sub ? '/' + sub : ''));
@@ -23727,7 +23438,7 @@ ${textContent ? `
                 if (window.WAC && window.WAC.active) return;
                 window.currentIncomingCall = callData; document.getElementById('incoming-caller-name').innerText = callData.callerName || 'Peer Student';
                 const isVideo = callData.callType === 'video'; document.getElementById('incoming-call-type-text').innerText = isVideo ? "Incoming Video Call" : "Incoming Audio Call"; document.getElementById('incoming-call-icon').className = isVideo ? "fa-solid fa-video animate-pulse" : "fa-solid fa-phone-volume animate-pulse";
-                document.getElementById('incoming-call-modal').classList.remove('hidden-view'); startRingtone(); if (window.wacDecorateIncoming) window.wacDecorateIncoming(callData);
+                document.getElementById('incoming-call-modal').classList.remove('hidden-view'); startRingtone(); if (window.wacDecorateIncoming) window.wacDecorateIncoming(callData); try { window.WAC && window.WAC.warm && window.WAC.warm(); } catch (e) { }
                 const key = String(callData.callerMobile) + '_' + String(callData.timestamp);
                 window._incomingCallKey = key; window.markCallHandled(key);
                 const age = Math.max(0, cNow() - (callData.timestamp || cNow()));
@@ -23780,9 +23491,19 @@ ${textContent ? `
 
             // Ask for mic/camera ONCE, up-front, from the app itself (so the OS prompt appears before the
             // call screen instead of inside the call). Result decides whether we can join with camera.
+            const wOkHas = (k) => { try { if (localStorage.getItem(k) === '1') return true; } catch (e) { } return document.cookie.split('; ').indexOf(k + '=1') !== -1; };
+            const wOkSet = (v) => { const k = 'exama_media_ok_' + (v ? 'av' : 'a'); try { localStorage.setItem(k, '1'); } catch (e) { } document.cookie = k + '=1; max-age=2592000; path=/; SameSite=Lax'; };
             async function wPrewarm(video) {
                 const dflt = { audio: true, video: !!video };
-                return Promise.race([wPrewarm0(video), new Promise(r => setTimeout(() => r(dflt), 10000))]);
+                // permission already granted on an earlier call -> skip the slow "open + close the camera" warm-up
+                if (wOkHas('exama_media_ok_av') || (!video && wOkHas('exama_media_ok_a'))) {
+                    let denied = false;
+                    try { const q = async (n) => (await navigator.permissions.query({ name: n })).state; denied = (await q('microphone')) === 'denied' || (!!video && (await q('camera')) === 'denied'); } catch (e) { }
+                    if (!denied) return dflt;
+                }
+                const r = await Promise.race([wPrewarm0(video), new Promise(res => setTimeout(() => res(dflt), 10000))]);
+                if (r && r.audio && (!video || r.video)) wOkSet(video);
+                return r;
             }
             async function wPrewarm0(video) {
                 const out = { audio: true, video: !!video };
@@ -23907,10 +23628,12 @@ ${textContent ? `
             //    or the pipe cannot be restored for 90s
             //  - a page reload / WebView restart resumes the call (session kept in localStorage)
             // ==========================================================
+            WAC.warm = function () { try { const o = document.getElementById('wac-preconnect'); if (o) o.remove(); const l = document.createElement('link'); l.id = 'wac-preconnect'; l.rel = 'preconnect'; l.href = 'https://8x8.vc'; l.crossOrigin = ''; document.head.appendChild(l); } catch (e) { } };
+            WAC.room = function (st) { return WAC_ROOM + (window.isGlobalTestMode ? '_TEST_' : '_') + ((st && st.callTimestamp) || 'live'); };
             WAC.options = function (container, st) {
                 const video = st.mode === 'video' && !st.camOff;
                 return {
-                    roomName: WAC_ROOM, parentNode: container, width: '100%', height: '100%',
+                    roomName: WAC.room(st), parentNode: container, width: '100%', height: '100%',
                     configOverwrite: {
                         prejoinPageEnabled: false, prejoinConfig: { enabled: false }, requireDisplayName: false, disableDeepLinking: true,
                         enableWelcomePage: false, enableClosePage: false, startWithAudioMuted: !!st.muted, startWithVideoMuted: !video,
@@ -23920,7 +23643,7 @@ ${textContent ? `
                         disableProfile: true, disableShortcuts: true, disableThirdPartyRequests: true, disableSelfViewSettings: true,
                         enableNoisyMicDetection: false, enableNoAudioDetection: false, enableInsecureRoomNameWarning: false,
                         lobby: { autoKnock: false, enableChat: false }, securityUi: { hideLobbyButton: true },
-                        p2p: { enabled: true }, resolution: 720, feedbackPercentage: 0
+                        p2p: { enabled: true }, resolution: 720, feedbackPercentage: 0, analytics: { disabled: true }
                     },
                     interfaceConfigOverwrite: {
                         TOOLBAR_BUTTONS: [], SHOW_JITSI_WATERMARK: false, SHOW_WATERMARK_FOR_GUESTS: false, SHOW_BRAND_WATERMARK: false,
@@ -23989,11 +23712,23 @@ ${textContent ? `
                 let api;
                 try { api = st.api = window.chatJitsiApi = new window.JitsiMeetExternalAPI('8x8.vc', WAC.options(c, st)); }
                 catch (e) { console.warn('Jitsi start failed', e); st.media = 'down'; WAC.scheduleReconnect(); return; }
-                try { api.executeCommand('join'); } catch (e) { }
                 WAC.attach(api, st);
                 WAC.tick();
             };
 
+            // ---- signaling: instant 'left' if the phone loses its connection, cleared again when it reconnects ----
+            WAC.arm = function (st) {
+                if (typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured || !window.rtdb) return;
+                try {
+                    st.armed = true;
+                    st.connOff = onValue(ref(window.rtdb, '.info/connected'), (s) => {
+                        if (s.val() !== true || WAC.st !== st || st.ended) return;
+                        const cd = window.globalDiscusCallState;
+                        onDisconnect(cRef('participants/' + st.me + '/left')).set(true).catch(() => { });
+                        if (cd && cd.timestamp === st.callTimestamp && cd.status !== 'ended') update(cRef('participants/' + st.me), { left: false, ts: cNow() }).catch(() => { });
+                    });
+                } catch (e) { st.armed = false; }
+            };
             // ---- signaling: heartbeat + watcher ------------------------------------
             WAC.heartbeat = function () {
                 const st = WAC.st; if (!st || st.ended || typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured) return;
@@ -24059,7 +23794,7 @@ ${textContent ? `
                 if (WAC.active) { if (!resume) WAC.restore(); return; }
                 if (WAC.busy) return;
                 if (!window.JitsiMeetExternalAPI) { if (!resume) wToast('Calls unavailable', 'Could not load the call service. Check your internet and try again.'); return; }
-                WAC.busy = true;
+                WAC.busy = true; WAC.warm();
                 if (!resume) WAC.setFull(true);          // must run inside the tap, before any await
                 try {
                     const wantVideo = kind === 'video';
@@ -24078,8 +23813,8 @@ ${textContent ? `
                         cd = Object.assign({}, resume, { participants: Object.assign({}, resume.participants || {}, { [me]: { name, ts: t0, joinedAt: prev.joinedAt || t0 } }) });
                         set(cRef('participants/' + me), { name, ts: t0, joinedAt: prev.joinedAt || t0 }).catch(() => { });
                     } else if (isAnswering) {
-                        const snap = await cTimeout(get(cRef()), 8000).catch(() => null);
-                        const cur = snap && snap.val();
+                        let cur = window.globalDiscusCallState;
+                        if (!cur || !window.callIsLive(cur)) { const snap = await cTimeout(get(cRef()), 8000).catch(() => null); cur = snap && snap.val(); }
                         if (!cur || !window.callIsLive(cur)) { WAC.setFull(false); return wToast('Call ended', 'This call already ended before you joined.'); }
                         cd = Object.assign({}, cur, { participants: Object.assign({}, cur.participants || {}, { [me]: { name, ts: t0, joinedAt: t0 } }) });
                         set(cRef('participants/' + me), { name, ts: t0, joinedAt: t0 }).catch(() => { });
@@ -24112,7 +23847,7 @@ ${textContent ? `
                     container.innerHTML = ''; if (window.chatJitsiApi) { try { window.chatJitsiApi.dispose(); } catch (e) { } window.chatJitsiApi = null; }
                     modal.dataset.mode = kind; modal.classList.remove('hidden-view', 'wac-min', 'wac-ui-hidden'); $w('wac-splash').classList.remove('wac-gone'); $w('wac-banner').classList.remove('wac-show');
                     WAC.active = true; WAC.minimized = false; WAC.renderStage(); WAC.syncBtns(); WAC.tick();
-                    WAC.mediaConnect();
+                    WAC.mediaConnect(); WAC.arm(st);
                     st.tick = setInterval(WAC.tick, 1000); st.wt = setInterval(WAC.watch, 2000); st.hb = setInterval(WAC.heartbeat, CE.HB);
                     WAC.lockScreen(); WAC.poke();
                     try { localStorage.setItem('exama_call_session', JSON.stringify({ id: st.callTimestamp, kind, mobile: me })); } catch (e) { }
@@ -24133,6 +23868,7 @@ ${textContent ? `
                 try {
                     st.ended = true;
                     clearInterval(st.tick); clearInterval(st.wt); clearInterval(st.hb); clearTimeout(st.reconTimer); clearTimeout(st.uiTimer);
+                    try { if (st.connOff) st.connOff(); if (st.armed) onDisconnect(cRef('participants/' + st.me + '/left')).cancel().catch(() => { }); } catch (e) { }
                     stopRingtone(); WAC.stopRingback(); WAC.unlockScreen();
                     try { localStorage.removeItem('exama_call_session'); } catch (e) { }
                     const api = st.api, cd = window.globalDiscusCallState, me = st.me;
