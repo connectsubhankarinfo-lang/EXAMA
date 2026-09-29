@@ -3037,6 +3037,7 @@ button:active{transform:scale(.96);transition-duration:.12s}
 #chat-input-bar{position:relative;z-index:10000}
 #discus-video-modal.wac-root{z-index:20000!important}
 #wac-banner{z-index:20001!important}
+.da-sheet.hidden{display:none!important}
 .da-sheet.flex{animation:da-pop .2s cubic-bezier(.2,.9,.3,1.15)}
 @keyframes da-pop{from{opacity:0;transform:translateY(10px) scale(.92)}to{opacity:1;transform:none}}
 .da-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;width:100%}
@@ -6966,7 +6967,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                             </button>
 
                             <!-- Popup Menu (redesigned) -->
-                            <div id="chat-attach-menu" class="hidden da-sheet" role="menu"><div class="da-grid"><button type="button" role="menuitem" class="da-item da-photo" onclick="document.getElementById('chat-img-input').click(); window.toggleChatAttachMenu();"><span class="da-ico"><i class="fa-solid fa-image"></i></span><span class="da-lbl">Photos</span></button><button type="button" role="menuitem" class="da-item da-doc" onclick="document.getElementById('chat-doc-input').click(); window.toggleChatAttachMenu();"><span class="da-ico"><i class="fa-solid fa-file-pdf"></i></span><span class="da-lbl">Document</span></button><button type="button" role="menuitem" class="da-item da-link" onclick="window.toggleChatAttachMenu(); window.openChatLinkSheet();"><span class="da-ico"><i class="fa-solid fa-link"></i></span><span class="da-lbl">Link</span></button></div></div>
+                            <div id="chat-attach-menu" class="hidden da-sheet" role="menu"><div class="da-grid"><button type="button" role="menuitem" class="da-item da-photo" onclick="window.closeChatAttachMenu(); document.getElementById('chat-img-input').click();"><span class="da-ico"><i class="fa-solid fa-image"></i></span><span class="da-lbl">Photos</span></button><button type="button" role="menuitem" class="da-item da-doc" onclick="window.closeChatAttachMenu(); document.getElementById('chat-doc-input').click();"><span class="da-ico"><i class="fa-solid fa-file-pdf"></i></span><span class="da-lbl">Document</span></button><button type="button" role="menuitem" class="da-item da-link" onclick="window.closeChatAttachMenu(); window.openChatLinkSheet();"><span class="da-ico"><i class="fa-solid fa-link"></i></span><span class="da-lbl">Link</span></button></div></div>
 
                             <!-- Hidden Inputs -->
                             <input type="file" id="chat-img-input" accept="image/*" multiple class="hidden"
@@ -10691,18 +10692,20 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 throw new Error(data.error);
             };
 
-            // Toggle the attachment menu (Crash-Proof)
+            // Attachment menu: explicit open / close / toggle (state always in sync)
+            window.closeChatAttachMenu = function () {
+                const menu = document.getElementById('chat-attach-menu');
+                if (menu && menu.classList) { menu.classList.add('hidden'); menu.classList.remove('flex'); }
+            };
+            window.openChatAttachMenu = function () {
+                const menu = document.getElementById('chat-attach-menu');
+                if (menu && menu.classList) { menu.classList.remove('hidden'); menu.classList.add('flex'); }
+            };
             window.toggleChatAttachMenu = function () {
                 const menu = document.getElementById('chat-attach-menu');
-                if (menu && menu.classList) {
-                    if (menu.classList.contains('hidden')) {
-                        menu.classList.remove('hidden');
-                        menu.classList.add('flex');
-                    } else {
-                        menu.classList.add('hidden');
-                        menu.classList.remove('flex');
-                    }
-                }
+                if (!menu || !menu.classList) return;
+                if (menu.classList.contains('hidden')) window.openChatAttachMenu();
+                else window.closeChatAttachMenu();
             };
 
             // === DISCUS: link sharing + attach popup helpers ===
@@ -10759,7 +10762,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 window.sendChatLink = async function () {
                     const u = parseLink($('chat-link-url').value); if (!u) return;
                     const caption = $('chat-link-caption').value.trim();
-                    window.closeChatLinkSheet();
+                    window.closeChatLinkSheet(); window.closeChatAttachMenu();
                     const me = (window.studentsDB || []).find((s) => s.mobile === window.loggedInMobile);
                     const senderName = window.currentRole === 'student' ? ((me && me.name) || 'Student') : 'EXAMA';
                     const msgObj = { text: caption, linkUrl: u.href, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null };
@@ -10780,12 +10783,23 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 });
                 document.addEventListener('keydown', (e) => {
                     if (e.key !== 'Escape') return;
-                    window.closeChatLinkSheet(); if (menuOpen()) window.toggleChatAttachMenu();
+                    window.closeChatLinkSheet(); window.closeChatAttachMenu();
                 });
+                // Safety nets: whenever the file picker returns, the tab regains focus, the page is restored,
+                // the user starts typing, or leaves the Discus screen -> the attach popup is always closed.
+                const closeMenu = () => window.closeChatAttachMenu();
+                window.addEventListener('focus', closeMenu);
+                window.addEventListener('pageshow', closeMenu);
+                window.addEventListener('hashchange', closeMenu);
+                document.addEventListener('visibilitychange', closeMenu);
+                ['chat-img-input', 'chat-doc-input'].forEach((id) => { const el = $(id); if (el) { el.addEventListener('click', closeMenu); el.addEventListener('change', closeMenu); el.addEventListener('cancel', closeMenu); } });
+                const ta = $('chat-input'); if (ta) ta.addEventListener('focus', closeMenu);
+                const bar = $('chat-input-bar'); if (bar) bar.addEventListener('submit', closeMenu, true);
             })();
 
             // Unified Upload Function (Strictly Google Drive, 100% Bulletproof)
             window.uploadChatAttachment = async function (event, type) {
+                window.closeChatAttachMenu(); // file chosen -> popup must be gone
                 const files = Array.from(event.target.files || []);
                 if (files.length === 0) return;
 
@@ -10841,9 +10855,11 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     window.showCustomAlert("Notice", "Upload failed. Check connection.", "info");
                 }
 
+                window.closeChatAttachMenu(); // after send (success or fail) -> popup stays hidden
                 setTimeout(() => {
                     if (banner) banner.classList.add('hidden');
-                    if (barEl) barEl.classList.replace('from-red-500', 'from-blue-500');
+                    if (barEl) { barEl.classList.replace('from-red-500', 'from-blue-500'); barEl.style.width = '0%'; }
+                    window.closeChatAttachMenu();
                 }, 2000);
 
                 if (event.target) event.target.value = '';
@@ -12973,6 +12989,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
 
             window.sendChatMessage = async function () {
                 const input = document.getElementById('chat-input');
+                window.closeChatAttachMenu();
                 const text = input.value.trim();
                 if (!text) return;
 
@@ -12996,6 +13013,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
             }
 
             window.sharePerformance = async function () {
+                window.closeChatAttachMenu();
                 if (window.currentRole === 'admin') return;
                 const senderName = window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || 'Student';
                 const todayStr = window.formatDateDDMMYYYY();
