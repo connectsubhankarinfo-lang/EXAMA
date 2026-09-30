@@ -17628,93 +17628,175 @@ ${textContent ? `
                     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             };
 
+            // ============================================================
+            // TOAST ENGINE v2 — spring drop-in, focus-blur reveal, countdown bar,
+            // swipe-up to dismiss, hold to pause, smooth hand-off between toasts.
+            // ============================================================
+            (function () {
+                if (document.getElementById('xt-style')) return;
+                const st = document.createElement('style');
+                st.id = 'xt-style';
+                st.textContent = `
+                .xt-toast{position:relative;overflow:hidden;touch-action:pan-x;user-select:none;-webkit-user-select:none;
+                    will-change:transform,opacity,filter;transform-origin:50% 0;
+                    opacity:0;transform:translate3d(0,-130%,0) scale(.86)}
+                .xt-toast.xt-in{animation:xtIn .42s cubic-bezier(.2,1.3,.3,1) forwards,xtFocus .28s ease-out forwards}
+                .xt-toast.xt-out{animation:xtOut .26s cubic-bezier(.5,0,.85,.35) forwards}
+                .xt-ico{animation:xtPop .4s cubic-bezier(.3,1.6,.4,1) .08s both}
+                .xt-txt{animation:xtTxt .3s ease-out .1s both}
+                .xt-bar{position:absolute;left:16px;right:16px;bottom:0;height:2.5px;border-radius:2px;background:rgba(15,23,42,.06);overflow:hidden}
+                .xt-bar i{display:block;height:100%;border-radius:2px;opacity:.85;transform-origin:left center;animation:xtBar var(--xt-dur,3600ms) linear forwards}
+                .xt-toast.xt-paused .xt-bar i{animation-play-state:paused}
+                @keyframes xtIn{from{opacity:0;transform:translate3d(0,-130%,0) scale(.86)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}
+                @keyframes xtFocus{from{filter:blur(8px)}to{filter:blur(0)}}
+                @keyframes xtOut{from{opacity:1;transform:translate3d(0,0,0) scale(1);filter:blur(0)}to{opacity:0;transform:translate3d(0,-120%,0) scale(.9);filter:blur(6px)}}
+                @keyframes xtPop{from{opacity:0;transform:scale(.3) rotate(-28deg)}to{opacity:1;transform:scale(1) rotate(0)}}
+                @keyframes xtTxt{from{opacity:0;transform:translate3d(0,-5px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+                @keyframes xtBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+                @media (prefers-reduced-motion:reduce){.xt-toast.xt-in{animation:xtFade .2s ease-out forwards}.xt-ico,.xt-txt{animation:none}}
+                @keyframes xtFade{from{opacity:0}to{opacity:1;transform:none}}`;
+                document.head.appendChild(st);
+            })();
+
             window.showToast = function (title, message, type = "info", avatarUrl = null, actionBadge = null) {
                 const container = document.getElementById('toast-container');
                 if (!container) return;
 
-                // 1. Force container to act as iOS top-center anchor
+                // Some callers pass the kind as the 2nd argument: showToast('Saved!', 'success')
+                const KINDS = ['success', 'error', 'info', 'warning', 'danger', 'alert', 'chat'];
+                if (type === 'info' && KINDS.indexOf(message) !== -1) { type = message; message = ''; }
+                if (message == null) message = '';
+                // Anything that deletes / removes / resets something gets the red trash style
+                // (chat messages, notices and errors keep their own look).
+                if (!avatarUrl && (type === 'info' || type === 'success' || type === 'warning') &&
+                    /\b(delet\w*|remov\w*|reset)\b/i.test(String(title) + ' ' + String(message))) type = 'delete';
+
+                // 1. Keep the container pinned to the iOS-style top-centre anchor
                 container.className = "fixed top-10 sm:top-8 left-1/2 transform -translate-x-1/2 z-[9999] flex flex-col items-center pointer-events-none w-[92%] max-w-[340px]";
 
-                // 2. Clear out any existing toasts so they NEVER stack
-                container.innerHTML = '';
+                // 2. Only one toast at a time: hand the old one off smoothly instead of wiping it
+                const prev = window._xtCurrent;
+                if (prev && prev.el && prev.el.isConnected) {
+                    prev.el.style.position = 'absolute';
+                    prev.el.style.left = '0'; prev.el.style.right = '0'; prev.el.style.top = '0';
+                    prev.dismiss(false);
+                }
+                Array.from(container.children).forEach(c => { if (!prev || c !== prev.el) c.remove(); });
 
                 const toastId = 'toast_' + Date.now();
 
-                // 3. iOS Style Icon & Colors
-                let iconHtml = '<div class="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-bell text-[11px]"></i></div>';
+                // 3. Icon + accent colour per type
+                const ICON = (bg, fa) => `<div class="w-8 h-8 rounded-full ${bg} text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid ${fa} text-[11px]"></i></div>`;
+                let iconHtml = ICON('bg-blue-500', 'fa-bell');
+                let accent = '#3b82f6';
+                if (type === 'chat') { iconHtml = ICON('bg-indigo-500', 'fa-comment'); accent = '#6366f1'; }
+                else if (type === 'alert') { iconHtml = ICON('bg-amber-500', 'fa-bullhorn'); accent = '#f59e0b'; }
+                else if (type === 'warning') { iconHtml = ICON('bg-amber-500', 'fa-triangle-exclamation'); accent = '#f59e0b'; }
+                else if (type === 'success') { iconHtml = ICON('bg-emerald-500', 'fa-check'); accent = '#10b981'; }
+                else if (type === 'error' || type === 'danger') { iconHtml = ICON('bg-red-500', 'fa-triangle-exclamation'); accent = '#ef4444'; }
+                else if (type === 'delete') { iconHtml = ICON('bg-red-500', 'fa-trash-can'); accent = '#ef4444'; }
 
-                if (type === 'chat') {
-                    iconHtml = '<div class="w-8 h-8 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-comment text-[11px]"></i></div>';
-                } else if (type === 'alert') {
-                    iconHtml = '<div class="w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-bullhorn text-[11px]"></i></div>';
-                } else if (type === 'success') {
-                    iconHtml = '<div class="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-check text-[11px]"></i></div>';
-                } else if (type === 'error') {
-                    iconHtml = '<div class="w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center shadow-sm shrink-0"><i class="fa-solid fa-triangle-exclamation text-[11px]"></i></div>';
-                }
-
-                // 3b. If a sender/actor DP is supplied (discus chat message, or a focus-session
-                // start/break/end activity), show that person's profile photo instead of the
-                // generic icon, with a small action badge in the corner for session activity.
+                // 3b. Actor / sender DP (Discus message or focus-session activity) with a corner badge
                 if (avatarUrl) {
                     let badgeHtml = '';
-                    if (actionBadge === 'START' || actionBadge === 'RESUME') {
-                        badgeHtml = '<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center shadow-sm"><i class="fa-solid fa-play text-white text-[5px]"></i></span>';
-                    } else if (actionBadge === 'BREAK') {
-                        badgeHtml = '<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-amber-500 border-2 border-white flex items-center justify-center shadow-sm"><i class="fa-solid fa-mug-hot text-white text-[5px]"></i></span>';
-                    } else if (actionBadge === 'STOP' || actionBadge === 'STOP_AT_LIMIT') {
-                        badgeHtml = '<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white flex items-center justify-center shadow-sm"><i class="fa-solid fa-flag-checkered text-white text-[5px]"></i></span>';
-                    } else if (type === 'chat') {
-                        badgeHtml = '<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-indigo-500 border-2 border-white flex items-center justify-center shadow-sm"><i class="fa-solid fa-comment text-white text-[5px]"></i></span>';
-                    }
+                    const BADGE = (bg, fa) => `<span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ${bg} border-2 border-white flex items-center justify-center shadow-sm"><i class="fa-solid ${fa} text-white text-[5px]"></i></span>`;
+                    if (actionBadge === 'START' || actionBadge === 'RESUME') { badgeHtml = BADGE('bg-emerald-500', 'fa-play'); accent = '#10b981'; }
+                    else if (actionBadge === 'BREAK') { badgeHtml = BADGE('bg-amber-500', 'fa-mug-hot'); accent = '#f59e0b'; }
+                    else if (actionBadge === 'STOP' || actionBadge === 'STOP_AT_LIMIT') { badgeHtml = BADGE('bg-red-500', 'fa-flag-checkered'); accent = '#ef4444'; }
+                    else if (type === 'chat') { badgeHtml = BADGE('bg-indigo-500', 'fa-comment'); }
                     const safeAvatar = String(avatarUrl).replace(/"/g, '&quot;');
                     iconHtml = `<div class="relative w-8 h-8 shrink-0"><img src="${safeAvatar}" onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=U&background=4f46e5&color=fff&bold=true'" class="w-8 h-8 rounded-full object-cover shadow-sm border border-white/70 bg-indigo-100">${badgeHtml}</div>`;
                 }
 
-                // 4. Create the iOS Premium Glass UI Toast
+                const duration = (type === 'error' || type === 'danger' || type === 'warning') ? 4800 : 3600;
+
+                // 4. Build the glass toast
                 const toast = document.createElement('div');
                 toast.id = toastId;
-                toast.className = `bg-white/85 backdrop-blur-2xl p-2.5 sm:p-3 rounded-[20px] shadow-[0_15px_40px_rgba(0,0,0,0.12)] border border-white/60 flex items-center gap-3 w-full transform -translate-y-[150%] opacity-0 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto cursor-pointer`;
-
+                toast.setAttribute('role', 'status');
+                toast.setAttribute('aria-live', 'polite');
+                toast.className = 'xt-toast bg-white/85 backdrop-blur-2xl p-2.5 sm:p-3 rounded-[20px] shadow-[0_15px_40px_rgba(0,0,0,0.12)] border border-white/60 flex items-center gap-3 w-full pointer-events-auto cursor-pointer';
+                toast.style.setProperty('--xt-dur', duration + 'ms');
                 toast.innerHTML = `
-                ${iconHtml}
-                <div class="flex-1 min-w-0 pr-2">
+                <div class="xt-ico">${iconHtml}</div>
+                <div class="xt-txt flex-1 min-w-0 pr-2">
                     <h4 class="text-[13px] font-bold text-slate-900 leading-tight truncate">${title}</h4>
-                    <p class="text-[11px] font-medium text-slate-500 leading-snug line-clamp-2 mt-0.5">${message}</p>
+                    ${message ? `<p class="text-[11px] font-medium text-slate-500 leading-snug line-clamp-2 mt-0.5">${message}</p>` : ''}
                 </div>
+                <div class="xt-bar"><i style="background:${accent}"></i></div>
             `;
 
-                // Click action to dismiss or navigate
+                // 5. Lifecycle: dismiss / pause / resume
+                let closed = false, timer = null, remaining = duration, startedAt = 0;
+                const arm = () => { startedAt = Date.now(); clearTimeout(timer); timer = setTimeout(() => dismiss(false), remaining); };
+                const pause = () => { if (closed) return; clearTimeout(timer); remaining = Math.max(400, remaining - (Date.now() - startedAt)); toast.classList.add('xt-paused'); };
+                const resume = () => { if (closed) return; toast.classList.remove('xt-paused'); arm(); };
+                function dismiss(fromDrag) {
+                    if (closed) return;
+                    closed = true;
+                    clearTimeout(timer);
+                    if (window._xtCurrent && window._xtCurrent.el === toast) window._xtCurrent = null;
+                    if (fromDrag) {
+                        toast.style.transition = 'transform .24s cubic-bezier(.5,0,.9,.4), opacity .2s ease-out';
+                        toast.style.transform = 'translate3d(0,-150%,0)';
+                        toast.style.opacity = '0';
+                    } else {
+                        toast.style.animation = '';
+                        toast.classList.remove('xt-in');
+                        toast.classList.add('xt-out');
+                    }
+                    setTimeout(() => { if (toast.isConnected) toast.remove(); }, 300);
+                }
+
+                // 6. Swipe up to dismiss, hold to pause, tap to open/dismiss
+                let sy = 0, dy = 0, dragging = false, moved = false, pid = null;
+                toast.addEventListener('pointerdown', (e) => {
+                    if (e.button > 0) return;
+                    sy = e.clientY; dy = 0; moved = false; dragging = true; pid = e.pointerId;
+                    pause();
+                });
+                toast.addEventListener('pointermove', (e) => {
+                    if (!dragging) return;
+                    dy = e.clientY - sy;
+                    if (!moved && Math.abs(dy) > 6) {
+                        moved = true;
+                        try { toast.setPointerCapture(pid); } catch (_) { }
+                        toast.style.animation = 'none';
+                        toast.style.filter = 'none';
+                        toast.style.transition = 'none';
+                    }
+                    if (moved) {
+                        toast.style.transform = `translate3d(0,${dy < 0 ? dy : dy * 0.25}px,0)`;
+                        toast.style.opacity = String(Math.max(0.25, 1 + Math.min(0, dy) / 140));
+                    }
+                });
+                const endDrag = () => {
+                    if (!dragging) return;
+                    dragging = false;
+                    if (moved && dy < -36) { dismiss(true); return; }
+                    if (moved) {
+                        toast.style.transition = 'transform .34s cubic-bezier(.2,1.3,.3,1), opacity .22s ease-out';
+                        toast.style.transform = 'translate3d(0,0,0)';
+                        toast.style.opacity = '1';
+                    }
+                    resume();
+                };
+                toast.addEventListener('pointerup', endDrag);
+                toast.addEventListener('pointercancel', endDrag);
+
                 toast.onclick = () => {
+                    if (moved) return;   // it was a swipe, not a tap
                     if (type === 'chat') window.location.hash = 'chat';
                     if (type === 'alert') window.location.hash = 'notices';
-
-                    // Slide up instantly on click
-                    toast.classList.remove('translate-y-0', 'opacity-100');
-                    toast.classList.add('-translate-y-[150%]', 'opacity-0');
-                    setTimeout(() => toast.remove(), 300);
+                    dismiss(false);
                 };
 
+                // 7. Show it
                 container.appendChild(toast);
-
-                // Trigger drop-down animation
-                requestAnimationFrame(() => {
-                    setTimeout(() => {
-                        toast.classList.remove('-translate-y-[150%]', 'opacity-0');
-                        toast.classList.add('translate-y-0', 'opacity-100');
-                    }, 10); // Tiny delay ensures the browser registers the CSS state
-                });
-
-                // Auto dismiss after 3.5 seconds
-                setTimeout(() => {
-                    if (document.getElementById(toastId)) {
-                        toast.classList.remove('translate-y-0', 'opacity-100');
-                        toast.classList.add('-translate-y-[150%]', 'opacity-0');
-                        setTimeout(() => {
-                            if (document.getElementById(toastId)) toast.remove();
-                        }, 400);
-                    }
-                }, 3500);
+                window._xtCurrent = { el: toast, dismiss };
+                void toast.offsetWidth;                 // commit the start state so the animation always plays
+                toast.classList.add('xt-in');
+                arm();
             };
 
             // === RTDB PRESENCE + WHATSAPP-STYLE TYPING (Discus) ===
@@ -18098,12 +18180,14 @@ ${textContent ? `
                                 if (knownSessionLogCounts && logs.length > (knownSessionLogCounts.get(ses.id) || 0)) {
                                     const last = logs[logs.length - 1];
                                     // ignore stale changes (e.g. catching up after being offline)
-                                    if (last && SESSION_TOAST_TEXT[last.action] && (Date.now() - (last.time || 0)) < 180000) events.push({ ses, last });
+                                    if (last && SESSION_TOAST_TEXT[last.action] && Math.abs(Date.now() - (last.time || 0)) < 1800000) events.push({ ses, last });
                                 }
                             });
                             knownSessionLogCounts = counts;   // first load: just remember, no toast
                             events.sort((x, y) => (x.last.time || 0) - (y.last.time || 0));
-                            const ev = events[events.length - 1];
+                            // send to OTHERS: the person who pressed the button already sees their own timer change
+                            const others = events.filter(e => String(e.ses.mobile) !== String(window.loggedInMobile));
+                            const ev = others[others.length - 1];
                             if (ev) {
                                 const shortName = String(ev.ses.sessionType || 'session').split(' ')[0];
                                 const timeStr = new Date(ev.last.time).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
