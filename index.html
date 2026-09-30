@@ -5293,7 +5293,6 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     .sd-profile { grid-area:profile; display:flex; align-items:center; gap:12px; min-width:0; cursor:pointer; }
                     .sd-av { position:relative; flex:none; width:56px; height:56px; padding:2.5px; border-radius:50%; background:conic-gradient(from 200deg,#fde68a,#f9a8d4,#a5b4fc,#67e8f9,#fde68a); box-shadow:0 8px 20px -6px rgba(0,0,0,.45); }
                     .sd-av img { width:100%; height:100%; border-radius:50%; object-fit:cover; background:#e0e7ff; border:2px solid rgba(255,255,255,.92); display:block; }
-                    .sd-dot { position:absolute; right:1px; bottom:1px; width:13px; height:13px; border-radius:50%; background:#34d399; border:2.5px solid #5b21b6; }
                     .sd-who { min-width:0; flex:1; }
                     #student-greeting { font-size:12px; font-weight:700; line-height:1.2; color:rgba(224,231,255,.92); margin:0 0 2px; }
                     /* FULL NAME: never truncated - wraps onto extra lines instead */
@@ -5591,7 +5590,6 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     <div class="sd-profile" onclick="window.__mpTarget=null;window.location.hash='my-profile'" title="My Profile">
                         <div class="sd-av">
                             <img id="student-nav-dp" src="https://ui-avatars.com/api/?name=Exama&background=4f46e5&color=fff&bold=true" alt="Profile" onerror="this.onerror=null; this.src='https://lh3.googleusercontent.com/a/default-user=s120-c';">
-                            <i class="sd-dot"></i>
                         </div>
                         <div class="sd-who"><p id="student-greeting"></p><h2 id="student-name-display">Student</h2></div>
                     </div>
@@ -5950,21 +5948,29 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     #student-view { --sd-px:12px; }
                     @media (min-width:600px) { #student-view { --sd-px:20px; } }
                     @media (min-width:1100px) { #student-view { --sd-px:clamp(28px,3vw,44px); } }
-                    /* Capsule: overlays the top edge of the button grid; sticks to the top of the sheet once it gets there */
+                    /* Capsule: overlays the top edge of the button grid. Once the performance card has tucked away, the grid sits flush under the header and the capsule pins near the top with a frosted rounded background (Apple style) */
+                    #student-view { --sd-pin:3px; }
+                    #student-view .sd-pdots, #student-view .sd-hdr .sd-pdots { display:none !important; }
                     #student-view .sd-tiles:not(#_) { margin-top:0 !important; }
+                    /* top corners of the grid panel flatten as it reaches the header, so there is no gap or notch under the curved sheet (JS sets --sd-tr) */
+                    #student-view:not(#_) .sd-tiles:not(#_) { border-top-left-radius:var(--sd-tr, 30px) !important; border-top-right-radius:var(--sd-tr, 30px) !important; }
                     #student-view .sd-grab:not(#_) {
-                        position:sticky; top:0; z-index:30; height:26px; box-sizing:border-box; padding-top:8px; cursor:pointer;
+                        position:sticky; top:calc(var(--sd-pin) - var(--sd-pad, 18px)); z-index:30; height:26px; box-sizing:border-box; padding-top:8px; cursor:pointer; pointer-events:none;
                         margin:16px calc(-1 * max(var(--sd-px), env(safe-area-inset-right, 0px))) -26px calc(-1 * max(var(--sd-px), env(safe-area-inset-left, 0px))) !important;
-                        display:flex; align-items:flex-start; justify-content:center; --sd-bar:0;
+                        display:flex; align-items:flex-start; justify-content:center; --sd-bar:0; --sd-fade:0;
                     }
-                    /* frosted bar behind the capsule: fades in only as the capsule reaches the top */
-                    #student-view .sd-grab::before { content:""; position:absolute; inset:0; z-index:-1; pointer-events:none; opacity:var(--sd-bar); background:linear-gradient(180deg, rgba(244,246,255,.97), rgba(244,246,255,.86)); }
-                    #student-view .sd-grab::after  { content:""; position:absolute; left:0; right:0; top:100%; height:16px; z-index:-1; pointer-events:none; opacity:var(--sd-bar); background:linear-gradient(180deg, rgba(244,246,255,.86), rgba(244,246,255,0)); }
-                    #student-view .sd-grab > span { display:block; width:42px; height:5px; border-radius:999px; background:linear-gradient(90deg,#a5b4fc,#c4b5fd,#7dd3fc); box-shadow:inset 0 0 0 .5px rgba(99,102,241,.25), 0 1px 3px rgba(99,102,241,.28); transition:width .25s cubic-bezier(.32,.72,0,1); }
+                    /* invisible tap target around the capsule (tap = back to top); no background, so tiles beneath stay clickable everywhere else */
+                    #student-view .sd-grab::before { content:""; position:absolute; top:0; left:50%; width:76px; height:21px; margin-left:-38px; z-index:-1; pointer-events:auto; background:none; }
+                    /* full-width fade: anything that scrolls up past the capsule melts into the sheet colour instead of being cut off (fades in as content starts passing under it) */
+                    #student-view .sd-grab::after { content:""; position:absolute; left:0; right:0; top:calc(-1 * var(--sd-pin)); height:64px; z-index:-2; pointer-events:none;
+                        opacity:var(--sd-fade);
+                        background:linear-gradient(180deg, rgba(244,246,255,.97) 0%, rgba(244,246,255,.90) 34%, rgba(244,246,255,.55) 68%, rgba(244,246,255,0) 100%); }
+                    @supports ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))) {
+                        #student-view .sd-grab::after { -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+                            -webkit-mask-image:linear-gradient(180deg,#000 0%,#000 40%,transparent 100%); mask-image:linear-gradient(180deg,#000 0%,#000 40%,transparent 100%); }
+                    }
+                    #student-view .sd-grab > span { display:block; width:42px; height:5px; border-radius:999px; background:linear-gradient(90deg,#a5b4fc,#c4b5fd,#7dd3fc); box-shadow:inset 0 0 0 .5px rgba(99,102,241,.25), 0 1px 3px rgba(99,102,241,.28); transition:width .25s cubic-bezier(.32,.72,0,1); pointer-events:none; }
                     #student-view .sd-grab:active > span { width:54px; }
-                    @supports (-webkit-touch-callout:none) {
-                        #student-view .sd-grab::before { background:rgba(244,246,255,.66); -webkit-backdrop-filter:blur(18px) saturate(180%); backdrop-filter:blur(18px) saturate(180%); }
-                    }
                     /* Scroll-linked animation: no timed transitions on the header fold (JS drives it every frame) */
                     #student-view .sd-hdr .sd-fold, #student-view .sd-hdr .sd-fold-in, #student-view .sd-hdr .sd-quote, #student-view .sd-hdr .sd-grid { transition:none !important; }
                     #student-view .sd-hdr .sd-fold { will-change:height, opacity; }
@@ -5972,47 +5978,108 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     #student-view > .sd-hdr + div { overflow-anchor:none; scroll-behavior:auto; overscroll-behavior-y:contain; -webkit-overflow-scrolling:touch; }
                 </style>
                 <script id="sd-scroll-sync-js">
-                /* ONE scroll listener + ONE requestAnimationFrame drives every scroll animation (header fold, performance-card tuck-away, capsule) so they stay in sync */
+                /* Apple-style collapse.
+                   The FIRST swipe / scroll only tucks the performance card away and pins the capsule to the top of the sheet;
+                   the button grid starts scrolling only after that. Pull down at the very top to bring the card back.
+                   p = collapse progress (0..1). V = p*D + scrollTop is the "virtual scroll" that drives every visual (header fold, card, capsule). */
                 (function () {
                     function init() {
                         var sv = document.getElementById('student-view'); if (!sv) return;
                         var hdr = sv.querySelector('.sd-hdr'), sc = hdr && hdr.nextElementSibling; if (!hdr || !sc) return;
                         var fold = hdr.querySelector('.sd-fold'), foldIn = hdr.querySelector('.sd-fold-in'), quote = hdr.querySelector('.sd-quote'), grid = hdr.querySelector('.sd-grid');
-                        var card = sc.querySelector('.flip-card'), bar = sc.querySelector('.sd-grab');
+                        var card = sc.querySelector('.flip-card'), bar = sc.querySelector('.sd-grab'), tiles = sc.querySelector('.sd-tiles');
                         var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
                         var mqLand = window.matchMedia('(orientation:landscape) and (max-height:480px)');
-                        var raf = 0, rowGap = 12, folded = false, cardCur = 0, barCur = 0, barSet = -1;
+                        var PIN = 3;                                             // must match --sd-pin (sticky top of .sd-grab in CSS)
+                        var raf = 0, rowGap = 12, folded = false, cardCur = 0, barCur = 0, barSet = -1, fadeSet = -1, trSet = -1, baseR = 30;
+                        var p = 0, D = 0, padTop = 18, barMt = 16, animRaf = 0, animating = false, pendingReveal = false;
+                        var tTracking = false, tOwn = false, tX = 0, tY = 0, tLastY = 0, tLastT = 0, tVel = 0, tP0 = 0;
+                        var wState = 0, wStart = 0, lastW = 0;
                         var clamp = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; }, smooth = function (t) { return t * t * (3 - 2 * t); };
                         if (card) { card.style.willChange = 'opacity, transform'; card.style.transformOrigin = '50% 100%'; }
                         function clearFold() {
                             if (!folded) return; folded = false;
                             fold.style.height = ''; fold.style.overflow = ''; fold.style.opacity = ''; if (quote) quote.style.transform = ''; if (grid) grid.style.marginBottom = '';
                         }
-                        function measure() { try { rowGap = parseFloat(getComputedStyle(grid).rowGap) || 12; } catch (e) {} }
+                        function measure() {
+                            try { rowGap = parseFloat(getComputedStyle(grid).rowGap) || 12; } catch (e) {}
+                            try { padTop = parseFloat(getComputedStyle(sc).paddingTop) || 0; if (bar) { barMt = parseFloat(getComputedStyle(bar).marginTop) || 0; bar.style.setProperty('--sd-pad', padTop + 'px'); } } catch (e) {}
+                            try { if (tiles) baseR = parseFloat(getComputedStyle(tiles).borderBottomLeftRadius) || 30; } catch (e) {}
+                        }
+                        /* distance the content must travel until the button grid sits flush under the header (no gap) */
+                        function calcD() { return card ? Math.max(0, padTop + card.offsetHeight + barMt + 1) : 0; }   // +1px overshoot: the grid tucks 1px under the header edge, never a hairline gap
+                        /* collapse = pull the card (and everything after it) up by p*D, exactly like scrolling would */
+                        function applyP() {
+                            if (!card || !sc.clientHeight) return;
+                            D = calcD();
+                            var mt = p > 0.0005 ? (-(p * D)).toFixed(2) + 'px' : '';
+                            if (card.style.marginTop !== mt) card.style.marginTop = mt;
+                        }
+                        function getV() { return p * D + sc.scrollTop; }
+                        function setV(v) {
+                            D = calcD(); if (D <= 0) return; if (v < 0) v = 0;
+                            if (v <= D) { p = v / D; applyP(); if (sc.scrollTop) sc.scrollTop = 0; }
+                            else { p = 1; applyP(); sc.scrollTop = v - D; }
+                            kick();
+                        }
+                        function cancelAnim() { if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; } animating = false; }
+                        function animateTo(target) {
+                            cancelAnim(); D = calcD();
+                            if (!D || reduce || Math.abs(target - p) < 0.001) { p = target; applyP(); kick(); return; }
+                            var from = p, t0 = 0, dur = 240 + 260 * Math.abs(target - from);
+                            animating = true;
+                            function step(now) {
+                                if (!t0) t0 = now;
+                                var t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3.2);
+                                p = from + (target - from) * e; applyP(); kick();
+                                if (t < 1) animRaf = requestAnimationFrame(step);
+                                else { animRaf = 0; animating = false; p = target; applyP(); kick(); }
+                            }
+                            animRaf = requestAnimationFrame(step);
+                        }
+                        /* momentum after a finger lift (only used when we own the gesture) */
+                        function fling(v) {
+                            cancelAnim(); var last = 0;
+                            function step(now) {
+                                if (!last) { last = now; animRaf = requestAnimationFrame(step); return; }
+                                var dt = Math.min(40, now - last); last = now;
+                                v *= Math.pow(0.95, dt / 16.7);
+                                var nv = getV() + v * dt;
+                                if (v < 0) nv = Math.max(nv, D);                    // coasting up stops at the pin - it never re-opens the card
+                                setV(nv);
+                                var atEnd = v > 0 && sc.scrollTop >= sc.scrollHeight - sc.clientHeight - 0.5;
+                                var atPin = v < 0 && nv <= D + 0.5;
+                                if (Math.abs(v) > 0.03 && !atEnd && !atPin) animRaf = requestAnimationFrame(step); else animRaf = 0;
+                            }
+                            animRaf = requestAnimationFrame(step);
+                        }
                         function frame() {
                             raf = 0;
+                            if (!sc.clientHeight) return;                            // view hidden
                             /* ---- reads ---- */
                             var y = sc.scrollTop, scTop = sc.getBoundingClientRect().top;
                             var bt = bar ? bar.getBoundingClientRect().top - scTop : 999;
                             var canFold = fold && foldIn && hdr.clientWidth < 900 && !mqLand.matches;
                             var nat = canFold ? foldIn.scrollHeight : 0;
                             var ch = card ? card.offsetHeight : 0;
+                            var vy = p * calcD() + y;                                // virtual scroll position
                             /* ---- targets ---- */
-                            var qT = card && !reduce ? smooth(clamp((y - ch * 0.04) / (ch * 0.85))) : 0;
-                            var sT = clamp(1 - bt / 36);
-                            var k = reduce ? 1 : 0.26;                                  // gentle easing for the cosmetic parts only
+                            var qT = card && !reduce ? smooth(clamp((vy - ch * 0.04) / (ch * 0.85))) : 0;
+                            var sT = clamp(1 - (bt - PIN) / 36);                     // 1 = capsule is pinned
+                            var k = reduce ? 1 : 0.26;                               // gentle easing for the cosmetic parts only
                             cardCur += (qT - cardCur) * k; barCur += (sT - barCur) * k;
                             var more = Math.abs(qT - cardCur) > 0.002 || Math.abs(sT - barCur) > 0.004;
                             if (!more) { cardCur = qT; barCur = sT; }
                             /* ---- writes ---- */
-                            if (canFold && nat > 0) {                                   // header fold stays exactly tied to the finger (it moves layout)
-                                var D = Math.max(150, nat * 1.6), p = reduce ? (y > 90 ? 1 : 0) : smooth(clamp(y / D));
-                                if (p > 0.001) {
+                            applyP();
+                            if (canFold && nat > 0) {                                // header fold stays exactly tied to the finger
+                                var FD = Math.max(150, nat * 1.6), pf = reduce ? (vy > 90 ? 1 : 0) : smooth(clamp(vy / FD));
+                                if (pf > 0.001) {
                                     folded = true; fold.style.overflow = 'hidden';
-                                    fold.style.height = (nat * (1 - p)).toFixed(1) + 'px';
-                                    fold.style.opacity = (1 - clamp(p * 1.25)).toFixed(3);
-                                    if (quote) quote.style.transform = 'translateY(' + (-14 * p).toFixed(1) + 'px) scale(' + (1 - 0.05 * p).toFixed(3) + ')';
-                                    if (grid) grid.style.marginBottom = (-rowGap * p).toFixed(1) + 'px';
+                                    fold.style.height = (nat * (1 - pf)).toFixed(1) + 'px';
+                                    fold.style.opacity = (1 - clamp(pf * 1.25)).toFixed(3);
+                                    if (quote) quote.style.transform = 'translateY(' + (-14 * pf).toFixed(1) + 'px) scale(' + (1 - 0.05 * pf).toFixed(3) + ')';
+                                    if (grid) grid.style.marginBottom = (-rowGap * pf).toFixed(1) + 'px';
                                 } else clearFold();
                             } else clearFold();
                             if (card && !reduce) {
@@ -6024,13 +6091,92 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                                 } else { card.style.opacity = ''; card.style.transform = ''; card.style.pointerEvents = ''; }
                             }
                             if (bar && Math.abs(barCur - barSet) > 0.004) { barSet = barCur; bar.style.setProperty('--sd-bar', barCur.toFixed(3)); }
+                            if (bar) {                                               // full-width fade grows as content starts passing under the pinned capsule
+                                var fT = clamp(y / 26) * barCur;
+                                if (Math.abs(fT - fadeSet) > 0.004) { fadeSet = fT; bar.style.setProperty('--sd-fade', fT.toFixed(3)); }
+                            }
+                            if (tiles) {                                             // panel's top corners flatten as it reaches the header
+                                var tt = tiles.getBoundingClientRect().top - scTop, rr = Math.round(baseR * clamp(tt / baseR) * 2) / 2;
+                                if (rr !== trSet) { trSet = rr; tiles.style.setProperty('--sd-tr', rr + 'px'); }
+                            }
                             if (more) kick();
                         }
                         function kick() { if (!raf) raf = requestAnimationFrame(frame); }
-                        sc.addEventListener('scroll', kick, { passive: true });
+
+                        sc.addEventListener('scroll', function () {
+                            /* something else scrolled the list (focus, anchor link...): finish the collapse first, keep what the user sees in place */
+                            if (card && !animating && !tOwn && sc.scrollTop > 0.5 && p < 1) {
+                                D = calcD(); var ny = Math.max(0, sc.scrollTop - (1 - p) * D); p = 1; applyP(); sc.scrollTop = ny;
+                            }
+                            if (pendingReveal && sc.scrollTop <= 0.5) { pendingReveal = false; animateTo(0); }
+                            kick();
+                        }, { passive: true });
+
+                        if (card && bar) {
+                            /* ---------- touch: the first swipe collapses the card, then the grid scrolls natively ---------- */
+                            sc.addEventListener('touchstart', function (e) {
+                                pendingReveal = false; cancelAnim();
+                                if (e.touches.length !== 1) { tTracking = false; tOwn = false; return; }
+                                tTracking = true; tOwn = false; tVel = 0;
+                                tX = e.touches[0].clientX; tY = tLastY = e.touches[0].clientY; tLastT = e.timeStamp;
+                            }, { passive: true });
+                            sc.addEventListener('touchmove', function (e) {
+                                if (!tTracking) return;
+                                var t = e.touches[0], dy = tLastY - t.clientY, dt = Math.max(1, e.timeStamp - tLastT);
+                                tLastY = t.clientY; tLastT = e.timeStamp;
+                                if (!tOwn) {
+                                    var mx = Math.abs(t.clientX - tX), my = Math.abs(t.clientY - tY);
+                                    if (mx < 3 && my < 3) return;                    // not decided yet
+                                    D = calcD();
+                                    var down = dy > 0 && p < 1 - 0.0005, up = dy < 0 && p > 0.0005 && sc.scrollTop <= 0.5;
+                                    if (my < mx || !(down || up) || !e.cancelable || D <= 0) { tTracking = false; return; }   // horizontal / normal scroll -> leave it to the browser
+                                    tOwn = true; tP0 = p;
+                                }
+                                e.preventDefault();
+                                setV(getV() + dy);
+                                tVel = tVel * 0.6 + (dy / dt) * 0.4;                 // px per ms, + = scrolling down
+                            }, { passive: false });
+                            function endTouch() {
+                                if (!tTracking || !tOwn) { tTracking = false; tOwn = false; return; }
+                                tTracking = false; tOwn = false; D = calcD();
+                                if (sc.scrollTop > 0.5) { if (Math.abs(tVel) > 0.05) fling(tVel); return; }
+                                if (p > 0.0005 && p < 0.9995) {                      // snap: card fully hidden + pinned, or fully back - decided by the direction you were moving
+                                    var dP = p - tP0;
+                                    animateTo((tVel > 0.12 || dP > 0.04) ? 1 : (tVel < -0.12 || dP < -0.12) ? 0 : (p >= 0.5 ? 1 : 0));
+                                }
+                                else if (p >= 0.9995 && tVel > 0.05) fling(tVel);
+                            }
+                            sc.addEventListener('touchend', endTouch, { passive: true });
+                            sc.addEventListener('touchcancel', endTouch, { passive: true });
+
+                            /* ---------- wheel / trackpad: first notch collapses (or re-opens) in one smooth move ---------- */
+                            sc.addEventListener('wheel', function (e) {
+                                if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+                                pendingReveal = false;
+                                var now = performance.now(), gap = now - lastW; lastW = now;
+                                var dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? sc.clientHeight : 1);
+                                if (wState && !animating && (gap >= 50 || now - wStart > 1200)) wState = 0;   // gesture over
+                                if (!wState) {
+                                    if (dy > 1 && p < 0.9995) wState = 1;
+                                    else if (dy < -1 && p > 0.0005 && sc.scrollTop <= 0.5) wState = 2;
+                                    else return;                                     // normal scrolling
+                                    wStart = now; animateTo(wState === 1 ? 1 : 0);
+                                }
+                                e.preventDefault();                                  // swallow the rest of this flick / momentum tail
+                            }, { passive: false });
+
+                            /* capsule: tap = back to top (then the card comes back); tap at the top toggles the card */
+                            bar.addEventListener('click', function () {
+                                cancelAnim();
+                                if (sc.scrollTop > 1) { pendingReveal = true; try { sc.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { sc.scrollTop = 0; } }
+                                else animateTo(p > 0.5 ? 0 : 1);
+                            });
+                            if (window.ResizeObserver) { try { new ResizeObserver(function () { kick(); }).observe(card); } catch (e) {} }
+                        } else if (bar) {
+                            bar.addEventListener('click', function () { try { sc.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { sc.scrollTop = 0; } });
+                        }
                         window.addEventListener('resize', function () { measure(); kick(); });
                         window.addEventListener('orientationchange', function () { setTimeout(function () { measure(); kick(); }, 250); });
-                        if (bar) bar.addEventListener('click', function () { try { sc.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { sc.scrollTop = 0; } });
                         measure(); frame();
                     }
                     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
