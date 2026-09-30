@@ -5329,20 +5329,12 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
 
                         <!-- DP and Student Info -->
                         <div class="flex items-center gap-3 min-w-0">
-                            <div class="relative group cursor-pointer shrink-0"
-                                onclick="document.getElementById('dp-upload-input').click()"
-                                title="Change Profile Picture">
+                            <div class="relative cursor-pointer shrink-0" onclick="window.__mpTarget=null;window.location.hash='my-profile'" title="My Profile">
                                 <img id="student-nav-dp"
                                     src="https://ui-avatars.com/api/?name=Exama&background=4f46e5&color=fff&bold=true"
                                     class="w-12 h-12 md:w-12 md:h-12 rounded-full shadow-md border-2 border-white/30 object-cover bg-indigo-100"
                                     onerror="this.onerror=null; this.src='https://lh3.googleusercontent.com/a/default-user=s120-c';">
-                                <div
-                                    class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <i class="fa-solid fa-camera text-white text-[10px]"></i>
-                                </div>
                             </div>
-                            <input type="file" id="dp-upload-input" accept="image/*" class="hidden"
-                                onchange="uploadStudentDP(this)">
 
                             <div class="flex flex-col justify-center min-w-0">
                                 <p id="student-greeting"
@@ -8054,6 +8046,17 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
         <!-- ========================================== -->
         <!-- PREMIUM PW-STYLE CLASSROOM HUB -->
         <!-- ========================================== -->
+        <!-- ===== MY PROFILE (lazy: rendered only when #my-profile opens) ===== -->
+        <div id="my-profile-view" class="hidden-view absolute inset-0 bg-[#f5f6fb] z-[80] flex flex-col slide-left" style="background-image:radial-gradient(900px 420px at 0% -5%,#e0e7ff 0,transparent 60%),radial-gradient(700px 380px at 100% 0,#fce7f3 0,transparent 55%)">
+            <button onclick="safeBack()" aria-label="Back"
+                class="absolute top-10 sm:top-12 left-4 z-20 w-9 h-9 flex items-center justify-center bg-black/30 hover:bg-black/40 backdrop-blur-md rounded-full active:scale-90 transition-all text-white">
+                <i class="fa-solid fa-arrow-left text-sm"></i>
+            </button>
+            <div class="flex-1 overflow-y-auto no-scrollbar">
+                <div id="my-profile-container" class="max-w-4xl mx-auto w-full pb-24"></div>
+            </div>
+        </div>
+
         <div id="video-hub-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
             <!-- Clean Classroom Header -->
             <div
@@ -11369,7 +11372,8 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
             window.openMyProfileFromMenu = function () {
                 if (window.currentRole === 'admin' || !window.loggedInMobile) return;
                 window.closeSettingsMenu();
-                setTimeout(() => { try { window.showStudentStats(window.loggedInMobile); } catch (e) { console.warn('profile popup', e); } }, 220);
+                window.__mpTarget = null;
+                setTimeout(() => { window.location.hash = 'my-profile'; }, 220);
             };
 
             window.openSettingsMenu = function () {
@@ -16327,7 +16331,7 @@ ${textContent ? `
                     'session-timer-view', 'nova-chat-view', 'video-hub-view',
                     'video-watch-view', 'syllabus-view', 'math-workout-view',
                     'student-directory-view', 'budget-manager-view', 'budget-track-view',
-                    'budget-room-view', 'budget-room-detail-view'
+                    'budget-room-view', 'budget-room-detail-view', 'my-profile-view'
                 ];
 
                 // 1. Hide all views and reset the Apple animation class
@@ -16442,6 +16446,10 @@ ${textContent ? `
                         document.getElementById('math-setup-screen')?.classList.remove('hidden');
                         document.getElementById('math-game-screen')?.classList.add('hidden');
                         document.getElementById('math-result-screen')?.classList.add('hidden');
+                        break;
+                    case 'my-profile':
+                        if (window.currentRole !== 'student' && !window.__mpTarget) { history.replaceState(null, '', '#admin'); window.handleHashChange(); return; }
+                        window.renderMyProfile();
                         break;
                     case 'video-hub':
                         window.loadVideosData();
@@ -19589,6 +19597,206 @@ ${textContent ? `
                     modal.classList.remove('opacity-0');
                     box.classList.remove('translate-y-full', 'sm:translate-y-10');
                 }, 10);
+            };
+
+            // ===== MY PROFILE PAGE: nothing is calculated until the page is opened =====
+            const MP_T = {
+                exams: { icon: 'fa-file-pen', tile: 'from-indigo-500 to-violet-500', soft: 'bg-indigo-50', text: 'text-indigo-600', bar: 'bg-indigo-500' },
+                study: { icon: 'fa-book-open', tile: 'from-teal-500 to-emerald-500', soft: 'bg-teal-50', text: 'text-teal-600', bar: 'bg-teal-500' },
+                targets: { icon: 'fa-bullseye', tile: 'from-fuchsia-500 to-purple-500', soft: 'bg-purple-50', text: 'text-purple-600', bar: 'bg-purple-500' },
+                fitness: { icon: 'fa-person-running', tile: 'from-rose-500 to-orange-400', soft: 'bg-rose-50', text: 'text-rose-600', bar: 'bg-rose-500' }
+            };
+            const mpFmtH = ms => { const m = Math.round((ms || 0) / 60000); return m >= 60 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'm' : m + 'm'; };
+            const mpDate = t => t ? new Date(t).toLocaleDateString('en-GB') : '';
+            const mpTone = pc => pc >= 75 ? 'text-emerald-600 bg-emerald-50' : pc >= 40 ? 'text-amber-600 bg-amber-50' : 'text-rose-600 bg-rose-50';
+            const mpBars = (vals, labels, cls) => {
+                const mx = Math.max(1, ...vals);
+                return `<div class="flex items-end gap-1.5 h-20">${vals.map((v, i) => `<div class="flex-1 h-full flex flex-col items-center gap-1 min-w-0">
+                    <div class="flex-1 w-full flex items-end"><div class="w-full rounded-md ${cls}" style="height:${Math.max(5, v / mx * 100)}%;opacity:${v ? 1 : .2}"></div></div>
+                    <span class="text-[9px] text-gray-400 font-semibold truncate">${labels[i]}</span></div>`).join('')}</div>`;
+            };
+            const mpCard = (k, title, headline, headLabel, pct, cells, extra) => {
+                const t = MP_T[k];
+                return `<section class="bg-white/85 backdrop-blur rounded-3xl border border-white shadow-[0_14px_40px_-18px_rgba(79,70,229,.28)] p-4 sm:p-5">
+                    <div class="flex items-center gap-3">
+                        <span class="w-10 h-10 rounded-2xl bg-gradient-to-br ${t.tile} text-white flex items-center justify-center shadow-md shrink-0"><i class="fa-solid ${t.icon}"></i></span>
+                        <div class="min-w-0 flex-1"><div class="text-[14px] font-extrabold text-gray-900 leading-tight">${title}</div><div class="text-[11px] font-medium text-gray-400">${headLabel}</div></div>
+                        <div class="text-2xl font-black ${t.text}">${headline}</div>
+                    </div>
+                    ${pct == null ? '' : `<div class="h-1.5 rounded-full ${t.soft} mt-3.5 overflow-hidden"><div class="h-full rounded-full ${t.bar}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>`}
+                    <div class="grid grid-cols-3 gap-2 mt-3.5">${cells.map(([l, v]) => `<div class="${t.soft} rounded-2xl py-2.5 px-1 text-center">
+                        <div class="text-[15px] font-black text-gray-900">${v}</div><div class="text-[10px] font-semibold text-gray-500 mt-0.5">${l}</div></div>`).join('')}</div>
+                    ${extra ? `<div class="mt-4">${extra}</div>` : ''}</section>`;
+            };
+
+            window.renderMyProfile = function () {
+                const box = document.getElementById('my-profile-container');
+                if (!box) return;
+                try {
+                    if (!document.getElementById('mp-style')) {
+                        const st = document.createElement('style'); st.id = 'mp-style';
+                        st.textContent = '@keyframes mpIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.mp-in{animation:mpIn .28s ease-out}@media(prefers-reduced-motion:reduce){.mp-in{animation:none}}#mp-tabs{padding-top:env(safe-area-inset-top,0px)}';
+                        document.head.appendChild(st);
+                    }
+                    const me = window.__mpTarget || window.loggedInMobile;
+                    const mine = me === window.loggedInMobile && window.currentRole === 'student';
+                    const stu = (window.studentsDB || []).find(s => s.mobile === me);
+                    if (!stu) { box.innerHTML = '<p class="text-center text-sm text-gray-400 py-16">Profile not found.</p>'; return; }
+                    const esc = window.escHtml;
+                    const { mondayMs, sundayMs } = window.getWeeklyRange();
+                    const parse = d => { if (!d || !d.includes('/')) return 0; const [dd, mm, yy] = d.split('/'); return new Date(`${yy}-${mm}-${dd}T00:00:00`).getTime(); };
+                    const pick = lb => lb.find(x => String(x.mobile) === String(me)) || {};
+                    const inWeek = t => t >= mondayMs && t <= sundayMs;
+
+                    const overall = getOverallLeaderboard();
+                    const score = pick(overall);
+                    const ranked = window.rankExamLb ? window.rankExamLb(overall, false) : [];
+                    const rank = ranked.findIndex(x => x.mobile === me) + 1;
+                    const exams = getComputedResults().filter(r => r.mobile === me).map(r => {
+                        const ex = (window.examsDB || []).find(e => e.id === r.examId) || {};
+                        return { r, ex, t: parse(ex.date) };
+                    }).sort((a, b) => b.t - a.t);
+                    const took = x => !x.r.isVirtual && x.r.status !== 'ABSENT';
+                    const sessions = (window.sessionsDB || []).filter(s => String(s.mobile) === String(me) && s.status !== 'ABSENT').sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    const runs = (window.fitnessDB || []).filter(l => String(l.mobile) === String(me)).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    window.__mp = { esc, rank, exams, sessions, runs, score, study: pick(getStudyLeaderboard()), target: pick(getTargetLeaderboard()), fit: pick(getFitnessLeaderboard()), took, inWeek, mondayMs, wkExams: exams.filter(x => inWeek(x.t)), tab: 'overall', cat: 'exams', shown: 6 };
+
+                    const avg = Math.min(100, score.avg || 0);
+                    const todayStr = window.formatDateDDMMYYYY();
+                    const todayMs = sessions.filter(x => x.dateStr === todayStr).reduce((a, x) => a + (x.totalStudyMs || 0) + (x.status === 'STUDYING' ? Date.now() - (x.lastToggleTime || Date.now()) : 0), 0);
+                    const cover = stu.coverUrl || 'https://akm-img-a-in.tosshub.com/indiatoday/images/story/201808/indian_flag.jpeg?VersionId=2xKH3EU60TaAjZPZEUz2_8D88ZfTvylo&size=690:388';
+                    const tile = (icon, tone, val, label) => `<div class="rounded-2xl bg-white/80 backdrop-blur border border-white shadow-[0_8px_24px_-14px_rgba(15,23,42,.25)] p-3 flex flex-col items-center text-center">
+                        <span class="w-8 h-8 rounded-xl ${tone} flex items-center justify-center text-[13px] mb-1.5"><i class="fa-solid ${icon}"></i></span>
+                        <div class="text-[17px] sm:text-xl font-black text-gray-900 leading-none">${val}</div><div class="text-[10px] font-semibold text-gray-400 mt-1">${label}</div></div>`;
+                    box.innerHTML = `
+                        <div class="relative h-44 sm:h-64 w-full overflow-hidden sm:rounded-b-[2.5rem] bg-indigo-900">
+                            <img src="${esc(cover)}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'">
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/25"></div>
+                            ${mine ? `<button onclick="document.getElementById('mp-cover-input').click()" class="absolute bottom-3 right-3 sm:right-6 flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/90 backdrop-blur text-gray-800 text-[12px] font-bold shadow-lg active:scale-95 transition-transform"><i class="fa-solid fa-camera"></i>Edit cover</button>
+                            <input type="file" id="mp-cover-input" accept="image/*" class="hidden" onchange="mpUploadCover(this)">` : ''}
+                        </div>
+                        <div class="px-4 sm:px-8 -mt-14 sm:-mt-16 relative">
+                            <div class="flex items-end gap-4">
+                                <div class="relative shrink-0">
+                                    <div class="p-1 rounded-full bg-gradient-to-tr from-indigo-500 via-fuchsia-500 to-amber-400 shadow-xl">
+                                        <img src="${window.getStudentAvatar(me, stu.name)}" alt="" class="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-white bg-gray-100">
+                                    </div>
+                                    ${mine ? `<button onclick="document.getElementById('mp-dp-input').click()" aria-label="Change profile picture" class="absolute bottom-1 right-0 w-9 h-9 rounded-full bg-white border border-gray-200 shadow-md text-gray-700 flex items-center justify-center active:scale-90 transition-transform"><i class="fa-solid fa-camera text-sm"></i></button>
+                                    <input type="file" id="mp-dp-input" accept="image/*" class="hidden" onchange="mpUploadDp(this)">` : ''}
+                                </div>
+                                <div class="min-w-0 flex-1 pb-2">
+                                    <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-gray-900 truncate">${esc(stu.name)}</h1>
+                                    <p class="text-xs sm:text-sm font-medium text-gray-500 mt-0.5">${mine ? esc(me) : 'EXAMA student'}</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-4 gap-2 sm:gap-3 mt-4">
+                                ${tile('fa-medal', 'bg-amber-50 text-amber-500', rank ? '#' + rank : '-', rank ? 'of ' + ranked.length : 'Rank')}
+                                ${tile('fa-file-pen', 'bg-indigo-50 text-indigo-600', exams.filter(took).length, 'Total exams')}
+                                ${tile('fa-chart-line', 'bg-violet-50 text-violet-600', Math.round(avg) + '%', 'Average')}
+                                ${tile('fa-book-open', 'bg-teal-50 text-teal-600', mpFmtH(todayMs), 'Study today')}
+                            </div>
+                        </div>
+                        <div id="mp-tabs" class="sticky top-0 z-10 mt-4 bg-white/60 backdrop-blur-xl px-4 sm:px-8 py-2.5">
+                            <div class="flex p-1 bg-white rounded-2xl border border-gray-200 shadow-sm max-w-md mx-auto sm:mx-0">
+                                ${[['overall', 'Overall'], ['activity', 'This week'], ['history', 'History']].map(([k, l]) => `<button data-tab="${k}" onclick="mpSetTab('${k}')">${l}</button>`).join('')}
+                            </div>
+                        </div>
+                        <div id="mp-body" class="px-4 sm:px-8 pt-2"></div>`;
+                    window.mpSetTab('overall');
+                } catch (e) {
+                    console.warn('my profile', e);
+                    box.innerHTML = '<p class="text-center text-sm text-rose-500 py-16">Could not load your profile. Go back and try again.</p>';
+                }
+            };
+
+            window.mpSetTab = function (tab) {
+                const d = window.__mp; if (!d) return;
+                d.tab = tab; d.shown = 6;
+                document.querySelectorAll('#mp-tabs button').forEach(b => {
+                    b.className = 'flex-1 py-2 rounded-xl text-[13px] font-bold transition-all ' + (b.dataset.tab === tab ? 'bg-indigo-600 text-white shadow' : 'text-gray-500');
+                });
+                const body = document.getElementById('mp-body'); if (!body) return;
+                if (tab === 'history') { body.innerHTML = '<div class="mp-in"><div id="mp-chips" class="flex gap-2 mb-3 overflow-x-auto no-scrollbar"></div><div id="mp-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div><div id="mp-more"></div></div>'; return mpDrawHistory(); }
+                const life = tab === 'overall';
+                const { score, study, target, fit, exams, sessions, runs, wkExams, took, inWeek, mondayMs } = d;
+                const ex = life ? exams : wkExams, given = ex.filter(took);
+                const best = given.reduce((m, x) => Math.max(m, x.r.percentage || 0), 0);
+                const avg = life ? (score.avg || 0) : (score.weeklyAvg || 0);
+                const ss = life ? sessions : sessions.filter(s => inWeek(s.timestamp || 0));
+                const rr = (life ? runs : runs.filter(l => inWeek(l.timestamp || 0))).filter(l => !l.isAbsent);
+                const km = life ? (fit.totalDist || 0) : (fit.weeklyDist || 0);
+                const studyMs = life ? (study.totalStudyMs || parseFloat(study.totalHours || 0) * 3600000) : (study.weeklyStudyMs || parseFloat(study.weeklyHours || 0) * 3600000);
+                const tPerc = (life ? target.totalPerc : target.weeklyPerc) || 0;
+                const last = given.slice(0, 8).reverse();
+                const examBars = last.length ? mpBars(last.map(x => x.r.percentage || 0), last.map(x => (x.ex.date || '').slice(0, 5)), 'bg-gradient-to-t from-indigo-500 to-violet-400') : '';
+                const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+                const dayMs = days.map((_, i) => sessions.filter(s => (s.timestamp || 0) >= mondayMs + i * 864e5 && (s.timestamp || 0) < mondayMs + (i + 1) * 864e5).reduce((a, s) => a + (s.totalStudyMs || 0), 0) / 3600000);
+                const studyBars = life ? '' : mpBars(dayMs, days, 'bg-gradient-to-t from-teal-500 to-emerald-400');
+                body.innerHTML = `<div class="mp-in grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 pb-6">` +
+                    mpCard('exams', 'Exams', Math.round(avg) + '%', life ? 'Lifetime average' : 'Average this week', avg, [['Best', Math.round(best) + '%'], ['Taken', given.length], ['Passed', ex.filter(x => x.r.status === 'PASS').length], ['Failed', ex.filter(x => x.r.status === 'FAIL').length], ['Absent', ex.filter(x => x.r.status === 'ABSENT').length], ['Rank', d.rank || '-']], examBars) +
+                    mpCard('study', 'Study', mpFmtH(studyMs), life ? 'Total focus time' : 'Focus time this week', null, [['Sessions', ss.length], ['Avg / session', ss.length ? mpFmtH(studyMs / ss.length) : '0m'], ['Longest', mpFmtH(ss.reduce((m, s) => Math.max(m, s.totalStudyMs || 0), 0))]], studyBars) +
+                    mpCard('targets', 'Targets', Math.round(tPerc) + '%', life ? 'All-time completion' : 'Completion this week', tPerc, [['Done', life ? (target.completedTasks || 0) : (target.weeklyCompleted || 0)], ['Total', life ? (target.totalTasks || 0) : (target.weeklyTasks || 0)], ['Pending', Math.max(0, (life ? (target.totalTasks || 0) - (target.completedTasks || 0) : (target.weeklyTasks || 0) - (target.weeklyCompleted || 0)))]]) +
+                    mpCard('fitness', 'Fitness', Number(km).toFixed(1) + ' km', life ? 'Total distance' : 'Distance this week', null, [['Runs', rr.length], ['Avg / run', rr.length ? (km / rr.length).toFixed(1) + ' km' : '0 km'], ['Longest', rr.reduce((m, l) => Math.max(m, l.distance || 0), 0).toFixed(1) + ' km']]) +
+                    `</div>`;
+            };
+
+            window.mpSetCat = function (cat) { const d = window.__mp; d.cat = cat; d.shown = 6; mpDrawHistory(); };
+            window.mpMore = function () { const d = window.__mp; d.shown += 6; mpDrawHistory(); };
+
+            function mpDrawHistory() {
+                const d = window.__mp, esc = d.esc;
+                const chips = document.getElementById('mp-chips'), list = document.getElementById('mp-list'), more = document.getElementById('mp-more');
+                if (!chips || !list) return;
+                chips.innerHTML = [['exams', 'Exams'], ['study', 'Study'], ['fitness', 'Fitness']].map(([k, l]) =>
+                    `<button onclick="mpSetCat('${k}')" class="px-4 py-2 rounded-full text-[12px] font-bold border shrink-0 transition-all ${d.cat === k ? 'bg-gray-900 text-white border-gray-900 shadow' : 'bg-white text-gray-600 border-gray-200'}"><i class="fa-solid ${MP_T[k === 'exams' ? 'exams' : k].icon} mr-1.5 text-[11px]"></i>${l}</button>`).join('');
+                const badge = st => ({ PASS: 'bg-emerald-50 text-emerald-700', FAIL: 'bg-rose-50 text-rose-700', ABSENT: 'bg-gray-100 text-gray-500', EVALUATING: 'bg-amber-50 text-amber-700' }[st] || 'bg-indigo-50 text-indigo-700');
+                const row = (k, title, sub, right, chip, tag) => `<div class="bg-white border border-gray-100 rounded-2xl p-3 shadow-sm flex items-center gap-3">
+                    <span class="w-10 h-10 rounded-xl bg-gradient-to-br ${MP_T[k].tile} text-white flex items-center justify-center text-sm shrink-0"><i class="fa-solid ${MP_T[k].icon}"></i></span>
+                    <div class="min-w-0 flex-1"><div class="text-[13px] font-bold text-gray-900 truncate">${title}</div><div class="text-[11px] text-gray-400 font-medium mt-0.5 truncate">${sub}</div></div>
+                    <div class="text-right shrink-0 flex flex-col items-end gap-1"><span class="text-[13px] font-black text-gray-900">${right}</span>${chip || ''}${tag || ''}</div></div>`;
+                let items = [], empty = '', ico = MP_T[d.cat].icon;
+                if (d.cat === 'exams') {
+                    empty = 'No exams yet. Your results will show up here.';
+                    items = d.exams.map(({ r, ex }) => row('exams', esc(ex.name || 'Exam'), esc(ex.date || '') + (ex.duration ? ' · ' + esc(ex.duration) + ' min' : ''),
+                        r.status === 'ABSENT' ? '-' : `${r.obtained ?? '-'}/${r.total ?? ex.totalMarks ?? '-'}`,
+                        r.status === 'ABSENT' ? '' : `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md ${mpTone(r.percentage || 0)}">${r.percentage ?? 0}%</span>`,
+                        `<span class="text-[9px] font-bold px-2 py-0.5 rounded-md ${badge(r.status)}">${esc(r.status || '')}</span>`));
+                } else if (d.cat === 'study') {
+                    empty = 'No study sessions yet.';
+                    items = d.sessions.map(s => row('study', esc(s.dateStr || mpDate(s.timestamp)), s.status === 'STUDYING' ? 'In progress' : 'Study session', mpFmtH(s.totalStudyMs)));
+                } else {
+                    empty = 'No runs logged yet.';
+                    items = d.runs.map(l => row('fitness', mpDate(l.timestamp), l.isAbsent ? 'Absent' : 'Run logged', l.isAbsent ? '-' : Number(l.distance || 0).toFixed(1) + ' km'));
+                }
+                list.innerHTML = items.length ? items.slice(0, d.shown).join('') : `<div class="sm:col-span-2 text-center py-14"><div class="w-14 h-14 mx-auto rounded-full bg-white border border-gray-100 shadow-sm flex items-center justify-center text-gray-300 text-xl mb-3"><i class="fa-solid ${ico}"></i></div><p class="text-sm text-gray-400">${empty}</p></div>`;
+                const left = items.length - d.shown;
+                more.innerHTML = left > 0 ? `<button onclick="mpMore()" class="block mx-auto mt-4 mb-6 px-6 py-3 rounded-full bg-white border border-gray-200 shadow-sm text-[13px] font-bold text-indigo-600 active:scale-95 transition-transform">Load ${Math.min(6, left)} more</button>` : '<div class="h-6"></div>';
+            }
+
+            window.showStudentStats = function (mobile) {
+                if (!mobile) return;
+                window.__mpTarget = (mobile === window.loggedInMobile && window.currentRole === 'student') ? null : mobile;
+                if (window.location.hash === '#my-profile') window.renderMyProfile();
+                else window.location.hash = 'my-profile';
+            };
+
+            window.mpUploadDp = async function (input) { await window.uploadStudentDP(input); window.renderMyProfile(); };
+            window.mpUploadCover = async function (input) {
+                const f = input.files && input.files[0]; if (!f) return;
+                try {
+                    if (window.showLoader) window.showLoader('Updating cover photo...');
+                    const url = await window.uploadFileToDrive(f, 'chat_img', false);   // same Drive folder as profile pictures
+                    const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js");
+                    await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { coverUrl: url });
+                    const st = window.studentsDB.find(x => x.mobile === window.loggedInMobile); if (st) st.coverUrl = url;
+                    if (window.hideLoader) window.hideLoader();
+                    window.renderMyProfile();
+                } catch (e) {
+                    if (window.hideLoader) window.hideLoader();
+                    console.error('Cover upload', e);
+                    window.showCustomAlert('Upload failed', 'Could not update the cover photo. Check your connection.', 'error');
+                }
+                input.value = '';
             };
 
             window.closeStudentStats = function () {
