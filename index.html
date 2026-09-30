@@ -6020,14 +6020,14 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                         function getV() { return p * D + sc.scrollTop; }
                         function setV(v) {
                             D = calcD(); if (D <= 0) return; if (v < 0) v = 0;
-                            if (v <= D) { p = v / D; applyP(); if (sc.scrollTop) sc.scrollTop = 0; }
+                            if (v <= D) { p = v / D; if (sc.scrollTop) { applyP(); sc.scrollTop = 0; } }   // margin itself is written once per frame, in frame()
                             else { p = 1; applyP(); sc.scrollTop = v - D; }
                             kick();
                         }
                         function cancelAnim() { if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; } animating = false; }
                         /* Spring (critically damped, iOS-like). Animates the VIRTUAL scroll V, so card, header fold, grid and capsule all move on ONE clock.
                            v0 = release velocity in px/s, so the motion continues the finger's momentum instead of restarting. */
-                        var SP_K = 210, SP_C = 2 * Math.sqrt(210);
+                        var SP_K = 135, SP_C = 2 * Math.sqrt(135);
                         function springTo(target, v0) {
                             cancelAnim(); D = calcD(); if (!D) return;
                             if (reduce) { setV(target); return; }
@@ -6052,7 +6052,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                             function step(now) {
                                 if (!last) { last = now; animRaf = requestAnimationFrame(step); return; }
                                 var dt = Math.min(40, now - last); last = now;
-                                v *= Math.pow(0.95, dt / 16.7);
+                                v *= Math.pow(0.962, dt / 16.7);
                                 var nv = getV() + v * dt;
                                 if (v < 0) nv = Math.max(nv, D);                    // coasting up stops at the pin - it never re-opens the card
                                 setV(nv);
@@ -6065,6 +6065,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                         function frame() {
                             raf = 0;
                             if (!sc.clientHeight) return;                            // view hidden
+                            applyP();                                                // grid position first, so every read below matches this frame (no 1-frame lag)
                             /* ---- reads ---- */
                             var y = sc.scrollTop, scTop = sc.getBoundingClientRect().top;
                             var bt = bar ? bar.getBoundingClientRect().top - scTop : 999;
@@ -6079,7 +6080,6 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                             cardCur = qT; barCur = sT;
                             var more = false;
                             /* ---- writes ---- */
-                            applyP();
                             if (canFold && nat > 0) {                                // header fold stays exactly tied to the finger
                                 var pf = reduce ? (vy > 90 ? 1 : 0) : (Dn > 0 ? smooth(clamp(tn / 0.95)) : smooth(clamp(vy / Math.max(150, nat * 1.6))));   // same clock as the card
                                 if (pf > 0.001) {
