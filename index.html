@@ -5613,6 +5613,12 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                                     <p id="sd-nt-title" class="sd-s-main"></p>
                                     <p class="sd-s-sub">Tap to open <i class="fa-solid fa-arrow-right"></i></p>
                                 </div>
+                                <div class="sd-slide" id="sd-slide-remind" hidden>
+                                    <span class="sd-q-lab"><i class="fa-solid fa-clock"></i> Reminder</span>
+                                    <p id="sd-rm-title" class="sd-s-main"></p>
+                                    <p id="sd-rm-sub" class="sd-s-sub"></p>
+                                    <span id="sd-rm-pill" class="sd-s-pill" style="display:none"></span>
+                                </div>
                             </div>
                             <div class="sd-pdots" id="sd-pdots"></div>
                         </div>
@@ -5652,6 +5658,23 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                             var L = window.noticesDB || [], me = window.loggedInMobile, u = 0;
                             if (me) u = L.filter(function (x) { return (!x.assignedTo || x.assignedTo.indexOf('All') > -1 || x.assignedTo.indexOf(me) > -1) && !(x.readBy && x.readBy.indexOf(me) > -1); }).length;
                             $('sd-slide-notice').hidden = !u; $('sd-nt-title').textContent = u + (u === 1 ? ' unread notice' : ' unread notices');
+                            // next reminder (the student's own alarms, same list as Settings > Reminders)
+                            var rs = $('sd-slide-remind'), R = ((window.budgetRoomCtx || {}).alarms || []), nr = null, tdy = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                            if (window.currentRole === 'student') R.forEach(function (a) {
+                                if (!a || !a.enabled) return; var tm = /^(\d{1,2}):(\d{2})/.exec(a.time || ''); if (!tm) return;
+                                var at;
+                                if (a.repeat === 'daily') { at = new Date(tdy.getFullYear(), tdy.getMonth(), tdy.getDate(), +tm[1], +tm[2]); if (at < now) at = new Date(at.getTime() + 864e5); }
+                                else { var dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(a.date || ''); if (!dm) return; at = new Date(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2]); if (at < now) return; }
+                                if (!nr || at < nr.at) nr = { a: a, at: at };
+                            });
+                            rs.hidden = !nr;
+                            if (nr) {
+                                var rd = Math.round((new Date(nr.at.getFullYear(), nr.at.getMonth(), nr.at.getDate()).getTime() - tdy.getTime()) / 864e5), rwhen = rd === 0 ? 'Today' : rd === 1 ? 'Tomorrow' : nr.at.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+                                var rms = nr.at - now, rmi = Math.max(0, Math.floor(rms / 6e4)), rdd = Math.floor(rmi / 1440), rh = Math.floor(rmi % 1440 / 60);
+                                $('sd-rm-title').textContent = nr.a.title || 'Reminder';
+                                $('sd-rm-sub').textContent = rwhen + '  \u2022  ' + (window.tpFmt ? window.tpFmt(nr.a.time) : fmt12(nr.at)) + (nr.a.repeat === 'daily' ? '  \u2022  Daily' : '');
+                                var rp = $('sd-rm-pill'); rp.textContent = 'In ' + (rdd > 0 ? rdd + 'd ' + rh + 'h' : rh > 0 ? rh + 'h ' + (rmi % 60) + 'm' : (rmi % 60) + 'm'); rp.style.display = '';
+                            }
                         }
                         function go(step) {
                             upd();
@@ -5917,6 +5940,47 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     #student-view .flip-card-back p.uppercase i { color:#c7d2fe !important; }
                     #card-back-exams { color:#ffffff !important; }
                     #card-back-study { color:#a5b4fc !important; }
+                </style>
+                <script id="sd-perf-hide">
+                /* Performance card: fades + shrinks away as you scroll down, and comes back as you scroll up (scroll-linked, no jumps) */
+                (function () {
+                    function init() {
+                        var card = document.querySelector('#student-view .flip-card');
+                        if (!card || !card.parentElement) return;
+                        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+                        var sc = card.parentElement, raf = 0;
+                        card.style.willChange = 'opacity, transform';
+                        card.style.transformOrigin = '50% 0';
+                        function upd() {
+                            raf = 0;
+                            var h = card.offsetHeight || 260, y = sc.scrollTop;
+                            var p = Math.min(1, Math.max(0, (y - h * 0.06) / (h * 0.7)));
+                            card.style.opacity = (1 - p).toFixed(3);
+                            card.style.transform = p ? 'translateY(' + (-p * 8).toFixed(1) + 'px) scale(' + (1 - p * 0.10).toFixed(3) + ')' : '';
+                            card.style.pointerEvents = p > 0.9 ? 'none' : '';
+                        }
+                        sc.addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(upd); }, { passive: true });
+                        upd();
+                    }
+                    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+                })();
+                </script>
+                <style id="sd-hdr-sheet">
+                    /* Header + content "sheet": the light content area curves up OVER the coloured header (rounded top corners), header bottom is square behind it */
+                    #student-view { --sd-sheet:26px; }
+                    #student-view > .sd-hdr:not(#_) {
+                        border-radius:0 !important; border-bottom:0 !important; box-shadow:none !important;
+                        padding-bottom:calc(16px + var(--sd-sheet)) !important; z-index:10 !important;
+                    }
+                    @media (orientation:landscape) and (max-height:480px) {
+                        #student-view > .sd-hdr:not(#_) { padding-bottom:calc(10px + var(--sd-sheet)) !important; }
+                    }
+                    #student-view > .sd-hdr + div:not(#_) {
+                        position:relative; z-index:20 !important; margin-top:calc(-1 * var(--sd-sheet)) !important; padding-top:18px !important;
+                        border-radius:var(--sd-sheet) var(--sd-sheet) 0 0 !important;
+                        background-color:#f4f6ff !important;
+                        box-shadow:0 -12px 28px -14px rgba(30,27,75,.45);
+                    }
                 </style>
                 <style id="sd-tiles-edge-to-edge">
                     /* Button grid panel: cancel the page's side gap so it reaches the screen edges (mobile + tablet). Panel's own inner padding is untouched. */
