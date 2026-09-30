@@ -19712,7 +19712,7 @@ ${textContent ? `
                                 </div>
                             </div>
                         </div>
-                        <div id="mp-tabs" class="sticky top-0 z-10 mt-3 px-4 sm:px-8 py-2">
+                        <div id="mp-tabs" class="sticky top-0 z-10 mt-0 sm:mt-3 px-4 sm:px-8 pt-0.5 pb-2 sm:py-2">
                             <div class="flex p-1 bg-white/55 backdrop-blur rounded-2xl border border-white/70 shadow-sm max-w-md mx-auto">
                                 ${[['overall', 'Overall'], ['activity', 'This week'], ['history', 'History']].map(([k, l]) => `<button data-tab="${k}" onclick="mpSetTab('${k}')">${l}</button>`).join('')}
                             </div>
@@ -19779,7 +19779,15 @@ ${textContent ? `
                         `<span class="text-[9px] font-bold px-2 py-0.5 rounded-md ${badge(r.status)}">${esc(r.status || '')}</span>`));
                 } else if (d.cat === 'study') {
                     empty = 'No study sessions yet.';
-                    items = d.sessions.map(s => row('study', esc(s.dateStr || mpDate(s.timestamp)), s.status === 'STUDYING' ? 'In progress' : 'Study session', mpFmtH(s.totalStudyMs)));
+                    const today = window.formatDateDDMMYYYY(), by = {};
+                    d.sessions.forEach(s => {
+                        const k = s.dateStr || mpDate(s.timestamp);
+                        const g = by[k] || (by[k] = { k, t: 0, ms: 0, n: 0, live: false });
+                        const live = s.status === 'STUDYING' && s.dateStr === today;
+                        g.ms += (s.totalStudyMs || 0) + (live ? Date.now() - (s.lastToggleTime || Date.now()) : 0);
+                        g.n++; g.live = g.live || live; g.t = Math.max(g.t, s.timestamp || 0);
+                    });
+                    items = Object.values(by).sort((a, b) => b.t - a.t).map(g => row('study', esc(g.k), g.live ? 'Studying now' : g.n + (g.n === 1 ? ' session' : ' sessions'), mpFmtH(g.ms)));
                 } else {
                     empty = 'No runs logged yet.';
                     items = d.runs.map(l => row('fitness', mpDate(l.timestamp), l.isAbsent ? 'Absent' : 'Run logged', l.isAbsent ? '-' : Number(l.distance || 0).toFixed(1) + ' km'));
