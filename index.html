@@ -17455,6 +17455,10 @@ ${textContent ? `
                 const BL = T.f - 260;                                         // colour starts just before the dot lands
                 const s0 = 40 / D, F = Math.round(Math.min(L.width, L.height) * .9);
                 const par = loader.parentNode, blobs = [], flashes = [], greys = [];
+                const sm = x => { x = Math.min(1, Math.max(0, x)); return .5 - .5 * Math.cos(Math.PI * x); };     // smooth 0 -> 1, zero slope at both ends
+                const curve = (n, f) => { const k = []; for (let i = 0; i <= n; i++) k.push({ opacity: +f(i / n).toFixed(4) }); return k; };
+                const FADE = curve(60, t => sm(t / .05) * (1 - sm((t - .3) / .7)));    // quick in, hold, then ONE long smooth fade out
+                const FLASH = curve(40, t => sm(t / .15) * (1 - sm((t - .15) / .85)));
 
                 // colour circles (one per corner, only clipped by the screen) + a small bright flash where the dot lands
                 for (let i = 0; i < 4; i++) {
@@ -17509,12 +17513,11 @@ ${textContent ? `
                     loader.classList.add('gl-flying');
                     blobs.forEach(function (bl) {
                         bl.animate([{ transform: 'scale(' + s0 + ')' }, { transform: 'scale(1)' }], { duration: DUR, delay: BL, easing: EZ, fill: 'both' });
-                        bl.animate([{ opacity: 0, offset: 0 }, { opacity: 1, offset: .05 }, { opacity: 1, offset: .4 }, { opacity: .72, offset: .62 }, { opacity: .38, offset: .8 }, { opacity: .12, offset: .92 }, { opacity: 0, offset: 1 }],
-                            { duration: DUR + T.t, delay: BL, easing: 'ease-in-out', fill: 'both' });
+                        bl.animate(FADE, { duration: DUR + T.t, delay: BL, easing: 'linear', fill: 'both' });
                     });
                     flashes.forEach(function (fs) {   // the "blast": a bright burst exactly where each dot lands
                         fs.animate([{ transform: 'scale(.1)' }, { transform: 'scale(1.15)' }], { duration: 560, delay: T.f - 60, easing: 'cubic-bezier(.12,.8,.2,1)', fill: 'both' });
-                        fs.animate([{ opacity: 0, offset: 0 }, { opacity: 1, offset: .14 }, { opacity: .55, offset: .5 }, { opacity: 0, offset: 1 }], { duration: 560, delay: T.f - 60, easing: 'ease-out', fill: 'both' });
+                        fs.animate(FLASH, { duration: 560, delay: T.f - 60, easing: 'linear', fill: 'both' });
                     });
                     greys.forEach(function (o) {
                         const up = o.g.animate([{ transform: 'scale(1)' }, { transform: 'scale(' + SC.toFixed(2) + ')' }], { duration: DUR, delay: BL, easing: EZ, fill: 'forwards' });
