@@ -17414,12 +17414,25 @@ ${textContent ? `
             };
             window.__glBwClean = function () { document.querySelectorAll('.gl-bw').forEach(function (e) { try { e.getAnimations().forEach(function (an) { an.cancel(); }); } catch (x) { } e.remove(); }); };
             // Exit: each orbiting dot glides along one smooth arc to a screen corner, then blasts into a full round colour circle
+            // Wait until the app has really finished loading and the screen is calm (several steady frames in a row) before the exit starts
+            window.__glReady = function (cb) {
+                const G = window.__gl, t0 = performance.now(); let last = 0, calm = 0, started = false;
+                const step = function (now) {
+                    if (last) calm = (now - last) < 22 ? calm + 1 : 0;
+                    last = now;
+                    if (calm >= 5 || performance.now() - t0 > 1500) return cb();
+                    G.raf = requestAnimationFrame(step);
+                };
+                const start = function () { if (started) return; started = true; G.raf = requestAnimationFrame(step); };
+                if (document.readyState === 'complete') start(); else { window.addEventListener('load', start, { once: true }); G.wait = setTimeout(start, 1200); }
+            };
+            // Exit, part 1 (PREPARE): build every colour layer first. Returns go(), which starts ALL animations in one frame, in sync.
             window.__glFly = function (loader, reduced, quick) {
-                if (reduced) return;
+                if (reduced) return null;
                 const fl = loader.querySelectorAll('.gl-fly'), dots = loader.querySelectorAll('.gl-spin .gl-dot'), logo = loader.querySelector('.gl-logo');
-                if (!logo || !fl.length || fl.length !== dots.length || !fl[0].animate) return;
+                if (!logo || !fl.length || fl.length !== dots.length || !fl[0].animate) return null;
                 const L = loader.getBoundingClientRect();
-                if (!L.width || !L.height) return;
+                if (!L.width || !L.height) return null;
                 window.__glClean(loader);
                 window.__glBwClean();
                 const T = quick ? window.__glT.q : window.__glT.n;
@@ -17434,72 +17447,80 @@ ${textContent ? `
                     let c = 0; P.forEach((p, j) => { const q = C[(j + k) % 4]; c += Math.hypot(q[0] - p.x, q[1] - p.y); });
                     if (c < bc) { bc = c; best = k; }
                 }
+                const target = []; P.forEach((p, j) => { target[p.i] = C[(j + best) % 4]; });
                 const RGB = ['79,70,229', '6,182,212', '245,158,11', '225,29,72'];     // = .gl-d1..d4
-                const R = Math.ceil(Math.hypot(L.width, L.height) * 0.62), D = R * 2;   // 0.62 x diagonal: four circles together cover the whole screen
-                const ease = t => .35 * t + .65 * t * t * (3 - 2 * t);   // moving from the first frame, still gaining speed on arrival: never parks anywhere
-                const DUR = T.b + 180, EZ = 'cubic-bezier(.25,.46,.3,1)';   // ONE curve + ONE duration for blast and colour reveal = in sync (iOS-style)
-                const BL = T.f - 260;                      // blast starts just BEFORE touchdown, so there is no dead moment at the corner
-                const hw = L.width / 2, hh = L.height / 2, tFly = performance.now(), blasts = [];
+                const R = Math.ceil(Math.hypot(L.width, L.height) * 0.62), D = R * 2;
+                const ease = t => .35 * t + .65 * t * t * (3 - 2 * t);   // gentle start, still moving on arrival
+                const DUR = T.b + 180, EZ = 'cubic-bezier(.18,.72,.26,1)';   // burst out of the corner, then settle softly
+                const BL = T.f - 260;                                         // colour starts just before the dot lands
+                const s0 = 40 / D, F = Math.round(Math.min(L.width, L.height) * .9);
+                const par = loader.parentNode, blobs = [], flashes = [], greys = [];
 
-                // FRAME 1 = only the dots (cheap, runs on the compositor): they start moving immediately
-                P.forEach((p, j) => {
-                    const q = C[(j + best) % 4], f = fl[p.i], dx = q[0] - p.x, dy = q[1] - p.y;
-                    f.style.left = (p.x - 7) + 'px'; f.style.top = (p.y - 7) + 'px';
-                    // ONE easing along ONE quadratic arc (no separate X / Y easing = no wobble)
-                    const hx = dx / 2 - dy * .1, hy = dy / 2 + dx * .1, kf = [];
-                    for (let s = 0; s <= 90; s++) {
-                        const t = s / 90, e = ease(t), u = 1 - e;
-                        kf.push({ transform: 'translate3d(' + (2 * u * e * hx + e * e * dx).toFixed(2) + 'px,' + (2 * u * e * hy + e * e * dy).toFixed(2) + 'px,0) scale(' + (.9 + .4 * e).toFixed(3) + ')' });
-                    }
-                    f.animate(kf, { duration: T.f, easing: 'linear', fill: 'forwards' });
-                    // the dot pops at the corner (this is the "blast") and hands over to the circle
-                    f.animate([{ transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(1.3)', opacity: 1 }, { transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(1.7)', opacity: 0 }],
-                        { duration: 400, delay: T.f, easing: 'cubic-bezier(.3,.1,.4,1)', fill: 'forwards' });
-                    blasts.push({ q: q, rgb: RGB[p.i % 4] });
-                });
-                loader.classList.add('gl-flying');
+                // colour circles (one per corner, only clipped by the screen) + a small bright flash where the dot lands
+                for (let i = 0; i < 4; i++) {
+                    const q = target[i], rgb = RGB[i % 4];
+                    const bq = document.createElement('div'), bl = document.createElement('div'), fs = document.createElement('div');
+                    bq.className = 'gl-bq';
+                    bq.style.cssText = 'position:absolute;z-index:4;pointer-events:none;overflow:hidden;left:0;top:0;width:' + L.width + 'px;height:' + L.height + 'px;';
+                    bl.className = 'gl-bl';
+                    bl.style.cssText = 'width:' + D + 'px;height:' + D + 'px;left:' + (q[0] - R) + 'px;top:' + (q[1] - R) + 'px;opacity:.01;transform:scale(' + s0 + ');' +
+                        'background:radial-gradient(circle closest-side,rgba(' + rgb + ',.92) 0%,rgba(' + rgb + ',.82) 18%,rgba(' + rgb + ',.62) 36%,rgba(' + rgb + ',.4) 54%,rgba(' + rgb + ',.2) 72%,rgba(' + rgb + ',.07) 88%,rgba(' + rgb + ',0) 100%);';
+                    fs.className = 'gl-bl';
+                    fs.style.cssText = 'width:' + F + 'px;height:' + F + 'px;left:' + (q[0] - F / 2) + 'px;top:' + (q[1] - F / 2) + 'px;opacity:.01;transform:scale(.1);' +
+                        'background:radial-gradient(circle closest-side,rgba(255,255,255,.95) 0%,rgba(' + rgb + ',.9) 22%,rgba(' + rgb + ',.35) 60%,rgba(' + rgb + ',0) 100%);';
+                    bq.appendChild(bl); bq.appendChild(fs); loader.appendChild(bq);
+                    blobs.push(bl); flashes.push(fs);
+                }
+
+                // grey layers (app start only): one per screen quarter, a STATIC soft hole at its corner; only transform animates
+                let SC = 1;
+                if (!quick && par && window.CSS && (CSS.supports('backdrop-filter', 'grayscale(1)') || CSS.supports('-webkit-backdrop-filter', 'grayscale(1)'))) {
+                    const W = L.width, H = L.height, cw = Math.ceil(W / 2) + 1, ch = Math.ceil(H / 2) + 1;
+                    const RO = Math.ceil(Math.hypot(cw, ch)) + 12, P0 = 22 / RO * 100; SC = (100 / P0) * 1.08;
+                    const mk = 'radial-gradient(circle closest-side at 50% 50%, transparent ' + P0.toFixed(2) + '%, rgba(0,0,0,.14) ' + (P0 * 1.25).toFixed(2) + '%, rgba(0,0,0,.48) ' + (P0 * 1.6).toFixed(2) + '%, rgba(0,0,0,.84) ' + (P0 * 1.95).toFixed(2) + '%, #000 ' + (P0 * 2.4).toFixed(2) + '%)';
+                    C.forEach(function (c) {
+                        const cl = c[0] < W / 2 ? 0 : Math.floor(W / 2) - 1, ct = c[1] < H / 2 ? 0 : Math.floor(H / 2) - 1;
+                        const box = document.createElement('div'), g = document.createElement('div');
+                        box.className = 'gl-bw';
+                        box.style.cssText = 'position:absolute;z-index:9998;pointer-events:none;overflow:hidden;left:' + cl + 'px;top:' + ct + 'px;width:' + cw + 'px;height:' + ch + 'px;';
+                        g.style.cssText = 'position:absolute;width:' + (RO * 2) + 'px;height:' + (RO * 2) + 'px;left:' + (c[0] - cl - RO) + 'px;top:' + (c[1] - ct - RO) + 'px;' +
+                            '-webkit-backdrop-filter:grayscale(1);backdrop-filter:grayscale(1);-webkit-mask-image:' + mk + ';mask-image:' + mk + ';will-change:transform;transform:scale(1);';
+                        box.appendChild(g); par.insertBefore(box, loader); greys.push({ box: box, g: g });
+                    });
+                }
                 window.__glOk = true;
 
-                // The heavy colour layers are built AFTER the dots are already on their way (they are timed to start right at touchdown),
-                // so the first frames are never blocked and the dots never sit still at the start.
-                setTimeout(function () {
-                    if (!loader.classList.contains('gl-out')) return;           // exit was cancelled
-                    const dl = Math.max(0, BL - (performance.now() - tFly)), s0 = 40 / D;
-                    blasts.forEach(function (b) {
-                        const q = b.q, rgb = b.rgb, qx = 0, qy = 0;
-                        const bq = document.createElement('div'), bl = document.createElement('div');
-                        bq.className = 'gl-bq';   // clips the colour to its own corner quarter, so the four colours never overlap
-                        bq.style.cssText = 'position:absolute;z-index:4;pointer-events:none;overflow:hidden;left:0;top:0;width:' + L.width + 'px;height:' + L.height + 'px;';
-                        bl.className = 'gl-bl';
-                        bl.style.cssText = 'width:' + D + 'px;height:' + D + 'px;left:' + (q[0] - qx - R) + 'px;top:' + (q[1] - qy - R) + 'px;transform:scale(' + s0 + ');' +
-                            'background:radial-gradient(circle closest-side,rgba(' + rgb + ',.92) 0%,rgba(' + rgb + ',.82) 18%,rgba(' + rgb + ',.62) 36%,rgba(' + rgb + ',.4) 54%,rgba(' + rgb + ',.2) 72%,rgba(' + rgb + ',.07) 88%,rgba(' + rgb + ',0) 100%);';   // strong at the corner, fades toward the middle
-                        bq.appendChild(bl); loader.appendChild(bq);
-                        bl.animate([{ transform: 'scale(' + s0 + ')' }, { transform: 'scale(1)' }], { duration: DUR, delay: dl, easing: EZ, fill: 'forwards' });
-                        bl.animate([{ opacity: 0, offset: 0 }, { opacity: 1, offset: .05 }, { opacity: 1, offset: .4 }, { opacity: .72, offset: .62 }, { opacity: .38, offset: .8 }, { opacity: .12, offset: .92 }, { opacity: 0, offset: 1 }], { duration: DUR + T.t, delay: dl, easing: 'ease-in-out', fill: 'forwards' });
+                // Exit, part 2 (GO): everything is already built and painted, so all animations start together in one frame
+                return function go() {
+                    if (loader.dataset.animating !== 'true') { try { window.__glClean(loader); window.__glBwClean(); } catch (e) { } return; }
+                    const now = Array.from(dots).map(d => { const r = d.getBoundingClientRect(); return { x: r.left + r.width / 2 - L.left, y: r.top + r.height / 2 - L.top }; });
+                    fl.forEach(function (f, i) {
+                        const q = target[i], p = now[i], dx = q[0] - p.x, dy = q[1] - p.y;
+                        f.style.left = (p.x - 7) + 'px'; f.style.top = (p.y - 7) + 'px';
+                        const hx = dx / 2 - dy * .1, hy = dy / 2 + dx * .1, kf = [];
+                        for (let s = 0; s <= 90; s++) {
+                            const t = s / 90, e = ease(t), u = 1 - e;
+                            kf.push({ transform: 'translate3d(' + (2 * u * e * hx + e * e * dx).toFixed(2) + 'px,' + (2 * u * e * hy + e * e * dy).toFixed(2) + 'px,0) scale(' + (.9 + .4 * e).toFixed(3) + ')' });
+                        }
+                        f.animate(kf, { duration: T.f, easing: 'linear', fill: 'forwards' });
+                        f.animate([{ transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(1.3)', opacity: 1 }, { transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(1.7)', opacity: 0 }],
+                            { duration: 400, delay: T.f, easing: 'cubic-bezier(.3,.1,.4,1)', fill: 'forwards' });
                     });
-
-                    // Website is grey as the loader lifts; the real colours then flow in from the four corners (app start only).
-                    // One grey layer per screen quarter. Each layer has a STATIC soft hole in the middle of its corner and only its
-                    // transform is animated (compositor, no repaint), so the hole grows smoothly = colour flows in from the corner.
-                    const par = loader.parentNode;
-                    if (!quick && par && window.CSS && (CSS.supports('backdrop-filter', 'grayscale(1)') || CSS.supports('-webkit-backdrop-filter', 'grayscale(1)'))) {
-                        const W = L.width, H = L.height, cw = Math.ceil(W / 2) + 1, ch = Math.ceil(H / 2) + 1;
-                        const RO = Math.ceil(Math.hypot(cw, ch)) + 12, P0 = 22 / RO * 100, SC = (100 / P0) * 1.08;
-                        const mk = 'radial-gradient(circle closest-side at 50% 50%, transparent ' + P0.toFixed(2) + '%, rgba(0,0,0,.14) ' + (P0 * 1.25).toFixed(2) + '%, rgba(0,0,0,.48) ' + (P0 * 1.6).toFixed(2) + '%, rgba(0,0,0,.84) ' + (P0 * 1.95).toFixed(2) + '%, #000 ' + (P0 * 2.4).toFixed(2) + '%)';
-                        const grey = [];
-                        C.forEach(function (c) {
-                            const cl = c[0] < W / 2 ? 0 : Math.floor(W / 2) - 1, ct = c[1] < H / 2 ? 0 : Math.floor(H / 2) - 1;
-                            const box = document.createElement('div'), g = document.createElement('div');
-                            box.className = 'gl-bw';
-                            box.style.cssText = 'position:absolute;z-index:9998;pointer-events:none;overflow:hidden;left:' + cl + 'px;top:' + ct + 'px;width:' + cw + 'px;height:' + ch + 'px;';
-                            g.style.cssText = 'position:absolute;width:' + (RO * 2) + 'px;height:' + (RO * 2) + 'px;left:' + (c[0] - cl - RO) + 'px;top:' + (c[1] - ct - RO) + 'px;' +
-                                '-webkit-backdrop-filter:grayscale(1);backdrop-filter:grayscale(1);-webkit-mask-image:' + mk + ';mask-image:' + mk + ';will-change:transform;transform:scale(1);';
-                            box.appendChild(g); par.insertBefore(box, loader); grey.push(box);
-                            const up = g.animate([{ transform: 'scale(1)' }, { transform: 'scale(' + SC.toFixed(2) + ')' }], { duration: DUR, delay: dl, easing: EZ, fill: 'forwards' });
-                            up.onfinish = up.oncancel = function () { box.remove(); };
-                        });
-                    }
-                }, 100);
+                    loader.classList.add('gl-flying');
+                    blobs.forEach(function (bl) {
+                        bl.animate([{ transform: 'scale(' + s0 + ')' }, { transform: 'scale(1)' }], { duration: DUR, delay: BL, easing: EZ, fill: 'both' });
+                        bl.animate([{ opacity: 0, offset: 0 }, { opacity: 1, offset: .05 }, { opacity: 1, offset: .4 }, { opacity: .72, offset: .62 }, { opacity: .38, offset: .8 }, { opacity: .12, offset: .92 }, { opacity: 0, offset: 1 }],
+                            { duration: DUR + T.t, delay: BL, easing: 'ease-in-out', fill: 'both' });
+                    });
+                    flashes.forEach(function (fs) {   // the "blast": a bright burst exactly where each dot lands
+                        fs.animate([{ transform: 'scale(.1)' }, { transform: 'scale(1.15)' }], { duration: 560, delay: T.f - 60, easing: 'cubic-bezier(.12,.8,.2,1)', fill: 'both' });
+                        fs.animate([{ opacity: 0, offset: 0 }, { opacity: 1, offset: .14 }, { opacity: .55, offset: .5 }, { opacity: 0, offset: 1 }], { duration: 560, delay: T.f - 60, easing: 'ease-out', fill: 'both' });
+                    });
+                    greys.forEach(function (o) {
+                        const up = o.g.animate([{ transform: 'scale(1)' }, { transform: 'scale(' + SC.toFixed(2) + ')' }], { duration: DUR, delay: BL, easing: EZ, fill: 'forwards' });
+                        up.onfinish = up.oncancel = function () { o.box.remove(); };
+                    });
+                };
             };
 
             window.showLoader = function (message) {
@@ -17545,15 +17566,26 @@ ${textContent ? `
                 const minShow = reduced ? 0 : (quick ? 380 : 1650 + 3 * 1500 + 100);   // only used for quick / reduced-motion / old browsers
 
                 const run = () => {
-                    window.__glOk = false; try { window.__glFly(loader, reduced, quick); } catch (e) { console.warn('glFly', e); }
-                    if (!window.__glOk && !reduced) loader.classList.add('gl-nofly');   // no frozen dots in the middle, ever
-                    loader.classList.add('gl-out'); // logo + title zoom through the screen, background fades away, dots fly to the corners
-                    G.done = setTimeout(() => {
-                        loader.classList.add('hidden-view');
-                        loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly');
-                        try { window.__glClean(loader); } catch (e) { }
-                        loader.dataset.animating = 'false'; // Unlock
-                    }, reduced ? 280 : (function (T) { return T.f + T.b + T.t + 80; })(quick ? window.__glT.q : window.__glT.n));
+                    const begin = () => {
+                        if (loader.dataset.animating !== 'true') return;
+                        window.__glOk = false; let go = null;
+                        try { go = window.__glFly(loader, reduced, quick); } catch (e) { console.warn('glFly', e); }
+                        const fire = () => {
+                            if (loader.dataset.animating !== 'true') { try { window.__glClean(loader); window.__glBwClean(); } catch (e) { } return; }
+                            try { if (go) go(); } catch (e) { console.warn('glFly go', e); window.__glOk = false; }
+                            if (!window.__glOk && !reduced) loader.classList.add('gl-nofly');   // no frozen dots in the middle, ever
+                            loader.classList.add('gl-out'); // logo + title zoom through the screen, background fades away, dots fly to the corners
+                            G.done = setTimeout(() => {
+                                loader.classList.add('hidden-view');
+                                loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly');
+                                try { window.__glClean(loader); window.__glBwClean(); } catch (e) { }
+                                loader.dataset.animating = 'false'; // Unlock
+                            }, reduced ? 280 : (function (T) { return T.f + T.b + T.t + 80; })(quick ? window.__glT.q : window.__glT.n));
+                        };
+                        // let the freshly built layers paint once (2 frames) so the first animated frame never has to do heavy work
+                        if (go) G.raf = requestAnimationFrame(() => { G.raf = requestAnimationFrame(fire); }); else fire();
+                    };
+                    if (reduced) begin(); else window.__glReady(begin);
                 };
 
                 // App start: read the real orbit clock. A dot is on a corner point (tip of its ellipse) at every half round.
