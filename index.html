@@ -3786,6 +3786,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 #global-loader.gl-out #loader-content-wrapper { animation: glZoomT var(--zt) linear forwards, glZoomO var(--zt) linear forwards; }
                 #global-loader.gl-out .gl-bg { animation: glBgOut var(--zt) cubic-bezier(.4, 0, .6, 1) forwards; }
                 #global-loader.gl-out #loader-text-wrapper { animation: glEarly .22s ease-in forwards; }
+                #global-loader.gl-out.gl-veil .gl-bg { animation: glBgOut .38s cubic-bezier(.4, 0, .6, 1) forwards; }   /* grey screen shows early and stays visible while the dots fly */
                 /* freeze the idle loops while exiting so the GPU only has the zoom to do */
                 #global-loader.gl-out .gl-float, #global-loader.gl-out .gl-sweep, #global-loader.gl-out .gl-g, #global-loader.gl-out .gl-o, #global-loader.gl-out .gl-dot, #global-loader.gl-out .gl-halo, #global-loader.gl-out .gl-glow { animation-play-state: paused; }
 
@@ -17407,7 +17408,7 @@ ${textContent ? `
             window.__gl = { t0: 0, wait: 0, done: 0 };
 
             // Exit: send each orbiting dot to the nearest screen corner (one dot per corner, colours keep their clockwise order)
-            window.__glT = { n: { f: 900, b: 950, t: 380 }, q: { f: 480, b: 560, t: 200 } };   // flight / blast / wash-out (ms)
+            window.__glT = { n: { f: 900, b: 900, t: 200 }, q: { f: 480, b: 560, t: 200 } };   // flight / blast / wash-out (ms)
             window.__glClean = function (loader) {
                 loader.querySelectorAll('.gl-bq').forEach(function (e) { e.remove(); });
                 loader.querySelectorAll('.gl-fly').forEach(function (e) { try { e.getAnimations().forEach(function (an) { an.cancel(); }); } catch (x) { } });
@@ -17427,7 +17428,7 @@ ${textContent ? `
                 if (document.readyState === 'complete') start(); else { window.addEventListener('load', start, { once: true }); G.wait = setTimeout(start, 1200); }
             };
             // Exit, part 1 (PREPARE): build every colour layer first. Returns go(), which starts ALL animations in one frame, in sync.
-            window.__glFly = function (loader, reduced, quick) {
+            window.__glFly = function (loader, reduced, quick, veil) {
                 if (reduced) return null;
                 const fl = loader.querySelectorAll('.gl-fly'), dots = loader.querySelectorAll('.gl-spin .gl-dot'), logo = loader.querySelector('.gl-logo');
                 if (!logo || !fl.length || fl.length !== dots.length || !fl[0].animate) return null;
@@ -17451,44 +17452,39 @@ ${textContent ? `
                 const RGB = ['79,70,229', '6,182,212', '245,158,11', '225,29,72'];     // = .gl-d1..d4
                 const R = Math.ceil(Math.hypot(L.width, L.height) * 0.62), D = R * 2;
                 const ease = t => .35 * t + .65 * t * t * (3 - 2 * t);   // gentle start, still moving on arrival
-                const DUR = T.b + 180, EZ = 'cubic-bezier(.18,.72,.26,1)';   // burst out of the corner, then settle softly
-                const BL = T.f - 260;                                         // colour starts just before the dot lands
-                const s0 = 40 / D, F = Math.round(Math.min(L.width, L.height) * .9);
-                const par = loader.parentNode, blobs = [], flashes = [], greys = [];
+                const DUR = T.b + 180, EZ = 'cubic-bezier(.3,.45,.35,1)';   // burst out of the corner, then settle softly
+                const BL = T.f - 260, BLg = T.f - 120;                                         // colour starts just before the dot lands
+                const F = Math.round(Math.min(L.width, L.height) * 1.05);
+                const par = loader.parentNode, blobs = [], flashes = [], greys = [], rgbAt = [];
+                for (let i = 0; i < 4; i++) rgbAt[C.indexOf(target[i])] = RGB[i % 4];
                 const sm = x => { x = Math.min(1, Math.max(0, x)); return .5 - .5 * Math.cos(Math.PI * x); };     // smooth 0 -> 1, zero slope at both ends
                 const curve = (n, f) => { const k = []; for (let i = 0; i <= n; i++) k.push({ opacity: +f(i / n).toFixed(4) }); return k; };
                 const FADE = curve(60, t => sm(t / .05) * (1 - sm((t - .3) / .7)));    // quick in, hold, then ONE long smooth fade out
                 const FLASH = curve(40, t => sm(t / .15) * (1 - sm((t - .15) / .85)));
 
-                // colour circles (one per corner, only clipped by the screen) + a small bright flash where the dot lands
+                // the "blast": a small bright burst exactly where each dot lands (tiny layer, only transform + opacity)
                 for (let i = 0; i < 4; i++) {
-                    const q = target[i], rgb = RGB[i % 4];
-                    const bq = document.createElement('div'), bl = document.createElement('div'), fs = document.createElement('div');
-                    bq.className = 'gl-bq';
-                    bq.style.cssText = 'position:absolute;z-index:4;pointer-events:none;overflow:hidden;left:0;top:0;width:' + L.width + 'px;height:' + L.height + 'px;';
-                    bl.className = 'gl-bl';
-                    bl.style.cssText = 'width:' + D + 'px;height:' + D + 'px;left:' + (q[0] - R) + 'px;top:' + (q[1] - R) + 'px;opacity:.01;transform:scale(' + s0 + ');' +
-                        'background:radial-gradient(circle closest-side,rgba(' + rgb + ',.92) 0%,rgba(' + rgb + ',.82) 18%,rgba(' + rgb + ',.62) 36%,rgba(' + rgb + ',.4) 54%,rgba(' + rgb + ',.2) 72%,rgba(' + rgb + ',.07) 88%,rgba(' + rgb + ',0) 100%);';
-                    fs.className = 'gl-bl';
+                    const q = target[i], rgb = RGB[i % 4], fs = document.createElement('div');
+                    fs.className = 'gl-bl gl-bq';
                     fs.style.cssText = 'width:' + F + 'px;height:' + F + 'px;left:' + (q[0] - F / 2) + 'px;top:' + (q[1] - F / 2) + 'px;opacity:.01;transform:scale(.1);' +
-                        'background:radial-gradient(circle closest-side,rgba(255,255,255,.95) 0%,rgba(' + rgb + ',.9) 22%,rgba(' + rgb + ',.35) 60%,rgba(' + rgb + ',0) 100%);';
-                    bq.appendChild(bl); bq.appendChild(fs); loader.appendChild(bq);
-                    blobs.push(bl); flashes.push(fs);
+                        'background:radial-gradient(circle closest-side,rgba(255,255,255,.95) 0%,rgba(' + rgb + ',.9) 22%,rgba(' + rgb + ',.4) 58%,rgba(' + rgb + ',0) 100%);';
+                    loader.appendChild(fs); flashes.push(fs);
                 }
 
-                // grey layers (app start only): one per screen quarter, a STATIC soft hole at its corner; only transform animates
+                // grey screen = a flat grey veil (plain gradient, no filter / mask / backdrop-filter = very light for the GPU), only on login + home screen.
+                // One veil per screen quarter with a STATIC soft hole at its corner; only its transform animates, so the hole grows and the real colours show from the corner.
                 let SC = 1;
-                if (!quick && par && window.CSS && (CSS.supports('backdrop-filter', 'grayscale(1)') || CSS.supports('-webkit-backdrop-filter', 'grayscale(1)'))) {
-                    const W = L.width, H = L.height, cw = Math.ceil(W / 2) + 1, ch = Math.ceil(H / 2) + 1;
-                    const RO = Math.ceil(Math.hypot(cw, ch)) + 12, P0 = 22 / RO * 100; SC = (100 / P0) * 1.08;
-                    const mk = 'radial-gradient(circle closest-side at 50% 50%, transparent ' + P0.toFixed(2) + '%, rgba(0,0,0,.14) ' + (P0 * 1.25).toFixed(2) + '%, rgba(0,0,0,.48) ' + (P0 * 1.6).toFixed(2) + '%, rgba(0,0,0,.84) ' + (P0 * 1.95).toFixed(2) + '%, #000 ' + (P0 * 2.4).toFixed(2) + '%)';
-                    C.forEach(function (c) {
-                        const cl = c[0] < W / 2 ? 0 : Math.floor(W / 2) - 1, ct = c[1] < H / 2 ? 0 : Math.floor(H / 2) - 1;
+                if (veil && par) {
+                    const W = L.width, H = L.height, lw = Math.floor(W / 2), lh = Math.floor(H / 2);
+                    const RO = Math.ceil(Math.hypot(Math.ceil(W / 2), Math.ceil(H / 2))) + 12, P0 = 22 / RO * 100, A = .93, G = '150,156,168'; SC = (100 / P0) * 1.5;
+                    // inside = real colours (transparent hole), then a thin ring in the corner's colour = the wave front, then the grey veil
+                    const bgFor = rgb => 'radial-gradient(circle closest-side at 50% 50%, rgba(' + rgb + ',0) 0%, rgba(' + rgb + ',0) ' + (P0 * .86).toFixed(2) + '%, rgba(' + rgb + ',.5) ' + (P0 * .98).toFixed(2) + '%, rgba(' + rgb + ',.62) ' + (P0 * 1.04).toFixed(2) + '%, rgba(' + G + ',' + (A * .55).toFixed(3) + ') ' + (P0 * 1.12).toFixed(2) + '%, rgba(' + G + ',' + (A * .9).toFixed(3) + ') ' + (P0 * 1.2).toFixed(2) + '%, rgba(' + G + ',' + A + ') ' + (P0 * 1.3).toFixed(2) + '%)';
+                    C.forEach(function (c, k) {
+                        const cl = c[0] < W / 2 ? 0 : lw, ct = c[1] < H / 2 ? 0 : lh, cw = c[0] < W / 2 ? lw : W - lw, ch = c[1] < H / 2 ? lh : H - lh;   // exact tiling, no overlap, no seam
                         const box = document.createElement('div'), g = document.createElement('div');
                         box.className = 'gl-bw';
                         box.style.cssText = 'position:absolute;z-index:9998;pointer-events:none;overflow:hidden;left:' + cl + 'px;top:' + ct + 'px;width:' + cw + 'px;height:' + ch + 'px;';
-                        g.style.cssText = 'position:absolute;width:' + (RO * 2) + 'px;height:' + (RO * 2) + 'px;left:' + (c[0] - cl - RO) + 'px;top:' + (c[1] - ct - RO) + 'px;' +
-                            '-webkit-backdrop-filter:grayscale(1);backdrop-filter:grayscale(1);-webkit-mask-image:' + mk + ';mask-image:' + mk + ';will-change:transform;transform:scale(1);';
+                        g.style.cssText = 'position:absolute;width:' + (RO * 2) + 'px;height:' + (RO * 2) + 'px;left:' + (c[0] - cl - RO) + 'px;top:' + (c[1] - ct - RO) + 'px;background:' + bgFor(rgbAt[k]) + ';will-change:transform;transform:scale(1);';
                         box.appendChild(g); par.insertBefore(box, loader); greys.push({ box: box, g: g });
                     });
                 }
@@ -17511,16 +17507,13 @@ ${textContent ? `
                             { duration: 400, delay: T.f, easing: 'cubic-bezier(.3,.1,.4,1)', fill: 'forwards' });
                     });
                     loader.classList.add('gl-flying');
-                    blobs.forEach(function (bl) {
-                        bl.animate([{ transform: 'scale(' + s0 + ')' }, { transform: 'scale(1)' }], { duration: DUR, delay: BL, easing: EZ, fill: 'both' });
-                        bl.animate(FADE, { duration: DUR + T.t, delay: BL, easing: 'linear', fill: 'both' });
-                    });
+                    if (greys.length) loader.classList.add('gl-veil');
                     flashes.forEach(function (fs) {   // the "blast": a bright burst exactly where each dot lands
-                        fs.animate([{ transform: 'scale(.1)' }, { transform: 'scale(1.15)' }], { duration: 560, delay: T.f - 60, easing: 'cubic-bezier(.12,.8,.2,1)', fill: 'both' });
-                        fs.animate(FLASH, { duration: 560, delay: T.f - 60, easing: 'linear', fill: 'both' });
+                        fs.animate([{ transform: 'scale(.1)' }, { transform: 'scale(1.5)' }], { duration: 700, delay: T.f - 60, easing: 'cubic-bezier(.12,.8,.2,1)', fill: 'both' });
+                        fs.animate(FLASH, { duration: 700, delay: T.f - 60, easing: 'linear', fill: 'both' });
                     });
                     greys.forEach(function (o) {
-                        const up = o.g.animate([{ transform: 'scale(1)' }, { transform: 'scale(' + SC.toFixed(2) + ')' }], { duration: DUR, delay: BL, easing: EZ, fill: 'forwards' });
+                        const up = o.g.animate([{ transform: 'scale(1)' }, { transform: 'scale(' + SC.toFixed(2) + ')' }], { duration: DUR, delay: BLg, easing: EZ, fill: 'forwards' });
                         up.onfinish = up.oncancel = function () { o.box.remove(); };
                     });
                 };
@@ -17539,7 +17532,7 @@ ${textContent ? `
                 loader.dataset.animating = 'false';
                 if (reopen) {
                     // every show after the first app start plays the short version of the title sequence
-                    loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly', 'hidden-view');
+                    loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly', 'gl-veil', 'hidden-view');
                     try { window.__glClean(loader); window.__glBwClean(); } catch (e) { }
                     loader.classList.add('gl-quick');
                     G.t0 = performance.now();
@@ -17572,7 +17565,8 @@ ${textContent ? `
                     const begin = () => {
                         if (loader.dataset.animating !== 'true') return;
                         window.__glOk = false; let go = null;
-                        try { go = window.__glFly(loader, reduced, quick); } catch (e) { console.warn('glFly', e); }
+                        const onHomeOrLogin = ['login-view', 'admin-login-view', 'student-view', 'admin-view'].some(id => { const e = document.getElementById(id); return e && !e.classList.contains('hidden-view'); }) || /^#?(login|student|admin)?$/.test(window.location.hash);
+                        try { go = window.__glFly(loader, reduced, quick, onHomeOrLogin); } catch (e) { console.warn('glFly', e); }
                         const fire = () => {
                             if (loader.dataset.animating !== 'true') { try { window.__glClean(loader); window.__glBwClean(); } catch (e) { } return; }
                             try { if (go) go(); } catch (e) { console.warn('glFly go', e); window.__glOk = false; }
@@ -17580,7 +17574,7 @@ ${textContent ? `
                             loader.classList.add('gl-out'); // logo + title zoom through the screen, background fades away, dots fly to the corners
                             G.done = setTimeout(() => {
                                 loader.classList.add('hidden-view');
-                                loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly');
+                                loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly', 'gl-veil');
                                 try { window.__glClean(loader); window.__glBwClean(); } catch (e) { }
                                 loader.dataset.animating = 'false'; // Unlock
                             }, reduced ? 280 : (function (T) { return T.f + T.b + T.t + 80; })(quick ? window.__glT.q : window.__glT.n));
