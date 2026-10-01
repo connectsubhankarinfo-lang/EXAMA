@@ -30,6 +30,112 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 </script>
 <script>window.getOtherStudentsMobiles = function() { return (window.studentsDB || []).map(s => s.mobile).filter(m => m !== window.loggedInMobile); };</script>
 
+<script id="img-cache-js">
+/* Profile picture / cover cache + compressor.
+   imgCache.get(key, url): returns a local copy (blob:) instantly when THIS exact url is already saved on the device,
+                           otherwise returns url as-is and saves it in the background. A new url (picture changed) replaces the old copy.
+   imgCache.put(key, url, blob): save a picture we already hold (e.g. right after upload).
+   prepareProfileImage(file, 'dp'|'cover'): small JPEG - dp = centred 384px square, cover = max 1280x720. */
+(function () {
+    var DB = 'exama-img-cache', ST = 'imgs', MAX = 900 * 1024, mem = {}, byUrl = {}, busy = {}, bad = {}, queue = [], active = 0, dbp = null;
+    function db() {
+        if (!dbp) dbp = new Promise(function (ok) {
+            try {
+                var r = indexedDB.open(DB, 1);
+                r.onupgradeneeded = function () { r.result.createObjectStore(ST, { keyPath: 'k' }); };
+                r.onsuccess = function () { ok(r.result); };
+                r.onerror = r.onblocked = function () { ok(null); };
+            } catch (e) { ok(null); }
+        });
+        return dbp;
+    }
+    function run(mode, fn) {
+        return db().then(function (d) {
+            if (!d) return null;
+            return new Promise(function (ok) {
+                try {
+                    var t = d.transaction(ST, mode), rq = fn(t.objectStore(ST));
+                    t.oncomplete = function () { ok(rq ? rq.result : null); };
+                    t.onerror = t.onabort = function () { ok(null); };
+                } catch (e) { ok(null); }
+            });
+        });
+    }
+    function remember(k, url, blob) {
+        var old = mem[k];
+        if (old) { delete byUrl[old.url]; setTimeout(function () { try { URL.revokeObjectURL(old.obj); } catch (e) { } }, 120000); }
+        var obj = URL.createObjectURL(blob); mem[k] = { url: url, obj: obj }; byUrl[url] = obj; return obj;
+    }
+    function fetchBlob(url) {
+        var tries = [url], m = url.match(/drive\.google\.com\/[^\s]*[?&]id=([\w-]+)/) || url.match(/drive\.google\.com\/(?:file\/)?d\/([\w-]+)/);
+        if (m) tries.push('https://lh3.googleusercontent.com/d/' + m[1]);          // Drive links often block fetch(); this host allows it
+        return tries.reduce(function (p, u) {
+            return p.catch(function () {
+                return fetch(u, { mode: 'cors', credentials: 'omit' }).then(function (r) { if (!r.ok) throw 0; return r.blob(); })
+                    .then(function (b) { if (!/^image\//.test(b.type) || !b.size || b.size > MAX) throw 0; return b; });
+            });
+        }, Promise.reject());
+    }
+    function pump() {
+        while (active < 3 && queue.length) {
+            (function (j) {
+                var id = j.k + '|' + j.url; active++;
+                fetchBlob(j.url).then(function (b) {
+                    if (mem[j.k] && mem[j.k].url === j.url) return;
+                    remember(j.k, j.url, b);
+                    return run('readwrite', function (st) { return st.put({ k: j.k, url: j.url, blob: b, t: Date.now() }); });
+                }).catch(function () { bad[id] = 1; }).then(function () { active--; delete busy[id]; pump(); });
+            })(queue.shift());
+        }
+    }
+    function cacheable(u) { return typeof u === 'string' && /^https?:\/\//i.test(u) && u.indexOf('ui-avatars.com') < 0; }
+    window.imgCache = {
+        get: function (k, url) {
+            if (!cacheable(url)) return url;
+            var m = mem[k]; if (m && m.url === url) return m.obj;
+            var id = k + '|' + url;
+            if (!busy[id] && !bad[id] && navigator.onLine !== false) { busy[id] = 1; queue.push({ k: k, url: url }); pump(); }
+            return url;
+        },
+        put: function (k, url, blob) {
+            if (!cacheable(url) || !blob) return url;
+            try { var obj = remember(k, url, blob); run('readwrite', function (st) { return st.put({ k: k, url: url, blob: blob, t: Date.now() }); }); return obj; }
+            catch (e) { return url; }
+        }
+    };
+    // load what is already saved on this device; pictures still downloading get swapped to the local copy
+    run('readonly', function (st) { return st.getAll(); }).then(function (all) {
+        (all || []).forEach(function (r) { if (r && r.blob && r.url && !mem[r.k]) remember(r.k, r.url, r.blob); });
+        try { document.querySelectorAll('img').forEach(function (im) { var u = byUrl[im.getAttribute('src')]; if (u && !im.complete) im.src = u; }); } catch (e) { }
+    });
+
+    window.prepareProfileImage = function (file, kind) {
+        var cover = kind === 'cover', MW = cover ? 1280 : 384, MH = cover ? 720 : 384, Q = cover ? 0.78 : 0.82;
+        return new Promise(function (resolve, reject) {
+            var url = URL.createObjectURL(file), img = new Image();
+            img.onload = function () {
+                try {
+                    var sw = img.naturalWidth, sh = img.naturalHeight, sx = 0, sy = 0, dw, dh;
+                    if (!cover) { var m = Math.min(sw, sh); sx = (sw - m) / 2; sy = (sh - m) / 2; sw = sh = m; dw = dh = Math.min(MW, m); }
+                    else { var k = Math.min(1, MW / sw, MH / sh); dw = Math.round(sw * k); dh = Math.round(sh * k); }
+                    var c = document.createElement('canvas'); c.width = dw; c.height = dh;
+                    var x = c.getContext('2d'); x.imageSmoothingQuality = 'high';
+                    x.fillStyle = '#fff'; x.fillRect(0, 0, dw, dh);               // transparent PNGs become white, not black
+                    x.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
+                    URL.revokeObjectURL(url);
+                    c.toBlob(function (b) {
+                        if (!b) return reject(new Error('compress failed'));
+                        resolve(new File([b], (cover ? 'cover' : 'dp') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
+                    }, 'image/jpeg', Q);
+                } catch (e) { URL.revokeObjectURL(url); reject(e); }
+            };
+            img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+            img.src = url;
+        });
+    };
+})();
+</script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <!-- SortableJS for Drag and Drop -->
@@ -11037,32 +11143,11 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
 
                 let file = input.files[0];
 
-                // --- COMPRESSION ENGINE FOR DP ---
+                // --- COMPRESSION ENGINE FOR DP: centred 384px square, JPEG 82% (shown at 24-128px, still sharp on 3x screens) ---
+                let dpReady = false;
                 if (file.type.match(/image.*/)) {
-                    file = await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onload = function (e) {
-                            const img = new Image();
-                            img.onload = function () {
-                                const canvas = document.createElement('canvas');
-                                const MAX_WIDTH = 800; const MAX_HEIGHT = 800;
-                                let width = img.width; let height = img.height;
-                                if (width > height) {
-                                    if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-                                } else {
-                                    if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
-                                }
-                                canvas.width = width; canvas.height = height;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(img, 0, 0, width, height);
-                                canvas.toBlob((blob) => {
-                                    resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }));
-                                }, 'image/jpeg', 0.7);
-                            };
-                            img.src = e.target.result;
-                        };
-                        reader.readAsDataURL(file);
-                    });
+                    try { file = await window.prepareProfileImage(file, 'dp'); dpReady = true; }
+                    catch (e) { console.warn('DP compress failed, uploading original', e); }
                 }
 
                 // Check if the user is a student (Admin DP is fixed/handled separately)
@@ -11075,7 +11160,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
 
                 try {
                     // 1. Upload to Google Drive using your existing engine
-                    const fileUrl = await window.uploadFileToDrive(file, 'chat_img', false);
+                    const fileUrl = await window.uploadFileToDrive(file, 'chat_img', false, { skipCompress: dpReady });
 
                     // 2. Update Firestore database
                     const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js");
@@ -11086,12 +11171,14 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     // 3. Update the local database array
                     const student = window.studentsDB.find(s => s.mobile === window.loggedInMobile);
                     if (student) student.dpUrl = fileUrl;
+                    // keep the new picture on this device straight away (replaces the old cached one)
+                    const shownDp = window.imgCache ? window.imgCache.put('dp:' + window.loggedInMobile, fileUrl, file) : fileUrl;
 
                     // 4. Update the UI instantly
                     const navDp = document.getElementById('student-nav-dp');
                     const settingsDp = document.getElementById('settings-user-dp');
-                    if (navDp) navDp.src = fileUrl;
-                    if (settingsDp) settingsDp.src = fileUrl;
+                    if (navDp) navDp.src = shownDp;
+                    if (settingsDp) settingsDp.src = shownDp;
 
                     if (typeof window.hideLoader === 'function') window.hideLoader();
                     window.showCustomAlert("Success", "Profile picture updated successfully!", "success");
@@ -11235,7 +11322,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
             // ==========================================
             window.EXAMA_DRIVE_API = "https://script.google.com/macros/s/AKfycbx-SUVz6yrJnWkakPrGxbHx7iUER3PfCv4QjNcmQJKc3dy7SW0DZx0LhKh0csoyy-v_Jg/exec"; // <--- PASTE IT HERE!
 
-            window.uploadFileToDrive = async function (file, folderType, isDocument = false) {
+            window.uploadFileToDrive = async function (file, folderType, isDocument = false, opts = {}) {
                 let base64Data = "";
 
                 if (isDocument) {
@@ -11247,7 +11334,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     });
                 } else {
                     // Compress images before upload to save space and speed up loading
-                    const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
+                    const compressedFile = (opts && opts.skipCompress) ? file : await window.compressImage(file, 1200, 1200, 0.85);
                     base64Data = await new Promise((res) => {
                         const reader = new FileReader();
                         reader.onloadend = () => res(reader.result.split(',')[1]);
@@ -11579,7 +11666,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
 
             const SCRIPT_URL = window.EXAMA_DRIVE_API;
 
-            window.uploadFileToDrive = async function (file, folderType, isDocument = false) {
+            window.uploadFileToDrive = async function (file, folderType, isDocument = false, opts = {}) {
                 let base64Data = "";
 
                 if (isDocument) {
@@ -11591,7 +11678,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     });
                 } else {
                     // Compress images before upload
-                    const compressedFile = await window.compressImage(file, 1200, 1200, 0.85);
+                    const compressedFile = (opts && opts.skipCompress) ? file : await window.compressImage(file, 1200, 1200, 0.85);
                     base64Data = await new Promise((res) => {
                         const reader = new FileReader();
                         reader.onloadend = () => res(reader.result.split(',')[1]);
@@ -20269,11 +20356,12 @@ ${textContent ? `
             window.getStudentAvatar = function (mobile, name) {
                 // 1. Instantly return the Exama logo if the user is the Admin
                 if (mobile === 'admin' || name === 'EXAMA') {
-                    return "https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/icon-512.png";
+                    const adminIcon = "https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/icon-512.png";
+                    return window.imgCache ? window.imgCache.get('admin-icon', adminIcon) : adminIcon;
                 }
                 if (!mobile) return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=4f46e5&color=fff&bold=true`;
                 const stu = window.studentsDB ? window.studentsDB.find(s => s.mobile === mobile) : null;
-                if (stu && stu.dpUrl) return stu.dpUrl;
+                if (stu && stu.dpUrl) return window.imgCache ? window.imgCache.get('dp:' + mobile, stu.dpUrl) : stu.dpUrl;
                 return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Student')}&background=4f46e5&color=fff&bold=true`;
             };
 
@@ -20418,7 +20506,7 @@ ${textContent ? `
                     const bestStudy = Math.max(1, ...getStudyLeaderboard().map(stMs));
                     const dayStart = new Date().setHours(0, 0, 0, 0);
                     const runKm = runs.filter(l => !l.isAbsent && (l.timestamp || 0) >= dayStart && (l.timestamp || 0) < dayStart + 864e5).reduce((a, l) => a + (Number(l.distance) || 0), 0);
-                    const cover = stu.coverUrl || 'https://akm-img-a-in.tosshub.com/indiatoday/images/story/201808/indian_flag.jpeg?VersionId=2xKH3EU60TaAjZPZEUz2_8D88ZfTvylo&size=690:388';
+                    const cover = stu.coverUrl ? (window.imgCache ? window.imgCache.get('cover:' + me, stu.coverUrl) : stu.coverUrl) : 'https://akm-img-a-in.tosshub.com/indiatoday/images/story/201808/indian_flag.jpeg?VersionId=2xKH3EU60TaAjZPZEUz2_8D88ZfTvylo&size=690:388';
                     const ring = (center, label, sub, p, col) => {
                         const v = Math.round(Math.max(0, Math.min(1, p || 0)) * 100);
                         return `<div class="min-w-0 flex flex-col items-center">
@@ -20432,7 +20520,7 @@ ${textContent ? `
                     const rankCenter = rank ? '☸' + rank : '-';
                     box.innerHTML = `
                         <div class="relative h-44 sm:h-64 w-full overflow-hidden rounded-b-[2rem] sm:rounded-b-[2.5rem] bg-indigo-900">
-                            <img src="${esc(cover)}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'">
+                            <img src="${esc(cover)}" alt="Cover" decoding="async" fetchpriority="high" class="w-full h-full object-cover" onerror="this.style.display='none'">
                             <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/25"></div>
                             ${mine ? `<button onclick="document.getElementById('mp-cover-input').click()" class="absolute z-20 bottom-16 sm:bottom-20 right-3 sm:right-6 flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/90 backdrop-blur text-gray-800 text-[12px] font-bold shadow-lg active:scale-95 transition-transform"><i class="fa-solid fa-camera"></i>Edit cover</button>
                             <input type="file" id="mp-cover-input" accept="image/*" class="hidden" onchange="mpUploadCover(this)">` : ''}
@@ -20441,7 +20529,7 @@ ${textContent ? `
                             <div class="flex flex-col items-center text-center gap-2.5">
                                 <div class="relative shrink-0 w-fit">
                                     <div class="p-1 rounded-full bg-gradient-to-tr from-indigo-500 via-fuchsia-500 to-amber-400 shadow-xl shadow-indigo-300/50">
-                                        <img src="${window.getStudentAvatar(me, stu.name)}" alt="" class="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-white bg-gray-100">
+                                        <img src="${window.getStudentAvatar(me, stu.name)}" alt="" decoding="async" class="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-white bg-gray-100">
                                     </div>
                                     ${mine ? `<button onclick="document.getElementById('mp-dp-input').click()" aria-label="Change profile picture" class="absolute bottom-1 right-0 w-9 h-9 rounded-full bg-white border border-gray-200 shadow-md text-gray-700 flex items-center justify-center active:scale-90 transition-transform"><i class="fa-solid fa-camera text-sm"></i></button>
                                     <input type="file" id="mp-dp-input" accept="image/*" class="hidden" onchange="mpUploadDp(this)">` : ''}
@@ -20555,13 +20643,16 @@ ${textContent ? `
 
             window.mpUploadDp = async function (input) { await window.uploadStudentDP(input); window.renderMyProfile(); };
             window.mpUploadCover = async function (input) {
-                const f = input.files && input.files[0]; if (!f) return;
+                let f = input.files && input.files[0]; if (!f) return;
                 try {
                     if (window.showLoader) window.showLoader('Updating cover photo...');
-                    const url = await window.uploadFileToDrive(f, 'chat_img', false);   // same Drive folder as profile pictures
+                    let ready = false;
+                    try { f = await window.prepareProfileImage(f, 'cover'); ready = true; } catch (e) { console.warn('Cover compress failed, uploading original', e); }
+                    const url = await window.uploadFileToDrive(f, 'chat_img', false, { skipCompress: ready });   // same Drive folder as profile pictures
                     const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js");
                     await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { coverUrl: url });
                     const st = window.studentsDB.find(x => x.mobile === window.loggedInMobile); if (st) st.coverUrl = url;
+                    if (window.imgCache && ready) window.imgCache.put('cover:' + window.loggedInMobile, url, f);
                     if (window.hideLoader) window.hideLoader();
                     window.renderMyProfile();
                 } catch (e) {
@@ -21753,7 +21844,7 @@ ${textContent ? `
 
                         const cachedDpUrl = localStorage.getItem(`exama_dp_${mob}`);
                         if (cachedDpUrl) {
-                            dpImg.src = cachedDpUrl;
+                            dpImg.src = window.imgCache ? window.imgCache.get('dp:' + mob, cachedDpUrl) : cachedDpUrl;
                         } else {
                             dpImg.src = defaultDp;
                         }
@@ -21761,7 +21852,7 @@ ${textContent ? `
                         if (curStu) {
                             const latestFirebaseDp = curStu.dpUrl || defaultDp;
                             if (dpImg.src !== latestFirebaseDp) {
-                                dpImg.src = latestFirebaseDp;
+                                dpImg.src = window.imgCache ? window.imgCache.get('dp:' + mob, latestFirebaseDp) : latestFirebaseDp;
                                 localStorage.setItem(`exama_dp_${mob}`, latestFirebaseDp);
                             }
                         }
@@ -22181,7 +22272,7 @@ ${textContent ? `
                         const latestFirebaseDp = curStu.dpUrl || defaultDp;
                         const cachedDpUrl = localStorage.getItem(`exama_dp_${window.loggedInMobile}`);
                         if (latestFirebaseDp !== cachedDpUrl) {
-                            dpImg.src = latestFirebaseDp;
+                            dpImg.src = window.imgCache ? window.imgCache.get('dp:' + window.loggedInMobile, latestFirebaseDp) : latestFirebaseDp;
                             localStorage.setItem(`exama_dp_${window.loggedInMobile}`, latestFirebaseDp);
                         }
                     }
