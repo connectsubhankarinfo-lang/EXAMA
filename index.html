@@ -17438,7 +17438,7 @@ ${textContent ? `
                 const R = Math.ceil(Math.hypot(L.width, L.height) * 0.62), D = R * 2;   // 0.62 x diagonal: four circles together cover the whole screen
                 const ease = t => .35 * t + .65 * t * t * (3 - 2 * t);   // moving from the first frame, still gaining speed on arrival: never parks anywhere
                 const DUR = T.b + 180, EZ = 'cubic-bezier(.25,.46,.3,1)';   // ONE curve + ONE duration for blast and colour reveal = in sync (iOS-style)
-                const BL = T.f - 160;                      // blast starts just BEFORE touchdown, so there is no dead moment at the corner
+                const BL = T.f - 260;                      // blast starts just BEFORE touchdown, so there is no dead moment at the corner
                 const hw = L.width / 2, hh = L.height / 2, tFly = performance.now(), blasts = [];
 
                 // FRAME 1 = only the dots (cheap, runs on the compositor): they start moving immediately
@@ -17453,8 +17453,8 @@ ${textContent ? `
                     }
                     f.animate(kf, { duration: T.f, easing: 'linear', fill: 'forwards' });
                     // the dot pops at the corner (this is the "blast") and hands over to the circle
-                    f.animate([{ transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(1.3)', opacity: 1 }, { transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(2.4)', opacity: 0 }],
-                        { duration: 300, delay: BL, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' });
+                    f.animate([{ transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(1.3)', opacity: 1 }, { transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(1.7)', opacity: 0 }],
+                        { duration: 400, delay: T.f, easing: 'cubic-bezier(.3,.1,.4,1)', fill: 'forwards' });
                     blasts.push({ q: q, rgb: RGB[p.i % 4] });
                 });
                 loader.classList.add('gl-flying');
@@ -17464,7 +17464,7 @@ ${textContent ? `
                 // so the first frames are never blocked and the dots never sit still at the start.
                 setTimeout(function () {
                     if (!loader.classList.contains('gl-out')) return;           // exit was cancelled
-                    const dl = Math.max(0, BL - (performance.now() - tFly)), s0 = 14 / D;
+                    const dl = Math.max(0, BL - (performance.now() - tFly)), s0 = 40 / D;
                     blasts.forEach(function (b) {
                         const q = b.q, rgb = b.rgb, qx = 0, qy = 0;
                         const bq = document.createElement('div'), bl = document.createElement('div');
@@ -17478,30 +17478,26 @@ ${textContent ? `
                         bl.animate([{ opacity: 0, offset: 0 }, { opacity: 1, offset: .05 }, { opacity: 1, offset: .4 }, { opacity: .72, offset: .62 }, { opacity: .38, offset: .8 }, { opacity: .12, offset: .92 }, { opacity: 0, offset: 1 }], { duration: DUR + T.t, delay: dl, easing: 'ease-in-out', fill: 'forwards' });
                     });
 
-                    // Website is black & white as the loader lifts; the real colours then flow in from the four corners, in sync with the blast (app start only)
+                    // Website is grey as the loader lifts; the real colours then flow in from the four corners (app start only).
+                    // One grey layer per screen quarter. Each layer has a STATIC soft hole in the middle of its corner and only its
+                    // transform is animated (compositor, no repaint), so the hole grows smoothly = colour flows in from the corner.
                     const par = loader.parentNode;
                     if (!quick && par && window.CSS && (CSS.supports('backdrop-filter', 'grayscale(1)') || CSS.supports('-webkit-backdrop-filter', 'grayscale(1)'))) {
-                        const bw = document.createElement('div');
-                        bw.className = 'gl-bw';
-                        const base = 'position:absolute;inset:0;z-index:9998;pointer-events:none;-webkit-backdrop-filter:grayscale(1);backdrop-filter:grayscale(1);';
-                        let canMask = false;
-                        try {
-                            if (!window.__glRegd && CSS.registerProperty) { try { CSS.registerProperty({ name: '--glr', syntax: '<length>', inherits: false, initialValue: '-90px' }); } catch (x) { } window.__glRegd = 1; }
-                            canMask = !!CSS.registerProperty && (CSS.supports('mask-image', 'radial-gradient(#000,#000)') || CSS.supports('-webkit-mask-image', 'radial-gradient(#000,#000)'));
-                        } catch (x) { }
-                        if (canMask) {
-                            // 4 holes (one per corner) in the grey layer; the holes grow with the blast, so real colour flows in from the corners with a soft edge
-                            const g = C.map(c => 'radial-gradient(circle at ' + c[0] + 'px ' + c[1] + 'px, transparent var(--glr), rgba(0,0,0,.12) calc(var(--glr) + 40px), rgba(0,0,0,.45) calc(var(--glr) + 100px), rgba(0,0,0,.82) calc(var(--glr) + 160px), #000 calc(var(--glr) + 200px))').join(',');
-                            bw.style.cssText = base + '--glr:-200px;-webkit-mask-image:' + g + ';mask-image:' + g + ';-webkit-mask-composite:source-in;mask-composite:intersect;';
-                            par.insertBefore(bw, loader);
-                            const up = bw.animate([{ '--glr': '-200px' }, { '--glr': Math.ceil(Math.hypot(L.width, L.height) / 2 + 220) + 'px' }], { duration: DUR, delay: dl, easing: EZ, fill: 'forwards' });
-                            up.onfinish = up.oncancel = function () { bw.remove(); };
-                        } else {
-                            bw.style.cssText = base;
-                            par.insertBefore(bw, loader);
-                            const up = bw.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, delay: dl + 60, easing: 'cubic-bezier(.33,0,.2,1)', fill: 'forwards' });
-                            up.onfinish = up.oncancel = function () { bw.remove(); };
-                        }
+                        const W = L.width, H = L.height, cw = Math.ceil(W / 2) + 1, ch = Math.ceil(H / 2) + 1;
+                        const RO = Math.ceil(Math.hypot(cw, ch)) + 12, P0 = 22 / RO * 100, SC = (100 / P0) * 1.08;
+                        const mk = 'radial-gradient(circle closest-side at 50% 50%, transparent ' + P0.toFixed(2) + '%, rgba(0,0,0,.14) ' + (P0 * 1.25).toFixed(2) + '%, rgba(0,0,0,.48) ' + (P0 * 1.6).toFixed(2) + '%, rgba(0,0,0,.84) ' + (P0 * 1.95).toFixed(2) + '%, #000 ' + (P0 * 2.4).toFixed(2) + '%)';
+                        const grey = [];
+                        C.forEach(function (c) {
+                            const cl = c[0] < W / 2 ? 0 : Math.floor(W / 2) - 1, ct = c[1] < H / 2 ? 0 : Math.floor(H / 2) - 1;
+                            const box = document.createElement('div'), g = document.createElement('div');
+                            box.className = 'gl-bw';
+                            box.style.cssText = 'position:absolute;z-index:9998;pointer-events:none;overflow:hidden;left:' + cl + 'px;top:' + ct + 'px;width:' + cw + 'px;height:' + ch + 'px;';
+                            g.style.cssText = 'position:absolute;width:' + (RO * 2) + 'px;height:' + (RO * 2) + 'px;left:' + (c[0] - cl - RO) + 'px;top:' + (c[1] - ct - RO) + 'px;' +
+                                '-webkit-backdrop-filter:grayscale(1);backdrop-filter:grayscale(1);-webkit-mask-image:' + mk + ';mask-image:' + mk + ';will-change:transform;transform:scale(1);';
+                            box.appendChild(g); par.insertBefore(box, loader); grey.push(box);
+                            const up = g.animate([{ transform: 'scale(1)' }, { transform: 'scale(' + SC.toFixed(2) + ')' }], { duration: DUR, delay: dl, easing: EZ, fill: 'forwards' });
+                            up.onfinish = up.oncancel = function () { box.remove(); };
+                        });
                     }
                 }, 100);
             };
