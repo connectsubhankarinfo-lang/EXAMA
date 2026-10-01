@@ -3673,7 +3673,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 #global-loader {
                     --k: 1;                 /* intro speed (1 = app start, .3 = quick re-show) */
                     --ti: 80px;             /* logo size */
-                    --zt: .95s;             /* exit: zoom-through duration */
+                    --zt: .75s;             /* exit: zoom-through duration */
                     position: absolute; inset: 0; z-index: 9999;
                     display: flex; flex-direction: column; align-items: center; justify-content: center;
                     overflow: hidden; contain: layout paint style; isolation: isolate; background: transparent;
@@ -3790,15 +3790,13 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 #global-loader.gl-out .gl-float, #global-loader.gl-out .gl-sweep, #global-loader.gl-out .gl-g, #global-loader.gl-out .gl-o, #global-loader.gl-out .gl-dot, #global-loader.gl-out .gl-halo, #global-loader.gl-out .gl-glow { animation-play-state: paused; }
 
                 /* EXIT: the 4 dots leave the circle and fly to the 4 corners of the screen (positions set by __glFly in JS) */
-                .gl-fly { display: none; position: absolute; z-index: 3; left: 0; top: 0; width: 14px; height: 14px; border-radius: 50%; pointer-events: none; box-shadow: 0 0 10px -2px rgba(15, 23, 42, .35); will-change: transform, opacity; }
+                .gl-fly { display: none; position: absolute; z-index: 5; left: 0; top: 0; width: 14px; height: 14px; border-radius: 50%; pointer-events: none; box-shadow: 0 0 10px -2px rgba(15, 23, 42, .35); will-change: transform, opacity; }
+                @keyframes glRingOut { to { opacity: 0; } }
+                #global-loader.gl-out .gl-ring { animation: glRingOut .18s ease-out forwards; }   /* no orbit lines once the exit starts */
                 #global-loader.gl-out.gl-flying .gl-g { visibility: hidden; }
-                #global-loader.gl-out.gl-flying .gl-fly { display: block; animation: glFlyX var(--zt) cubic-bezier(.45, 0, .2, 1) forwards, glFlyY var(--zt) cubic-bezier(.2, .6, .3, 1) forwards; }
-                @keyframes glFlyX { from { translate: 0 0; } to { translate: var(--dx) 0; } }
-                @keyframes glFlyY {
-                    0%   { transform: translate3d(0, 0, 0) scale(.9); opacity: 1; }
-                    75%  { opacity: 1; }
-                    100% { transform: translate3d(0, var(--dy), 0) scale(1.5); opacity: 0; }
-                }
+                #global-loader.gl-out.gl-flying .gl-fly { display: block; }
+                /* corner blast: one perfectly round circle per corner, grows from the dot and washes the screen with the dot's colour (built + animated in __glFly) */
+                .gl-bl { position: absolute; z-index: 4; border-radius: 50%; box-sizing: border-box; pointer-events: none; opacity: 0; will-change: transform, opacity; backface-visibility: hidden; }
 
                 #pdf-loader { animation: glIn .3s cubic-bezier(.4, 0, .2, 1) both; }
 
@@ -3936,10 +3934,10 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     <div class="gl-spin">
                         <div class="gl-ring gl-ring-a" style="--tilt:45deg"></div>
                         <div class="gl-ring gl-ring-b" style="--tilt:135deg"></div>
-                        <div class="gl-g" style="--tilt:45deg;--kx:-.7071;--ky:-.7071;--wx:-37.5px;--op:2.4s;--n:0"><div class="gl-o"><div class="gl-dot gl-d1"></div></div></div>
-                        <div class="gl-g" style="--tilt:135deg;--kx:.7071;--ky:-.7071;--wx:-12.5px;--op:3s;--n:1"><div class="gl-o"><div class="gl-dot gl-d2"></div></div></div>
-                        <div class="gl-g" style="--tilt:225deg;--kx:.7071;--ky:.7071;--wx:12.5px;--op:2.4s;--n:2"><div class="gl-o"><div class="gl-dot gl-d3"></div></div></div>
-                        <div class="gl-g" style="--tilt:315deg;--kx:-.7071;--ky:.7071;--wx:37.5px;--op:3s;--n:3"><div class="gl-o"><div class="gl-dot gl-d4"></div></div></div>
+                        <div class="gl-g" style="--tilt:45deg;--kx:-.7071;--ky:-.7071;--wx:-37.5px;--op:1.5s;--n:0"><div class="gl-o"><div class="gl-dot gl-d1"></div></div></div>
+                        <div class="gl-g" style="--tilt:135deg;--kx:.7071;--ky:-.7071;--wx:-12.5px;--op:1.5s;--n:1"><div class="gl-o"><div class="gl-dot gl-d2"></div></div></div>
+                        <div class="gl-g" style="--tilt:225deg;--kx:.7071;--ky:.7071;--wx:12.5px;--op:1.5s;--n:2"><div class="gl-o"><div class="gl-dot gl-d3"></div></div></div>
+                        <div class="gl-g" style="--tilt:315deg;--kx:-.7071;--ky:.7071;--wx:37.5px;--op:1.5s;--n:3"><div class="gl-o"><div class="gl-dot gl-d4"></div></div></div>
                     </div>
                     <div class="gl-float">
                         <img class="gl-img" src="https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/1f98f94f146402514c06b9f4669681910cc0c96e/Exma%20loading%20logo.png" alt="Exama Logo" draggable="false"
@@ -17409,13 +17407,22 @@ ${textContent ? `
             window.__gl = { t0: 0, wait: 0, done: 0 };
 
             // Exit: send each orbiting dot to the nearest screen corner (one dot per corner, colours keep their clockwise order)
-            window.__glFly = function (loader, reduced) {
+            window.__glT = { n: { f: 820, b: 650, t: 220 }, q: { f: 480, b: 650, t: 300 } };   // flight / blast / wash-out (ms)
+            window.__glClean = function (loader) {
+                loader.querySelectorAll('.gl-bl').forEach(function (e) { e.remove(); });
+                loader.querySelectorAll('.gl-fly').forEach(function (e) { try { e.getAnimations().forEach(function (an) { an.cancel(); }); } catch (x) { } });
+            };
+            window.__glBwClean = function () { document.querySelectorAll('.gl-bw').forEach(function (e) { try { e.getAnimations().forEach(function (an) { an.cancel(); }); } catch (x) { } e.remove(); }); };
+            // Exit: each orbiting dot glides along one smooth arc to a screen corner, then blasts into a full round colour circle
+            window.__glFly = function (loader, reduced, quick) {
                 if (reduced) return;
                 const fl = loader.querySelectorAll('.gl-fly'), dots = loader.querySelectorAll('.gl-spin .gl-dot'), logo = loader.querySelector('.gl-logo');
-                if (!logo || !fl.length || fl.length !== dots.length) return;
+                if (!logo || !fl.length || fl.length !== dots.length || !fl[0].animate) return;
                 const L = loader.getBoundingClientRect();
                 if (!L.width || !L.height) return;
-                const lg = logo.getBoundingClientRect(), cx = lg.left + lg.width / 2 - L.left, cy = lg.top + lg.height / 2 - L.top, m = 26;
+                window.__glClean(loader);
+                const T = quick ? window.__glT.q : window.__glT.n;
+                const lg = logo.getBoundingClientRect(), cx = lg.left + lg.width / 2 - L.left, cy = lg.top + lg.height / 2 - L.top, m = 34;
                 const P = Array.from(dots).map((d, i) => {
                     const r = d.getBoundingClientRect(), x = r.left + r.width / 2 - L.left, y = r.top + r.height / 2 - L.top;
                     return { i: i, x: x, y: y, a: Math.atan2(y - cy, x - cx) };
@@ -17426,12 +17433,43 @@ ${textContent ? `
                     let c = 0; P.forEach((p, j) => { const q = C[(j + k) % 4]; c += Math.hypot(q[0] - p.x, q[1] - p.y); });
                     if (c < bc) { bc = c; best = k; }
                 }
+                const RGB = ['79,70,229', '6,182,212', '245,158,11', '225,29,72'];     // = .gl-d1..d4
+                const R = Math.ceil(Math.hypot(L.width, L.height) * 0.62), D = R * 2;   // 0.62 x diagonal: four circles together cover the whole screen
+                const ease = t => .25 * t + .75 * t * t;   // keeps speeding up: no slow-down / stop at the corner, blast fires on impact
                 P.forEach((p, j) => {
-                    const q = C[(j + best) % 4], f = fl[p.i];
+                    const q = C[(j + best) % 4], f = fl[p.i], dx = q[0] - p.x, dy = q[1] - p.y;
                     f.style.left = (p.x - 7) + 'px'; f.style.top = (p.y - 7) + 'px';
-                    f.style.setProperty('--dx', (q[0] - p.x) + 'px'); f.style.setProperty('--dy', (q[1] - p.y) + 'px');
+                    // ONE easing along ONE quadratic arc (no separate X / Y easing = no wobble)
+                    const hx = dx / 2 - dy * .1, hy = dy / 2 + dx * .1, kf = [];
+                    for (let s = 0; s <= 40; s++) {
+                        const t = s / 40, e = ease(t), u = 1 - e;
+                        kf.push({ transform: 'translate3d(' + (2 * u * e * hx + e * e * dx).toFixed(2) + 'px,' + (2 * u * e * hy + e * e * dy).toFixed(2) + 'px,0) scale(' + (.9 + .4 * e).toFixed(3) + ')' });
+                    }
+                    f.animate(kf, { duration: T.f, easing: 'linear', fill: 'forwards' });
+                    // the dot pops at the corner (this is the "blast") and hands over to the circle
+                    f.animate([{ transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(1.3)', opacity: 1 }, { transform: 'translate3d(' + dx + 'px,' + dy + 'px,0) scale(2.4)', opacity: 0 }],
+                        { duration: 240, delay: T.f, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' });
+                    // the colour circle: starts the size of the dot, grows as ONE perfect circle (flat colour fill + solid ring), stays crisp, never blurs
+                    const bl = document.createElement('div'), rgb = RGB[p.i % 4], s0 = 14 / D;
+                    bl.className = 'gl-bl';
+                    bl.style.cssText = 'width:' + D + 'px;height:' + D + 'px;left:' + (q[0] - R) + 'px;top:' + (q[1] - R) + 'px;background:rgba(' + rgb + ',.2);transform:scale(' + s0 + ')';
+                    loader.appendChild(bl);
+                    bl.animate([{ transform: 'scale(' + s0 + ')' }, { transform: 'scale(1)' }], { duration: T.b, delay: T.f, easing: 'cubic-bezier(.16,.72,.24,1)', fill: 'forwards' });
+                    bl.animate([{ opacity: 1, offset: 0 }, { opacity: 1, offset: .72 }, { opacity: 0, offset: 1 }], { duration: T.b + T.t, delay: T.f, easing: 'linear', fill: 'forwards' });
                 });
                 loader.classList.add('gl-flying');
+
+                // Website turns black & white as the loader lifts, the colour balls blast over it, THEN the real colours fade up over the whole site
+                window.__glBwClean();
+                const par = loader.parentNode;
+                if (!quick && par && window.CSS && (CSS.supports('backdrop-filter', 'grayscale(1)') || CSS.supports('-webkit-backdrop-filter', 'grayscale(1)'))) {
+                    const bw = document.createElement('div');
+                    bw.className = 'gl-bw';
+                    bw.style.cssText = 'position:absolute;inset:0;z-index:9998;pointer-events:none;-webkit-backdrop-filter:grayscale(1);backdrop-filter:grayscale(1);';
+                    par.insertBefore(bw, loader);
+                    const up = bw.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, delay: T.f + Math.round(T.b * .2), easing: 'cubic-bezier(.33,0,.2,1)', fill: 'forwards' });
+                    up.onfinish = up.oncancel = function () { bw.remove(); };
+                }
             };
 
             window.showLoader = function (message) {
@@ -17441,13 +17479,14 @@ ${textContent ? `
                 const G = window.__gl;
 
                 // A new show cancels any pending / running exit
-                clearTimeout(G.wait); clearTimeout(G.done);
+                clearTimeout(G.wait); clearTimeout(G.done); cancelAnimationFrame(G.raf);
                 const reopen = loader.classList.contains('hidden-view') || loader.classList.contains('gl-out');
 
                 loader.dataset.animating = 'false';
                 if (reopen) {
                     // every show after the first app start plays the short version of the title sequence
                     loader.classList.remove('gl-out', 'gl-flying', 'hidden-view');
+                    try { window.__glClean(loader); window.__glBwClean(); } catch (e) { }
                     loader.classList.add('gl-quick');
                     G.t0 = performance.now();
                 }
@@ -17473,20 +17512,48 @@ ${textContent ? `
                 const quick = loader.classList.contains('gl-quick');
                 const reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
                 // keep it up long enough for the title to finish (app start) / to avoid a flash (quick actions)
-                const minShow = reduced ? 0 : (quick ? 380 : 2600);
+                const minShow = reduced ? 0 : (quick ? 380 : 1650 + 3 * 1500 + 100);   // only used for quick / reduced-motion / old browsers
 
                 const run = () => {
-                    try { window.__glFly(loader, reduced); } catch (e) { }
+                    try { window.__glFly(loader, reduced, quick); } catch (e) { }
                     loader.classList.add('gl-out'); // logo + title zoom through the screen, background fades away, dots fly to the corners
                     G.done = setTimeout(() => {
                         loader.classList.add('hidden-view');
                         loader.classList.remove('gl-out', 'gl-flying');
+                        try { window.__glClean(loader); } catch (e) { }
                         loader.dataset.animating = 'false'; // Unlock
-                    }, reduced ? 280 : (quick ? 660 : 1000));
+                    }, reduced ? 280 : (function (T) { return T.f + T.b + T.t + 80; })(quick ? window.__glT.q : window.__glT.n));
                 };
 
-                const shownFor = performance.now() - G.t0;
-                if (shownFor < minShow) G.wait = setTimeout(run, minShow - shownFor); else run();
+                // App start: read the real orbit clock. A dot is on a corner point (tip of its ellipse) at every half round.
+                // Wait until 3 full rounds are done AND all dots are on a tip, then start the exit.
+                const tStart = performance.now();
+                const orbitWait = () => {
+                    const os = loader.querySelectorAll('.gl-spin .gl-o'); let need = 0;
+                    if (!os.length) return -1;
+                    for (let i = 0; i < os.length; i++) {
+                        let an = null;
+                        try { an = os[i].getAnimations().find(a => a.animationName === 'glOX'); } catch (e) { }
+                        if (!an || !an.effect) return -1;
+                        const tm = an.effect.getComputedTiming(), d = tm.duration, half = d / 2, el = Number(an.currentTime) - tm.delay;
+                        if (!(d > 0) || isNaN(el)) return -1;
+                        let w;
+                        if (el < 3 * d - 30) w = 3 * d - el;                                   // fewer than 3 rounds so far
+                        else { const m = el % half; w = (m <= 30 || half - m <= 30) ? 0 : half - m; }   // 0 = on a corner point now
+                        if (w > need) need = w;
+                    }
+                    return need;
+                };
+                const gate = () => {
+                    const w = orbitWait();
+                    if (w === 0 || performance.now() - tStart > 40000) return run();
+                    if (w < 0) { const sf = performance.now() - G.t0; if (sf < minShow) G.wait = setTimeout(run, minShow - sf); else run(); return; }
+                    if (w > 80) G.wait = setTimeout(gate, w - 60); else G.raf = requestAnimationFrame(gate);
+                };
+                if (quick || reduced) {
+                    const shownFor = performance.now() - G.t0;
+                    if (shownFor < minShow) G.wait = setTimeout(run, minShow - shownFor); else run();
+                } else gate();
             };
 
             // ==========================================
