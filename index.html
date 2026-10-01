@@ -4446,10 +4446,10 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                     <div class="flex items-center gap-1.5 sm:gap-2">
                         <button onclick="window.undoRp()"
                             class="text-gray-300 hover:text-white active:scale-90 transition-all w-8 h-8 flex items-center justify-center bg-gray-800 rounded-full shadow-sm"
-                            title="Undo"><i class="fa-solid fa-rotate-left text-xs"></i></button>
+                            title="Undo"><i class="fa-solid fa-reply text-xs"></i></button>
                         <button onclick="window.redoRp()"
                             class="text-gray-300 hover:text-white active:scale-90 transition-all w-8 h-8 flex items-center justify-center bg-gray-800 rounded-full shadow-sm"
-                            title="Redo"><i class="fa-solid fa-rotate-right text-xs"></i></button>
+                            title="Redo"><i class="fa-solid fa-share text-xs"></i></button>
                     </div>
                 </div>
 
@@ -4463,10 +4463,8 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                         class="text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm"
                         title="Eraser Mode"><i class="fa-solid fa-eraser text-xs"></i></button>
                     <div class="w-px h-5 bg-gray-700 mx-0.5 sm:mx-1"></div>
-                    <button onclick="window.rotateRpImage(-1)" title="Rotate left"
-                        class="text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all shadow-sm"><i class="fa-solid fa-rotate-left text-xs" style="transform:scaleX(1)"></i><span class="sr-only">Rotate left</span></button>
-                    <button onclick="window.rotateRpImage(1)" title="Rotate right"
-                        class="text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all shadow-sm"><i class="fa-solid fa-rotate-right text-xs"></i><span class="sr-only">Rotate right</span></button>
+                    <button onclick="window.rotateRpImage(1)" title="Rotate"
+                        class="text-white bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-all shadow-sm"><i class="fa-solid fa-rotate-right text-xs"></i><span class="sr-only">Rotate</span></button>
 
                     <div class="w-px h-5 bg-gray-700 mx-0.5 sm:mx-1"></div>
 
@@ -4486,11 +4484,21 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 <canvas id="red-pen-canvas" class="absolute cursor-crosshair touch-none"></canvas>
             </div>
 
+            <div class="relative h-0 shrink-0 z-10">
+                <div id="rp-voice" class="hidden absolute left-3 right-3 bottom-3 flex items-center gap-2 p-2 rounded-2xl bg-gray-900/95 border border-gray-700 shadow-xl backdrop-blur">
+                    <span class="w-8 h-8 shrink-0 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center"><i class="fa-solid fa-microphone text-xs"></i></span>
+                    <audio id="rp-voice-player" controls preload="metadata" class="h-8 flex-1 min-w-0 outline-none"></audio>
+                    <button type="button" onclick="window.rpDeleteVoice()" title="Delete voice note" aria-label="Delete voice note" class="w-8 h-8 shrink-0 rounded-lg bg-red-500/15 text-red-400 hover:bg-red-500/25 flex items-center justify-center active:scale-90 transition-all"><i class="fa-solid fa-trash text-xs"></i></button>
+                </div>
+            </div>
+
             <div
                 class="bg-gray-950 p-4 shrink-0 flex items-center justify-between gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
                 <button onclick="clearRedPenCanvas()"
                     class="px-4 py-3 bg-gray-800 text-white rounded-xl font-bold text-xs active:scale-95 transition-all"><i
                         class="fa-solid fa-trash mr-1"></i> Clear</button>
+                <button id="rp-mic-btn" type="button" onclick="window.rpToggleMic()" title="Record voice note" aria-label="Record voice note"
+                    class="relative w-12 h-12 shrink-0 bg-gray-800 text-white rounded-xl flex items-center justify-center active:scale-95 transition-all"><i id="rp-mic-ic" class="fa-solid fa-microphone"></i><span id="rp-mic-ok" class="hidden absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-white text-[8px] flex items-center justify-center border-2 border-gray-950"><i class="fa-solid fa-check"></i></span></button>
                 <button onclick="saveRedPenAnnotation()"
                     class="flex-1 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-xl font-black py-3 active:scale-95 transition-all shadow-lg shadow-red-600/30">Save
                     Annotation <i class="fa-solid fa-check ml-1"></i></button>
@@ -13838,7 +13846,8 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 delete window.peerAudioDrafts[scriptId];
                 document.getElementById(`eval-audio-preview-${scriptId}`).classList.add('hidden');
                 document.getElementById(`eval-audio-player-${scriptId}`).src = "";
-                document.getElementById(`eval-mic-btn-${scriptId}`).classList.remove('hidden');
+                const _mb = document.getElementById(`eval-mic-btn-${scriptId}`); if (_mb) _mb.classList.remove('hidden');
+                if (typeof window.rpMicRefresh === 'function') window.rpMicRefresh();
             };
 
             // --- NEW CHAT PAGINATION ENGINE ---
@@ -26387,11 +26396,6 @@ YOUR DIRECTIVES:
                             <input type="number" id="marks-${script.id}" placeholder="Max: ${maxMarksForThisSet}" class="w-full px-3 py-3 bg-gray-50 rounded-xl border border-gray-200 font-black text-gray-900 outline-none text-sm focus:border-indigo-400 focus:bg-white transition-all shadow-inner">
                         </div>
                         
-                        <!-- Voice Note Mic Button -->
-                        <button id="eval-mic-btn-${script.id}" onclick="togglePeerAudioRecord('${script.id}')" class="w-11 h-11 bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-500 rounded-xl flex items-center justify-center shadow-sm active:scale-95 transition-all shrink-0" title="Record Voice Note">
-                            <i class="fa-solid fa-microphone text-lg"></i>
-                        </button>
-                        
                         <!-- Submit Button -->
                         <button onclick="submitPeerMarks('${script.id}', '${script.solverMobile}', '${examId}', this)" class="bg-gray-900 hover:bg-black text-white font-black px-5 py-3 rounded-xl active:scale-95 shadow-md text-sm shrink-0 transition-all">Submit</button>
                     </div>
@@ -29405,7 +29409,7 @@ window.initCustomSelects();
 #ae-secure-host,#active-exam-q-images,.ae-proc,.ae-pre,.ae-finish{width:100%;max-width:46rem}
 #active-exam-circle{display:none!important}
 /* header */
-.ae-head{position:sticky;top:0;z-index:40;align-self:stretch;margin:0 -1rem .5rem;padding:max(1.6rem,calc(env(safe-area-inset-top,0px) + .5rem)) 1rem .9rem;background:linear-gradient(var(--bg) 76%,rgba(12,17,24,0))}
+.ae-head{position:sticky;top:0;z-index:40;align-self:stretch;margin:0 -1rem .5rem;padding:calc(env(safe-area-inset-top,0px) + .45rem) 1rem .6rem;background:linear-gradient(var(--bg) 76%,rgba(12,17,24,0))}
 .ae-head .hidden{display:none!important}
 .ae-card{max-width:46rem;margin:0 auto;padding:.8rem .9rem .85rem;border-radius:1.4rem;border:1px solid var(--ln);background:linear-gradient(180deg,color-mix(in srgb,var(--ac) 9%,var(--s1)),var(--s1));box-shadow:0 12px 32px rgba(0,0,0,.38)}
 .ae-top{display:flex;align-items:center;justify-content:space-between;gap:.9rem}
@@ -29502,10 +29506,10 @@ window.initCustomSelects();
 .ae-cov-box button{width:100%;padding:.85rem 1rem;border-radius:.85rem;background:var(--ac);color:#0b1020;font-weight:800;font-size:.9rem}
 .ae-cov-hint{display:none;margin-top:.8rem;font-size:.72rem;line-height:1.5;color:var(--mut)}
 #ae-viewer{z-index:132;flex-direction:column;background:rgba(6,9,14,.98)}
-.ae-v-bar{display:flex;align-items:center;justify-content:space-between;padding:max(2rem,calc(env(safe-area-inset-top,0px) + .6rem)) 1rem .6rem}
+.ae-v-bar{position:absolute;top:0;right:0;z-index:5;display:flex;justify-content:flex-end;padding:calc(env(safe-area-inset-top,0px) + .6rem) .75rem 0;pointer-events:none}
 .ae-v-z{min-width:3rem;font-size:.78rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--mut)}
-.ae-v-btns{display:flex;gap:.45rem}
-.ae-v-btns button{width:2.4rem;height:2.4rem;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.1);color:#fff;font-size:.85rem}
+.ae-v-btns{display:flex;gap:.45rem;pointer-events:auto}
+.ae-v-btns button{width:2.4rem;height:2.4rem;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.22);color:#fff;font-size:.85rem}
 .ae-v-body{position:relative;flex:1;overflow:hidden;touch-action:none;overscroll-behavior:contain;cursor:grab;-webkit-user-select:none;user-select:none}
 .ae-v-body.drag{cursor:grabbing}
 .ae-v-body canvas{position:absolute;left:0;top:0;display:block;max-width:none;transform-origin:0 0;will-change:transform}
@@ -29551,8 +29555,6 @@ window.initCustomSelects();
 .ae-prog{height:5px}
 .ae-prog i,.ae-prog i.warn,.ae-prog i.crit{background:linear-gradient(90deg,color-mix(in srgb,var(--tone) 55%,transparent),var(--tone));box-shadow:0 0 12px color-mix(in srgb,var(--tone) 60%,transparent);transition:width .8s linear,background .5s,box-shadow .5s}
 @media(max-width:380px){.ae-clock{gap:.45rem;padding:.4rem .7rem .4rem .6rem}}
-/* zoom viewer: close button only */
-.ae-v-bar{justify-content:flex-end}
 
 </style>
 
@@ -29820,8 +29822,19 @@ window.initCustomSelects();
         if (e) e.textContent = S.v + '/' + MAX;
         if (h) h.setAttribute('data-lv', S.v >= 4 ? 'hi' : (S.v >= 1 ? 'mid' : ''));
     }
+    /* alerts survive a reload: saved per student + exam in localStorage, cleared once the exam is submitted */
+    function aKey(id) { return 'ae_alerts:' + String(window.loggedInMobile || '') + ':' + id; }
+    function aSave(id, v) { if (id == null) return; try { localStorage.setItem(aKey(id), JSON.stringify({ v: v, t: Date.now() })); } catch (x) { } }
+    function aLoad(id) {
+        try {
+            var r = JSON.parse(localStorage.getItem(aKey(id)) || 'null');
+            if (r && Date.now() - r.t < 12 * 3600 * 1000) return Math.min(MAX, Math.max(0, r.v | 0));
+        } catch (x) { }
+        return 0;
+    }
+    function aClear(id) { if (id == null) return; try { localStorage.removeItem(aKey(id)); } catch (x) { } }
     function strike() {
-        S.v++; updViol();
+        S.v++; updViol(); aSave(S.examId, S.v);
         if (S.v >= MAX && !S.ending) { S.ending = true; setTimeout(forceEnd, 2600); }
     }
     function forceEnd() {
@@ -29853,7 +29866,10 @@ window.initCustomSelects();
             items.push({ url: im.getAttribute('src'), label: sp ? sp.textContent : 'Question' });
         });
         q.innerHTML = '';
-        if (id !== S.examId) { S.examId = id; S.v = 0; S.camOff = false; S.covered = false; S.ending = false; updViol(); }
+        if (id !== S.examId) {
+            S.examId = id; S.v = aLoad(id); S.camOff = false; S.covered = false; S.ending = false; updViol();
+            if (S.v >= MAX) { S.ending = true; setTimeout(forceEnd, 2600); }
+        }
         var sig = items.map(function (i) { return i.url; }).join('|');
         if (sig !== S.sig) { S.sig = sig; S.items = items; wipe(); }
         var t = T();
@@ -29905,6 +29921,20 @@ window.initCustomSelects();
         bar.style.width = (mini.style.display === 'none' ? 0 : pct) + '%'; bar.className = cls; mini.className = 'ae-mini ' + cls;
         sync();
     }, 500);
+
+    var tries2 = 0, iv2 = setInterval(function () {
+        var o = window.submitFromActiveExam;
+        if (typeof o === 'function' && !o.__ae) {
+            var n = function () {
+                var e = exam(), ok = !!e && !e.isPaused && !!e.globalStartTime, id = S.examId != null ? S.examId : window.activeExamId;
+                var r = o.apply(this, arguments);
+                if (ok) { aClear(id); S.examId = null; S.v = 0; updViol(); }
+                return r;
+            };
+            n.__ae = 1; window.submitFromActiveExam = n; clearInterval(iv2);
+        }
+        if (++tries2 > 200) clearInterval(iv2);
+    }, 300);
 
     var tries = 0, iv = setInterval(function () {
         if (typeof window.renderActiveExam === 'function' && !window.renderActiveExam.__ae) {
@@ -30010,6 +30040,80 @@ window.initCustomSelects();
         running: function (id) { return !!(P.api && P.want && window.jitsiApi === P.api && P.room === roomFor(id)); },
         reset: function () { if (P.want || P.api) stop(); }
     };
+})();
+</script>
+
+<script id="rp-mic-js">
+/* Red pen room: voice note mic (saved for the paper being marked; the card keeps the player + delete) */
+(function () {
+    var $ = function (i) { return document.getElementById(i); };
+    var rec = null, chunks = [], stream = null, recFor = null;
+    function sid() { return window.currentAnnotationData && window.currentAnnotationData.scriptId; }
+    function paint(state) {
+        var b = $('rp-mic-btn'), ic = $('rp-mic-ic'), ok = $('rp-mic-ok'); if (!b) return;
+        b.className = 'relative w-12 h-12 shrink-0 rounded-xl flex items-center justify-center active:scale-95 transition-all ' +
+            (state === 'rec' ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-800 text-white');
+        ic.className = 'fa-solid ' + (state === 'rec' ? 'fa-stop' : 'fa-microphone');
+        ok.classList.toggle('hidden', state !== 'done');
+        b.title = state === 'rec' ? 'Stop recording' : (state === 'done' ? 'Voice note saved. Tap to record again' : 'Record voice note');
+    }
+    function voice(show, src) {
+        var box = $('rp-voice'), pl = $('rp-voice-player'); if (!box || !pl) return;
+        if (show) { if (src && pl.getAttribute('data-src') !== src) { pl.src = src; pl.setAttribute('data-src', src); } box.classList.remove('hidden'); }
+        else { try { pl.pause(); } catch (e) { } pl.removeAttribute('src'); pl.removeAttribute('data-src'); pl.load(); box.classList.add('hidden'); }
+    }
+    window.rpMicRefresh = function () {
+        var id = sid(), d = id && window.peerAudioDrafts && window.peerAudioDrafts[id];
+        voice(!!d, d);
+        if (rec && rec.state === 'recording') return paint('rec');
+        paint(d ? 'done' : 'idle');
+    };
+    window.rpDeleteVoice = function () {
+        var id = sid(); if (!id) return;
+        if (typeof window.deletePeerAudio === 'function') { try { window.deletePeerAudio(id); } catch (e) { delete window.peerAudioDrafts[id]; } }
+        else if (window.peerAudioDrafts) delete window.peerAudioDrafts[id];
+        window.rpMicRefresh();
+    };
+    function release() { try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { } stream = null; }
+    function stop() { if (rec && rec.state === 'recording') { try { rec.stop(); } catch (e) { } } }
+    window.rpToggleMic = async function () {
+        if (rec && rec.state === 'recording') { stop(); return; }
+        var id = sid(); if (id === null || id === undefined) return;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            try { var pp = $('rp-voice-player'); if (pp) pp.pause(); } catch (e) { }
+            rec = new MediaRecorder(stream); chunks = []; recFor = id;
+            rec.ondataavailable = function (e) { if (e.data && e.data.size > 0) chunks.push(e.data); };
+            rec.onstop = function () {
+                var forId = recFor, blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+                release(); paint('idle');
+                if (!blob.size) return;
+                var r = new FileReader(); r.readAsDataURL(blob);
+                r.onloadend = function () {
+                    window.peerAudioDrafts = window.peerAudioDrafts || {};
+                    window.peerAudioDrafts[forId] = r.result;
+                    var pl = $('eval-audio-player-' + forId), pv = $('eval-audio-preview-' + forId);
+                    if (pl) pl.src = URL.createObjectURL(blob); if (pv) pv.classList.remove('hidden');
+                    if (sid() === forId) window.rpMicRefresh();
+                    if (typeof window.showToast === 'function') window.showToast('Saved', 'Voice note recorded.', 'success');
+                };
+            };
+            rec.start(); paint('rec');
+        } catch (err) {
+            release(); paint('idle');
+            if (typeof window.showCustomAlert === 'function') window.showCustomAlert('Notice', 'Microphone access denied. Please allow mic permissions.', 'info');
+        }
+    };
+    function watch() {
+        var m = $('red-pen-modal'); if (!m) return setTimeout(watch, 500);
+        var was = !m.classList.contains('hidden-view');
+        new MutationObserver(function () {
+            var now = !m.classList.contains('hidden-view');
+            if (now === was) return; was = now;
+            if (now) window.rpMicRefresh(); else { stop(); try { var pp = $('rp-voice-player'); if (pp) pp.pause(); } catch (e) { } }   /* closing the room finishes the recording */
+        }).observe(m, { attributes: true, attributeFilter: ['class'] });
+    }
+    watch();
 })();
 </script>
 </body>
