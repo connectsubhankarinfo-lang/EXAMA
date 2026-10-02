@@ -5843,7 +5843,7 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                                     </div>
                                     <div
                                         class="text-indigo-400 bg-white/70 backdrop-blur-md w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shadow-sm border border-white hover:rotate-180 transition-transform duration-500 cursor-pointer">
-                                        <i class="fa-solid fa-rotate text-xs sm:text-sm"></i></div>
+                                        <i class="fa-solid fa-wallet text-xs sm:text-sm" onclick="event.stopPropagation();window.openWallet&&window.openWallet()" aria-label="Wallet" style="padding:12px;margin:-12px;cursor:pointer"></i></div>
                                 </div>
 
                                 <!-- 3-Column Main Stats (Restored Landscape Style & Enhanced Aesthetics) -->
@@ -10947,7 +10947,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
 
 
             import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
-            import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion, enableIndexedDbPersistence, limit, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+            import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion, enableIndexedDbPersistence, limit, getDoc, writeBatch, runTransaction as fsRunTransaction, startAfter } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
             // 🔥 NEW AUTH IMPORTS
             import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
             import { getDatabase, ref, set, get, push, update, remove, onValue, off, onDisconnect, query as rtdbQuery, orderByChild, limitToLast, endBefore, serverTimestamp as rtdbServerTimestamp, child, runTransaction } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
@@ -20566,7 +20566,7 @@ window.rtJoin=function(k){const r=others[k];if(!r||S().st!=='idle')return;group=
 const syncLock=()=>{const a=$('rt-lock-km'),d=$('rt-dist'),b=$('rt-lock-time'),c=$('rt-time');if(a&&d)a.textContent=d.textContent;if(b&&c)b.textContent=c.textContent;};
 const ol=window.lockRunTracker,ou=window.unlockRunTracker;
 window.lockRunTracker=function(){ol();syncLock();try{if(S().locked){if(window.AppFS)window.AppFS.request('run');if(screen.orientation&&screen.orientation.lock)screen.orientation.lock('portrait').catch(function(){});}}catch(e){}if(S().locked&&!trap){trap=1;try{history.pushState({rtlock:1},'',location.href);}catch(e){}}};
-window.unlockRunTracker=function(){ou();try{if(screen.orientation&&screen.orientation.unlock)screen.orientation.unlock();}catch(e){}if(trap){trap=0;ignore++;try{history.back();}catch(e){}}};
+window.unlockRunTracker=function(){ou();if(trap){trap=0;ignore++;try{history.back();}catch(e){}}};
 window.addEventListener('popstate',e=>{if(ignore>0){ignore--;return;}if(S().locked){try{history.pushState({rtlock:1},'',location.href);}catch(x){}try{e.stopImmediatePropagation();}catch(x){}}},true);
 const sb=window.safeBack;if(sb)window.safeBack=function(){if(S().locked)return;const v=$('run-tracker');if(v&&!v.classList.contains('hidden')){window.closeRunTracker();return;}return sb.apply(this,arguments);};
 // keep fullscreen while locked (re-assert if the app comes back from background / bars reappear)
@@ -20729,6 +20729,205 @@ window.stopRunTracker = async function () {
     if (m >= 100 && sec >= 30 && m / sec <= 6.5) { const km = m / 1000; setTimeout(() => open({ km: km.toFixed(2), time: mmss(sec), pace: mmss(sec / km), cal: String(Math.round(km * 60)), segs: segs, name: String((st && st.name) || 'RUNNER').toUpperCase(), date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase() }), 450); }
     return r;
 };
+})();
+
+;(function(){
+// ===== RUN SCREEN: always fullscreen + portrait while it is open =====
+const tr=document.getElementById('run-tracker'); if(!tr) return;
+let on=false,t1=null,t2=null;
+const lockP=()=>{try{if(screen.orientation&&screen.orientation.lock)screen.orientation.lock('portrait').catch(function(){});}catch(e){}};
+const keep=()=>{if(!on||document.hidden)return;try{if(window.AppFS)window.AppFS.request('run');}catch(e){}lockP();};
+const sync=()=>{const open=!tr.classList.contains('hidden');if(open===on)return;on=open;clearTimeout(t1);clearTimeout(t2);
+ if(open){keep();t1=setTimeout(keep,400);t2=setTimeout(keep,1500);}   /* some browsers only accept the lock once fullscreen is active, so retry */
+ else{try{if(screen.orientation&&screen.orientation.unlock)screen.orientation.unlock();}catch(e){}}};
+if(window.MutationObserver)new MutationObserver(sync).observe(tr,{attributes:true,attributeFilter:['class']});
+window.addEventListener('orientationchange',keep);window.addEventListener('resize',keep);
+document.addEventListener('visibilitychange',keep);
+sync();
+})();
+;(function () {
+// ===== EXAMA WALLET: coins for goals / exams, PIN protected, loads only when opened =====
+const $ = id => document.getElementById(id), me = () => String(window.loggedInMobile || ''), COL = n => window.getCollectionName(n);
+const esc = x => window.escHtml ? window.escHtml(x) : String(x), fd = d => window.formatDateDDMMYYYY(d);
+const dk = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const pk = k => { const a = k.split('-'); return new Date(+a[0], +a[1] - 1, +a[2]); };
+const stu = () => (window.studentsDB || []).find(s => String(s.mobile) === me()) || {};
+const wRef = () => doc(db, COL('wallets'), me());
+const LSD = () => 'exama_walk_' + me();
+const done = () => { try { return JSON.parse(localStorage.getItem(LSD()) || '[]'); } catch (e) { return []; } };
+const mark = k => { try { const a = done(); if (a.indexOf(k) < 0) { a.push(k); localStorage.setItem(LSD(), JSON.stringify(a.slice(-400))); } } catch (e) { } };
+// One coin entry, exactly once (entry id = key, checked inside a transaction). Balance never goes below 0.
+async function award(key, amount, title, date) {
+    if (done().indexOf(key) > -1) return;
+    const tRef = doc(db, COL('wallets'), me(), 'tx', key);
+    await fsRunTransaction(db, async t => {
+        const e = await t.get(tRef); if (e.exists()) return;
+        const w = await t.get(wRef()), bal = w.exists() ? (w.data().balance || 0) : 0, nb = bal + amount;   // can go below 0
+        t.set(tRef, { key: key, amount: nb - bal, title: title, date: date || '', ts: Date.now() });
+        t.set(wRef(), { balance: nb, mobile: me(), updatedAt: Date.now() }, { merge: true });
+    });
+    mark(key);
+}
+// ---------- PAST DATA: one-time backfill (oldest day -> yesterday), same rules as the daily check ----------
+const PAST_PENALTIES = true;   // false = past days only give coins and never take any away
+const pd = s => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || ''); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
+async function backfill(w, tk, yest) {
+    const s = stu(), endD = w.since ? new Date(pk(w.since).getTime() - 864e5) : yest, E = [], fit = {};
+    (await getDocs(query(collection(db, COL('fitness_logs')), where('mobile', '==', me())))).forEach(x => { const l = x.data(); if (!l.isAbsent) fit[l.date] = (fit[l.date] || 0) + (parseFloat(l.distance) || 0); });
+    const ses = (window.sessionsDB || []).filter(x => String(x.mobile) === me()), R = window.getComputedResults ? window.getComputedResults() : [], exs = []; let start = null;
+    const see = d => { if (d && (!start || d < start)) start = d; };
+    Object.keys(fit).forEach(k => see(pd(k))); ses.forEach(x => see(pd(x.dateStr)));
+    R.filter(r => String(r.mobile) === me()).forEach(r => { const ex = (window.examsDB || []).find(e => e.id === r.examId), d = ex && pd(ex.date); if (!ex || !ex.isEnded || ['quiz', 'auto-quiz', 'anytime'].indexOf(ex.examType) > -1 || !d || d > endD) return; see(d); exs.push([r, ex, d]); });
+    if (start) {
+        const goal = (parseFloat(s.targetFitnessKm) || 0) / 7, tp = parseFloat(s.targetPercentage) || 0;
+        for (let d = new Date(Math.max(start.getTime(), endD.getTime() - 400 * 864e5)); d <= endD; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+            const ds = fd(d), k = dk(d), ts = d.getTime() + 864e5 - 1000;
+            if (goal > 0) { if ((fit[ds] || 0) >= goal - 0.001) E.push({ key: 'run_' + k, amount: 5, title: 'Run goal completed', date: ds, ts: ts }); else if (PAST_PENALTIES) E.push({ key: 'runmiss_' + k, amount: -10, title: 'Missed run goal', date: ds, ts: ts }); }
+            const full = ses.filter(x => x.dateStr === ds && (x.totalStudyMs || 0) >= 14400000 - 60000);
+            full.forEach(x => E.push({ key: 'study_' + k + '_' + String(x.sessionType || 's').split(' ')[0], amount: 5, title: (x.sessionType || 'Study') + ' session (4h) done', date: ds, ts: ts }));
+            if (!full.length && PAST_PENALTIES) E.push({ key: 'studymiss_' + k, amount: -10, title: 'Missed study target', date: ds, ts: ts });
+        }
+        exs.forEach(a => { const r = a[0], ex = a[1], ts = a[2].getTime() + 864e5 - 500;
+            if (r.status === 'FAIL') { if (PAST_PENALTIES) E.push({ key: 'examfail_' + ex.id, amount: -10, title: 'Failed exam: ' + ex.name, date: ex.date, ts: ts }); }
+            else if (r.status === 'PASS') {
+                if (tp > 0 && r.percentage >= tp) E.push({ key: 'examscore_' + ex.id, amount: 5, title: 'Score target hit: ' + ex.name, date: ex.date, ts: ts });
+                const all = R.filter(x => x.examId === ex.id);
+                if (all.length > 1 && !all.some(x => x.status === 'EVALUATING') && r.percentage >= Math.max.apply(null, all.filter(x => x.status === 'PASS').map(x => x.percentage))) E.push({ key: 'examtop_' + ex.id, amount: 5, title: 'Exam topper: ' + ex.name, date: ex.date, ts: ts + 1 });
+            } });
+    }
+    const have = {}; let sum = 0; (await getDocs(collection(db, COL('wallets'), me(), 'tx'))).forEach(d => { have[d.id] = 1; sum += d.data().amount || 0; });
+    let bal = 0; const list = E.filter(e => !have[e.key]).sort((a, b) => a.ts - b.ts); list.forEach(e => { e.applied = e.amount; bal += e.amount; });   // oldest first
+    for (let i = 0; i < list.length; i += 450) { const b = writeBatch(db); list.slice(i, i + 450).forEach(e => b.set(doc(db, COL('wallets'), me(), 'tx', e.key), { key: e.key, amount: e.applied, title: e.title, date: e.date, ts: e.ts, past: true })); await b.commit(); }
+    const nw = { balance: sum + bal, mobile: me(), backfilled: true, since: w.since || tk, evalUpTo: w.evalUpTo || dk(yest), updatedAt: Date.now() };
+    await setDoc(wRef(), nw, { merge: true }); list.forEach(e => mark(e.key));
+    return Object.assign({}, w, nw);
+}
+let busy = false;
+async function evaluate() {
+    if (busy || !isFirebaseConfigured || window.currentRole !== 'student' || !me()) return;
+    const s = stu(); if (!s.mobile || !(window.sessionsDB || []).length) return;   // data not loaded yet: try again later
+    busy = true;
+    try {
+        const now = new Date(), tk = dk(now), yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1), snap = await getDoc(wRef()); let w = snap.exists() ? snap.data() : {};
+        if (!w.backfilled) w = await backfill(w, tk, yest);   // first time: coins for all past data, then carry on from today
+        let last = pk(w.evalUpTo || w.since), n = 0; const lsKey = 'exama_wal_' + me(); let ranToday = false; try { ranToday = localStorage.getItem(lsKey) === tk; } catch (e) { }
+        if (!ranToday) {
+            const first = new Date(Math.max(pk(w.since).getTime(), yest.getTime() - 6 * 864e5));
+            for (let d = new Date(Math.max(first.getTime(), last.getTime() + 864e5)); d <= yest && n < 7; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1), n++) {
+                const ds = fd(d), k = dk(d), goal = (parseFloat(s.targetFitnessKm) || 0) / 7;
+                if (goal > 0) {   // run goal (weekly target / 7), read straight from the database so nothing is missed
+                    const q = await getDocs(query(collection(db, COL('fitness_logs')), where('mobile', '==', me()), where('date', '==', ds)));
+                    let km = 0; q.forEach(x => { const l = x.data(); if (!l.isAbsent) km += parseFloat(l.distance) || 0; });
+                    if (km >= goal - 0.001) await award('run_' + k, 5, 'Run goal completed', ds); else await award('runmiss_' + k, -10, 'Missed run goal', ds);
+                }
+                const ses = (window.sessionsDB || []).filter(x => String(x.mobile) === me() && x.dateStr === ds), full = ses.filter(x => (x.totalStudyMs || 0) >= 14400000 - 60000);
+                for (const x of full) await award('study_' + k + '_' + String(x.sessionType || 's').split(' ')[0], 5, (x.sessionType || 'Study') + ' session (4h) done', ds);
+                if (!full.length) await award('studymiss_' + k, -10, 'Missed study target', ds);
+            }
+            const upto = n ? new Date(Math.min(yest.getTime(), new Date(last.getTime() + 864e5 * n).getTime())) : last;
+            await setDoc(wRef(), { evalUpTo: dk(upto > yest ? yest : upto), updatedAt: Date.now() }, { merge: true }); try { localStorage.setItem(lsKey, tk); } catch (e) { }
+        }
+        // exams (full exams only, not quizzes): fail -10, score target +5, topper +5
+        const R = window.getComputedResults ? window.getComputedResults() : [], lim = Math.max(pk(w.since).getTime(), now.getTime() - 14 * 864e5);
+        if (R.length) R.filter(r => String(r.mobile) === me()).forEach(r => { r._m = 1; });
+        for (const r of R.filter(r => String(r.mobile) === me())) {
+            const ex = (window.examsDB || []).find(e => e.id === r.examId); if (!ex || !ex.isEnded || ['quiz', 'auto-quiz', 'anytime'].indexOf(ex.examType) > -1) continue;
+            const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(ex.date || ''); if (!m || new Date(+m[3], +m[2] - 1, +m[1]).getTime() < lim) continue;
+            if (r.status === 'FAIL') await award('examfail_' + ex.id, -10, 'Failed exam: ' + ex.name, ex.date);
+            else if (r.status === 'PASS') {
+                const tp = parseFloat(s.targetPercentage); if (tp > 0 && r.percentage >= tp) await award('examscore_' + ex.id, 5, 'Score target hit: ' + ex.name, ex.date);
+                const all = R.filter(x => x.examId === ex.id);
+                if (all.length > 1 && !all.some(x => x.status === 'EVALUATING') && r.percentage >= Math.max.apply(null, all.filter(x => x.status === 'PASS').map(x => x.percentage))) await award('examtop_' + ex.id, 5, 'Exam topper: ' + ex.name, ex.date);
+            }
+        }
+    } catch (e) { console.warn('wallet eval', e); }
+    busy = false;
+}
+let tries = 0; const iv = setInterval(() => { if (++tries > 40) return clearInterval(iv); if (window.currentRole === 'student' && me() && (window.sessionsDB || []).length) { clearInterval(iv); setTimeout(evaluate, 8000); } }, 3000);
+
+// ---------- screens (built only when the wallet button is tapped) ----------
+let tries2 = 0, lockUntil = 0, lastDoc = null;
+const SH = 'box-sizing:border-box;position:fixed;inset:0;z-index:150;display:flex;flex-direction:column;align-items:center;color:#fff;background:linear-gradient(160deg,#0b0f1a,#1b1033 60%,#2a0f1c);padding:calc(14px + env(safe-area-inset-top,0px)) 16px calc(14px + env(safe-area-inset-bottom,0px));overflow:hidden';
+const coin = px => '<span style="display:inline-flex;width:' + px + 'px;height:' + px + 'px;border-radius:50%;align-items:center;justify-content:center;background:linear-gradient(145deg,#fde68a,#f59e0b);color:#78350f;font-weight:900;font-size:' + px * .55 + 'px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18),0 4px 14px rgba(245,158,11,.4)">E</span>';
+window.closeWallet = function () { const p = $('wlt'); if (p) p.remove(); lastDoc = null; if (io) { io.disconnect(); io = null; } };
+window.openWallet = function () {
+    window.closeWallet(); ensureCss(); tries2 = 0; const p = document.createElement('div'); p.id = 'wlt'; p.style.cssText = SH; document.body.appendChild(p); pinScreen();
+};
+function pinScreen() {
+    const p = $('wlt'); if (!p) return; let v = '';
+    const pin = me().replace(/\D/g, '').slice(0, 4);
+    p.innerHTML = '<div style="width:100%;max-width:360px;display:flex;justify-content:flex-end"><button type="button" onclick="window.closeWallet()" aria-label="Close" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
+        + '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%;max-width:360px">' + coin(64) + '<div style="font-size:12px;font-weight:900;letter-spacing:.3em;margin-top:8px">WALLET PIN</div><div id="wlt-msg" style="font-size:12px;color:rgba(255,255,255,.55);font-weight:700;height:16px">Enter your 4-digit PIN</div>'
+        + '<div id="wlt-dots" style="display:flex;gap:16px;margin:14px 0 22px">' + [0, 1, 2, 3].map(() => '<i style="width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.5)"></i>').join('') + '</div>'
+        + '<div class="wl-pad">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, 'x'].map(k => k === '' ? '<span></span>' : '<button type="button" class="wl-k" data-k="' + k + '">' + (k === 'x' ? '<i class="fa-solid fa-delete-left" style="font-size:20px"></i>' : k) + '</button>').join('') + '</div></div>';
+    const paint = () => { p.querySelectorAll('#wlt-dots i').forEach((d, i) => { d.style.background = i < v.length ? '#fff' : 'transparent'; }); };
+    p.addEventListener('click', e => {
+        const b = e.target.closest('[data-k]'); if (!b) return; const k = b.getAttribute('data-k'), msg = $('wlt-msg');
+        if (Date.now() < lockUntil) { if (msg) msg.textContent = 'Too many tries. Wait ' + Math.ceil((lockUntil - Date.now()) / 1000) + 's'; return; }
+        if (k === 'x') v = v.slice(0, -1); else if (v.length < 4) v += k; paint();
+        if (v.length === 4) {
+            if (pin.length === 4 && v === pin) return showWallet();
+            tries2++; v = ''; try { navigator.vibrate && navigator.vibrate(120); } catch (x) { }
+            const d = $('wlt-dots'); if (d && d.animate) d.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-12px)' }, { transform: 'translateX(12px)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(0)' }], { duration: 320 });
+            if (tries2 >= 5) { lockUntil = Date.now() + 30000; tries2 = 0; if (msg) msg.textContent = 'Too many tries. Wait 30s'; } else if (msg) msg.textContent = 'Wrong PIN, try again';
+            setTimeout(paint, 330);
+        }
+    });
+}
+const when = ts => { const d = new Date(ts); return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' · ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); };
+const row = x => { const pos = x.amount >= 0; return '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.06);margin-bottom:8px"><span style="width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;background:' + (pos ? 'rgba(52,211,153,.18)' : 'rgba(251,113,133,.18)') + ';color:' + (pos ? '#34d399' : '#fb7185') + '"><i class="fa-solid ' + (pos ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down') + '"></i></span><div style="min-width:0;flex:1"><div class="truncate" style="font-size:13px;font-weight:800">' + esc(x.title || '') + '</div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.45);margin-top:2px">' + esc(when(x.ts || 0)) + '</div></div><div style="font-size:16px;font-weight:900;color:' + (pos ? '#34d399' : '#fb7185') + '">' + (pos ? '+' : '') + x.amount + '</div></div>'; };
+const PAGE = 6; let mb = false, hDone = false, io = null, rankDone = false;
+const CSS = '.wl-head{width:100%;max-width:440px;display:flex;align-items:center;justify-content:space-between;flex:none}.wl-wrap{width:100%;max-width:440px;flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;margin-top:16px}.wl-left{flex:none}.wl-right{flex:1;min-height:0;display:flex;flex-direction:column;min-width:0}.wl-pane{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}'
+    + '.wl-pad{display:grid;grid-template-columns:repeat(3,76px);gap:14px}.wl-k{height:76px;border-radius:50%;background:rgba(255,255,255,.1);color:#fff;font-size:26px;font-weight:800;touch-action:manipulation}.wl-k:active{background:rgba(255,255,255,.25)}'
+    + '@media (min-width:768px){.wl-head,.wl-wrap{max-width:1000px}.wl-wrap{flex-direction:row;gap:28px}.wl-left{width:340px}.wl-pad{grid-template-columns:repeat(3,96px);gap:20px}.wl-k{height:96px;font-size:32px}}'
+    + '@media (orientation:landscape) and (max-height:540px){.wl-head,.wl-wrap{max-width:900px}.wl-wrap{flex-direction:row;gap:16px;margin-top:8px}.wl-left{width:260px}.wl-pad{grid-template-columns:repeat(3,56px);gap:10px}.wl-k{height:56px;font-size:20px}}';
+const ensureCss = () => { if (!$('wlt-css')) { const s = document.createElement('style'); s.id = 'wlt-css'; s.textContent = CSS; document.head.appendChild(s); } };
+async function more() { if (mb) return; mb = true; try { await moreRun(); } finally { mb = false; } }
+async function moreRun() {
+    const rows = $('wlt-rows'); if (!rows || hDone) return;
+    try {
+        const q = lastDoc ? query(collection(db, COL('wallets'), me(), 'tx'), orderBy('ts', 'desc'), startAfter(lastDoc), limit(PAGE)) : query(collection(db, COL('wallets'), me(), 'tx'), orderBy('ts', 'desc'), limit(PAGE));
+        const sn = await getDocs(q); if (!lastDoc) rows.innerHTML = '';
+        sn.forEach(d => { rows.insertAdjacentHTML('beforeend', row(d.data())); }); if (sn.docs.length) lastDoc = sn.docs[sn.docs.length - 1];
+        if (sn.docs.length < PAGE) hDone = true;
+        if (!rows.children.length) rows.innerHTML = '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">No coins yet. Complete your goals to earn.</p>';
+    } catch (e) { if (!rows.children.length || !lastDoc) rows.innerHTML = '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Could not load history. Check your internet.</p>'; hDone = true; }
+    if (io && !hDone) { const e = $('wlt-end'); if (e) { io.unobserve(e); io.observe(e); } }   // still visible (big screens)? load the next 6
+}
+const rkRow = (x, i, mine, lab) => { const nm = x.name || 'Student', col = i < 3 ? ['#fcd34d', '#e2e8f0', '#fdba74'][i] : 'rgba(255,255,255,.45)', u = (window.getStudentAvatar && window.getStudentAvatar(x.mobile, nm)) || '';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:16px;margin-bottom:8px;background:' + (mine ? 'rgba(245,158,11,.18)' : 'rgba(255,255,255,.06)') + ';' + (mine ? 'border:1px solid rgba(245,158,11,.5)' : '') + '"><span style="width:34px;text-align:center;font-weight:900;font-size:' + (lab ? 12 : 15) + 'px;color:' + col + '">' + (lab || (i + 1)) + '</span>'
+        + (u ? '<img alt="" src="' + esc(u) + '" onerror="this.style.visibility=\'hidden\'" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex:none;background:#27272a">' : '<span style="width:38px;height:38px;flex:none"></span>')
+        + '<div class="truncate" style="min-width:0;flex:1;font-size:13px;font-weight:800">' + esc(nm) + (mine ? ' (You)' : '') + '</div><div style="font-size:16px;font-weight:900;color:' + (x.balance < 0 ? '#fb7185' : '#fcd34d') + '">' + x.balance + '</div></div>'; };
+async function loadRank() {
+    const box = $('wlt-rank'); if (!box) return; box.innerHTML = '<p style="text-align:center;padding:40px;color:rgba(255,255,255,.4);font-size:12px;font-weight:800">Loading...</p>';
+    try {
+        const sn = await getDocs(query(collection(db, COL('wallets')), orderBy('balance', 'desc'), limit(50))), L = [];
+        sn.forEach(d => { const w = d.data(), s = (window.studentsDB || []).find(z => String(z.mobile) === String(w.mobile || d.id)); L.push({ mobile: String(w.mobile || d.id), name: s ? s.name : 'Student ' + String(w.mobile || d.id).slice(-4), balance: w.balance || 0 }); });
+        let h = L.map((x, i) => rkRow(x, i, x.mobile === me())).join('');
+        if (L.length && !L.some(x => x.mobile === me())) { const s = stu(); h += '<div style="text-align:center;font-size:10px;color:rgba(255,255,255,.35);margin:4px 0 8px">· · ·</div>' + rkRow({ mobile: me(), name: s.name || 'You', balance: +(($('wlt-bal') || {}).textContent) || 0 }, 99, true, '50+'); }
+        box.innerHTML = h || '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">No ranking yet.</p>'; rankDone = true;
+    } catch (e) { box.innerHTML = '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Could not load ranking. Check your internet.</p>'; }
+}
+window.wltTab = function (t) {
+    const h = $('wlt-list'), r = $('wlt-rank'); if (!h || !r) return;
+    h.style.display = t === 'h' ? '' : 'none'; r.style.display = t === 'r' ? '' : 'none';
+    document.querySelectorAll('#wlt [data-tab]').forEach(b => { const on = b.getAttribute('data-tab') === t; b.style.background = on ? '#fff' : 'rgba(255,255,255,.12)'; b.style.color = on ? '#09090b' : '#fff'; });
+    if (t === 'r' && !rankDone) loadRank();   // ranking is only fetched when its tab is tapped
+};
+async function showWallet() {
+    const p = $('wlt'); if (!p) return; lastDoc = null; hDone = false; rankDone = false; mb = false; if (io) { io.disconnect(); io = null; }
+    const tb = 'height:36px;padding:0 20px;border-radius:99px;font-size:10px;font-weight:900;letter-spacing:.2em;';
+    p.innerHTML = '<div class="wl-head"><span style="font-size:11px;font-weight:900;letter-spacing:.35em">MY WALLET</span><button type="button" onclick="window.closeWallet()" aria-label="Close" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
+        + '<div class="wl-wrap"><div class="wl-left"><div style="padding:24px 20px;box-sizing:border-box;border-radius:26px;text-align:center;background:linear-gradient(135deg,rgba(245,158,11,.22),rgba(244,63,94,.18));border:1px solid rgba(255,255,255,.12)"><div style="display:flex;align-items:center;justify-content:center;gap:12px">' + coin(46) + '<span id="wlt-bal" style="font-size:56px;font-weight:900;font-style:italic;line-height:1">--</span></div><div style="font-size:11px;font-weight:900;letter-spacing:.3em;margin-top:12px;color:#fcd34d">EXAMA COINS</div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.5);margin-top:6px">+5 goal done · −10 goal missed · can go below 0 · cannot be withdrawn</div></div></div>'
+        + '<div class="wl-right"><div style="display:flex;gap:8px;margin-bottom:10px"><button type="button" data-tab="h" onclick="window.wltTab(\'h\')" style="' + tb + 'background:#fff;color:#09090b">HISTORY</button><button type="button" data-tab="r" onclick="window.wltTab(\'r\')" style="' + tb + 'background:rgba(255,255,255,.12);color:#fff">RANKING</button></div>'
+        + '<div id="wlt-list" class="wl-pane"><div id="wlt-rows"><p style="text-align:center;padding:40px;color:rgba(255,255,255,.4);font-size:12px;font-weight:800">Loading...</p></div><div id="wlt-end" style="height:2px"></div></div><div id="wlt-rank" class="wl-pane" style="display:none"></div></div></div>';
+    if (!isFirebaseConfigured) { $('wlt-rows').innerHTML = '<p style="text-align:center;padding:40px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Wallet needs the online database.</p>'; $('wlt-bal').textContent = '0'; return; }
+    if (window.IntersectionObserver) { io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(); }, { root: $('wlt-list'), rootMargin: '0px 0px 120px 0px' }); io.observe($('wlt-end')); }   // auto-loads the next 6 when you reach the bottom
+    evaluate().catch(() => { }).then(async () => {
+        try { const w = await getDoc(wRef()), bal = w.exists() ? (w.data().balance || 0) : 0, el = $('wlt-bal'); if (el) { el.style.color = bal < 0 ? '#fb7185' : '#fff'; let i = 0; const sg = bal < 0 ? -1 : 1, st = Math.max(1, Math.ceil(Math.abs(bal) / 18)), t = setInterval(() => { i = Math.min(Math.abs(bal), Math.abs(i) + st) * sg; if ($('wlt-bal')) $('wlt-bal').textContent = i; if (Math.abs(i) >= Math.abs(bal)) clearInterval(t); }, 28); if (!bal) el.textContent = '0'; } } catch (e) { const el = $('wlt-bal'); if (el) el.textContent = '?'; }
+    });
+    more();
+}
 })();
 // ===== RUN TRACKER END =====
             // Auto-Penalty for missed fitness days
