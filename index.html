@@ -20777,6 +20777,7 @@ async function award(key, amount, title, date, quiet) {
         const w = await t.get(wRef()), bal = w.exists() ? (w.data().balance || 0) : 0, nb = bal + amount;   // can go below 0
         t.set(tRef, { key: key, amount: nb - bal, title: title, date: date || '', ts: Date.now() });
         t.set(wRef(), { balance: nb, mobile: me(), updatedAt: Date.now() }, { merge: true });
+        window.__wltBalance = nb;
         return 1;
     });
     mark(key); if (made && !quiet && nonZero(amount)) PQ.push({ amount: amount, title: title });
@@ -20832,7 +20833,7 @@ async function evaluate() {
     const s = stu(); if (!s.mobile || !(window.sessionsDB || []).length) return;   // data not loaded yet: try again later
     busy = true;
     try {
-        const now = new Date(), tk = dk(now), yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1), snap = await getDoc(wRef()); let w = snap.exists() ? snap.data() : {};
+        const now = new Date(), tk = dk(now), yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1), snap = await getDoc(wRef()); let w = snap.exists() ? snap.data() : {}; window.__wltBalance = w.balance || 0;
         if (!w.backfilled) w = await backfill(w, tk, yest);   // first time: coins for all past data, then carry on from today
         if (!w.sunFix) await sundayFix();
         let last = pk(w.evalUpTo || w.since), n = 0; const lsKey = 'exama_wal_' + me(); let ranToday = false; try { ranToday = localStorage.getItem(lsKey) === tk; } catch (e) { }
@@ -21046,7 +21047,7 @@ window.wltRank = function () { if (!isFirebaseConfigured) return; ov(head('windo
 window.wltOpenProfile = function (m) { m = String(m || ''); if (!m) return; window.closeWallet(); setTimeout(function () { if (typeof window.showStudentStats === 'function') window.showStudentStats(m); }, 80); };
 window.wltRules = function (v) { const r = $('wlt-rules'), bt = $('wlt-rbtn'); if (!r || !bt) return; const on = v === undefined ? !r.classList.contains('open') : !!v; r.classList.toggle('open', on); bt.classList.toggle('on', on); bt.setAttribute('aria-expanded', on ? 'true' : 'false'); r.setAttribute('aria-hidden', on ? 'false' : 'true'); };
 window.wltFlip = function (b) { if (b) window.wltRules(0); const f = $('wlt-flip'); if (!f) return; f.classList.toggle('flip', !!b); $('wlt-front').style.pointerEvents = b ? 'none' : ''; $('wlt-back').style.pointerEvents = b ? '' : 'none'; };
-const setBal = n => { curBal = n; const el = $('wlt-bal'); if (el) { el.textContent = n; el.style.color = n < 0 ? '#fb7185' : '#fff'; } };
+const setBal = n => { curBal = n; window.__wltBalance = n; const el = $('wlt-bal'); if (el) { el.textContent = n; el.style.color = n < 0 ? '#fb7185' : '#fff'; } };
 // ---------- send coins: scan -> amount -> PIN -> receipt ----------
 window.wltScan = async function () {
     ov(head('window.wltOvBack()', 'SCAN &amp; PAY') + '<div class="wl-scan"><video id="wlt-vid" playsinline muted></video><div class="wl-fr"><i></i><i></i><i></i><i></i><b></b></div></div><div id="wlt-sm" class="wl-sm">Point the camera at a friend\'s Exama wallet QR</div><div class="wl-alt"><label class="wl-lnk"><i class="fa-regular fa-image"></i>From photo<input id="wlt-file" type="file" accept="image/*" hidden></label><button type="button" class="wl-lnk" onclick="window.wltManual()"><i class="fa-solid fa-keyboard"></i>Enter number</button></div>');
@@ -21075,7 +21076,7 @@ async function payScreen(peer) {
     const upd = () => { const n = +a || 0, pm = $('wlt-pm'), b = $('wlt-pay'); if (!pm) return; $('wlt-amt').textContent = a || '0'; pm.textContent = n > curBal ? 'Balance now ' + curBal + ' · after paying ' + (curBal - n) : 'Balance: ' + curBal + ' coins'; pm.style.color = n > curBal ? '#fcd34d' : 'rgba(255,255,255,.5)'; b.disabled = !(n > 0); };
     o.addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (!b) return; const k = b.getAttribute('data-k'); if (k === 'x') a = a.slice(0, -1); else if (a.length < 6) a = (a + k).replace(/^0+/, ''); upd(); });
     $('wlt-pay').onclick = () => pinStep(peer, +a); upd();
-    try { const w = await getDoc(wRef()); curBal = w.exists() ? (w.data().balance || 0) : 0; upd(); } catch (e) { }
+    try { const w = await getDoc(wRef()); curBal = w.exists() ? (w.data().balance || 0) : 0; window.__wltBalance = curBal; upd(); } catch (e) { }
 }
 function pinStep(peer, n) {
     const o = ov(head(`window.wltPayBack()`, 'CONFIRM') + `<div class="wl-mid wl-pinbox">${coin(56)}<div style="font-size:12px;font-weight:900;letter-spacing:.3em;margin-top:6px">ENTER PIN</div><div id="wlt-msg" style="font-size:12px;color:rgba(255,255,255,.55);font-weight:700;min-height:16px">Paying ${n} coins to ${esc(peer.name)}</div>${dotsH}${padH()}</div>`);
@@ -21120,7 +21121,7 @@ async function showWallet() {
     if (!isFirebaseConfigured) { $('wlt-rows').innerHTML = '<p style="text-align:center;padding:40px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Wallet needs the online database.</p>'; $('wlt-bal').textContent = '0'; return; }
     if (window.IntersectionObserver) { io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(); }, { root: $('wlt-list'), rootMargin: '0px 0px 120px 0px' }); io.observe($('wlt-end')); }
     evaluate().catch(() => { }).then(async () => {
-        try { const w = await getDoc(wRef()), bal = w.exists() ? (w.data().balance || 0) : 0, el = $('wlt-bal'); curBal = bal; if (el) { el.style.color = bal < 0 ? '#fb7185' : '#fff'; let i = 0; const sg = bal < 0 ? -1 : 1, st = Math.max(1, Math.ceil(Math.abs(bal) / 18)), t = setInterval(() => { i = Math.min(Math.abs(bal), Math.abs(i) + st) * sg; if ($('wlt-bal')) $('wlt-bal').textContent = i; if (Math.abs(i) >= Math.abs(bal)) clearInterval(t); }, 28); if (!bal) el.textContent = '0'; } } catch (e) { const el = $('wlt-bal'); if (el) el.textContent = '?'; }
+        try { const w = await getDoc(wRef()), bal = w.exists() ? (w.data().balance || 0) : 0, el = $('wlt-bal'); curBal = window.__wltBalance = bal; if (el) { el.style.color = bal < 0 ? '#fb7185' : '#fff'; let i = 0; const sg = bal < 0 ? -1 : 1, st = Math.max(1, Math.ceil(Math.abs(bal) / 18)), t = setInterval(() => { i = Math.min(Math.abs(bal), Math.abs(i) + st) * sg; if ($('wlt-bal')) $('wlt-bal').textContent = i; if (Math.abs(i) >= Math.abs(bal)) clearInterval(t); }, 28); if (!bal) el.textContent = '0'; } } catch (e) { const el = $('wlt-bal'); if (el) el.textContent = '?'; }
     });
     more();
 }
@@ -27291,6 +27292,132 @@ async function showWallet() {
                 }
             };
 
+            // ==========================================================
+            // NOVA DEEP KNOWLEDGE: everything the app knows about THIS student.
+            // Every section is isolated (try/catch) so one bad record can never break Nova.
+            // ==========================================================
+            window.buildNovaDeepProfile = function (student, mobile) {
+                const DAY = 86400000, nowD = new Date();
+                const fmt = ms => window.formatDateDDMMYYYY(new Date(ms));
+                const num = (v, d = 1) => (Number(v) || 0).toFixed(d);
+                const pDate = d => { if (!d || !String(d).includes('/')) return 0; const [dd, mm, yy] = String(d).split('/'); return new Date(`${yy}-${mm}-${dd}T00:00:00`).getTime(); };
+                const sec = (title, fn) => { try { const t = fn(); return t ? `\n=== ${title} ===\n${t}\n` : ''; } catch (e) { console.warn('Nova context section skipped:', title, e); return ''; } };
+                const { mondayMs, sundayMs } = window.getWeeklyRange();
+                const inWeek = t => t >= mondayMs && t <= sundayMs;
+                let out = '';
+
+                out += sec('🕒 RIGHT NOW', () => `${nowD.toLocaleString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit' })}. Current week runs ${fmt(mondayMs)} to ${fmt(sundayMs)} (Monday to Sunday).`);
+
+                out += sec('👤 STUDENT PROFILE (ALL SAVED DETAILS)', () => {
+                    const hide = /pass|pwd|\bpin\b|token|secret|otp|fcm|onesignal|player|device|dpurl|photo|avatar|lastactive|targetpeermobile|^id$/i;
+                    const rows = [];
+                    Object.entries(student).forEach(([k, v]) => {
+                        if (hide.test(k) || v === '' || v == null) return;
+                        if (typeof v === 'number' && v > 1e11 && /(at|time|stamp|date|login|seen)$/i.test(k)) { rows.push(`- ${k}: ${new Date(v).toLocaleString('en-IN')}`); return; }
+                        if (['string', 'number', 'boolean'].includes(typeof v) && String(v).length <= 120) rows.push(`- ${k}: ${v}`);
+                    });
+                    const peer = student.targetPeerMobile ? (window.studentsDB || []).find(s => s.mobile === student.targetPeerMobile) : null;
+                    if (peer) rows.push(`- Study/competition buddy: ${peer.name}`);
+                    rows.push(`- Goals: score target ${student.targetPercentage || 'not set'}% | weekly study target ${student.targetStudyHours || 'not set'} h | weekly run target ${student.targetFitnessKm || 'not set'} km`);
+                    return rows.join('\n');
+                });
+
+                out += sec('⏱️ STUDY ROUTINE (FOCUS SESSIONS)', () => {
+                    const ses = (window.sessionsDB || []).filter(s => String(s.mobile) === String(mobile) && s.status !== 'ABSENT');
+                    if (!ses.length) return 'No study sessions recorded yet.';
+                    const hrs = ms => ms / 3600000, byDay = {}, byType = {};
+                    let total = 0, week = 0;
+                    ses.forEach(s => { const ms = s.totalStudyMs || 0; total += ms; if (inWeek(s.timestamp || 0)) week += ms; byDay[s.dateStr] = (byDay[s.dateStr] || 0) + ms; const t = s.sessionType || 'Session'; byType[t] = (byType[t] || 0) + ms; });
+                    const lines = [];
+                    for (let i = 0; i < 7; i++) { const d = new Date(nowD.getTime() - i * DAY), k = window.formatDateDDMMYYYY(d); lines.push(`  ${k} ${d.toLocaleDateString('en-IN', { weekday: 'short' })}: ${num(hrs(byDay[k] || 0))} h`); }
+                    let streak = 0;
+                    for (let i = 0; i < 400; i++) { const k = window.formatDateDDMMYYYY(new Date(nowD.getTime() - i * DAY)); if ((byDay[k] || 0) > 0) streak++; else if (i > 0) break; }
+                    const active = Object.keys(byDay).filter(k => byDay[k] > 0);
+                    const best = active.reduce((a, k) => byDay[k] > (byDay[a] || 0) ? k : a, active[0]);
+                    const absent = (window.sessionsDB || []).filter(s => String(s.mobile) === String(mobile) && s.status === 'ABSENT').length;
+                    const tgt = parseFloat(student.targetStudyHours) || 0;
+                    return [`- Total: ${num(hrs(total))} h over ${active.length} study days (average ${num(hrs(total) / Math.max(1, active.length))} h per active day)`,
+                        `- This week: ${num(hrs(week))} h${tgt ? ` of the ${tgt} h weekly target (${Math.min(100, Math.round(hrs(week) / tgt * 100))}%)` : ''}`,
+                        `- Current study streak: ${streak} day(s). Best day: ${best} with ${num(hrs(byDay[best] || 0))} h. Absent session days recorded: ${absent}`,
+                        `- By session type: ${Object.entries(byType).map(([t, ms]) => `${t} ${num(hrs(ms))} h`).join(', ')}`,
+                        `- Last 7 days:\n${lines.join('\n')}`].join('\n');
+                });
+
+                out += sec('🏃 FITNESS & RUNNING', () => {
+                    const logs = (window.fitnessDB || []).filter(l => String(l.mobile) === String(mobile));
+                    const runs = logs.filter(l => !l.isAbsent).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    const missed = logs.length - runs.length;
+                    if (!runs.length) return `No runs logged yet.${missed ? ` Absent/missed days recorded: ${missed}.` : ''}`;
+                    const todayK = window.formatDateDDMMYYYY();
+                    let tot = 0, wk = 0, cal = 0, today = 0;
+                    runs.forEach(l => { const d = Number(l.distance) || 0; tot += d; cal += Number(l.cals) || 0; if (inWeek(l.timestamp || 0)) wk += d; if (l.date === todayK) today += d; });
+                    const wt = parseFloat(student.targetFitnessKm) || 0;
+                    const pace = l => { const d = Number(l.distance) || 0, t = Number(l.time) || 0; if (!d || !t) return '-'; const pc = t / d, m = Math.floor(pc); return `${m}:${String(Math.round((pc - m) * 60) % 60).padStart(2, '0')} min/km`; };
+                    return [`- Total: ${num(tot)} km in ${runs.length} runs, about ${Math.round(cal)} kcal burned. Missed/absent days: ${missed}`,
+                        `- This week: ${num(wk)} km${wt ? ` of the ${wt} km weekly target (daily goal ${num(wt / 7)} km)` : ''}. Today so far: ${num(today)} km`,
+                        `- Recent runs:\n${runs.slice(0, 5).map(l => `  ${l.date}: ${num(l.distance, 2)} km in ${l.time} min (pace ${pace(l)})`).join('\n')}`].join('\n');
+                });
+
+                out += sec('🪙 EXAMA WALLET (COINS)', () => (typeof window.__wltBalance === 'number'
+                    ? `Coin balance: ${window.__wltBalance} coins.`
+                    : 'Coin balance not loaded yet (the student has not opened the wallet in this session).')
+                    + ' Rules: +5 coins for the daily run goal (+2 extra if exceeded), +5 for a full 4-hour study session (+2 extra if exceeded), +5 for hitting the exam score target, +5 for topping an exam. Penalties: -10 for a missed run goal, -10 for a missed study target, -10 for a failed exam. Sundays carry no penalty. Coins can be sent to friends and are protected by a 4-digit wallet PIN.');
+
+                out += sec('📝 EXAM PERFORMANCE ANALYTICS', () => {
+                    const all = (typeof getComputedResults === 'function' ? getComputedResults() : []).filter(r => r.mobile === mobile && !r.isVirtual);
+                    if (!all.length) return 'No exam results yet.';
+                    const exOf = r => (window.examsDB || []).find(e => e.id === r.examId) || {};
+                    const taken = all.filter(r => r.status !== 'ABSENT' && r.status !== 'EVALUATING');
+                    const cnt = st => all.filter(r => r.status === st).length;
+                    const dated = taken.map(r => ({ r, ex: exOf(r), t: pDate(exOf(r).date) })).sort((a, b) => b.t - a.t);
+                    const avgOf = arr => arr.length ? arr.reduce((a, x) => a + (x.r.percentage || 0), 0) / arr.length : 0;
+                    const best = [...taken].sort((a, b) => b.percentage - a.percentage)[0], worst = [...taken].sort((a, b) => a.percentage - b.percentage)[0];
+                    const L = r => `${exOf(r).name || r.examName || 'Exam'} (${num(r.percentage, 0)}%)`;
+                    const recent = avgOf(dated.slice(0, 3)), prev = avgOf(dated.slice(3, 6));
+                    const byType = {}; dated.forEach(x => { const t = x.ex.examType || 'other'; (byType[t] = byType[t] || []).push(x); });
+                    const tp = parseFloat(student.targetPercentage) || 0;
+                    return [`- Exams on record: ${all.length} | passed ${cnt('PASS')}, failed ${cnt('FAIL')}, absent ${cnt('ABSENT')}, still being evaluated ${cnt('EVALUATING')}`,
+                        taken.length ? `- Best: ${L(best)} | Weakest: ${L(worst)}` : '',
+                        dated.length > 3 ? `- Trend: last 3 exams average ${num(recent, 0)}% vs the 3 before ${num(prev, 0)}% -> ${recent > prev + 2 ? 'IMPROVING' : recent < prev - 2 ? 'DECLINING' : 'STEADY'}` : '',
+                        `- By exam type: ${Object.entries(byType).map(([t, a]) => `${t}: ${a.length} exams, average ${num(avgOf(a), 0)}%`).join(' | ')}`,
+                        tp ? `- Score target ${tp}%: reached in ${taken.filter(r => r.percentage >= tp).length} of ${taken.length} exams` : ''].filter(Boolean).join('\n');
+                });
+
+                out += sec('📘 SYLLABUS BREAKDOWN BY SUBJECT', () => {
+                    const topics = (window.syllabusTopicsDB || []).filter(t => !t.assignedTo || t.assignedTo.includes('All') || t.assignedTo.includes(mobile));
+                    if (!topics.length) return '';
+                    const prog = id => (window.studentSyllabusProgressDB || []).find(p => p.topicId === id && p.mobile === mobile) || {};
+                    const subj = {};
+                    topics.forEach(t => { const sName = t.subject || 'General', p = prog(t.id), o = subj[sName] = subj[sName] || { n: 0, done: 0, pr: 0, rv: 0, pending: [] }; o.n++; if (p.classDone) o.done++; else if (t.topic) o.pending.push(t.topic); o.pr += p.practiceCount || 0; o.rv += p.revisionCount || 0; });
+                    return Object.entries(subj).map(([sName, o]) => `- ${sName}: ${o.done}/${o.n} topics covered (${Math.round(o.done / o.n * 100)}%), practice rounds ${o.pr}, revision rounds ${o.rv}${o.pending.length ? `. Still pending: ${o.pending.slice(0, 12).join('; ')}${o.pending.length > 12 ? ` (+${o.pending.length - 12} more)` : ''}` : ''}`).join('\n');
+                });
+
+                out += sec('🎬 LECTURE HUB (VIDEOS AVAILABLE)', () => {
+                    const v = (window.videosDB || []).filter(x => x.title && x.subject);
+                    if (!v.length) return '';
+                    const g = {}; v.forEach(x => { (g[x.subject] = g[x.subject] || []).push(x); });
+                    return Object.entries(g).map(([sName, a]) => `- ${sName} (${a.length} lectures): ${[...new Set(a.map(x => x.topic).filter(Boolean))].slice(0, 10).join('; ')}`).join('\n')
+                        + '\nRecommend these lectures by subject/topic when the student needs to learn or revise something.';
+                });
+
+                out += sec('📂 MATERIALS HUB (NOTES & QUESTION SETS)', () => {
+                    const m = (window.materialsDB || []).filter(x => x.title && x.isApproved !== false);
+                    if (!m.length) return '';
+                    const g = {}; m.forEach(x => { const sName = x.subject || 'General'; g[sName] = (g[sName] || 0) + 1; });
+                    return `${m.length} items available: ${Object.entries(g).map(([sName, n]) => `${sName} ${n}`).join(', ')}. Latest: ${[...m].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 6).map(x => x.title).join('; ')}`;
+                });
+
+                out += sec('💰 PERSONAL BUDGET (THIS STUDENT ONLY)', () => {
+                    const b = window.budgetsDB || [];
+                    if (!b.length) return '';
+                    let inc = 0, exp = 0, winc = 0, wexp = 0; const wk = Date.now() - 7 * DAY;
+                    b.forEach(t => { const a = Number(t.amount) || 0, isIn = t.type === 'income', isOut = t.type === 'expense' || t.type === 'transfer'; if (isIn) { inc += a; if (t.timestamp >= wk) winc += a; } if (isOut) { exp += a; if (t.timestamp >= wk) wexp += a; } });
+                    return `Lifetime: income Rs ${inc}, spent Rs ${exp}, balance Rs ${inc - exp}. Last 7 days: income Rs ${winc}, spent Rs ${wexp}.`;
+                });
+
+                return out;
+            };
+
             window.buildNovaSystemContext = function () {
                 const mobile = window.loggedInMobile;
                 const student = (window.studentsDB || []).find(s => s.mobile === mobile);
@@ -27413,6 +27540,8 @@ async function showWallet() {
                     unreadNoticesText = "No unread notices.";
                 }
 
+                const deepProfile = typeof window.buildNovaDeepProfile === 'function' ? window.buildNovaDeepProfile(student, mobile) : '';
+
                 // ==========================================
                 // THE ULTIMATE MASTER PROMPT
                 // ==========================================
@@ -27445,7 +27574,7 @@ ${examHistory}
 
 === 🧠 DETAILED EXAM FEEDBACK & MISTAKES (AI EVALUATIONS) ===
 ${detailedFeedbackText}
-
+${deepProfile}
 YOUR DIRECTIVES:
 1. Act as an encouraging, expert mentor with absolute awareness of the student's entire schedule and progress.
 2. If they ask "What do I have today?", "Any exams?", or "What's my schedule?", refer to the [TODAY'S EXAMS] and [UPCOMING EXAMS] sections.
@@ -27455,6 +27584,11 @@ YOUR DIRECTIVES:
 6. Keep answers clean, structured, and easy to read using bolding and bullet points.
 7. Address the student by their name (${student.name}) naturally.
 8. If an exam includes "Syllabus & Instructions", use that information to tell the student exactly what topics and chapters to study when they ask for study advice or preparation tips.
+9. You know EVERYTHING above about this student (profile, study routine & streak, fitness, wallet coins, exam analytics, syllabus by subject, lectures, materials, budget). Use these real numbers in your answers instead of generic advice.
+10. Never invent data. If something is not in the information above, say you do not have it yet and tell the student where in the app to find it.
+11. Only discuss THIS student's data. Never reveal passwords or PINs, and never share other students' private details (leaderboard ranks and names are fine).
+12. Connect the dots: link study hours, fitness and syllabus progress to exam results, warn about risks (declining trend, broken streak, pending topics before an exam, weekly targets falling behind) and always suggest the next best action. Recommend matching Lecture Hub videos or Materials by subject and topic.
+13. Explain wallet coin rules and balance whenever asked, using the Wallet section.
 `;
             };
 
