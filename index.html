@@ -25137,33 +25137,65 @@ async function showWallet() {
 
                 window.renderQuizModal();
             };
+            // Loads a question image (normally a Google Drive link) as base64 for the AI.
+            // Drive blocks a plain fetch() with CORS, so several routes are tried in order.
+            window.imageUrlToBase64 = async function (url) {
+                const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+                const toB64 = blob => new Promise((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onloadend = () => resolve(String(r.result).split(',')[1] || '');
+                    r.onerror = () => reject(new Error('read failed'));
+                    r.readAsDataURL(blob);
+                });
+                const okMime = t => /^image\/(png|jpeg|webp|heic|heif)$/.test(t) ? t : 'image/jpeg';
+                const m = String(url).match(/(?:\/d\/|[?&]id=)([\w-]{20,})/);
+                const id = m && m[1];
+                const routes = [() => fetch(url, { mode: 'cors' })];                                                   // 1) direct
+                if (id) routes.push(() => fetch('https://lh3.googleusercontent.com/d/' + id + '=w2000', { mode: 'cors' })); // 2) Google image CDN
+                if (/drive\.google\.com/.test(url)) routes.push(() => fetch('https://pdf-subhankar.connect-subhankar-info.workers.dev/?url=' + encodeURIComponent(url))); // 3) your proxy worker
+                let lastErr;
+                for (const go of routes) {
+                    try {
+                        const r = await withTimeout(go(), 10000);
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        const blob = await r.blob();
+                        if (!blob.size || !/^image\//.test(blob.type)) throw new Error('not an image');   // e.g. a Drive HTML page
+                        return { data: await toB64(blob), mime: okMime(blob.type) };
+                    } catch (e) { lastErr = e; console.warn('Question image route failed', e); }
+                }
+                if (id && window.EXAMA_DRIVE_API) {                                                                       // 4) Apps Script hands the file over
+                    try {
+                        const r = await withTimeout(fetch(window.EXAMA_DRIVE_API + '?action=image&id=' + encodeURIComponent(id)), 25000);
+                        const j = await r.json();
+                        if (j && j.success && j.base64) return { data: j.base64, mime: okMime(j.mimeType) };
+                    } catch (e) { lastErr = e; console.warn('Apps Script image route failed', e); }
+                }
+                const err = new Error('Question image could not be loaded'); err.imgLoad = true; err.cause = lastErr; throw err;
+            };
+
             // 2. IMAGE TRIGGER
             window.generateImageQuiz = async function (imgUrl, title) {
                 window.showLoader("NOVA is analyzing the image and generating a 20-question quiz. This takes about 10-15 seconds...");
 
                 try {
-                    const res = await fetch(imgUrl);
-                    const blob = await res.blob();
-                    const b64 = await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-                        reader.readAsDataURL(blob);
-                    });
+                    const img = await window.imageUrlToBase64(imgUrl);
+                    const b64 = img.data;
 
                     const prompt = `Analyze the educational content, formulas, or concepts in this image. Generate exactly 20 multiple-choice questions based on these concepts. Based on the overall topic, create a short, catchy title for this quiz. Keep the explanation to EXACTLY ONE short sentence.\n\nReturn strictly in this JSON format with no markdown blocks:\n{"quizTitle": "Generated Title Here", "questions": [{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]}`;
 
-                    await window.fetchQuizFromGemini(prompt, `Image Quiz: ${title.substring(0, 15)}`, b64);
+                    await window.fetchQuizFromGemini(prompt, `Image Quiz: ${String(title || '').substring(0, 15)}`, b64, img.mime);
                 } catch (e) {
-                    // Handled silently to hide loader
+                    console.error('Image quiz failed:', e);
+                    if (e && e.imgLoad) window.showCustomAlert("Notice", "Could not load this question image. Please check your internet connection and try again.", "info");   // (other errors are already shown by fetchQuizFromGemini)
                 }
                 window.hideLoader();
             };
 
             // 3. BULLETPROOF GEMINI API CALLER & PARSER
-            window.fetchQuizFromGemini = async function (promptText, title, base64Image = null) {
+            window.fetchQuizFromGemini = async function (promptText, title, base64Image = null, mimeType = "image/jpeg") {
                 const parts = [{ text: promptText }];
                 if (base64Image) {
-                    parts.push({ inlineData: { data: base64Image, mimeType: "image/jpeg" } });
+                    parts.push({ inlineData: { data: base64Image, mimeType: mimeType || "image/jpeg" } });
                 }
 
                 const payload = {
@@ -25806,16 +25838,12 @@ async function showWallet() {
                 setTimeout(() => { if (chatBox) chatBox.scrollTop = chatBox.scrollHeight; }, 300);
 
                 window.showNovaTyping();
+                const __histLen = window.novaChatHistory.length;
 
                 try {
                     // 3. Convert Image URL to Base64 (Required for Gemini API)
-                    const response = await fetch(imgUrl);
-                    const blob = await response.blob();
-                    const base64data = await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-                        reader.readAsDataURL(blob);
-                    });
+                    const img = await window.imageUrlToBase64(imgUrl);
+                    const base64data = img.data;
 
                     // 4. Construct the Multimodal Prompt for Gemini
                     const promptText = "Please carefully read the question in the provided image. Solve it step-by-step, explain the concepts clearly, and guide me to the correct answer. Act as an encouraging mentor.";
@@ -25824,7 +25852,7 @@ async function showWallet() {
                         role: "user",
                         parts: [
                             { text: promptText },
-                            { inlineData: { data: base64data, mimeType: "image/jpeg" } } // Gemini Vision Payload
+                            { inlineData: { data: base64data, mimeType: img.mime } } // Gemini Vision Payload
                         ]
                     });
 
@@ -25860,7 +25888,7 @@ async function showWallet() {
                     console.error(e);
                     window.hideNovaTyping();
                     window.appendNovaMessage('model', "Sorry, I failed to process the image. Please check your internet connection.");
-                    window.novaChatHistory.pop();
+                    window.novaChatHistory.length = __histLen;
                 }
             };
 
