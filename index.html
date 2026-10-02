@@ -20610,6 +20610,7 @@ window.rtMapToggle=function(){on=!on;const v=$('run-tracker');if(v)v.classList.t
  if(on)load(()=>{init();setTimeout(()=>{map.invalidateSize();follow=1;const b=$('rt-recenter');if(b)b.style.display='none';draw();},80);});};
 const focus=a=>{if(!map||!R.pos)return;const z=map.getZoom()<16?17:map.getZoom(),pt=map.project(R.pos,z);pt.y+=Math.round(map.getSize().y*0.17);map.setView(map.unproject(pt,z),z,{animate:!!a});};
 window.rtMapCenter=function(){follow=1;const b=$('rt-recenter');if(b)b.style.display='none';focus(1);};
+window.__rtRouteSnap=function(){return R.segs.map(sg=>sg.slice());};
 window.__rtShape=function(){try{let pts=[];R.segs.forEach(sg=>sg.forEach(p=>pts.push(p)));if(pts.length<4)return null;const N=60;if(pts.length>N){const o=[];for(let i=0;i<N;i++)o.push(pts[Math.round(i*(pts.length-1)/(N-1))]);pts=o;}const c=Math.cos(pts[0][0]*Math.PI/180),xy=pts.map(p=>[p[1]*c,-p[0]]);let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;xy.forEach(q=>{x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1]);});const sc=100/(Math.max(x1-x0,y1-y0)||1),out=[];xy.forEach(q=>{out.push(Math.round((q[0]-x0)*sc),Math.round((q[1]-y0)*sc));});return out;}catch(e){return null;}};
 const locate=()=>{if(S().st!=='idle'||!navigator.geolocation)return;navigator.geolocation.getCurrentPosition(p=>{if(S().st!=='idle')return;R.pos=[p.coords.latitude,p.coords.longitude];draw();},()=>{},{enableHighAccuracy:true,timeout:10000,maximumAge:30000});};
 (function(){const tr=$('run-tracker'),fv=$('fitness-view');let was=null;
@@ -20641,6 +20642,93 @@ setInterval(()=>{const s=S(),run=s.st!=='idle';
  if(!run){if(hadRun){hadRun=0;clear();}return;}
  if(!hadRun){hadRun=1;const keep=R.pos;clear();R.pos=keep;const h=$('rt-map-hint');if(h)h.textContent='WAITING FOR GPS';}
  collect();draw();},1000);
+})();
+;(function () {
+// ===== RUN CARD: after FINISH, makes a shareable image (route + stats) with Download / Share =====
+const $ = id => document.getElementById(id), S = () => window.__rt || { st: 'idle', dist: 0 };
+const mmss = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(x).padStart(2, '0'); };
+const toSec = t => String(t || '').split(':').reduce((a, v) => a * 60 + (+v || 0), 0);
+const FONT = 'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif';
+const W = 1080, H = 1920;
+let cur = null, style = 'card', blob = null, url = '';
+
+function drawCard(d, mode) {
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+    const tr = mode === 'clear';
+    const sp = (px) => { try { x.letterSpacing = px + 'px'; } catch (e) { } };
+    const txt = (t, px, y, o) => { o = o || {}; x.font = (o.w || 900) + ' ' + (o.i === false ? '' : 'italic ') + px + 'px ' + FONT; x.textAlign = o.a || 'center'; x.fillStyle = o.c || '#fff'; sp(o.s || 0);
+        if (tr) { x.shadowColor = 'rgba(0,0,0,.55)'; x.shadowBlur = 14; } x.fillText(t, o.x == null ? W / 2 : o.x, y); x.shadowBlur = 0; sp(0); };
+    if (!tr) {
+        const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0a0d18'); g.addColorStop(.55, '#150b1f'); g.addColorStop(1, '#1f0a14'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+        const r = x.createRadialGradient(W / 2, 700, 40, W / 2, 700, 760); r.addColorStop(0, 'rgba(244,63,94,.28)'); r.addColorStop(1, 'rgba(244,63,94,0)'); x.fillStyle = r; x.fillRect(0, 0, W, H);
+        x.fillStyle = 'rgba(255,255,255,.06)'; for (let i = 40; i < W; i += 60) for (let j = 40; j < H; j += 60) x.fillRect(i, j, 3, 3);
+    }
+    txt('EXAMA', 46, 130, { c: '#fb7185', s: 16 });
+    txt(d.date, 30, 186, { c: 'rgba(255,255,255,.62)', w: 700, i: false, s: 4 });
+    // route
+    const segs = (d.segs || []).filter(s => s.length > 1), bx = 90, by = 280, bw = 900, bh = 860;
+    if (segs.length) {
+        const all = [].concat.apply([], segs), c0 = Math.cos(all[0][0] * Math.PI / 180);
+        const P = ll => [ll[1] * c0, -ll[0]]; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+        all.forEach(ll => { const p = P(ll); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+        const sc = Math.min(bw / ((x1 - x0) || 1e-6), bh / ((y1 - y0) || 1e-6)), ox = bx + (bw - (x1 - x0) * sc) / 2, oy = by + (bh - (y1 - y0) * sc) / 2;
+        const T = ll => { const p = P(ll); return [ox + (p[0] - x0) * sc, oy + (p[1] - y0) * sc]; };
+        const path = sg => { x.beginPath(); const q = sg.map(T); x.moveTo(q[0][0], q[0][1]); for (let i = 1; i < q.length - 1; i++) { x.quadraticCurveTo(q[i][0], q[i][1], (q[i][0] + q[i + 1][0]) / 2, (q[i][1] + q[i + 1][1]) / 2); } x.lineTo(q[q.length - 1][0], q[q.length - 1][1]); };
+        const lg = x.createLinearGradient(bx, by, bx + bw, by + bh); lg.addColorStop(0, '#fbbf24'); lg.addColorStop(.5, '#fb7185'); lg.addColorStop(1, '#e11d48');
+        x.lineCap = 'round'; x.lineJoin = 'round';
+        [[34, 'rgba(244,63,94,.22)', 40], [16, lg, 18], [5, 'rgba(255,255,255,.95)', 0]].forEach(a => { x.save(); x.lineWidth = a[0]; x.strokeStyle = a[1]; x.shadowColor = 'rgba(244,63,94,.9)'; x.shadowBlur = a[2]; segs.forEach(sg => { path(sg); x.stroke(); }); x.restore(); });
+        const dot = (p, col) => { x.beginPath(); x.arc(p[0], p[1], 20, 0, 7); x.fillStyle = '#fff'; x.fill(); x.beginPath(); x.arc(p[0], p[1], 13, 0, 7); x.fillStyle = col; x.fill(); };
+        dot(T(segs[0][0]), '#34d399'); const ls = segs[segs.length - 1]; dot(T(ls[ls.length - 1]), '#f43f5e');
+    } else txt('ROUTE NOT RECORDED', 34, by + bh / 2, { c: 'rgba(255,255,255,.4)', w: 800, s: 6 });
+    // numbers
+    txt(d.km, d.km.length > 4 ? 270 : 330, 1470);
+    txt('KILOMETERS', 40, 1545, { c: '#fb7185', s: 18, i: false });
+    const cols = [['TIME', d.time], ['PACE /KM', d.pace], ['CALORIES', d.cal]];
+    cols.forEach((a, i) => { const cx = 210 + i * 330; txt(a[1], 84, 1688, { x: cx }); txt(a[0], 26, 1734, { x: cx, c: 'rgba(255,255,255,.58)', w: 800, i: false, s: 5 }); if (i) { x.fillStyle = 'rgba(255,255,255,.18)'; x.fillRect(cx - 165, 1630, 2, 120); } });
+    txt(d.name, 36, 1830, { w: 800, i: false, s: 6 });
+    txt('KEEP RUNNING  •  EXAMA', 24, 1876, { c: 'rgba(255,255,255,.5)', w: 700, i: false, s: 6 });
+    return c;
+}
+
+function render() {
+    if (!cur) return;
+    const c = drawCard(cur, style), img = $('rtc-img'); if (!img) return;
+    c.toBlob(b => { if (!b) return; blob = b; if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(b); img.src = url; img.style.background = style === 'clear' ? 'repeating-conic-gradient(#2a2a30 0 25%,#1a1a1f 0 50%) 0 0/28px 28px' : '#000'; }, 'image/png');
+}
+const fname = () => 'EXAMA_Run_' + cur.km + 'km_' + new Date().toISOString().slice(0, 10) + '.png';
+window.rtCardDownload = function () {
+    if (!blob) return;
+    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = fname(); document.body.appendChild(a); a.click();
+    setTimeout(() => { try { document.body.removeChild(a); } catch (e) { } if (window.showToast) window.showToast('Saved!', 'Check your gallery / downloads folder.', 'success'); }, 600);
+};
+window.rtCardShare = async function () {
+    if (!blob) return;
+    try { const f = new File([blob], fname(), { type: 'image/png' }); if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: 'My run', text: 'I ran ' + cur.km + ' km with EXAMA!' }); else window.rtCardDownload(); } catch (e) { }
+};
+window.rtCardStyle = function (m) { style = m; document.querySelectorAll('#rt-share [data-st]').forEach(b => { const on = b.getAttribute('data-st') === m; b.style.background = on ? '#fff' : 'rgba(255,255,255,.12)'; b.style.color = on ? '#09090b' : '#fff'; }); render(); };
+window.rtCardClose = function () { const p = $('rt-share'); if (p) p.remove(); if (url) { URL.revokeObjectURL(url); url = ''; } blob = null; };
+function open(d) {
+    cur = d; style = 'card'; window.rtCardClose();
+    const p = document.createElement('div'); p.id = 'rt-share';
+    p.style.cssText = 'position:fixed;inset:0;z-index:140;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:calc(14px + env(safe-area-inset-top,0px)) 16px calc(14px + env(safe-area-inset-bottom,0px));color:#fff';
+    const bt = 'height:46px;border-radius:99px;font-weight:900;font-size:12px;letter-spacing:.18em;padding:0 22px;';
+    p.innerHTML = '<div style="width:100%;max-width:420px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:11px;font-weight:900;letter-spacing:.35em">RUN COMPLETE</span><button type="button" onclick="window.rtCardClose()" aria-label="Close" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
+        + '<img id="rtc-img" alt="Run card" style="max-height:66dvh;max-width:100%;aspect-ratio:9/16;object-fit:contain;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.6);-webkit-touch-callout:default;user-select:auto">'
+        + '<div style="display:flex;gap:8px"><button type="button" data-st="card" onclick="window.rtCardStyle(\'card\')" style="' + bt + 'height:36px;font-size:10px;background:#fff;color:#09090b">CARD</button><button type="button" data-st="clear" onclick="window.rtCardStyle(\'clear\')" style="' + bt + 'height:36px;font-size:10px;background:rgba(255,255,255,.12);color:#fff">TRANSPARENT</button></div>'
+        + '<div style="display:flex;gap:10px;width:100%;max-width:420px;justify-content:center"><button type="button" onclick="window.rtCardDownload()" style="' + bt + 'flex:1;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff"><i class="fa-solid fa-download" style="margin-right:8px"></i>DOWNLOAD</button>'
+        + (navigator.share ? '<button type="button" onclick="window.rtCardShare()" style="' + bt + 'background:#fff;color:#09090b"><i class="fa-solid fa-share-nodes" style="margin-right:8px"></i>SHARE</button>' : '') + '</div>';
+    document.body.appendChild(p); render();
+}
+// wrap FINISH: grab the route + numbers before the tracker resets, then show the card if the run was really saved-worthy
+const os = window.stopRunTracker;
+window.stopRunTracker = async function () {
+    const s = S(); if (s.st === 'idle') return os.apply(this, arguments);
+    const m = s.dist, sec = toSec(($('rt-time') || {}).textContent), segs = window.__rtRouteSnap ? window.__rtRouteSnap() : [];
+    const st = (window.studentsDB || []).find(z => String(z.mobile) === String(window.loggedInMobile));
+    const r = await os.apply(this, arguments);
+    if (m >= 100 && sec >= 30 && m / sec <= 6.5) { const km = m / 1000; setTimeout(() => open({ km: km.toFixed(2), time: mmss(sec), pace: mmss(sec / km), cal: String(Math.round(km * 60)), segs: segs, name: String((st && st.name) || 'RUNNER').toUpperCase(), date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase() }), 450); }
+    return r;
+};
 })();
 // ===== RUN TRACKER END =====
             // Auto-Penalty for missed fitness days
