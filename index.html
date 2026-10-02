@@ -7428,7 +7428,7 @@ window.rmRunCard=function(l){
  var mini=sp.length>1?'<div class="rm-mini">'+sp.slice(0,24).map(function(x){return '<i style="height:'+Math.max(14,(1/x)/mx*100)+'%"></i>';}).join('')+'</div>':'';
  var rid=window.escJsAttr?window.escJsAttr(l.id):String(l.id),right=l.photoUrl?'<img class="rm-ph" alt="" loading="lazy" src="'+E(window.imgCache?window.imgCache.get('run:'+l.id,l.photoUrl):l.photoUrl)+'" onerror="this.style.display=\'none\'">':'<i class="fa-solid fa-chevron-right" style="color:#cbd5e1;font-size:12px;flex:none"></i>';
  return '<div class="rm-item rm-tap" role="button" onclick="window.rtOpenRun&&window.rtOpenRun(\''+rid+'\')"><div style="display:flex;align-items:center;gap:12px"><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:baseline"><div><span style="font-size:22px;font-weight:900;font-style:italic;color:#0f172a">'+d.toFixed(2)+'</span><span style="font-size:13px;font-weight:800;color:#f43f5e;margin-left:4px">km</span>'+(l.source==='gps'?'<span class="rm-badge">GPS</span>':'')+'</div><span class="rm-k">'+nice(l.date)+'</span></div>'
- +'<div class="rm-chips"><span class="rm-chip">'+E(l.pace)+' /km</span><span class="rm-chip">'+E(l.time)+' min</span><span class="rm-chip">'+E(l.cals)+' kcal</span>'+(l.avgSpeed?'<span class="rm-chip">'+E(l.avgSpeed)+' km/h</span>':'')+'</div>'+mini+'</div>'+right+'</div></div>';};
+ +'</div>'+right+'</div></div>';};
 window.rmEnhance=function(logs,o){
  var $=function(i){return document.getElementById(i);},t=o.stuObj&&parseFloat(o.stuObj.targetFitnessKm)||0;
  var isRun=function(l){return !l.isAbsent&&l.pace!=='ABSENT';};
@@ -7490,9 +7490,9 @@ window.rmEnhance=function(logs,o){
  try{
   var el=document.getElementById('rm-last'),last=(logs||[]).filter(function(l){return !l.isAbsent&&l.pace!=='ABSENT';})[0];
   if(el&&last&&last.id!=null){
-   el.classList.add('rm-tap');
-   el.onclick=function(){if(window.rtOpenRun)window.rtOpenRun(last.id);};
-   el.insertAdjacentHTML('beforeend','<p class="rm-k" style="margin-top:14px;color:#be123c;font-weight:800"><i class="fa-solid fa-image" style="margin-right:6px"></i>'+(last.photoUrl?'Tap to view your run photo card':'Tap to view run card and add a photo')+'</p>');
+   var old=el.querySelector('.rm-viewcard');if(old)old.remove();
+   el.insertAdjacentHTML('beforeend','<button type="button" class="rm-viewcard" style="margin-top:16px;width:100%;height:46px;border-radius:99px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;font-weight:900;font-size:12px;letter-spacing:.18em;box-shadow:0 8px 20px rgba(225,29,72,.28)"><i class="fa-solid fa-image" style="margin-right:8px"></i>VIEW CARD</button>');
+   el.querySelector('.rm-viewcard').onclick=function(){if(window.rtOpenRun)window.rtOpenRun(last.id);};
   }
  }catch(e){}
  return r;
@@ -20739,7 +20739,7 @@ function drawCard(d, mode) {
 
 function render() {
     if (!cur) return;
-    const tok = ++rTok, m = (style === 'photo' && !cur.photo) ? 'card' : style, png = m === 'clear';
+    const tok = ++rTok, m = cur.photo ? 'photo' : 'card', png = false;
     const c = drawCard(cur, m), img = $('rtc-img'); if (!img) return;
     c.toBlob(b => {
         if (!b || tok !== rTok) return;   // a newer render already started
@@ -20757,12 +20757,6 @@ window.rtCardShare = async function () {
     if (!blob || !cur) return;
     try { const f = new File([blob], fname(), { type: blob.type || 'image/jpeg' }); if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: 'My run', text: 'I ran ' + cur.km + ' km with EXAMA!' }); else window.rtCardDownload(); } catch (e) { }
 };
-function paintStyles() {
-    const box = $('rtc-styles'); if (!box || !cur) return;
-    const list = (cur.photo ? [['photo', 'PHOTO']] : []).concat([['card', 'CARD'], ['clear', 'TRANSPARENT']]);
-    box.innerHTML = list.map(a => '<button type="button" data-st="' + a[0] + '" onclick="window.rtCardStyle(\'' + a[0] + '\')" style="' + BT + 'height:36px;font-size:10px;' + (a[0] === style ? 'background:#fff;color:#09090b' : 'background:rgba(255,255,255,.12);color:#fff') + '">' + a[1] + '</button>').join('');
-}
-window.rtCardStyle = function (m) { style = m; paintStyles(); render(); };
 window.rtCardClose = function () {
     const p = $('rt-share'); if (p) p.remove(); if (url) { URL.revokeObjectURL(url); url = ''; } blob = null; rTok++;
     if (cur && cur.localUrl) { try { URL.revokeObjectURL(cur.localUrl); } catch (e) { } cur.localUrl = ''; }
@@ -20816,35 +20810,35 @@ async function saveLink(d, link) {
 }
 async function uploadPhoto(d) {
     if (!d.photoFile || d.upBusy) return; d.upBusy = true;
-    if (cur === d) setStatus('Saving to Drive\u2026 (' + Math.max(1, Math.round(d.photoFile.size / 1024)) + ' KB)');
+    if (cur === d) setStatus('Saving your photo\u2026');
     try {
         const link = await window.uploadFileToDrive(d.photoFile, 'chat_img', false, { skipCompress: true });   // 'chat_img' = the same Drive folder as profile pictures
         if (!link) throw new Error('no link returned');
         await saveLink(d, link);
         d.photoUrl = link;
         try { if (window.imgCache && d.logId) window.imgCache.put('run:' + d.logId, link, d.photoFile); } catch (e) { }
-        if (cur === d) setStatus('Saved to Drive \u2713', 'ok');
+        if (cur === d) setStatus('Photo added \u2713', 'ok');
         try { if (window.renderFitnessMonitor) window.renderFitnessMonitor(); } catch (e) { }
     } catch (e) {
         console.error('run photo upload', e);
-        if (cur === d) setStatus('Photo not saved yet. Tap here to retry.', 'err', () => uploadPhoto(d));
+        if (cur === d) setStatus('Your photo could not be saved. Tap to try again.', 'err', () => uploadPhoto(d));
     }
     d.upBusy = false;
 }
 async function applyPhoto(file) {
     const d = cur; if (!d || d.busy) return; d.busy = true;
     try {
-        setStatus('Compressing photo\u2026');
+        setStatus('Preparing your photo\u2026');
         const f = await compressRunPhoto(file);
         const lu = URL.createObjectURL(f), im = await imgFrom(lu);
         if (d.localUrl) { try { URL.revokeObjectURL(d.localUrl); } catch (e) { } }
         d.localUrl = lu; d.photo = im; d.photoFile = f;
-        if (cur === d) { style = 'photo'; paintStyles(); camLabel(); render(); }
+        if (cur === d) { camLabel(); render(); }
         d.busy = false;
         await uploadPhoto(d);
-    } catch (e) { console.error('run photo', e); d.busy = false; if (cur === d) setStatus('Could not use that photo. Please try another one.', 'err'); }
+    } catch (e) { console.error('run photo', e); d.busy = false; if (cur === d) setStatus('That photo could not be used. Please try again.', 'err'); }
 }
-window.rtCardPick = function (k) { const i = $(k === 'cam' ? 'rtc-cam' : 'rtc-gal'); if (i) i.click(); };
+window.rtCardPick = function (k) { const i = $('rtc-cam'); if (i) i.click(); };
 window.rtCardFile = function (input) { const f = input && input.files && input.files[0]; try { input.value = ''; } catch (e) { } if (f) applyPhoto(f); };
 
 // download the saved photo from Drive as a same-origin blob (needed so the canvas can export the card)
@@ -20861,8 +20855,8 @@ async function loadRemote(d) {
         if (typeof c === 'string' && c.indexOf('blob:') === 0) im = await imgFrom(c);
         else { const bl = await fetchBlob(d.photoUrl), lu = URL.createObjectURL(bl); d.localUrl = lu; im = await imgFrom(lu); try { if (window.imgCache) window.imgCache.put('run:' + d.logId, d.photoUrl, bl); } catch (e) { } }
         d.photo = im;
-        if (cur === d) { style = 'photo'; paintStyles(); camLabel(); render(); setStatus(d.canEdit ? 'Saved in your Drive \u2713' : '', 'ok'); }
-    } catch (e) { console.warn('run photo load', e); if (cur === d) setStatus('Photo could not be loaded. Tap here to try again.', 'err', () => loadRemote(d)); }
+        if (cur === d) { camLabel(); render(); setStatus(''); }
+    } catch (e) { console.warn('run photo load', e); if (cur === d) setStatus('The photo could not be loaded. Tap to try again.', 'err', () => loadRemote(d)); }
 }
 
 // ---------- overlay ----------
@@ -20870,19 +20864,18 @@ function open(d, o) {
     o = o || {}; window.rtCardClose(); cur = d; style = 'card';
     const p = document.createElement('div'); p.id = 'rt-share';
     p.style.cssText = 'position:fixed;inset:0;z-index:140;background:rgba(0,0,0,.97);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(14px + env(safe-area-inset-top,0px)) 16px calc(14px + env(safe-area-inset-bottom,0px));color:#fff';
-    const imgMax = d.canEdit ? 'min(62dvh,calc(100dvh - 340px))' : '66dvh';
+    const imgMax = d.canEdit ? 'min(66dvh,calc(100dvh - 290px))' : '66dvh';
     p.innerHTML = '<div style="min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px">'
         + '<div style="width:100%;max-width:420px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:11px;font-weight:900;letter-spacing:.35em">' + (window.escHtml ? window.escHtml(o.title || 'RUN COMPLETE') : 'RUN COMPLETE') + '</span><button type="button" onclick="window.rtCardClose()" aria-label="Close" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
         + '<img id="rtc-img" alt="Run card" style="max-height:' + imgMax + ';min-height:200px;max-width:100%;aspect-ratio:9/16;object-fit:contain;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.6);-webkit-touch-callout:default;user-select:auto">'
         + (d.canEdit ? '<div style="width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px;align-items:center">'
-            + '<div style="display:flex;gap:10px;width:100%"><button type="button" onclick="window.rtCardPick(\'cam\')" style="' + BT + 'flex:1;background:#fff;color:#09090b"><i class="fa-solid fa-camera" style="margin-right:8px"></i><span id="rtc-cam-t">TAKE PHOTO</span></button>'
-            + '<button type="button" onclick="window.rtCardPick(\'gal\')" style="' + BT + 'background:rgba(255,255,255,.14);color:#fff;padding:0 18px" aria-label="Choose from gallery"><i class="fa-solid fa-image" style="margin-right:8px"></i>GALLERY</button></div>'
-            + '<p id="rtc-status" style="font-size:12px;font-weight:600;text-align:center;line-height:1.35;min-height:16px;color:rgba(255,255,255,.65)">Add a photo. It becomes the background of your run card and is saved to your Drive.</p>'
-            + '<input id="rtc-cam" type="file" accept="image/*" capture="environment" onchange="window.rtCardFile(this)" style="display:none"><input id="rtc-gal" type="file" accept="image/*" onchange="window.rtCardFile(this)" style="display:none"></div>' : '<p id="rtc-status" style="font-size:12px;font-weight:600;text-align:center;min-height:16px;color:rgba(255,255,255,.65)"></p>')
-        + '<div id="rtc-styles" style="display:flex;gap:8px"></div>'
+            + '<button type="button" onclick="window.rtCardPick(\'cam\')" style="' + BT + 'width:100%;background:#fff;color:#09090b"><i class="fa-solid fa-camera" style="margin-right:8px"></i><span id="rtc-cam-t">TAKE PHOTO</span></button>'
+            + '<p id="rtc-status" style="font-size:12px;font-weight:600;text-align:center;line-height:1.35;min-height:16px;color:rgba(255,255,255,.65)">Take a photo to personalise your run card.</p>'
+            + '<input id="rtc-cam" type="file" accept="image/*" capture="environment" onchange="window.rtCardFile(this)" style="display:none"></div>' : '<p id="rtc-status" style="font-size:12px;font-weight:600;text-align:center;min-height:16px;color:rgba(255,255,255,.65)"></p>')
         + '<div style="display:flex;gap:10px;width:100%;max-width:420px;justify-content:center"><button type="button" onclick="window.rtCardDownload()" style="' + BT + 'flex:1;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff"><i class="fa-solid fa-download" style="margin-right:8px"></i>DOWNLOAD</button>'
-        + (navigator.share ? '<button type="button" onclick="window.rtCardShare()" style="' + BT + 'background:#fff;color:#09090b"><i class="fa-solid fa-share-nodes" style="margin-right:8px"></i>SHARE</button>' : '') + '</div></div>';
-    document.body.appendChild(p); paintStyles(); camLabel(); render();
+        + ''
+        + '</div></div>';
+    document.body.appendChild(p); camLabel(); render();
 }
 
 // ---------- Run History: tap a run to see its card ----------
@@ -20892,14 +20885,14 @@ window.rtOpenRun = function (id) {
     const km = parseFloat(l.distance) || 0, tmin = parseFloat(l.time) || 0, m = String(l.date || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     const dt = m ? new Date(+m[3], +m[2] - 1, +m[1]) : new Date(l.timestamp || Date.now());
     const d = {
-        logId: l.id, mobile: l.mobile, timestamp: l.timestamp, canEdit: String(l.mobile) === String(window.loggedInMobile), photoUrl: l.photoUrl || '',
+        logId: l.id, mobile: l.mobile, timestamp: l.timestamp, canEdit: false, photoUrl: l.photoUrl || '',
         km: km.toFixed(2), time: mmss(tmin * 60), pace: String(l.pace || '--:--'), cal: String(l.cals != null ? l.cals : Math.round(km * 60)),
         plane: (Array.isArray(l.route) && l.route.length > 7) ? planeFromFlat(l.route) : planeFromFlat(l.shape),
         name: String((st && st.name) || 'RUNNER').toUpperCase(), fileDate: iso(dt),
         date: dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase()
     };
     open(d, { title: 'RUN CARD' });
-    if (d.photoUrl) loadRemote(d); else if (d.canEdit) setStatus('No photo on this run yet. Add one to use it as the background.');
+    if (d.photoUrl) loadRemote(d);
 };
 
 // ---------- wrap FINISH: grab the route + numbers before the tracker resets, then show the card ----------
@@ -20911,7 +20904,7 @@ window.stopRunTracker = async function () {
     window.__lastSavedRun = null;
     const r = await os.apply(this, arguments);
     const saved = window.__lastSavedRun; window.__lastSavedRun = null;   // set by the saver when the run really went into the database
-    if (m >= 10 && sec >= 30 && m / sec <= 6.5) {
+    if (m >= 100 && sec >= 30 && m / sec <= 6.5) {
         const km = m / 1000, now = new Date();
         setTimeout(() => open({
             logId: saved && saved.id, timestamp: saved && saved.timestamp, mobile: window.loggedInMobile, canEdit: !!saved,
