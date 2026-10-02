@@ -11266,7 +11266,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                 enableIndexedDbPersistence(db).catch((err) => { /* Silently catch cache errors */ });
             }
 
-            window.studentsDB = []; window.peerAudioDrafts = {}; window.annotatedImagesDraft = {}; window.examsDB = []; window.sessionsDB = []; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = []; window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null; window.videosDB = []; window.activeVideoCategory = 'All';
+            window.studentsDB = []; window.peerAudioDrafts = {}; window.annotatedImagesDraft = {}; window.examsDB = []; window.sessionsDB = []; window.__sessionsSynced = false; window.resultsDB = []; window.chatDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.peerAnswerScriptsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = []; window.syllabusTopicsDB = []; window.studentSyllabusProgressDB = []; window.currentWeekViewOffset = 0; window.currentRole = ''; window.loggedInMobile = ''; window.activeExamId = null; window.pendingPasskeyExamId = null; window.videosDB = []; window.activeVideoCategory = 'All';
 
             // --- WHATSAPP WAVE PLAYER & SPEED CONTROLLER ENGINE ---
 
@@ -16495,8 +16495,17 @@ ${textContent ? `
             // 🔥 AUTO SESSION DETECTION — Determines session type based on current hour
             window.manualNextSessionOverride = null;
             window.getAutoSessionType = function () {
-                if (window.manualNextSessionOverride) return window.manualNextSessionOverride;
                 const hour = new Date().getHours();
+                // FIX: the manual override used to live forever, so the next day / later slot kept saving
+                // study under the WRONG session (e.g. Afternoon at 9 AM) and the real slot was marked ABSENT.
+                const ov = window.manualNextSessionOverride;
+                if (ov) {
+                    const order = { 'Morning Session': 0, 'Afternoon Session': 1, 'Evening Session': 2 };
+                    const realIdx = (hour >= 5 && hour < 12) ? 0 : (hour >= 12 && hour < 18) ? 1 : (hour >= 18 ? 2 : -1);
+                    const stale = (ov.setOn && ov.setOn !== window.formatDateDDMMYYYY()) || (order[ov.type] <= realIdx);
+                    if (!stale) return ov;
+                    window.manualNextSessionOverride = null;
+                }
                 if (hour >= 5 && hour < 12) return { type: 'Morning Session', label: 'Morning', icon: 'fa-sun', color: 'from-amber-400 to-orange-500', endHour: 12 };
                 if (hour >= 12 && hour < 18) return { type: 'Afternoon Session', label: 'Afternoon', icon: 'fa-cloud-sun', color: 'from-sky-400 to-blue-500', endHour: 18 };
                 if (hour >= 18 && hour < 24) return { type: 'Evening Session', label: 'Evening', icon: 'fa-moon', color: 'from-indigo-400 to-purple-600', endHour: 24 };
@@ -16510,6 +16519,7 @@ ${textContent ? `
             window.startNextSessionOverride = function (currentType) {
                 const nextType = window.getNextSessionTypeFor(currentType);
                 if (nextType) {
+                    nextType.setOn = window.formatDateDDMMYYYY();
                     window.manualNextSessionOverride = nextType;
                     window.toggleSessionState('START');
                 }
@@ -16574,20 +16584,43 @@ ${textContent ? `
                 return `${h}:${m}:${s}`;
             }
 
+            // FIX: an Evening session started before midnight disappeared (and could not be ended) after 12 AM
+            window.findMyLiveSession = function (mobile) {
+                const live = s => s.status === 'STUDYING' || s.status === 'BREAK' || s.status === 'OVERTIME_PAUSE';
+                const db = window.sessionsDB || [];
+                const today = window.formatDateDDMMYYYY();
+                let found = db.find(s => s.mobile === mobile && s.dateStr === today && live(s));
+                if (!found && new Date().getHours() < 5) {
+                    const y = new Date(); y.setDate(y.getDate() - 1);
+                    const yStr = window.formatDateDDMMYYYY(y);
+                    found = db.find(s => s.mobile === mobile && s.dateStr === yStr && s.sessionType === 'Evening Session' && live(s));
+                }
+                return found;
+            };
+
             window.toggleSessionState = async function (action) {
-                const mobile = window.loggedInMobile; const dateStr = window.formatDateDDMMYYYY(); let sessionType = '';
+                const mobile = window.loggedInMobile; const dateStr = window.formatDateDDMMYYYY(); let sessionType = ''; let liveSessionId = null;
                 if (action === 'START' || action === 'ABSENT') {
                     // 🔥 AUTO-DETECT session based on current time instead of manual dropdown
                     const autoSession = window.getAutoSessionType();
                     if (!autoSession) return window.showToast('No Session Available', 'Sessions are available between 5 AM and 12 AM.', 'warning');
                     sessionType = autoSession.type;
                 } else {
-                    const active = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK'));
-                    if (active) sessionType = active.sessionType; else return;
+                    const active = window.findMyLiveSession(mobile);
+                    if (active) { sessionType = active.sessionType; liveSessionId = active.id; } else return;
                 }
 
-                showLoader("Updating Session..."); const id = `${mobile}_${dateStr.replace(/\//g, '-')}_${sessionType.split(' ')[0]}`;
+                showLoader("Updating Session..."); const id = liveSessionId || `${mobile}_${dateStr.replace(/\//g, '-')}_${sessionType.split(' ')[0]}`;
                 let existing = window.sessionsDB.find(s => s.id === id); const now = Date.now();
+                // FIX: local cache can be empty/stale (reload, 2nd device) - check the server before creating a new record,
+                // otherwise a brand-new record would overwrite real study time.
+                if (!existing && isFirebaseConfigured && window.rtdb) {
+                    try {
+                        const sp = window.isGlobalTestMode ? 'test_sessions' : 'sessions';
+                        const snap = await get(ref(window.rtdb, `${sp}/${id}`));
+                        if (snap.exists()) existing = { id, ...snap.val() };
+                    } catch (e) { console.warn('Session remote check failed:', e); }
+                }
 
                 if (action === 'START' && existing && existing.status === 'COMPLETED') { existing.totalStudyMs = 0; existing.totalBreakMs = 0; existing.status = 'STUDYING'; existing.lastToggleTime = now; existing.overtimePrompted = false; }
 
@@ -16630,6 +16663,9 @@ ${textContent ? `
                 const todayStr = window.formatDateDDMMYYYY();
                 const mobile = window.loggedInMobile;
                 if (!mobile || !window.sessionsDB) return;
+                const fbOn = (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.rtdb);
+                // FIX 1: until the first sessions snapshot has arrived the local list is EMPTY, so every past slot looked 'missed'
+                if (fbOn && !window.__sessionsSynced) return;
                 const hour = new Date().getHours();
 
                 const sessionsToVerify = [
@@ -16637,17 +16673,27 @@ ${textContent ? `
                     { type: 'Afternoon Session', endHour: 18 },
                     { type: 'Evening Session', endHour: 24 }
                 ];
+                window.__missedInFlight = window.__missedInFlight || {};
 
                 let changed = false;
                 sessionsToVerify.forEach(sess => {
                     if (hour >= sess.endHour) {
-                        const existing = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === todayStr && s.sessionType === sess.type);
+                        const id = `${mobile}_${todayStr.replace(/\//g, '-')}_${sess.type.split(' ')[0]}`;
+                        const existing = window.sessionsDB.find(s => s.id === id || (String(s.mobile) === String(mobile) && s.dateStr === todayStr && s.sessionType === sess.type));
                         if (!existing) {
-                            const id = `${mobile}_${todayStr.replace(/\//g, '-')}_${sess.type.split(' ')[0]}`;
                             const newSess = { id, mobile, dateStr: todayStr, sessionType: sess.type, name: window.studentsDB.find(s => s.mobile === mobile)?.name || 'Unknown', status: 'ABSENT', lastToggleTime: Date.now(), totalStudyMs: 0, totalBreakMs: 0, timestamp: Date.now(), logs: [{ action: 'ABSENT', time: Date.now() }], overtimePrompted: false };
-                            window.sessionsDB.push(newSess);
-                            if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.rtdb) { const sesPath = window.isGlobalTestMode ? 'test_sessions' : 'sessions'; set(ref(window.rtdb, `${sesPath}/${id}`), newSess); }
-                            changed = true;
+                            if (fbOn) {
+                                if (window.__missedInFlight[id]) return;
+                                window.__missedInFlight[id] = true;
+                                const sesPath = window.isGlobalTestMode ? 'test_sessions' : 'sessions';
+                                // FIX 2: write ABSENT only if the server really has NO record (transaction) - never overwrite real study data
+                                runTransaction(ref(window.rtdb, `${sesPath}/${id}`), cur => (cur === null || cur === undefined) ? newSess : undefined)
+                                    .catch(e => console.warn('Absent check failed:', e))
+                                    .finally(() => { delete window.__missedInFlight[id]; });
+                            } else {
+                                window.sessionsDB.push(newSess);
+                                changed = true;
+                            }
                         }
                     }
                 });
@@ -16658,7 +16704,7 @@ ${textContent ? `
                 window.checkMissedSessions();
                 if (sessionTimerInterval) clearInterval(sessionTimerInterval);
                 const mobile = window.loggedInMobile; const dateStr = window.formatDateDDMMYYYY();
-                let mySession = window.sessionsDB.find(s => s.mobile === mobile && s.dateStr === dateStr && (s.status === 'STUDYING' || s.status === 'BREAK' || s.status === 'OVERTIME_PAUSE'));
+                let mySession = window.findMyLiveSession(mobile);
                 const controlDiv = document.getElementById('session-controls');
 
                 if (!mySession) {
@@ -18609,6 +18655,7 @@ ${textContent ? `
                     onValue(ref(window.rtdb, window.isGlobalTestMode ? 'test_sessions' : 'sessions'), (snapshot) => {
                         const data = snapshot.val() || {};
                         window.sessionsDB = Object.entries(data).map(([key, val]) => ({ id: key, ...val }));
+                        window.__sessionsSynced = true; // FIX: checkMissedSessions must wait for real data
 
                         // ---- FOCUS SESSION TOAST (shown to everyone: start / break / resume / end) ----
                         // Built from the sessions data that every device already syncs, by spotting a new
