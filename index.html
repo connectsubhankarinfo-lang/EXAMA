@@ -3779,6 +3779,13 @@ html #login-form button[type=submit]:active{background:linear-gradient(90deg,#63
                 @media (min-width: 640px) { #loader-text { font-size: 14px; } }
                 @keyframes glText { from { opacity: 0; transform: translate3d(0, 8px, 0); } to { opacity: 1; transform: none; } }
                 .ios-text-animate { animation: glText .5s cubic-bezier(.16, 1, .3, 1) both; }
+                /* live status line: soft light sweep across the words + three animated dots */
+                #loader-text.gl-live { color: transparent; background: linear-gradient(100deg, #475569 0%, #475569 40%, #6366f1 50%, #475569 60%, #475569 100%) 120% 0 / 260% 100% no-repeat; -webkit-background-clip: text; background-clip: text; }
+                #loader-text.gl-live.ios-text-animate { animation: glText .5s cubic-bezier(.16, 1, .3, 1) both, glShine 2.4s linear .5s infinite; }
+                #loader-text.gl-live::after { content: '...'; display: inline-block; width: 0; overflow: hidden; vertical-align: bottom; color: #6366f1; -webkit-text-fill-color: #6366f1; animation: glDots 1.3s steps(4, end) infinite; }
+                @keyframes glShine { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+                @keyframes glDots { to { width: 1.15em; } }
+                @media (prefers-reduced-motion: reduce) { #loader-text.gl-live { color: #475569; background: none; } #loader-text.gl-live.ios-text-animate { animation: glText .5s both; } #loader-text.gl-live::after { animation: none; width: 1.15em; } }
 
                 /* ===== EXIT: logo + title zoom through, the 4 dots glide to the corners and each one blooms into a soft colour wave =====
                    Only transform + opacity are animated (compositor only): no blur, no mask, no big gradient scaling. ===== */
@@ -11146,7 +11153,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                 const who = [...new Set(targets.map(String))].filter(m => m && m !== "admin" && m !== "9475757821" && m !== String(window.loggedInMobile));
                 if (who.length && typeof sendOneSignalPush === "function") {
                     const when = repeat === "daily" ? "Every day" : (date ? date.split("-").reverse().join("-") : "");
-                    sendOneSignalPush("⏰ New alarm: " + title, "Set for " + (window.tpFmt ? window.tpFmt(time) : time) + (when ? " • " + when : ""), null, { category: "exam", data: { noNav: 1, alarmCreated: 1 } }, who);
+                    sendOneSignalPush("Alarm set: " + title, (window.tpFmt ? window.tpFmt(time) : time) + (when ? " • " + when : ""), null, { category: "exam", data: { noNav: 1, alarmCreated: 1 } }, who);
                 }
             } catch (e) { console.warn("[Alarms] push failed", e && e.message); }
         };
@@ -11385,7 +11392,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                     return;
                 }
 
-                if (typeof window.showLoader === 'function') window.showLoader("Updating Profile Picture...");
+                if (typeof window.showLoader === 'function') window.showLoader("Updating photo");
 
                 try {
                     // 1. Upload to Google Drive using your existing engine
@@ -11664,7 +11671,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                     const senderName = window.currentRole === 'student' ? ((me && me.name) || 'Student') : 'EXAMA';
                     const msgObj = { text: caption, linkUrl: u.href, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null };
                     await window.dbSendChat(msgObj);
-                    try { sendOneSignalPush(`New Link from ${senderName}`, caption || u.hostname.replace(/^www\./, ''), null, { category: 'discus' }); } catch (e) { }
+                    try { sendOneSignalPush(`${senderName} shared a link`, caption || u.hostname.replace(/^www\./, ''), null, { category: 'discus' }); } catch (e) { }
                     window.markChatAsRead();
                     if (typeof cancelChatReply === 'function') cancelChatReply();
                 };
@@ -11739,7 +11746,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                     else chatPayload.docUrls = uploadedUrls;
 
                     await window.dbSendChat(chatPayload);
-                    if (typeof sendOneSignalPush === 'function') sendOneSignalPush(`New ${isDoc ? 'Document' : 'Photo'} from ${senderName}`, "Tap to view in Discus.", null, {
+                    if (typeof sendOneSignalPush === 'function') sendOneSignalPush(`${senderName} shared a ${isDoc ? 'document' : 'photo'}`, "Tap to view in Discus.", null, {
                         category: 'discus'
                     });
                     if (typeof window.markChatAsRead === 'function') window.markChatAsRead();
@@ -11976,7 +11983,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                 if (!newPass || newPass.length < 6) return window.showCustomAlert("Weak Password", "Password must be at least 6 characters long.", "warning");
                 if (newPass !== confirmPass) return window.showCustomAlert("Mismatch", "Passwords do not match.", "warning");
 
-                window.showLoader("Preparing OTP...");
+                window.showLoader("Preparing OTP");
 
                 try {
                     const adminSnapshot = await getDocs(collection(db, window.getCollectionName("admins")));
@@ -12022,7 +12029,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                 if (Date.now() > state.expiresAt) return window.showCustomAlert("Expired", "This OTP has expired. Please try again.", "error");
                 if (parseInt(inputCode, 10) !== state.otp) return window.showCustomAlert("Access Denied", "Incorrect OTP.", "error");
 
-                window.showLoader("Updating Password...");
+                window.showLoader("Updating password");
 
                 try {
                     const user = auth.currentUser;
@@ -12078,7 +12085,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                     return window.showCustomAlert("Mismatch", "Passwords do not match. Please re-enter.", "warning");
                 }
 
-                window.showLoader("Preparing OTP...");
+                window.showLoader("Preparing OTP");
 
                 try {
                     // Fetch Admin credentials to reuse the Telegram Bot
@@ -12146,7 +12153,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                     return window.showCustomAlert("Access Denied", "Incorrect OTP. Please check and try again.", "error");
                 }
 
-                window.showLoader("Updating Security Key...");
+                window.showLoader("Updating security key");
 
                 try {
                     const user = auth.currentUser;
@@ -12441,7 +12448,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
             window.saveRedPenAnnotation = function () {
                 if (!rpCanvas || window.currentAnnotationData.scriptId === null) return;
 
-                if (typeof window.showLoader === 'function') window.showLoader("Saving...");
+                if (typeof window.showLoader === 'function') window.showLoader("Saving");
 
                 const bgImg = document.getElementById('red-pen-bg-img');
 
@@ -12555,7 +12562,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                 rpCtx = rpCanvas.getContext('2d');
 
                 modal.classList.remove('hidden-view');
-                window.showLoader("Loading Canvas...");
+                window.showLoader("Loading canvas");
 
                 // Reset Data on new open
                 rpHistory = [];
@@ -12646,7 +12653,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                 const bg = document.getElementById('red-pen-bg-img');
                 if (!rpCanvas || !bg || !bg.naturalWidth || window.__rpRotating) return;
                 window.__rpRotating = true;
-                if (typeof window.showLoader === 'function') window.showLoader('Rotating...');
+                if (typeof window.showLoader === 'function') window.showLoader('Rotating');
                 try {
                     const ang = (dir < 0 ? -1 : 1) * Math.PI / 2;
                     const nw = bg.naturalWidth, nh = bg.naturalHeight;
@@ -13791,14 +13798,14 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
 
             window.sendAudioMessage = function () {
                 if (!audioBlob) return;
-                showLoader("Sending Voice Note...");
+                showLoader("Sending voice note");
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async function () {
                     const base64Audio = reader.result;
                     const senderName = window.currentRole === 'student' ? window.studentsDB.find(s => s.mobile === window.loggedInMobile).name : 'EXAMA';
                     await window.dbSendChat({ text: '', audioUrl: base64Audio, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-                    sendOneSignalPush(`New Voice Note from ${senderName}`, "Tap to listen in Discus.", null, {
+                    sendOneSignalPush(`${senderName} sent a voice note`, "Tap to listen in Discus.", null, {
                         category: 'discus'
                     });
                     window.markChatAsRead();
@@ -13911,7 +13918,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
             function toggleSendButton() { const val = document.getElementById('chat-input').value.trim(); if (val.length > 0) { document.getElementById('mic-btn').classList.add('hidden'); document.getElementById('send-text-btn').classList.remove('hidden'); } else { document.getElementById('mic-btn').classList.remove('hidden'); document.getElementById('send-text-btn').classList.add('hidden'); } }
 
             window.uploadChatImages = async function (event) {
-                const files = Array.from(event.target.files); if (files.length === 0) return; showLoader(`Uploading ${files.length} Image(s)...`);
+                const files = Array.from(event.target.files); if (files.length === 0) return; showLoader(files.length > 1 ? `Uploading ${files.length} images` : "Uploading image");
                 const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
                 try {
                     let urls = [];
@@ -13925,7 +13932,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                     if (urls.length > 0) {
                         const senderName = window.currentRole === 'student' ? window.studentsDB.find(s => s.mobile === window.loggedInMobile).name : 'EXAMA';
                         await window.dbSendChat({ text: '', imgUrls: urls, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-                        sendOneSignalPush(`New Photo from ${senderName}`, "Tap to view in Discus.", null, {
+                        sendOneSignalPush(`${senderName} sent a photo`, "Tap to view in Discus.", null, {
                             category: 'discus'
                         }); window.markChatAsRead(); cancelChatReply();
                     }
@@ -13951,7 +13958,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
 
                 // Send to Firebase - will update local chatDB and call renderChat() for immediate UI update
                 await window.dbSendChat(msgObj);
-                sendOneSignalPush(`New Message from ${senderName}`, text, null, {
+                sendOneSignalPush(`${senderName} in Discus`, text, null, {
                     category: 'discus'
                 });
                 window.markChatAsRead();
@@ -14094,7 +14101,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                     replyTo: window.replyingTo ? window.replyingTo : null
                 });
 
-                sendOneSignalPush(`Performance Card Shared`, `${senderName} shared their Exam Performance.`, null, {
+                sendOneSignalPush(`${senderName} shared a performance card`, `Tap to view their exam stats.`, null, {
                     category: 'discus'
                 });
                 window.markChatAsRead();
@@ -15093,7 +15100,7 @@ ${textContent ? `
                     return;
                 }
 
-                showLoader("Publishing Notice...");
+                showLoader("Publishing notice");
 
                 let imageUrl = "";
                 try {
@@ -15122,7 +15129,7 @@ ${textContent ? `
                     window.toggleNoticeForm();
 
                     if (typeof sendOneSignalPush === 'function') {
-                        sendOneSignalPush(`New Notice: ${title}`, "Check the Notice Board for details.", null, {
+                        sendOneSignalPush(`Notice: ${title}`, "Tap to read it on the Notice Board.", null, {
                             category: 'exam'
                         });
                     }
@@ -15268,7 +15275,7 @@ ${textContent ? `
                     if (assignedTo.length === 0) return window.showCustomAlert("Notice", "Please select at least one student!", "info");
                 }
 
-                showLoader("Publishing Topic...");
+                showLoader("Publishing topic");
                 const obj = { subject, topic, assignedTo, timestamp: Date.now() };
 
                 if (isFirebaseConfigured) await addDoc(collection(db, window.getCollectionName("syllabus_topics")), obj);
@@ -15465,7 +15472,7 @@ ${textContent ? `
                 const parsedData = window.parseVideoLink(url);
                 if (!parsedData) return window.showCustomAlert("Notice", "Invalid link! Only YouTube and Google Drive links are supported.", "info");
 
-                showLoader("Updating Lecture...");
+                showLoader("Updating lecture");
 
                 const payload = {
                     title: title,
@@ -15534,14 +15541,14 @@ ${textContent ? `
 
                 if (payloads.length === 0) return window.showCustomAlert("Notice", "Please add at least one valid video.", "info");
 
-                showLoader(`Publishing ${payloads.length} Lecture(s)...`);
+                showLoader(payloads.length > 1 ? `Publishing ${payloads.length} lectures` : "Publishing lecture");
 
                 try {
                     if (isFirebaseConfigured) {
                         // Upload all videos to Firebase Database simultaneously 
                         const uploadPromises = payloads.map(p => addDoc(collection(db, window.getCollectionName("videos")), p));
                         await Promise.all(uploadPromises);
-                        window.pushToStudents(payloads.length === 1 ? `New Lecture: ${payloads[0].title}` : `${payloads.length} New Lectures Added`, [payloads[0].subject, payloads[0].topic].filter(Boolean).join(' • ') || 'Open Lectures to watch.');
+                        window.pushToStudents(payloads.length === 1 ? `New lecture: ${payloads[0].title}` : `${payloads.length} new lectures`, [payloads[0].subject, payloads[0].topic].filter(Boolean).join(' • ') || 'Tap to watch.');
                     } else {
                         if (!window.videosDB) window.videosDB = [];
                         payloads.forEach(p => window.videosDB.push({ id: Math.random().toString(), ...p }));
@@ -15798,7 +15805,7 @@ ${textContent ? `
                 const container = document.getElementById('vh-dynamic-container');
                 const items = container.querySelectorAll('.video-item');
 
-                showLoader("Saving New Order...");
+                showLoader("Saving order");
 
                 const updates = [];
                 items.forEach((item, index) => {
@@ -15846,7 +15853,7 @@ ${textContent ? `
                 topicVids[currentIndex] = topicVids[targetIndex];
                 topicVids[targetIndex] = temp;
 
-                showLoader("Reordering...");
+                showLoader("Reordering");
 
                 const updates = [];
 
@@ -15875,7 +15882,7 @@ ${textContent ? `
             // 5. RESET TOPIC PROGRESS
             window.resetTopicProgress = async function (subject, topic) {
                 if (!(await window.showCustomConfirm("Reset Progress", `Reset your progress for "${topic}"?`, "Reset", "Cancel", "warning"))) return;
-                showLoader("Resetting...");
+                showLoader("Resetting");
                 const topicVids = window.videosDB.filter(v => v.topic === topic && v.subject === subject);
                 for (let vid of topicVids) {
                     let watchedList = vid.watchedBy || [];
@@ -16610,7 +16617,7 @@ ${textContent ? `
                     if (active) { sessionType = active.sessionType; liveSessionId = active.id; } else return;
                 }
 
-                showLoader("Updating Session..."); const id = liveSessionId || `${mobile}_${dateStr.replace(/\//g, '-')}_${sessionType.split(' ')[0]}`;
+                showLoader("Updating session"); const id = liveSessionId || `${mobile}_${dateStr.replace(/\//g, '-')}_${sessionType.split(' ')[0]}`;
                 let existing = window.sessionsDB.find(s => s.id === id); const now = Date.now();
                 // FIX: local cache can be empty/stale (reload, 2nd device) - check the server before creating a new record,
                 // otherwise a brand-new record would overwrite real study time.
@@ -16651,10 +16658,10 @@ ${textContent ? `
                 if (isFirebaseConfigured) { const sesPath = window.isGlobalTestMode ? 'test_sessions' : 'sessions'; await set(ref(window.rtdb, `${sesPath}/${id}`), existing); } else { window.sessionsDB = window.sessionsDB.filter(s => s.id !== id); window.sessionsDB.push(existing); }
 
                 const timeString = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); const sessionShortName = sessionType.split(' ')[0];
-                if (action === 'START') { let msg = `${existing.name} started their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Focus Session Started \uD83D\uDE80', msg, null, { category: 'session' }); }
-                else if (action === 'BREAK') { let msg = `${existing.name} took a break at ${timeString}.`; sendOneSignalPush('Session Pause \u2615', msg, null, { category: 'session' }); }
-                else if (action === 'RESUME') { let msg = `${existing.name} resumed studying at ${timeString}.`; sendOneSignalPush('Session Resumed \uD83C\uDFC3', msg, null, { category: 'session' }); }
-                else if (action === 'STOP' || action === 'STOP_AT_LIMIT') { let msg = `${existing.name} ended their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session Ended \uD83C\uDFC1', msg, null, { category: 'session' }); }
+                if (action === 'START') { let msg = `${existing.name} started their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session started', msg, null, { category: 'session' }); }
+                else if (action === 'BREAK') { let msg = `${existing.name} took a break at ${timeString}.`; sendOneSignalPush('On a break', msg, null, { category: 'session' }); }
+                else if (action === 'RESUME') { let msg = `${existing.name} resumed studying at ${timeString}.`; sendOneSignalPush('Session resumed', msg, null, { category: 'session' }); }
+                else if (action === 'STOP' || action === 'STOP_AT_LIMIT') { let msg = `${existing.name} ended their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session ended', msg, null, { category: 'session' }); }
 
                 hideLoader(); renderSessionTimer();
             };
@@ -17222,7 +17229,7 @@ ${textContent ? `
                             if (latest) {
                                 const msgText = latest.text || (latest.linkUrl ? 'Shared a Link' : latest.audioUrl ? 'Shared a Voice Message' : 'Shared a Performance Card/Photo');
                                 playChime();
-                                sendPushNotification(`New Message from ${latest.name}`, msgText);
+                                sendPushNotification(`${latest.name} in Discus`, msgText);
                                 const chatViewEl = document.getElementById('community-chat-view');
                                 const insideDiscus = !!chatViewEl && !chatViewEl.classList.contains('hidden-view');
                                 if (!insideDiscus) {
@@ -17807,8 +17814,11 @@ ${textContent ? `
                 }
 
                 // Crossfade the status line only when the text really changes
+                const plain = typeof message === 'string' && message.indexOf('<') < 0;
+                if (plain) message = message.replace(/\s*(\.{2,}|\u2026)\s*$/, '');   // dots are animated by CSS
                 if (loaderText && message && (reopen || loaderText.innerHTML !== message)) {
                     loaderText.innerHTML = message;
+                    loaderText.classList.toggle('gl-live', plain);
                     loaderText.classList.remove('ios-text-animate');
                     void loaderText.offsetWidth; // restart the animation
                     loaderText.classList.add('ios-text-animate');
@@ -18069,7 +18079,7 @@ ${textContent ? `
                         return;
                     }
                     if (typeof window.closeSettingsMenu === 'function') window.closeSettingsMenu();
-                    window.showLoader("Cleaning up Sandbox...");
+                    window.showLoader("Cleaning up");
                     try {
                         // Cleanup logic
                         const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices'];
@@ -18709,7 +18719,7 @@ ${textContent ? `
 
                         if (window.noticesDB.length > oldLen && oldLen > 0) {
                             const latest = window.noticesDB[0];
-                            sendPushNotification("New EXAMA Notice", latest.title);
+                            sendPushNotification("New notice", latest.title);
                             showToast("New Notice", latest.title, 'alert');
                         }
 
@@ -18985,12 +18995,12 @@ ${textContent ? `
                 const qFiles = Array.from(document.getElementById('peer-q-file').files);
 
                 if (qFiles.length === 0) return window.showCustomAlert("Notice", "Please upload at least one question image.", "info");
-                showLoader(`Uploading ${qFiles.length} Pages to Drive...`);
+                showLoader(qFiles.length > 1 ? `Uploading ${qFiles.length} pages` : "Uploading page");
 
                 try {
                     let allQUrls = [];
                     for (let i = 0; i < qFiles.length; i++) {
-                        document.getElementById('loader-text').innerText = `Uploading Page ${i + 1}/${qFiles.length}...`;
+                        document.getElementById('loader-text').innerText = `Uploading page ${i + 1} of ${qFiles.length}`;
                         const url = await window.uploadFileToDrive(qFiles[i], 'qa', false);
                         allQUrls.push(url);
                     }
@@ -19020,7 +19030,7 @@ ${textContent ? `
                         const others = [...new Set(assigned)].filter(m => m !== String(window.loggedInMobile));
                         if (others.length && typeof sendOneSignalPush === 'function') {
                             const upName = (window.studentsDB.find(s => s.mobile === window.loggedInMobile) || {}).name || 'A peer';
-                            sendOneSignalPush('New Question Set Available', `${upName} uploaded a question set${exObj && exObj.name ? ' for "' + exObj.name + '"' : ''}. Tap to attempt it.`, null, { category: 'exam', data: { p2p: 'question_set', examId } }, others);
+                            sendOneSignalPush('New question set', `${upName} shared a question set${exObj && exObj.name ? ' for "' + exObj.name + '"' : ''}. Tap to attempt it.`, null, { category: 'exam', data: { p2p: 'question_set', examId } }, others);
                         }
                     } catch (pe) { console.warn('P2P question push failed', pe); }
 
@@ -19083,7 +19093,7 @@ ${textContent ? `
                 if (!topic || !title || !subject) return window.showCustomAlert("Notice", "Please fill Subject, Topic, and Title.", "info");
                 if (!extLink) return window.showCustomAlert("Notice", "Please Select & Upload a file first. Wait for the green success message before publishing.", "info");
 
-                showLoader(`Publishing Material...`);
+                showLoader(`Publishing material`);
 
                 try {
                     const isAdmin = window.currentRole === 'admin';
@@ -19123,11 +19133,11 @@ ${textContent ? `
 
                     if (isAdmin) {
                         window.showToast("Success", "Material Published Successfully!", "success");
-                        window.pushToStudents("New Study Material: " + title, [subject, topic].filter(Boolean).join(" • ") || "Check the Material Hub.");
+                        window.pushToStudents("New material: " + title, [subject, topic].filter(Boolean).join(" • ") || "Open the Material Hub.");
                     } else {
                         window.showCustomAlert("Submitted", "Material uploaded! It is pending Admin approval.", "success");
                         // Tell the admin (by External ID) that a student is waiting for approval
-                        if (typeof sendOneSignalPush === "function") sendOneSignalPush("Material Awaiting Approval", `${uploaderName} submitted "${title}"` + ([subject, topic].filter(Boolean).length ? ` in ${[subject, topic].filter(Boolean).join(" • ")}` : "") + ".", null, { category: "exam", data: { materialId: __newMatId || "" } }, ["9475757821"]);
+                        if (typeof sendOneSignalPush === "function") sendOneSignalPush("Material pending approval", `${uploaderName} submitted "${title}"` + ([subject, topic].filter(Boolean).length ? ` in ${[subject, topic].filter(Boolean).join(" • ")}` : "") + ".", null, { category: "exam", data: { materialId: __newMatId || "" } }, ["9475757821"]);
                     }
                     renderStudyMaterials();
                 } catch (e) {
@@ -19195,7 +19205,7 @@ ${textContent ? `
 
                 if (!topic || !title || !subject) return window.showCustomAlert("Notice", "Please fill Subject, Topic, and Title.", "info");
 
-                window.showLoader(`Updating Material...`);
+                window.showLoader(`Updating material`);
 
                 try {
                     const payload = { subject: subject, topic: topic, title: title, extLink: extLink || null };
@@ -19229,7 +19239,7 @@ ${textContent ? `
                 const msg = approveStatus ? "Make this material visible to all students?" : "Hide this material from students?";
                 if (!(await window.showCustomConfirm(approveStatus ? "Approve Material" : "Hide Material", msg, approveStatus ? "Approve" : "Hide", "Cancel", "info"))) return;
 
-                window.showLoader("Updating...");
+                window.showLoader("Updating");
                 try {
                     if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
                         await updateDoc(doc(db, window.getCollectionName("materials"), id), { isApproved: approveStatus });
@@ -19239,7 +19249,7 @@ ${textContent ? `
                     }
                     window.hideLoader();
                     window.showToast("Success", approveStatus ? "Material is now live for everyone." : "Material hidden.", "success");
-                    if (approveStatus) { const pm = (window.materialsDB || []).find(x => x.id === id); if (pm) window.pushToStudents("New Study Material: " + (pm.title || ""), [pm.subject, pm.topic].filter(Boolean).join(" • ") || "Check the Material Hub."); }
+                    if (approveStatus) { const pm = (window.materialsDB || []).find(x => x.id === id); if (pm) window.pushToStudents("New material: " + (pm.title || ""), [pm.subject, pm.topic].filter(Boolean).join(" • ") || "Open the Material Hub."); }
                     window.renderStudyMaterials();
                 } catch (e) {
                     window.hideLoader();
@@ -19291,7 +19301,7 @@ ${textContent ? `
 
                 if (!topic || !title || !subject) return window.showCustomAlert("Notice", "Please fill Subject, Topic, and Title.", "info");
 
-                window.showLoader(`Updating Material...`);
+                window.showLoader(`Updating material`);
                 const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
                 let uploadedFiles = null;
 
@@ -20994,11 +21004,12 @@ const mark = k => { try { const a = done(); if (a.indexOf(k) < 0) { a.push(k); l
 const PQ = [];   // coin changes waiting to be announced as ONE push (Notice Board sound, 'exam' channel)
 const wPush = (t, m, to, d) => { try { const f = window.sendOneSignalPush || (typeof sendOneSignalPush === 'function' ? sendOneSignalPush : null); if (f) f(t, m, null, { category: 'exam', data: Object.assign({ noNav: 1, coin: 1 }, d || {}) }, to); } catch (e) { } };
 const sg = n => (n > 0 ? '+' : n < 0 ? '\u2212' : '') + Math.abs(n);
+const dLab = s => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || ''); return m ? new Date(+m[3], +m[2] - 1, +m[1]).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''; };
 function flushPush() {
     const q = PQ.splice(0); if (!q.length || !me()) return;
     const net = q.reduce((a, x) => a + x.amount, 0); let t, m;
-    if (q.length === 1) { const x = q[0]; t = x.amount > 0 ? '\u2618 ' + sg(x.amount) + ' coins earned' : '\u26A0\uFE0F ' + sg(x.amount) + ' coins penalty'; m = x.title; }
-    else { t = (net >= 0 ? '\u2618 ' : '\u26A0\uFE0F ') + 'Wallet ' + sg(net) + ' coins'; m = q.slice(0, 3).map(x => sg(x.amount) + ' ' + x.title).join(' \u2022 ') + (q.length > 3 ? ' +' + (q.length - 3) + ' more' : ''); }
+    if (q.length === 1) { const x = q[0]; t = sg(x.amount) + ' coins ' + (x.amount > 0 ? 'earned' : 'deducted'); m = x.title + (x.date && dLab(x.date) ? ' \u2022 ' + dLab(x.date) : ''); }
+    else { t = 'Wallet ' + sg(net) + ' coins'; m = q.slice(0, 3).map(x => sg(x.amount) + ' ' + x.title).join(' \u2022 ') + (q.length > 3 ? ' +' + (q.length - 3) + ' more' : ''); }
     wPush(t, m, [me()]); try { window.showToast && window.showToast(t, m, net >= 0 ? 'success' : 'error'); } catch (e) { }
 }
 async function award(key, amount, title, date, quiet) {
@@ -21007,17 +21018,20 @@ async function award(key, amount, title, date, quiet) {
     const made = await fsRunTransaction(db, async t => {
         const e = await t.get(tRef); if (e.exists()) return 0;
         const w = await t.get(wRef()), bal = w.exists() ? (w.data().balance || 0) : 0, nb = bal + amount;   // can go below 0
-        t.set(tRef, { key: key, amount: nb - bal, title: title, date: date || '', ts: Date.now() });
+        const pdt = pd(date), nowT = Date.now();   // ts = end of the day the entry is FOR (so history sorts/groups by that day); at = real credit time
+        t.set(tRef, { key: key, amount: nb - bal, title: title, date: date || '', ts: pdt ? Math.min(pdt.getTime() + 864e5 - 1000, nowT) : nowT, at: nowT });
         t.set(wRef(), { balance: nb, mobile: me(), updatedAt: Date.now() }, { merge: true });
         window.__wltBalance = nb;
         return 1;
     });
-    mark(key); if (made && !quiet && nonZero(amount)) PQ.push({ amount: amount, title: title });
+    mark(key); if (made && !quiet && nonZero(amount)) PQ.push({ amount: amount, title: title, date: date });
 }
 const nonZero = n => !!n;
 // ---------- PAST DATA: one-time backfill (oldest day -> yesterday), same rules as the daily check ----------
 const PAST_PENALTIES = true;   // false = past days only give coins and never take any away
 const isSun = d => d.getDay() === 0;   // Sundays never carry a penalty
+// PENALTY RULE: -10 only when the student was ABSENT (no run at all / no study session attended). Falling short of the goal or target is NOT penalised.
+const studied = x => x.status !== 'ABSENT' || (x.totalStudyMs || 0) > 0;
 const pd = s => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || ''); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
 async function backfill(w, tk, yest) {
     const s = stu(), endD = w.since ? new Date(pk(w.since).getTime() - 864e5) : yest, E = [], fit = {};
@@ -21030,10 +21044,10 @@ async function backfill(w, tk, yest) {
         const goal = (parseFloat(s.targetFitnessKm) || 0) / 7, tp = parseFloat(s.targetPercentage) || 0;
         for (let d = new Date(Math.max(start.getTime(), endD.getTime() - 400 * 864e5)); d <= endD; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
             const ds = fd(d), k = dk(d), ts = d.getTime() + 864e5 - 1000;
-            if (goal > 0) { if ((fit[ds] || 0) >= goal - 0.001) { E.push({ key: 'run_' + k, amount: 5, title: 'Run goal completed', date: ds, ts: ts }); if ((fit[ds] || 0) > goal + 0.001) E.push({ key: 'runbonus_' + k, amount: 2, title: 'Extra run bonus', date: ds, ts: ts + 1 }); } else if (PAST_PENALTIES && !isSun(d)) E.push({ key: 'runmiss_' + k, amount: -10, title: 'Missed run goal', date: ds, ts: ts }); }
+            if (goal > 0) { if ((fit[ds] || 0) >= goal - 0.001) { E.push({ key: 'run_' + k, amount: 5, title: 'Run goal completed', date: ds, ts: ts }); if ((fit[ds] || 0) > goal + 0.001) E.push({ key: 'runbonus_' + k, amount: 2, title: 'Extra run bonus', date: ds, ts: ts + 1 }); } else if (PAST_PENALTIES && !isSun(d) && (fit[ds] || 0) <= 0.001) E.push({ key: 'runmiss_' + k, amount: -10, title: 'Absent on run goal', date: ds, ts: ts }); }
             const full = ses.filter(x => x.dateStr === ds && (x.totalStudyMs || 0) >= 14400000 - 60000);
             full.forEach(x => { const sk = String(x.sessionType || 's').split(' ')[0]; E.push({ key: 'study_' + k + '_' + sk, amount: 5, title: (x.sessionType || 'Study') + ' session (4h) done', date: ds, ts: ts }); if ((x.totalStudyMs || 0) > 14400000 + 60000) E.push({ key: 'studybonus_' + k + '_' + sk, amount: 2, title: (x.sessionType || 'Study') + ' extra study bonus', date: ds, ts: ts + 1 }); });
-            if (!full.length && PAST_PENALTIES && !isSun(d)) E.push({ key: 'studymiss_' + k, amount: -10, title: 'Missed study target', date: ds, ts: ts });
+            if (!full.length && PAST_PENALTIES && !isSun(d) && !ses.some(x => x.dateStr === ds && studied(x))) E.push({ key: 'studymiss_' + k, amount: -10, title: 'Absent on study target', date: ds, ts: ts });
         }
         exs.forEach(a => { const r = a[0], ex = a[1], ts = a[2].getTime() + 864e5 - 500;
             if (r.status === 'FAIL') { if (PAST_PENALTIES && !isSun(a[2])) E.push({ key: 'examfail_' + ex.id, amount: -10, title: 'Failed exam: ' + ex.name, date: ex.date, ts: ts }); }
@@ -21059,6 +21073,24 @@ async function sundayFix() {
         await setDoc(wRef(), { sunFix: true, updatedAt: Date.now() }, { merge: true });
     } catch (e) { console.warn('wallet sunday fix', e); }
 }
+// One-time clean-up: -10 penalties already charged on days the student was NOT absent (only fell short of the goal) are refunded with a visible entry (safe to run twice).
+async function absentFix() {
+    try {
+        const sn = await getDocs(collection(db, COL('wallets'), me(), 'tx')), cand = [], ids = {};
+        sn.forEach(d => { ids[d.id] = 1; const x = d.data(), k = String(x.key || d.id); if ((x.amount || 0) < 0 && /^(runmiss|studymiss)_\d{4}-\d{2}-\d{2}$/.test(k)) cand.push([k, x]); });
+        if (cand.length) {
+            const fit = {}; (await getDocs(query(collection(db, COL('fitness_logs')), where('mobile', '==', me())))).forEach(z => { const l = z.data(); if (!l.isAbsent) fit[l.date] = (fit[l.date] || 0) + (parseFloat(l.distance) || 0); });
+            const ses = (window.sessionsDB || []).filter(z => String(z.mobile) === me());
+            for (const c of cand) {
+                const k = c[0], x = c[1], ds = x.date || '';
+                if (!ds || ids['sunref_' + k] || ids['absref_' + k]) continue;   // already refunded (e.g. Sunday fix)
+                const present = k.indexOf('runmiss_') === 0 ? (fit[ds] || 0) > 0.001 : ses.some(z => z.dateStr === ds && studied(z));
+                if (present) await award('absref_' + k, -x.amount, 'Penalty removed (not absent)', ds, true);
+            }
+        }
+        await setDoc(wRef(), { absFix: true, updatedAt: Date.now() }, { merge: true });
+    } catch (e) { console.warn('wallet absent fix', e); }
+}
 let busy = false;
 async function evaluate() {
     if (busy || !isFirebaseConfigured || window.currentRole !== 'student' || !me()) return;
@@ -21068,6 +21100,7 @@ async function evaluate() {
         const now = new Date(), tk = dk(now), yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1), snap = await getDoc(wRef()); let w = snap.exists() ? snap.data() : {}; window.__wltBalance = w.balance || 0;
         if (!w.backfilled) w = await backfill(w, tk, yest);   // first time: coins for all past data, then carry on from today
         if (!w.sunFix) await sundayFix();
+        if (!w.absFix) await absentFix();
         let last = pk(w.evalUpTo || w.since), n = 0; const lsKey = 'exama_wal_' + me(); let ranToday = false; try { ranToday = localStorage.getItem(lsKey) === tk; } catch (e) { }
         if (!ranToday) {
             const first = new Date(Math.max(pk(w.since).getTime(), yest.getTime() - 6 * 864e5));
@@ -21076,11 +21109,11 @@ async function evaluate() {
                 if (goal > 0) {   // run goal (weekly target / 7), read straight from the database so nothing is missed
                     const q = await getDocs(query(collection(db, COL('fitness_logs')), where('mobile', '==', me()), where('date', '==', ds)));
                     let km = 0; q.forEach(x => { const l = x.data(); if (!l.isAbsent) km += parseFloat(l.distance) || 0; });
-                    if (km >= goal - 0.001) { await award('run_' + k, 5, 'Run goal completed', ds); if (km > goal + 0.001) await award('runbonus_' + k, 2, 'Extra run bonus', ds); } else if (!isSun(d)) await award('runmiss_' + k, -10, 'Missed run goal', ds);
+                    if (km >= goal - 0.001) { await award('run_' + k, 5, 'Run goal completed', ds); if (km > goal + 0.001) await award('runbonus_' + k, 2, 'Extra run bonus', ds); } else if (!isSun(d) && km <= 0.001) await award('runmiss_' + k, -10, 'Absent on run goal', ds);
                 }
                 const ses = (window.sessionsDB || []).filter(x => String(x.mobile) === me() && x.dateStr === ds), full = ses.filter(x => (x.totalStudyMs || 0) >= 14400000 - 60000);
                 for (const x of full) { const sk = String(x.sessionType || 's').split(' ')[0]; await award('study_' + k + '_' + sk, 5, (x.sessionType || 'Study') + ' session (4h) done', ds); if ((x.totalStudyMs || 0) > 14400000 + 60000) await award('studybonus_' + k + '_' + sk, 2, (x.sessionType || 'Study') + ' extra study bonus', ds); }
-                if (!full.length && !isSun(d)) await award('studymiss_' + k, -10, 'Missed study target', ds);
+                if (!full.length && !isSun(d) && !ses.some(studied)) await award('studymiss_' + k, -10, 'Absent on study target', ds);
             }
             const upto = n ? new Date(Math.min(yest.getTime(), new Date(last.getTime() + 864e5 * n).getTime())) : last;
             await setDoc(wRef(), { evalUpTo: dk(upto > yest ? yest : upto), updatedAt: Date.now() }, { merge: true }); try { localStorage.setItem(lsKey, tk); } catch (e) { }
@@ -21185,16 +21218,20 @@ function pinScreen() {
     pinCheck(p, showWallet);
 }
 const when = ts => new Date(ts).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-const dayLab = ts => { const d = new Date(ts), t = new Date(), y = new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1), sm = (a, b) => a.toDateString() === b.toDateString(); return sm(d, t) ? 'Today' : sm(d, y) ? 'Yesterday' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); };
+// Always the exact date: the day an entry is FOR (never "Today"/"Yesterday")
+const dayLab = x => { const d = pd(x.date) || new Date(x.ts || 0); return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); };
+const sdt = d => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+const sub = x => { const dd = pd(x.date); if (!dd || /^(send|recv)_/.test(String(x.key || ''))) return when(x.ts || 0); const at = x.at || (x.past ? 0 : (x.ts || 0)), a = at ? new Date(at) : null; return 'For ' + sdt(dd) + (a && a.toDateString() !== dd.toDateString() ? ' \u2022 Added ' + sdt(a) + ', ' + when(at) : ''); };
 const sep = l => `<div class="wl-sep"><i></i><span>${esc(l)}</span><i></i></div>`;
 const kind = x => { const k = String(x.key || ''), pos = x.amount >= 0, G = '#34d399,#10b981', R = '#fb7185,#e11d48';
     if (k.indexOf('runbonus_') === 0 || k.indexOf('studybonus_') === 0) return ['fa-star', '#fbbf24,#f59e0b', 'BONUS'];
     if (k.indexOf('sunref_') === 0) return ['fa-sun', '#fbbf24,#f97316', 'REFUND'];
+    if (k.indexOf('absref_') === 0) return ['fa-rotate-left', '#fbbf24,#f97316', 'REFUND'];
     if (k.indexOf('send_') === 0) return ['fa-paper-plane', '#38bdf8,#6366f1', 'SENT'];
     if (k.indexOf('recv_') === 0) return ['fa-arrow-down', '#34d399,#14b8a6', 'RECEIVED'];
-    if (k.indexOf('runmiss_') === 0) return ['fa-person-running', R, 'MISSED'];
+    if (k.indexOf('runmiss_') === 0) return ['fa-person-running', R, 'ABSENT'];
     if (k.indexOf('run_') === 0) return ['fa-person-running', G, 'GOAL'];
-    if (k.indexOf('studymiss_') === 0) return ['fa-book-open', R, 'MISSED'];
+    if (k.indexOf('studymiss_') === 0) return ['fa-book-open', R, 'ABSENT'];
     if (k.indexOf('study_') === 0) return ['fa-book-open', G, 'GOAL'];
     if (k.indexOf('examfail_') === 0) return ['fa-file-circle-xmark', R, 'FAILED'];
     if (k.indexOf('exam') === 0) return ['fa-trophy', '#fbbf24,#f59e0b', 'EXAM'];
@@ -21204,7 +21241,7 @@ const ico = (x, k) => { const key = String(x.key || ''), snd = key.indexOf('send
     const nm = String(x.title || '').replace(/^(Sent to|Received from)\s+/i, ''), u = (x.peer && window.getStudentAvatar && window.getStudentAvatar(String(x.peer), nm)) || '';
     return `<span class="wl-ico wl-dp">${esc((nm || '?').trim().charAt(0).toUpperCase())}${u ? `<img alt="" loading="lazy" src="${esc(u)}" onerror="this.remove()">` : ''}<b class="wl-dir" style="background:${snd ? '#6366f1' : '#10b981'}"><i class="fa-solid ${snd ? 'fa-arrow-up' : 'fa-arrow-down'}"></i></b></span>`; };
 const row = x => { const pos = x.amount >= 0, k = kind(x), c = pos ? '#34d399' : '#fb7185';
-    return `<div class="wl-row">${ico(x, k)}<div style="min-width:0;flex:1"><div class="truncate" style="font-size:13px;font-weight:800">${esc(x.title || '')}</div><div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.45);margin-top:2px">${when(x.ts || 0)}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span style="font-size:16px;font-weight:900;color:${c}">${pos ? '+' : ''}${x.amount}</span><span class="wl-chip" style="color:${c};background:${pos ? 'rgba(52,211,153,.14)' : 'rgba(251,113,133,.14)'}">${k[2]}</span></div></div>`; };
+    return `<div class="wl-row">${ico(x, k)}<div style="min-width:0;flex:1"><div class="truncate" style="font-size:13px;font-weight:800">${esc(x.title || '')}</div><div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.45);margin-top:2px">${esc(sub(x))}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span style="font-size:16px;font-weight:900;color:${c}">${pos ? '+' : ''}${x.amount}</span><span class="wl-chip" style="color:${c};background:${pos ? 'rgba(52,211,153,.14)' : 'rgba(251,113,133,.14)'}">${k[2]}</span></div></div>`; };
 const CSS = `:root{--wl-top:max(3rem,env(safe-area-inset-top,0px))}html.is-tablet{--wl-top:max(4rem,env(safe-area-inset-top,0px))}html.is-tablet.is-landscape{--wl-top:max(3rem,env(safe-area-inset-top,0px))}@media (orientation:landscape) and (max-height:540px){:root,html.is-tablet.is-landscape{--wl-top:max(.75rem,env(safe-area-inset-top,0px))}}
 .wl-head{width:100%;max-width:440px;display:flex;align-items:center;justify-content:space-between;flex:none}.wl-ttl{font-size:11px;font-weight:900;letter-spacing:.35em}.wl-ib{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;display:flex;align-items:center;justify-content:center}
 .wl-wrap{width:100%;max-width:440px;flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;margin-top:16px}.wl-left{flex:none}.wl-right{flex:1;min-height:0;display:flex;flex-direction:column;min-width:0}.wl-pane{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
@@ -21254,7 +21291,7 @@ async function moreRun() {
     try {
         const q = lastDoc ? query(collection(db, COL('wallets'), me(), 'tx'), orderBy('ts', 'desc'), startAfter(lastDoc), limit(PAGE)) : query(collection(db, COL('wallets'), me(), 'tx'), orderBy('ts', 'desc'), limit(PAGE));
         const sn = await getDocs(q); if (!lastDoc) { rows.innerHTML = ''; lastDay = ''; }
-        sn.forEach(d => { const x = d.data(), l = dayLab(x.ts || 0); if (l !== lastDay) { rows.insertAdjacentHTML('beforeend', sep(l)); lastDay = l; } rows.insertAdjacentHTML('beforeend', row(x)); }); if (sn.docs.length) lastDoc = sn.docs[sn.docs.length - 1];
+        sn.forEach(d => { const x = d.data(), l = dayLab(x); if (l !== lastDay) { rows.insertAdjacentHTML('beforeend', sep(l)); lastDay = l; } rows.insertAdjacentHTML('beforeend', row(x)); }); if (sn.docs.length) lastDoc = sn.docs[sn.docs.length - 1];
         if (sn.docs.length < PAGE) hDone = true;
         if (!rows.children.length) rows.innerHTML = '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">No coins yet. Complete your goals to earn.</p>';
     } catch (e) { if (!rows.children.length || !lastDoc) rows.innerHTML = '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Could not load history. Check your internet.</p>'; hDone = true; }
@@ -21328,7 +21365,7 @@ async function doPay(peer, n) {
             return ab - n;
         });
         setBal(nb); try { navigator.vibrate && navigator.vibrate([60, 40, 60]); } catch (e) { }
-        wPush('\u2618 +' + n + ' coins received', myName + ' sent you ' + n + ' coin' + (n === 1 ? '' : 's'), [String(peer.mobile)], { from: me() });
+        wPush('+' + n + ' coin' + (n === 1 ? '' : 's') + ' received', myName + ' sent you ' + n + ' coin' + (n === 1 ? '' : 's'), [String(peer.mobile)], { from: me() });
         ov(`<div class="wl-mid"><div class="wl-ok"><i class="fa-solid fa-check"></i></div><div style="font-size:20px;font-weight:900;margin-top:8px">Payment successful</div><div style="display:flex;align-items:center;gap:10px">${coin(30)}<span style="font-size:40px;font-weight:900">${n}</span></div><div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.7)">Sent to ${esc(peer.name)}</div><div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.4);margin-top:6px">Txn ID ${key}<br>${new Date(ts).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</div><button type="button" class="wl-send" style="margin-top:22px;width:200px" onclick="window.wltDone()">Done</button></div>`);
     } catch (e) {
         console.warn('wallet send', e);
@@ -21345,7 +21382,7 @@ async function showWallet() {
 <div class="wl-brand">${coin(16)}EXAMA WALLET</div>
 <div class="wl-mainbal"><span class="wl-lbl">AVAILABLE COINS</span><div class="wl-balrow">${coin(46)}<span id="wlt-bal" class="wl-bal">--</span></div></div>
 <div class="wl-hold"><div><small>CARD HOLDER</small><b class="truncate">${esc(stu().name || 'Student')}</b></div><div><small>MOBILE</small><b>•••• ${esc(me().slice(-4))}</b></div></div>
-<div class="wl-strap"><div class="wl-rules" id="wlt-rules" aria-hidden="true" onclick="window.wltRules(0)"><div class="wl-cell up"><b>+5</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Daily run goal" aria-label="Daily run goal"></i><i class="fa-solid fa-book-open" role="img" title="4h study done" aria-label="4h study done"></i><i class="fa-solid fa-bullseye" role="img" title="Exam score goal" aria-label="Exam score goal"></i><i class="fa-solid fa-trophy" role="img" title="Exam topper" aria-label="Exam topper"></i></span><em>Goals</em></div><div class="wl-cell bn"><b>+2</b><span class="wl-ics"><i class="fa-solid fa-star" role="img" title="Bonus for going past the run or study goal" aria-label="Bonus for going past the run or study goal"></i></span><em>Extra bonus</em></div><div class="wl-cell dn"><b>−10</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Missed run goal" aria-label="Missed run goal"></i><i class="fa-solid fa-book-open" role="img" title="Missed study goal" aria-label="Missed study goal"></i><i class="fa-solid fa-file-circle-xmark" role="img" title="Failed exam" aria-label="Failed exam"></i></span><em>Missed</em></div><div class="wl-sun"><i class="fa-solid fa-sun"></i>No penalty on Sundays</div></div><button type="button" class="wl-rulebtn" id="wlt-rbtn" aria-expanded="false" aria-controls="wlt-rules" onclick="window.wltRules()"><i class="fa-solid fa-circle-info"></i>Card Rule<i class="fa-solid fa-chevron-up wl-rc"></i></button></div></div>
+<div class="wl-strap"><div class="wl-rules" id="wlt-rules" aria-hidden="true" onclick="window.wltRules(0)"><div class="wl-cell up"><b>+5</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Daily run goal" aria-label="Daily run goal"></i><i class="fa-solid fa-book-open" role="img" title="4h study done" aria-label="4h study done"></i><i class="fa-solid fa-bullseye" role="img" title="Exam score goal" aria-label="Exam score goal"></i><i class="fa-solid fa-trophy" role="img" title="Exam topper" aria-label="Exam topper"></i></span><em>Goals</em></div><div class="wl-cell bn"><b>+2</b><span class="wl-ics"><i class="fa-solid fa-star" role="img" title="Bonus for going past the run or study goal" aria-label="Bonus for going past the run or study goal"></i></span><em>Extra bonus</em></div><div class="wl-cell dn"><b>−10</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Absent on run goal" aria-label="Absent on run goal"></i><i class="fa-solid fa-book-open" role="img" title="Absent on study goal" aria-label="Absent on study goal"></i><i class="fa-solid fa-file-circle-xmark" role="img" title="Failed exam" aria-label="Failed exam"></i></span><em>Absent/Fail</em></div><div class="wl-sun"><i class="fa-solid fa-sun"></i>No penalty on Sundays</div></div><button type="button" class="wl-rulebtn" id="wlt-rbtn" aria-expanded="false" aria-controls="wlt-rules" onclick="window.wltRules()"><i class="fa-solid fa-circle-info"></i>Card Rule<i class="fa-solid fa-chevron-up wl-rc"></i></button></div></div>
 <div class="wl-face wl-back" id="wlt-back" style="pointer-events:none"><button type="button" class="wl-qrb" onclick="window.wltFlip(0)" aria-label="Back to card"><i class="fa-solid fa-rotate-left"></i></button>
 <div class="wl-qr">${qr}</div><div class="truncate" style="font-size:14px;font-weight:900;max-width:80%">${esc(stu().name || 'My QR')}</div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.5)">Show this QR to receive coins</div>
 <button type="button" class="wl-send" style="margin-top:6px" onclick="window.wltScan()"><i class="fa-solid fa-paper-plane"></i>Send Coin</button></div></div></div></div>
@@ -22178,7 +22215,7 @@ async function showWallet() {
             window.mpUploadCover = async function (input) {
                 let f = input.files && input.files[0]; if (!f) return;
                 try {
-                    if (window.showLoader) window.showLoader('Updating cover photo...');
+                    if (window.showLoader) window.showLoader('Updating cover photo');
                     let ready = false;
                     try { f = await window.prepareProfileImage(f, 'cover'); ready = true; } catch (e) { console.warn('Cover compress failed, uploading original', e); }
                     const url = await window.uploadFileToDrive(f, 'chat_img', false, { skipCompress: ready });   // same Drive folder as profile pictures
@@ -22642,7 +22679,7 @@ async function showWallet() {
                 const mobileToUse = targetMobile || window.loggedInMobile;
                 const student = window.studentsDB.find(s => s.mobile === mobileToUse);
                 if (!student) return;
-                window.showLoader("Gathering Data & Generating PDF...");
+                window.showLoader("Preparing your PDF");
 
                 const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`).getTime(); };
 
@@ -22959,7 +22996,7 @@ async function showWallet() {
                     // Styled Student First Name with a bright Gradient
                     window.showLoader(`Welcome Back, <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 font-black">${firstName}</span>!`);
                 } else {
-                    window.showLoader("Starting Exama...");
+                    window.showLoader("Starting EXAMA");
                 }
                 // ⏳ 3. PAUSE HERE: Keeps the loader visible for 1.2 seconds (1200ms)
                 await new Promise(r => setTimeout(r, 1200));
@@ -22984,7 +23021,7 @@ async function showWallet() {
                             } else {
                                 // Browser dropped the session, attempt silent background re-login
                                 try {
-                                    showLoader("Restoring Secure Session...");
+                                    showLoader("Restoring session");
                                     const authEmail = `${savedMob}@exama.app`;
                                     await signInWithEmailAndPassword(auth, authEmail, savedPass);
 
@@ -23039,7 +23076,7 @@ async function showWallet() {
                 const mob = document.getElementById('mobile').value.trim();
                 const pass = document.getElementById('password').value.trim();
 
-                showLoader("Authenticating Student...");
+                showLoader("Signing you in");
                 const authEmail = `${mob}@exama.app`;
 
                 try {
@@ -23054,7 +23091,7 @@ async function showWallet() {
                     } catch (authError) {
                         if (['auth/invalid-login-credentials', 'auth/user-not-found', 'auth/invalid-credential'].includes(authError.code)) {
                             if (pass === authorizedLegacyPass) {
-                                showLoader("Upgrading Account Security...");
+                                showLoader("Securing your account");
                                 await createUserWithEmailAndPassword(auth, authEmail, pass);
                             } else {
                                 throw new Error("Incorrect Password.");
@@ -23087,7 +23124,7 @@ async function showWallet() {
                 const mob = document.getElementById('admin-mobile').value.trim();
                 const pass = document.getElementById('admin-password').value.trim();
 
-                showLoader("Authenticating Admin...");
+                showLoader("Signing you in");
                 const authEmail = `${mob}@exama.app`;
 
                 try {
@@ -23103,7 +23140,7 @@ async function showWallet() {
                     } catch (authError) {
                         if (['auth/invalid-login-credentials', 'auth/user-not-found', 'auth/invalid-credential'].includes(authError.code)) {
                             if (pass === authorizedLegacyPass) {
-                                showLoader("Upgrading Security...");
+                                showLoader("Securing your account");
                                 await createUserWithEmailAndPassword(auth, authEmail, pass);
                             } else {
                                 throw new Error("Incorrect Master Password.");
@@ -23146,7 +23183,7 @@ async function showWallet() {
                 const message = `🔐 *EXAMA Admin Login Verification*\n\nYour security OTP is: \`${otp}\`\n\n⏱️ Valid for 5 minutes.`;
 
                 try {
-                    showLoader("Sending Telegram OTP...");
+                    showLoader("Sending OTP");
                     const url = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&text=${encodeURIComponent(message)}&parse_mode=Markdown`;
                     const res = await fetch(url);
                     const data = await res.json();
@@ -23225,7 +23262,7 @@ async function showWallet() {
                 if (!newPass || newPass.length < 6) return window.showCustomAlert("Weak Password", "Password must be at least 6 characters.", "warning");
                 if (!mobile) return;
 
-                window.showLoader("Updating Student Password...");
+                window.showLoader("Updating password");
 
                 try {
                     if (isFirebaseConfigured) {
@@ -23256,7 +23293,7 @@ async function showWallet() {
                 const newPass = document.getElementById('new-pass-input').value.trim();
                 if (!newPass || newPass.length < 6) return window.showCustomAlert("Too Short", "Password must be at least 6 characters.", "warning");
 
-                showLoader("Securing New Password...");
+                showLoader("Saving password");
                 try {
                     const user = auth.currentUser;
                     if (user) {
@@ -23293,7 +23330,7 @@ async function showWallet() {
                 if (!name || !mob || !pass) return;
                 if (pass.length < 6) return window.showCustomAlert("Weak Password", "Password must be at least 6 characters.", "warning");
 
-                showLoader("Creating Secure Account...");
+                showLoader("Creating your account");
                 const authEmail = `${mob}@exama.app`;
 
                 try {
@@ -24513,7 +24550,7 @@ async function showWallet() {
             }
             window.switchForms = function (activeId) { ['form-log-result', 'form-create-exam', 'form-edit-exam', 'form-create-student'].forEach(id => document.getElementById(id).classList.add('hidden')); document.getElementById('form-' + activeId).classList.remove('hidden'); }
 
-            window.submitStudent = async function () { showLoader("Saving Student..."); await window.dbSubmitStudent({ name: document.getElementById('new-stu-name').value, mobile: document.getElementById('new-stu-mobile').value, password: document.getElementById('new-stu-password').value }); hideLoader(); closeBottomSheet(); document.getElementById('form-create-student').reset(); }
+            window.submitStudent = async function () { showLoader("Saving student"); await window.dbSubmitStudent({ name: document.getElementById('new-stu-name').value, mobile: document.getElementById('new-stu-mobile').value, password: document.getElementById('new-stu-password').value }); hideLoader(); closeBottomSheet(); document.getElementById('form-create-student').reset(); }
 
             window.autoVersionExamName = function (requestedName) {
                 let baseName = requestedName.trim(); let highestVersion = 0; let exactFound = false;
@@ -24607,7 +24644,7 @@ async function showWallet() {
                         const files = document.getElementById('new-exam-images').files;
                         if (files.length === 0) return window.showCustomAlert("Notice", "Please upload at least one topic image for NOVA to generate the quiz.", "info");
 
-                        showLoader(`NOVA is reading images & generating exactly ${totalMarks} questions... (Takes ~15-20s)`);
+                        showLoader(`NOVA is analyzing images`);
 
                         try {
                             const fileArray = Array.from(files);
@@ -24633,7 +24670,7 @@ async function showWallet() {
                         const promptInput = document.getElementById('new-exam-prompt').value.trim();
                         if (!promptInput) return window.showCustomAlert("Notice", "Please enter a text prompt describing the test you want NOVA to build.", "info");
 
-                        showLoader(`NOVA is reading your instructions & writing exactly ${totalMarks} questions... (Takes ~10s)`);
+                        showLoader(`NOVA is writing ${totalMarks} questions`);
 
                         const promptText = `Based on the following topic/instructions: "${promptInput}".\n\nGenerate exactly ${totalMarks} multiple-choice questions. Each question carries 1 mark. Keep options concise and explanations to EXACTLY ONE short sentence. Ensure questions are highly accurate and test the user's understanding of the requested topic.\n\nReturn strictly in this JSON array format with no markdown blocks:\n[{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]`;
                         parts.push({ text: promptText });
@@ -24667,7 +24704,7 @@ async function showWallet() {
                         return window.showCustomAlert("Notice", "Failed to generate AI Quiz: " + e.message, "info");
                     }
                 } else {
-                    showLoader("Creating Exam...");
+                    showLoader("Creating exam");
                 }
 
                 const payload = {
@@ -24689,7 +24726,7 @@ async function showWallet() {
                 };
 
                 await window.dbSubmitExam(payload);
-                sendOneSignalPush("New Exam Scheduled", `${examName} is scheduled on ${examDate}${timeTxt}.`, null, { category: 'exam' }, typeof assignedTo !== 'undefined' ? assignedTo : null);
+                sendOneSignalPush("New exam scheduled", `${examName} is scheduled on ${examDate}${timeTxt}.`, null, { category: 'exam' }, typeof assignedTo !== 'undefined' ? assignedTo : null);
                 await window.dbSendNotice({ title: `New Exam: ${examName}`, text: `A new exam has been scheduled for ${examDate}${timeTxt}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard!`, date: window.formatDateDDMMYYYY(), type: 'new_exam', timestamp: Date.now(), assignedTo: assignedTo });
 
                 document.getElementById('admin-exam-info').value = '';
@@ -24773,7 +24810,7 @@ async function showWallet() {
             };
 
             window.submitEditExam = async function () {
-                showLoader("Updating Exam...");
+                showLoader("Updating exam");
                 const id = document.getElementById('edit-exam-id').value;
                 const examInfo = document.getElementById('edit-exam-info').value.trim();
                 const assignType = document.getElementById('edit-exam-assign-type').value;
@@ -24803,7 +24840,7 @@ async function showWallet() {
                         const parts = [];
 
                         if (mockMode === 'image') {
-                            showLoader(`NOVA is reading new images & regenerating exactly ${totalMarks} questions...`);
+                            showLoader(`NOVA is analyzing new images`);
                             try {
                                 const fileArray = Array.from(imgInput);
                                 const base64Images = await Promise.all(fileArray.map(async (file) => {
@@ -24824,7 +24861,7 @@ async function showWallet() {
                                 return window.showCustomAlert("Notice", "Failed to process images: " + e.message, "info");
                             }
                         } else {
-                            showLoader(`NOVA is reading your prompt & regenerating exactly ${totalMarks} questions...`);
+                            showLoader(`NOVA is rewriting ${totalMarks} questions`);
                             const promptText = `Based on the following topic/instructions: "${prmInput}".\n\nGenerate exactly ${totalMarks} multiple-choice questions. Each question carries 1 mark. Keep options concise and explanations to EXACTLY ONE short sentence.\n\nReturn strictly in this JSON array format with no markdown blocks:\n[{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]`;
                             parts.push({ text: promptText });
                         }
@@ -24886,7 +24923,7 @@ async function showWallet() {
             };
             window.restartExam = async function (id) {
                 if (!(await window.showCustomConfirm("Reset Exam", "Are you sure? This resets the timer, deletes ALL student results, and clears all Q&A uploads for this exam.", "Reset Exam", "Cancel", "danger"))) return;
-                showLoader("Resetting Exam Data...");
+                showLoader("Resetting exam");
 
                 const exam = window.examsDB.find(e => e.id === id);
                 await window.dbUpdateExam(id, { globalStartTime: null, isPaused: false, pausedElapsed: 0, isEnded: false });
@@ -24913,7 +24950,7 @@ async function showWallet() {
                 if (exam) {
                     const title = `Exam Reset: ${exam.name}`;
                     const msg = `The admin has fully reset "${exam.name}". All previous submissions have been cleared. You MUST re-upload your Q&A materials to unlock the exam again!`;
-                    sendOneSignalPush(title, msg, null, {
+                    sendOneSignalPush(title, `Your submissions were cleared. Re-upload your Q&A materials to unlock the exam.`, null, {
                         category: 'exam'
                     });
                     await window.dbSendNotice({ title: title, text: msg, date: window.formatDateDDMMYYYY(), type: 'reset_exam', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
@@ -24926,7 +24963,7 @@ async function showWallet() {
 
             window.endExam = async function (id) {
                 if (!(await window.showCustomConfirm("End Exam", "Are you sure? This will END the exam permanently, auto-grade pending evaluations, mark lazy evaluators as ABSENT, and publish all question sets.", "End Exam", "Cancel", "danger"))) return;
-                showLoader("Ending Exam & Archiving Papers...");
+                showLoader("Ending exam");
                 const exam = window.examsDB.find(e => e.id === id);
 
                 const pendingScripts = window.peerAnswerScriptsDB.filter(s => s.examId === id && !s.isGraded);
@@ -25012,7 +25049,7 @@ async function showWallet() {
                 await window.dbSendNotice({ title: exam.name, text: `The exam "${exam.name}" has officially ended. Pending evaluations were auto-graded to their max portion marks, and lazy evaluators/absentees were marked ABSENT. Question papers are now available in the Material Hub.`, date: window.formatDateDDMMYYYY(), type: 'exam_ended', timestamp: Date.now(), assignedTo: exam.assignedTo || ['All'] });
 
                 if (exam) {
-                    sendOneSignalPush("Exam Ended", `"${exam.name}" has ended. Results & question papers are now available.`, null, { category: 'exam' }, exam.assignedTo);
+                    sendOneSignalPush("Exam ended", `"${exam.name}" has ended. Results and papers are now available.`, null, { category: 'exam' }, exam.assignedTo);
                 }
 
                 hideLoader();
@@ -25032,7 +25069,7 @@ async function showWallet() {
                 if (!isConfirmed) return;
 
                 // If they click delete, show the loader, delete from DB, and hide the loader
-                window.showLoader("Deleting Exam...");
+                window.showLoader("Deleting exam");
                 await window.dbDeleteExam(id);
                 window.hideLoader();
             };
@@ -25059,7 +25096,7 @@ async function showWallet() {
                 const ex = window.examsDB.find(e => e.id === id);
                 window.dbUpdateExam(id, { globalStartTime: Date.now(), isPaused: false, pausedElapsed: 0 });
                 window.showToast("Exam Started", "The exam is now live for all students.", "success");
-                if (ex) sendOneSignalPush("Exam Started", `Let's Crack ${ex.name}!`, null, { category: 'exam' }, ex.assignedTo);
+                if (ex) sendOneSignalPush("Exam started", `${ex.name} is now live. Good luck!`, null, { category: 'exam' }, ex.assignedTo);
             }
             window.pauseGlobalExam = async function (id) {
                 const ex = window.examsDB.find(e => e.id === id); if (!ex) return;
@@ -25133,7 +25170,7 @@ async function showWallet() {
                 const totalOpponents = [...new Set(window.peerMaterialsDB.filter(m => m.examId === examId).map(m => m.mobile))].length || 1;
                 const assignedMaxMarks = parseFloat((exam.totalMarks / totalOpponents).toFixed(1));
 
-                showLoader("Sending Answers to Peers...");
+                showLoader("Sending answers");
 
                 try {
                     for (let peer of uniquePeers) {
@@ -25168,7 +25205,7 @@ async function showWallet() {
                             try {
                                 if (typeof sendOneSignalPush === 'function' && String(peer.mobile) !== String(window.loggedInMobile)) {
                                     const solverName = (window.studentsDB.find(s => s.mobile === window.loggedInMobile) || {}).name || 'A peer';
-                                    sendOneSignalPush('New Answer Script to Evaluate', `${solverName} submitted an answer script${exam && exam.name ? ' for "' + exam.name + '"' : ''}. Tap to evaluate it.`, null, { category: 'exam', data: { p2p: 'answer_script', examId } }, [String(peer.mobile)]);
+                                    sendOneSignalPush('Answer script to evaluate', `${solverName} submitted an answer script${exam && exam.name ? ' for "' + exam.name + '"' : ''}. Tap to evaluate.`, null, { category: 'exam', data: { p2p: 'answer_script', examId } }, [String(peer.mobile)]);
                                 }
                             } catch (pe) { console.warn('P2P script push failed', pe); }
                         } else {
@@ -25234,7 +25271,7 @@ async function showWallet() {
                     status = percentage >= (exam.passPercentage || 40) ? 'PASS' : 'FAIL';
                 }
 
-                showLoader("Saving Marks...");
+                showLoader("Saving marks");
 
                 // 3. Prepare the data payload
                 const resultPayload = {
@@ -25278,7 +25315,7 @@ async function showWallet() {
                     window.showCustomAlert("Notice", "No PDF loaded.", "info");
                     return;
                 }
-                window.showLoader("NOVA is converting PDF pages to images and reading them. Please wait...");
+                window.showLoader("NOVA is reading your PDF");
 
                 try {
                     const totalPages = window.pdfDoc.numPages;
@@ -25408,7 +25445,7 @@ async function showWallet() {
 
             // 2. IMAGE TRIGGER
             window.generateImageQuiz = async function (imgUrl, title) {
-                window.showLoader("NOVA is analyzing the image and generating a 20-question quiz. This takes about 10-15 seconds...");
+                window.showLoader("NOVA is building your quiz");
 
                 try {
                     const img = await window.imageUrlToBase64(imgUrl);
@@ -25830,7 +25867,7 @@ async function showWallet() {
                 window.renderQuizPalette();
 
                 // 4. Save logic to Firebase
-                window.showLoader("Saving test scorecard securely...");
+                window.showLoader("Saving scorecard");
                 try {
                     const percentage = maxScore > 0 ? (score / maxScore) * 100 : 0;
                     const passPerc = exam ? (exam.passPercentage || 40) : 40;
@@ -26656,7 +26693,7 @@ async function showWallet() {
                     try { localStorage.setItem('exama_call_session', JSON.stringify({ id: st.callTimestamp, kind, mobile: me })); } catch (e) { }
                     if (created) {
                         WAC.startRingback();
-                        try { sendOneSignalPush(wantVideo ? '🎥 Incoming Video Call' : '📞 Incoming Audio Call', `${name} started a live ${wantVideo ? 'video' : 'audio'} call in Discus Community.`, null, { category: 'call', data: { callType: kind } }, window.getOtherStudentsMobiles()); } catch (e) { console.warn('call push', e); }
+                        try { sendOneSignalPush(wantVideo ? 'Incoming video call' : 'Incoming audio call', `${name} started a ${wantVideo ? 'video' : 'audio'} call in Discus.`, null, { category: 'call', data: { callType: kind } }, window.getOtherStudentsMobiles()); } catch (e) { console.warn('call push', e); }
                         try { await window.dbSendChat({ type: 'call_log', callType: kind, text: wantVideo ? 'Video Call' : 'Audio Call', mobile: window.loggedInMobile, name, timestamp: st.callTimestamp, replyTo: null }); } catch (e) { console.warn('call log', e); }
                     }
                     WAC.watch();
@@ -27229,7 +27266,7 @@ async function showWallet() {
 
             window.downloadCustomPdf = function () {
                 if (!window.currentPdfRawUrl) return;
-                if (typeof window.showLoader === 'function') window.showLoader("Starting Download...");
+                if (typeof window.showLoader === 'function') window.showLoader("Starting download");
 
                 let downloadUrl = window.currentPdfRawUrl;
 
@@ -27601,7 +27638,7 @@ async function showWallet() {
                 out += sec('🪙 EXAMA WALLET (COINS)', () => (typeof window.__wltBalance === 'number'
                     ? `Coin balance: ${window.__wltBalance} coins.`
                     : 'Coin balance not loaded yet (the student has not opened the wallet in this session).')
-                    + ' Rules: +5 coins for the daily run goal (+2 extra if exceeded), +5 for a full 4-hour study session (+2 extra if exceeded), +5 for hitting the exam score target, +5 for topping an exam. Penalties: -10 for a missed run goal, -10 for a missed study target, -10 for a failed exam. Sundays carry no penalty. Coins can be sent to friends and are protected by a 4-digit wallet PIN.');
+                    + ' Rules: +5 coins for the daily run goal (+2 extra if exceeded), +5 for a full 4-hour study session (+2 extra if exceeded), +5 for hitting the exam score target, +5 for topping an exam. Penalties: -10 only when you are absent (no run logged for the day / no study session attended), and -10 for a failed exam. Falling short of a goal or target while you were present is not penalised. Sundays carry no penalty. Coins can be sent to friends and are protected by a 4-digit wallet PIN.');
 
                 out += sec('📝 EXAM PERFORMANCE ANALYTICS', () => {
                     const all = (typeof getComputedResults === 'function' ? getComputedResults() : []).filter(r => r.mobile === mobile && !r.isVirtual);
@@ -28294,7 +28331,7 @@ YOUR DIRECTIVES:
                     btnElement.disabled = true;
                     btnElement.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
                 }
-                window.showLoader("Saving Evaluation...");
+                window.showLoader("Saving evaluation");
 
                 try {
                     const script = window.peerAnswerScriptsDB.find(x => x.id === scriptId);
@@ -28315,15 +28352,15 @@ YOUR DIRECTIVES:
                     const pendingIdx = finalImages.map((u, i) => (/^data:/.test(u) ? i : -1)).filter(i => i >= 0);
                     if (pendingIdx.length) {
                         let doneCount = 0;
-                        window.showLoader(`Uploading marked paper 0/${pendingIdx.length}...`);
+                        window.showLoader(`Uploading 1 of ${pendingIdx.length}`);
                         await Promise.all(pendingIdx.map(async (i) => {
                             const driveUrl = String(await window.uploadAnnotationToDrive(finalImages[i], scriptId, i));
                             finalImages[i] = driveUrl;
                             if (window.annotatedImagesDraft && window.annotatedImagesDraft[scriptId]) window.annotatedImagesDraft[scriptId][i] = driveUrl; // a retry won't upload twice
                             doneCount++;
-                            window.showLoader(`Uploading marked paper ${doneCount}/${pendingIdx.length}...`);
+                            window.showLoader(`Uploading ${Math.min(doneCount + 1, pendingIdx.length)} of ${pendingIdx.length}`);
                         }));
-                        window.showLoader("Saving Evaluation...");
+                        window.showLoader("Saving evaluation");
                     }
 
                     // 2. Build the Payload
@@ -29556,7 +29593,7 @@ YOUR DIRECTIVES:
                             settlement: { totalIncome: r2(inc), totalExpense: r2(exp), perHead, spentBy, memberCount: ms.length, expenses: exps.slice(-150), truncated: exps.length > 150 }
                         });
                         toast('Room ended', 'Students have been asked to submit their portion.', 'success');
-                        if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Budget Room ended', `"${room.name}" has ended. Please submit your portion.`, null, { category: 'exam', data: { roomId: room.id } }, ms);
+                        if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Budget room ended', `"${room.name}" has ended. Please submit your portion.`, null, { category: 'exam', data: { roomId: room.id } }, ms);
                     } catch (e) { console.error(e); toast('Error', 'Could not end the room.', 'error'); }
                 };
 
@@ -29662,11 +29699,11 @@ YOUR DIRECTIVES:
                             const old = membersOf(R.byId[R.editingId]);
                             await updateDoc(doc(db, ROOMS, R.editingId), { name, members, allStudents });
                             const added = members.filter(m => !old.includes(m));
-                            if (added.length && typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: R.editingId } }, added);
+                            if (added.length && typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a budget room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: R.editingId } }, added);
                             toast('Saved', 'Room updated.', 'success');
                         } else {
                             const newRoomRef = await addDoc(collection(db, ROOMS), { name, members, allStudents, status: 'active', createdAt: Date.now(), createdBy: 'admin' });
-                            if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a Budget Room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: newRoomRef.id } }, members);
+                            if (typeof sendOneSignalPush === 'function') sendOneSignalPush('Added to a budget room', `You were added to "${name}".`, null, { category: 'exam', data: { roomId: newRoomRef.id } }, members);
                             toast('Room created', `"${name}" is ready.`, 'success');
                         }
                         window.closeRoomManage();
@@ -29908,7 +29945,7 @@ YOUR DIRECTIVES:
                     if (m.isApproved !== false) return toast('Approve', 'Already approved.', 'info');
                     await updateDoc(ref, { isApproved: true });
                     toast('Approved', `"${m.title || 'Material'}" is now live for everyone.`, 'success');
-                    if (window.pushToStudents) window.pushToStudents('New Study Material: ' + (m.title || ''), [m.subject, m.topic].filter(Boolean).join(' • ') || 'Check the Material Hub.');
+                    if (window.pushToStudents) window.pushToStudents('New material: ' + (m.title || ''), [m.subject, m.topic].filter(Boolean).join(' • ') || 'Open the Material Hub.');
                     if (window.renderStudyMaterials) try { window.renderStudyMaterials(); } catch (e) { }
                 } catch (e) { console.error(e); toast('Approve', 'Could not approve: ' + e.message, 'error'); }
             };
