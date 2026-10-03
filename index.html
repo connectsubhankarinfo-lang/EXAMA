@@ -3394,7 +3394,7 @@ html.is-tablet #syl-st-class, html.is-tablet #syl-st-prac, html.is-tablet #syl-s
 html.is-tablet #wt-tasks-list .wt-row span { font-size: 14.5px; }
 html.is-tablet #wt-tasks-list h4, html.is-tablet #syl-topics-list h4 { font-size: 17px; }
 html.is-tablet #syl-topics-list h5 { font-size: 16px; }
-html.is-tablet #syl-subject-tabs-container button, html.is-tablet #syl-status-chips button { font-size: 12px; padding: 8px 16px; }
+html.is-tablet #syl-status-chips button { font-size: 12px; padding: 8px 16px; }
 
 /* NOVA exam-preparing loader card */
 html.is-tablet #nova-exam-loader>div { max-width: 460px; width: 70%; }
@@ -9673,7 +9673,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
                     </div>
                 </div>
                 <!-- Subject Tabs Container -->
-                <div class="flex gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-2 pt-1 mt-4"
+                <div class="flex gap-2 overflow-x-auto no-scrollbar pb-3 pt-2 px-1 mt-2"
                     id="syl-subject-tabs-container"></div>
                 <div class="flex gap-1.5 overflow-x-auto no-scrollbar" id="syl-status-chips"></div>
                 <!-- Dynamic Syllabus List -->
@@ -11813,7 +11813,7 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
             window.activeSyllabusSubjectFilter = 'All';
             window.filterSyllabusBySubject = function (sub) {
                 window.activeSyllabusSubjectFilter = sub;
-                window.renderSyllabusTracker();
+                window.renderSyllabusTracker(true);
             };
             // -----------------------------------
             // Track how many items to show before clicking "See More"
@@ -15297,6 +15297,7 @@ ${textContent ? `
                     });
 
                     myTopics.sort((a, b) => a.timestamp - b.timestamp);
+                    if (window.activeSyllabusSubjectFilter !== 'All' && !myTopics.some(x => x.subject === window.activeSyllabusSubjectFilter)) window.activeSyllabusSubjectFilter = 'All';
 
                     let totalClasses = 0; let completedClasses = 0;
                     myTopics.forEach(topic => {
@@ -15318,20 +15319,15 @@ ${textContent ? `
                     }
 
                     if (tabsContainer) {
-                        const uniqueSubjects = [...new Set(myTopics.map(t => t.subject))];
-                        let tabsHtml = `<button onclick="window.filterSyllabusBySubject('All')" class="px-3 sm:px-4 py-1.5 sm:py-2 ${window.activeSyllabusSubjectFilter === 'All' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-indigo-50 border border-gray-200'} font-black text-[10px] sm:text-xs rounded-full shrink-0 transition-colors break-words">All Subjects</button>`;
-                        uniqueSubjects.forEach(sub => {
-                            const isActive = window.activeSyllabusSubjectFilter === sub;
-                            tabsHtml += `<button onclick="window.filterSyllabusBySubject('${sub.replace(/'/g, "\\'")}')" class="px-3 sm:px-4 py-1.5 sm:py-2 ${isActive ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-700 hover:bg-indigo-50 border border-gray-200'} font-black text-[10px] sm:text-xs rounded-full shrink-0 transition-colors break-words">${sub}</button>`;
-                        });
-                        tabsContainer.innerHTML = tabsHtml;
+                        const subs = [...new Set(myTopics.map(x => x.subject))], DBp = window.studentSyllabusProgressDB, me = window.loggedInMobile, adm = window.currentRole === 'admin';
+                        const IC = { English: 'fa-language', Mathematics: 'fa-square-root-variable', Reasoning: 'fa-puzzle-piece', 'General Knowledge': 'fa-earth-asia', Calculation: 'fa-calculator', Vocabulary: 'fa-spell-check', Stenography: 'fa-pen-nib', Academic: 'fa-graduation-cap' };
+                        const GR = ['from-indigo-500 to-blue-500', 'from-emerald-500 to-teal-500', 'from-rose-500 to-pink-500', 'from-amber-500 to-orange-500', 'from-violet-500 to-purple-500', 'from-sky-500 to-cyan-500'];
+                        const badge = list => adm ? list.length : (list.length ? Math.round(list.filter(x => (DBp.find(p => p.topicId === x.id && p.mobile === me) || {}).classDone).length / list.length * 100) : 0) + '%';
+                        const tab = (key, label, ic, grad, bd) => { const on = window.activeSyllabusSubjectFilter === key; return `<button onclick="window.filterSyllabusBySubject('${window.escJsAttr(key)}')" class="shrink-0 flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-full text-[12px] font-black transition-all duration-200 active:scale-95 ${on ? `bg-gradient-to-r ${grad} text-white shadow-lg scale-[1.03]` : 'bg-white text-gray-600 ring-1 ring-gray-200'}"><span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] ${on ? 'bg-white/25' : 'bg-gray-100 text-gray-500'}"><i class="fa-solid ${ic}"></i></span>${window.escHtml(label)}<span class="text-[10px] font-black px-1.5 py-0.5 rounded-full ${on ? 'bg-white/25' : 'bg-gray-100 text-gray-500'}">${bd}</span></button>`; };
+                        tabsContainer.innerHTML = tab('All', 'All', 'fa-layer-group', GR[0], badge(myTopics)) + subs.map((sb, i) => tab(sb, sb, IC[sb] || 'fa-book', GR[(i + 1) % GR.length], badge(myTopics.filter(x => x.subject === sb)))).join('');
                     }
 
-                    { const sc = document.getElementById('syl-status-chips'); if (sc) { const cnt = { new: 0, prog: 0, done: 0 }; myTopics.forEach(x => cnt[window.sylStatus(window.studentSyllabusProgressDB.find(p => p.topicId === x.id && p.mobile === window.loggedInMobile) || {})]++);
-                        sc.innerHTML = [['All', 'All', myTopics.length], ['new', 'Not started', cnt.new], ['prog', 'In progress', cnt.prog], ['done', 'Mastered', cnt.done]].map(([k, l, c]) => `<button onclick="window.filterSyllabusStatus('${k}')" class="shrink-0 px-3 py-1 rounded-full text-[10px] font-black transition-all ${window.activeSyllabusStatus === k ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}">${l} <span class="opacity-60">${c}</span></button>`).join(''); } }
-                    if (window.activeSyllabusSubjectFilter !== 'All') {
-                        myTopics = myTopics.filter(t => t.subject === window.activeSyllabusSubjectFilter);
-                    }
+                    
 
                     if (myTopics.length === 0) {
                         listContainer.innerHTML = `<div class="text-center text-gray-500 font-medium py-8 text-xs sm:text-sm bg-white rounded-[1rem] shadow-sm border border-gray-100 px-4">No topics found for this subject.</div>`;
@@ -15365,23 +15361,23 @@ ${textContent ? `
                             const st = window.sylStatus(t.progress), [sc, sl] = ({ new: ['slate', 'Not started'], prog: ['amber', 'In progress'], done: ['emerald', 'Mastered'] })[st];
                             const ok = [t.progress.classDone, (t.progress.revisionCount || 0) > 0, (t.progress.practiceCount || 0) > 0];
                             const stepper = ok.map(v => `<div class="h-1.5 flex-1 rounded-full transition-all ${v ? 'bg-indigo-500' : 'bg-gray-200'}"></div>`).join('');
-                            const cd = !!t.progress.classDone, rv = t.progress.revisionCount || 0, pr = t.progress.practiceCount || 0;
-                            const tile = (c, ic, lb, key, v) => `<div class="rounded-2xl p-2.5 flex flex-col items-center gap-1.5 border-2 transition-all ${v > 0 ? `bg-${c}-50 border-${c}-200` : 'bg-gray-50 border-gray-100'}"><span class="text-[10px] font-black uppercase tracking-wider text-${c}-700"><i class="fa-solid ${ic}"></i> ${lb}</span><span class="text-2xl font-black leading-none text-${c}-600">${v}</span><div class="flex items-center gap-1.5"><button onclick="updateSyllabusProgress('${t.id}', '${key}', -1)" aria-label="Decrease ${lb}" class="w-8 h-8 rounded-xl bg-white border border-${c}-200 text-${c}-600 flex items-center justify-center active:scale-90 transition-all"><i class="fa-solid fa-minus text-[10px]"></i></button><button onclick="updateSyllabusProgress('${t.id}', '${key}', 1)" aria-label="Increase ${lb}" class="w-8 h-8 rounded-xl bg-${c}-500 text-white flex items-center justify-center shadow-sm active:scale-90 transition-all"><i class="fa-solid fa-plus text-[10px]"></i></button></div></div>`;
+                            const cd = !!t.progress.classDone, rv = t.progress.revisionCount || 0, pr = t.progress.practiceCount || 0, stepsDone = ok.filter(Boolean).length;
+                            const ringCol = ({ new: 'text-gray-300', prog: 'text-amber-500', done: 'text-emerald-500' })[st];
+                            const cnt = (c, lb, key, v) => `<div class="flex-[1.3] flex h-9 rounded-xl overflow-hidden transition-all ${v > 0 ? `bg-${c}-500 text-white shadow-sm` : `bg-${c}-50 text-${c}-700`}"><button onclick="updateSyllabusProgress('${t.id}', '${key}', 1)" aria-label="Add ${lb}" class="flex-1 flex items-center justify-center gap-1 text-[11px] font-black active:opacity-70">${v > 0 ? '' : '<i class="fa-solid fa-plus text-[8px]"></i>'}${lb}${v > 0 ? `<span class="min-w-[18px] h-[18px] px-1 rounded-full bg-white/25 text-[10px] leading-none flex items-center justify-center">${v}</span>` : ''}</button>${v > 0 ? `<button onclick="updateSyllabusProgress('${t.id}', '${key}', -1)" aria-label="Remove one ${lb}" class="w-8 flex items-center justify-center bg-black/10 active:bg-black/20"><i class="fa-solid fa-minus text-[9px]"></i></button>` : ''}</div>`;
                             subjectHtml += `
-                <div class="syl-card bg-white p-3.5 rounded-2xl border border-gray-100 border-l-4 border-l-${sc}-400 shadow-[0_2px_12px_rgba(0,0,0,0.04)] flex flex-col gap-3">
-                    <div class="flex justify-between items-start gap-2">
-                        <div class="min-w-0"><h5 class="font-bold text-gray-900 text-sm sm:text-[15px] leading-tight break-words">${t.topic}</h5>${assignBadge}</div>
-                        <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded-md shrink-0 bg-${sc}-50 text-${sc}-700 border border-${sc}-100">${sl}</span>
+                <div class="syl-card bg-white p-3.5 rounded-3xl shadow-[0_6px_24px_rgba(15,23,42,0.07)]">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0"><h5 class="font-bold text-gray-900 text-[15px] leading-tight break-words">${t.topic}</h5>${assignBadge}</div>
+                        <span class="text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-full shrink-0 ${({ new: 'bg-gray-100 text-gray-500', prog: 'bg-amber-100 text-amber-700', done: 'bg-emerald-100 text-emerald-700' })[st]}">${sl}</span>
                     </div>
-                    <div class="flex gap-1">${stepper}</div>
-                    <div class="grid grid-cols-3 gap-2">
-                        <button onclick="updateSyllabusProgress('${t.id}', 'classDone', null)" class="rounded-2xl p-2.5 flex flex-col items-center justify-center gap-1.5 border-2 transition-all active:scale-95 ${cd ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-indigo-50/60 border-indigo-100 text-indigo-700'}">
-                            <span class="w-9 h-9 rounded-full flex items-center justify-center text-base ${cd ? 'bg-white/20' : 'bg-white shadow-sm'}"><i class="fa-solid ${cd ? 'fa-check' : 'fa-chalkboard-user'}"></i></span>
-                            <span class="text-[10px] font-black uppercase tracking-wider leading-tight">Class</span>
-                            <span class="text-[10px] font-bold ${cd ? 'text-indigo-100' : 'text-indigo-400'}">${cd ? 'Done' : 'Tap to mark'}</span>
-                        </button>
-                        ${tile('emerald', 'fa-rotate', 'Revision', 'revision', rv)}
-                        ${tile('blue', 'fa-dumbbell', 'Practice', 'practice', pr)}
+                    <div class="flex items-center gap-2.5 mt-2.5 mb-3">
+                        <div class="flex-1 flex gap-1">${['bg-indigo-500', 'bg-emerald-500', 'bg-blue-500'].map((c, i) => `<div class="h-2 flex-1 rounded-full transition-all duration-500 ${ok[i] ? c : 'bg-gray-200'}"></div>`).join('')}</div>
+                        <span class="text-[11px] font-black text-gray-500 tabular-nums">${stepsDone}/3</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="updateSyllabusProgress('${t.id}', 'classDone', null)" aria-pressed="${cd}" class="flex-1 h-9 rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all ${cd ? 'bg-indigo-600 text-white shadow-sm' : 'bg-indigo-50 text-indigo-700'}"><i class="fa-solid ${cd ? 'fa-check' : 'fa-plus'} text-[9px]"></i>Class</button>
+                        ${cnt('emerald', 'Revision', 'revision', rv)}
+                        ${cnt('blue', 'Practice', 'practice', pr)}
                     </div>
                 </div>`;
                         });
