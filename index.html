@@ -3416,8 +3416,6 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
   html.is-tablet #wt-tasks-list > .text-center { grid-column: 1 / -1; }
   html.is-tablet #syl-topics-list .space-y-3 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
   html.is-tablet #syl-topics-list .space-y-3 > * { margin-top: 0 !important; }
-  html.is-tablet #syl-topics-list .syl-card > .grid { grid-template-columns: 1fr 1fr; }
-  html.is-tablet #syl-topics-list .syl-card > .grid > button { grid-column: 1 / -1; }
   html.is-tablet #syl-subject-tabs-container, html.is-tablet #syl-status-chips { flex-wrap: wrap; overflow: visible; }
   /* NOVA Evaluation: summary blocks become a 2x2 board */
   html.is-tablet #nova-fb-body > div:first-child { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; }
@@ -15253,9 +15251,10 @@ ${textContent ? `
             window.filterSyllabusStatus = s => { window.activeSyllabusStatus = s; window.renderSyllabusTracker(); };
             window.setSylHero = function (topics, doneClasses, pct) {
                 const $ = id => document.getElementById(id), isA = window.currentRole === 'admin', DB = window.studentSyllabusProgressDB || [], SD = window.studentsDB || [];
-                let tot = topics.length, dn = doneClasses, pr = 0, rv = 0, lab = 'Total Syllabus Covered', sub = '';
+                const sf = window.activeSyllabusSubjectFilter, one = sf && sf !== 'All';
+                let tot = topics.length, dn = doneClasses, pr = 0, rv = 0, lab = one ? sf + ' Progress' : 'Total Syllabus Covered', sub = '';
                 if (isA) {
-                    tot = 0; dn = 0; lab = 'Class Completion · All Students';
+                    tot = 0; dn = 0; lab = 'Class Completion · ' + (one ? sf : 'All Students');
                     topics.forEach(x => (!x.assignedTo || x.assignedTo.includes('All') ? SD.map(s => s.mobile) : x.assignedTo).forEach(m => { const p = DB.find(q => q.topicId === x.id && q.mobile === m) || {}; tot++; if (p.classDone) dn++; pr += p.practiceCount || 0; rv += p.revisionCount || 0; }));
                     pct = tot ? Math.round(dn / tot * 100) : 0; sub = topics.length + ' topics · ' + SD.length + ' students';
                 } else topics.forEach(x => { const p = DB.find(q => q.topicId === x.id && q.mobile === window.loggedInMobile) || {}; pr += p.practiceCount || 0; rv += p.revisionCount || 0; });
@@ -15287,7 +15286,7 @@ ${textContent ? `
                 if (!listContainer) return;
 
                 // 1. SKELETON
-                if (instant !== true) listContainer.innerHTML = window.getSkeletonHTML('card', 3);
+                
 
                 // 2. DELAY
                 setTimeout(() => {
@@ -15307,7 +15306,9 @@ ${textContent ? `
                     });
 
                     const progPerc = totalClasses > 0 ? Math.round((completedClasses / totalClasses) * 100) : 0;
-                    window.setSylHero(myTopics, completedClasses, progPerc);
+                    const sf = window.activeSyllabusSubjectFilter, hT = sf === 'All' ? myTopics : myTopics.filter(x => x.subject === sf);
+                    const hDone = hT.filter(x => (window.studentSyllabusProgressDB.find(p => p.topicId === x.id && p.mobile === window.loggedInMobile) || {}).classDone).length;
+                    window.setSylHero(hT, hDone, hT.length ? Math.round(hDone / hT.length * 100) : 0);
                     
 
                     if (myTopics.length === 0) {
@@ -15363,32 +15364,24 @@ ${textContent ? `
                             if (isAdmin) { subjectHtml += window.sylAdminCard(t, delBtn, assignBadge); return; }
                             const st = window.sylStatus(t.progress), [sc, sl] = ({ new: ['slate', 'Not started'], prog: ['amber', 'In progress'], done: ['emerald', 'Mastered'] })[st];
                             const ok = [t.progress.classDone, (t.progress.revisionCount || 0) > 0, (t.progress.practiceCount || 0) > 0];
-                            const stepper = ['Class', 'Revision', 'Practice'].map((l, i) => `<div class="flex flex-col items-center gap-1 w-14"><div class="w-5 h-5 rounded-full flex items-center justify-center text-[8px] transition-all ${ok[i] ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-transparent'}"><i class="fa-solid fa-check"></i></div><span class="text-[8px] font-bold uppercase tracking-wider ${ok[i] ? 'text-indigo-600' : 'text-gray-400'}">${l}</span></div>` + (i < 2 ? `<div class="flex-1 h-0.5 -mt-3.5 rounded ${ok[i] && ok[i + 1] ? 'bg-indigo-500' : 'bg-gray-200'}"></div>` : '')).join('');
+                            const stepper = ok.map(v => `<div class="h-1.5 flex-1 rounded-full transition-all ${v ? 'bg-indigo-500' : 'bg-gray-200'}"></div>`).join('');
+                            const cd = !!t.progress.classDone, rv = t.progress.revisionCount || 0, pr = t.progress.practiceCount || 0;
+                            const tile = (c, ic, lb, key, v) => `<div class="rounded-2xl p-2.5 flex flex-col items-center gap-1.5 border-2 transition-all ${v > 0 ? `bg-${c}-50 border-${c}-200` : 'bg-gray-50 border-gray-100'}"><span class="text-[10px] font-black uppercase tracking-wider text-${c}-700"><i class="fa-solid ${ic}"></i> ${lb}</span><span class="text-2xl font-black leading-none text-${c}-600">${v}</span><div class="flex items-center gap-1.5"><button onclick="updateSyllabusProgress('${t.id}', '${key}', -1)" aria-label="Decrease ${lb}" class="w-8 h-8 rounded-xl bg-white border border-${c}-200 text-${c}-600 flex items-center justify-center active:scale-90 transition-all"><i class="fa-solid fa-minus text-[10px]"></i></button><button onclick="updateSyllabusProgress('${t.id}', '${key}', 1)" aria-label="Increase ${lb}" class="w-8 h-8 rounded-xl bg-${c}-500 text-white flex items-center justify-center shadow-sm active:scale-90 transition-all"><i class="fa-solid fa-plus text-[10px]"></i></button></div></div>`;
                             subjectHtml += `
                 <div class="syl-card bg-white p-3.5 rounded-2xl border border-gray-100 border-l-4 border-l-${sc}-400 shadow-[0_2px_12px_rgba(0,0,0,0.04)] flex flex-col gap-3">
                     <div class="flex justify-between items-start gap-2">
                         <div class="min-w-0"><h5 class="font-bold text-gray-900 text-sm sm:text-[15px] leading-tight break-words">${t.topic}</h5>${assignBadge}</div>
-                        <div class="flex items-center gap-1.5 shrink-0"><span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded-md bg-${sc}-50 text-${sc}-700 border border-${sc}-100">${sl}</span>${delBtn}</div>
+                        <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded-md shrink-0 bg-${sc}-50 text-${sc}-700 border border-${sc}-100">${sl}</span>
                     </div>
-                    <div class="flex items-center px-1">${stepper}</div>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <button onclick="updateSyllabusProgress('${t.id}', 'classDone', null)" class="w-full py-2 rounded-xl flex items-center justify-center gap-1.5 text-xs font-black transition-all active:scale-95 ${classBtnStyle} ${isAdmin ? 'pointer-events-none opacity-50' : ''}"><i class="fa-solid ${classIcon}"></i> ${t.progress.classDone ? 'Class Done' : 'Mark Class Done'}</button>
-                        <div class="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl px-2 py-1.5">
-                            <span class="text-[10px] font-bold text-emerald-800 uppercase tracking-widest ml-1"><i class="fa-solid fa-rotate mr-1"></i> Revision</span>
-                            <div class="flex items-center gap-2 bg-white rounded-lg p-0.5 shadow-sm border border-emerald-200 ${isAdmin ? 'pointer-events-none opacity-50' : ''}">
-                                <button onclick="updateSyllabusProgress('${t.id}', 'revision', -1)" class="w-6 h-6 flex items-center justify-center text-gray-500 active:scale-90 bg-gray-50 rounded"><i class="fa-solid fa-minus text-[10px]"></i></button>
-                                <span class="font-black text-emerald-600 text-xs w-4 text-center">${t.progress.revisionCount || 0}</span>
-                                <button onclick="updateSyllabusProgress('${t.id}', 'revision', 1)" class="w-6 h-6 flex items-center justify-center text-gray-500 active:scale-90 bg-gray-50 rounded"><i class="fa-solid fa-plus text-[10px]"></i></button>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-2 py-1.5">
-                            <span class="text-[10px] font-bold text-blue-800 uppercase tracking-widest ml-1"><i class="fa-solid fa-dumbbell mr-1"></i> Practice</span>
-                            <div class="flex items-center gap-2 bg-white rounded-lg p-0.5 shadow-sm border border-blue-200 ${isAdmin ? 'pointer-events-none opacity-50' : ''}">
-                                <button onclick="updateSyllabusProgress('${t.id}', 'practice', -1)" class="w-6 h-6 flex items-center justify-center text-gray-500 active:scale-90 bg-gray-50 rounded"><i class="fa-solid fa-minus text-[10px]"></i></button>
-                                <span class="font-black text-blue-600 text-xs w-4 text-center">${t.progress.practiceCount || 0}</span>
-                                <button onclick="updateSyllabusProgress('${t.id}', 'practice', 1)" class="w-6 h-6 flex items-center justify-center text-gray-500 active:scale-90 bg-gray-50 rounded"><i class="fa-solid fa-plus text-[10px]"></i></button>
-                            </div>
-                        </div>
+                    <div class="flex gap-1">${stepper}</div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="updateSyllabusProgress('${t.id}', 'classDone', null)" class="rounded-2xl p-2.5 flex flex-col items-center justify-center gap-1.5 border-2 transition-all active:scale-95 ${cd ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-indigo-50/60 border-indigo-100 text-indigo-700'}">
+                            <span class="w-9 h-9 rounded-full flex items-center justify-center text-base ${cd ? 'bg-white/20' : 'bg-white shadow-sm'}"><i class="fa-solid ${cd ? 'fa-check' : 'fa-chalkboard-user'}"></i></span>
+                            <span class="text-[10px] font-black uppercase tracking-wider leading-tight">Class</span>
+                            <span class="text-[10px] font-bold ${cd ? 'text-indigo-100' : 'text-indigo-400'}">${cd ? 'Done' : 'Tap to mark'}</span>
+                        </button>
+                        ${tile('emerald', 'fa-rotate', 'Revision', 'revision', rv)}
+                        ${tile('blue', 'fa-dumbbell', 'Practice', 'practice', pr)}
                     </div>
                 </div>`;
                         });
@@ -15397,7 +15390,7 @@ ${textContent ? `
                     });
 
                     listContainer.innerHTML = finalHtml || `<div class="text-center text-gray-500 font-medium py-8 text-xs bg-white rounded-2xl border border-gray-100 px-4">No topics match this filter.</div>`;
-                }, instant === true ? 0 : 300);
+                }, 0);
             };
             // ==========================================
             // EDIT LECTURE LOGIC
@@ -21614,7 +21607,7 @@ async function showWallet() {
                 if (!listContainer) return;
 
                 // 1. SKELETON
-                listContainer.innerHTML = window.getSkeletonHTML('card', 2);
+                
 
                 // 2. DELAY
                 setTimeout(() => {
@@ -21665,7 +21658,7 @@ async function showWallet() {
                     });
 
                     listContainer.innerHTML = finalHtml;
-                }, 300);
+                }, 0);
             };
 
             window.getComputedResults = function () {
