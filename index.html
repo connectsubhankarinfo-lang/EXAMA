@@ -11277,8 +11277,22 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
             f(); SOS.mine = setInterval(f, 10000);
         }
         window.sosCancel = async function () {
-            if (!(await window.showCustomConfirm("Stop SOS", "Are you safe? This stops the alert for everyone.", "I'm safe", "Keep SOS", "info"))) return;
-            const s = session(); if (s) await call("/sos/cancel", {}, s.u);
+            // The shared confirm dialog (z-index 9999) opens BEHIND the SOS screen (z-index 10001), so it can't be used here.
+            // Use a two-tap confirm on the button itself instead.
+            const btn = document.getElementById("soss-safe"); if (!btn) return;
+            if (!btn.dataset.armed) {
+                btn.dataset.armed = "1"; const orig = btn.textContent; btn.dataset.orig = orig;
+                btn.textContent = "TAP AGAIN TO CONFIRM — I'M SAFE";
+                btn.style.background = "#22c55e"; btn.style.color = "#fff";
+                setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = btn.dataset.orig; btn.style.background = "#fff"; btn.style.color = "#15803d"; } }, 4000);
+                return;
+            }
+            delete btn.dataset.armed; btn.textContent = btn.dataset.orig; btn.style.background = "#fff"; btn.style.color = "#15803d";
+            const s = session(); if (!s) return toast("SOS", "Please log in again.", "error");
+            btn.disabled = true;
+            let r = null; try { r = await call("/sos/cancel", {}, s.u); } catch (e) { }
+            btn.disabled = false;
+            if (!r || !r.ok) { toast("Could not stop SOS", "Check your internet and tap again.", "error"); return; }
             SOS.sending = false; clearInterval(SOS.upd); sosMineLoop(false); sosShow("sos-sender", false); toast("SOS stopped", "Glad you're safe.", "success");
         };
 
@@ -31249,7 +31263,7 @@ YOUR DIRECTIVES:
   <div class="sos-card"><b>YOUR LOCATION</b><div id="soss-loc" style="font-size:13px;font-weight:800">Locating…</div></div>
   <div class="sos-card" style="margin-top:10px"><b>SEEN BY</b><div id="soss-seen" style="font-size:13px;font-weight:800">0 people</div></div>
   <p style="opacity:.75;font-size:11px;font-weight:600;margin:14px 0 18px;max-width:280px">Alerts repeat every minute until each person taps “I've seen it”. Stay where you are if it is safe.</p>
-  <button class="sos-btn" style="background:#fff;color:#15803d" onclick="window.sosCancel()">I'M SAFE — STOP SOS</button>
+  <button id="soss-safe" class="sos-btn" style="background:#fff;color:#15803d" onclick="window.sosCancel()">I'M SAFE — STOP SOS</button>
   <button id="soss-retry" class="sos-btn hidden" style="background:rgba(255,255,255,.2);margin-top:10px" onclick="window.sosSendNow()">Retry sending</button>
 </div>
 
