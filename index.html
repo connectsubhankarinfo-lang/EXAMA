@@ -7566,7 +7566,7 @@ window.rmEnhance=function(logs,o){
     <div id="rt-topshade"></div>
     <div id="rt-head">
         <button id="rt-close" type="button" onclick="window.closeRunTracker()" aria-label="Minimise run screen" class="rt-glass rt-sq"><i class="fa-solid fa-chevron-down"></i></button>
-        <div id="rt-gps" class="rt-glass"><span id="rt-gps-dot" class="bg-gray-500"></span><span id="rt-gps-txt">GPS off</span></div>
+        <div style="display:flex;align-items:center;gap:8px"><div id="rt-gps" class="rt-glass"><span id="rt-gps-dot" class="bg-gray-500"></span><span id="rt-gps-txt">GPS off</span></div><button id="rt-lockbtn" type="button" onclick="window.lockRunTracker()" aria-label="Lock screen" class="invisible rt-glass rt-sq"><i class="fa-solid fa-lock"></i></button></div>
     </div>
     <div id="rt-center">
         <p class="rt-lab">Distance</p>
@@ -7599,7 +7599,7 @@ window.rmEnhance=function(logs,o){
         <div class="rt-ctrl">
             <button id="rt-music" type="button" onclick="window.openRunMusic()" aria-label="Music" class="invisible rt-glass rt-side"><i class="fa-solid fa-music"></i></button>
             <div class="rt-halo"><button id="rt-main" type="button" onclick="window.runMainTap()" style="background:linear-gradient(135deg,#f43f5e,#dc2626);box-shadow:0 10px 30px rgba(225,29,72,.4)">START</button></div>
-            <button id="rt-lockbtn" type="button" onclick="window.lockRunTracker()" aria-label="Lock screen" class="invisible rt-glass rt-side"><i class="fa-solid fa-lock"></i></button>
+            <button type="button" class="rt-ptt rt-glass rt-side" aria-label="Hold to talk"><i class="fa-solid fa-walkie-talkie"></i><span>HOLD</span></button>
         </div>
     </div>
     <div id="rt-count" class="hidden absolute inset-0 z-20 flex flex-col items-center justify-center" onclick="window.cancelRunCountdown()">
@@ -7611,9 +7611,9 @@ window.rmEnhance=function(logs,o){
     <div id="rt-lock" class="hidden absolute inset-0 z-30 flex flex-col items-center justify-end pb-12" style="touch-action:none">
         <div style="text-align:center;margin-bottom:26px;text-shadow:0 1px 10px rgba(0,0,0,.8)"><div id="rt-lock-km">0.00</div><div style="font-size:15px;font-weight:800;color:#fb7185;margin-top:6px">km</div><div id="rt-lock-time" style="font-size:22px;font-weight:800;font-style:italic;margin-top:10px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.8)"></div></div>
         <p id="rt-lock-hint" style="font-size:14px;font-weight:700;color:rgba(255,255,255,.7);margin-bottom:22px">Screen locked</p>
-        <button id="rt-unlock" type="button" aria-label="Hold to unlock" class="relative w-24 h-24 rounded-full flex items-center justify-center text-white" style="touch-action:none;-webkit-touch-callout:none;background:rgba(255,255,255,.08)">
+        <div class="rt-lockrow"><span></span><button id="rt-unlock" type="button" aria-label="Hold to unlock" class="relative w-24 h-24 rounded-full flex items-center justify-center text-white" style="touch-action:none;-webkit-touch-callout:none;background:rgba(255,255,255,.08)">
             <svg class="absolute inset-0" viewBox="0 0 96 96" width="96" height="96" style="transform:rotate(-90deg)"><circle cx="48" cy="48" r="44" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="4"/><circle id="rt-ring" cx="48" cy="48" r="44" fill="none" stroke="#fb7185" stroke-width="4" stroke-linecap="round" stroke-dasharray="276.46" stroke-dashoffset="276.46"/></svg>
-            <i class="fa-solid fa-lock text-xl"></i></button>
+            <i class="fa-solid fa-lock text-xl"></i></button><button type="button" class="rt-ptt rt-glass rt-side" aria-label="Hold to talk"><i class="fa-solid fa-walkie-talkie"></i><span>HOLD</span></button></div>
         <p style="font-size:12px;color:rgba(255,255,255,.4);margin-top:14px">Hold to unlock</p>
        
     </div>
@@ -11244,6 +11244,34 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
             } catch (e) { }
         }
 
+        // ---- live map helpers (Leaflet loads on demand) ----
+        SOS.maps = {};
+        const sosLoadL = cb => { if (window.L) return cb(); if (SOS.ll) return SOS.ll.push(cb); SOS.ll = [cb]; const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"; document.head.appendChild(l); const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"; sc.onload = () => { const q = SOS.ll; SOS.ll = null; q.forEach(f => f()); }; sc.onerror = () => { SOS.ll = null; }; document.head.appendChild(sc); };
+        const sosDist = (a, b, c, d) => { const r = Math.PI / 180, x = (c - a) * r, y = (d - b) * r, h = Math.sin(x / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(y / 2) ** 2; return 12742000 * Math.asin(Math.sqrt(h)); };
+        const sosFmtD = m => m < 1000 ? Math.round(m) + " m" : (m / 1000).toFixed(1) + " km";
+        const sosAgo = ms => { const t = Math.max(0, Math.round((Date.now() - ms) / 1000)); return t < 60 ? "updated " + t + "s ago" : "updated " + Math.floor(t / 60) + " min ago"; };
+        const sosDot = me => L.divIcon({ className: "sos-mk" + (me ? " me" : ""), html: "<i></i>", iconSize: [22, 22], iconAnchor: [11, 11] });
+        function sosMapUpd(key, id, pt, me) {
+            if (!pt || pt.lat == null) return;
+            sosLoadL(() => {
+                const el = $(id); if (!el) return; const M = SOS.maps[key] = SOS.maps[key] || {}, ll = [pt.lat, pt.lng];
+                if (!M.map) {
+                    M.map = L.map(el, { zoomControl: false, attributionControl: false }).setView(ll, 16);
+                    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(M.map);
+                    M.follow = true; M.map.on("dragstart", () => { M.follow = false; });
+                    M.mk = L.marker(ll, { icon: sosDot(me) }).addTo(M.map);
+                    M.ac = L.circle(ll, { radius: pt.acc || 20, color: me ? "#3b82f6" : "#ef4444", weight: 1, fillOpacity: .12 }).addTo(M.map);
+                    M.tr = L.polyline([], { color: "#ef4444", weight: 4, opacity: .8 }).addTo(M.map);
+                }
+                M.mk.setLatLng(ll); M.ac.setLatLng(ll); M.ac.setRadius(pt.acc || 20);
+                if (!me) { const t = M.tr.getLatLngs(), l = t[t.length - 1]; if (!l || l.lat !== pt.lat || l.lng !== pt.lng) M.tr.addLatLng(ll); }
+                if (M.follow) M.map.setView(ll, M.map.getZoom());
+                setTimeout(() => M.map.invalidateSize(), 150);
+            });
+        }
+        window.sosRecenter = () => { const M = SOS.maps.r; if (M && M.map) { M.follow = true; M.map.setView(M.mk.getLatLng(), 17); } };
+        setInterval(() => { const x = SOS.shown; if (x) { const e = $("sosp-ago"); if (e) e.textContent = sosAgo(x.locAt || x.at); } }, 1000);
+
         // ---- sender ----
         window.sosOpenConfirm = function () {
             if (window.currentRole !== "student") return toast("SOS", "SOS is for student accounts.", "info");
@@ -11260,20 +11288,20 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
             SOS.sending = true; sosShow("sos-sender", true); sosShow("soss-retry", false);
             $("soss-status").textContent = "Getting your location…";
             const pos = await sosPos(), me = (window.studentsDB || []).find(x => String(x.mobile) === s.m) || {};
-            $("soss-loc").textContent = sosLocText(pos);
+            $("soss-loc").textContent = sosLocText(pos); sosMapUpd("s", "soss-map", pos, true);
             const r = await call("/sos/trigger", { name: me.name || s.m, targets: students().map(x => x.m).filter(m => m !== s.m), ...(pos || {}) }, s.u);
             if (!r.ok) { $("soss-status").textContent = "⚠ Could not send — check your internet"; sosShow("soss-retry", true); return; }
             $("soss-status").textContent = "✔ Sent to " + r.data.sent + " people (students + admin)";
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
             clearInterval(SOS.upd); SOS.upd = setInterval(async () => {          // keep the location fresh every 15 s
                 const p = await sosPos(), ss = session(); if (!p || !ss) return;
-                $("soss-loc").textContent = sosLocText(p); call("/sos/update", p, ss.u);
+                $("soss-loc").textContent = sosLocText(p); sosMapUpd("s", "soss-map", p, true); call("/sos/update", p, ss.u);
             }, 15000);
             sosMineLoop(true);
         };
         function sosMineLoop(on) {
             clearInterval(SOS.mine); if (!on) return;
-            const f = async () => { const s = session(); if (!s) return; try { const r = await call("/sos/mine", {}, s.u); if (r.ok) { if (!r.data.active && !SOS.sending) return; $("soss-seen").textContent = r.data.seen + " of " + r.data.total + " have seen it"; } } catch (e) { } };
+            const f = async () => { const s = session(); if (!s) return; try { const r = await call("/sos/mine", {}, s.u); if (r.ok) { if (!r.data.active && !SOS.sending) return; $("soss-seen").textContent = r.data.seen + " of " + r.data.total + " have seen it"; { const b = $("soss-bar"); if (b) b.style.width = (r.data.total ? Math.round(r.data.seen / r.data.total * 100) : 0) + "%"; } } } catch (e) { } };
             f(); SOS.mine = setInterval(f, 10000);
         }
         window.sosCancel = async function () {
@@ -11293,21 +11321,30 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
             let r = null; try { r = await call("/sos/cancel", {}, s.u); } catch (e) { }
             btn.disabled = false;
             if (!r || !r.ok) { toast("Could not stop SOS", "Check your internet and tap again.", "error"); return; }
-            SOS.sending = false; clearInterval(SOS.upd); sosMineLoop(false); sosShow("sos-sender", false); toast("SOS stopped", "Glad you're safe.", "success");
+            SOS.sending = false; clearInterval(SOS.upd); sosMineLoop(false); sosShow("sos-sender", false); try { const m = SOS.maps.s; if (m && m.map) { m.map.remove(); delete SOS.maps.s; } } catch (e) { } toast("SOS stopped", "Glad you're safe.", "success");
         };
 
         // ---- receiver ----
         function sosRender(x) {
+            if (SOS.rid !== x.id) { SOS.rid = x.id; const m = SOS.maps.r; if (m && m.map) { try { m.map.remove(); } catch (e) { } } delete SOS.maps.r; $("sosp-dist").textContent = "distance —"; }
             $("sosp-name").textContent = x.name; $("sosp-phone").textContent = x.mobile; $("sosp-call").href = "tel:" + x.mobile;
-            $("sosp-time").textContent = sosT(x.at);
+            $("sosp-time").textContent = sosT(x.at); $("sosp-ago").textContent = sosAgo(x.locAt || x.at);
             const has = x.lat !== null && x.lat !== undefined && x.lng !== null && x.lng !== undefined;
-            $("sosp-loc").textContent = has ? sosLocText(x) + "  • updated " + sosT(x.locAt || x.at) : "Location unavailable — call her now";
-            const a = $("sosp-open"), f = $("sosp-map");
-            a.style.display = has ? "block" : "none"; f.classList.toggle("hidden", !has);
-            if (has) {
-                a.href = "https://www.google.com/maps?q=" + x.lat + "," + x.lng;
-                const u = "https://www.openstreetmap.org/export/embed.html?bbox=" + (x.lng - .004) + "%2C" + (x.lat - .003) + "%2C" + (x.lng + .004) + "%2C" + (x.lat + .003) + "&layer=mapnik&marker=" + x.lat + "%2C" + x.lng;
-                if (f.dataset.u !== u) { f.dataset.u = u; f.src = u; }
+            $("sosp-loc").textContent = has ? sosLocText(x) : "Location unavailable — call her now";
+            $("sosp-mapwrap").style.display = has ? "block" : "none";
+            $("sosp-nav").style.display = has ? "flex" : "none"; $("sosp-open").style.display = has ? "inline-block" : "none";
+            if (!has) return;
+            $("sosp-open").href = "https://www.google.com/maps?q=" + x.lat + "," + x.lng;
+            $("sosp-nav").href = "https://www.google.com/maps/dir/?api=1&destination=" + x.lat + "," + x.lng + "&travelmode=walking";
+            sosMapUpd("r", "sosp-map", x, false);
+            if (!SOS.myT || Date.now() - SOS.myT > 20000) {                    // my own dot + distance to her
+                SOS.myT = Date.now();
+                sosPos().then(p => sosLoadL(() => {
+                    const M = SOS.maps.r; if (!p || !M || !M.map) return;
+                    if (!M.my) M.my = L.marker([p.lat, p.lng], { icon: sosDot(true) }).addTo(M.map); else M.my.setLatLng([p.lat, p.lng]);
+                    const q = M.mk.getLatLng(); $("sosp-dist").textContent = sosFmtD(sosDist(p.lat, p.lng, q.lat, q.lng)) + " away";
+                    if (!M.fit) { M.fit = 1; M.map.fitBounds(L.latLngBounds([p.lat, p.lng], q).pad(.4), { maxZoom: 17 }); }
+                }));
             }
         }
         async function sosPoll() {
@@ -20692,10 +20729,10 @@ const burst=(big,sub,col,vb)=>{const o=$('rt-ms');if(!o)return;o.innerHTML='<i c
 let DB=null,others={},group='',hooked=0,lastW=0,active=0,announced=0,lastStep=0,goalFired=0,base=0,trap=0,ignore=0,listening=0;
 const path=()=>window.isGlobalTestMode?'test_live_runs':'live_runs';
 const fb=async()=>DB||(DB=await import('https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js'));
-const wLive=async rm=>{try{if(!window.rtdb||!me())return;const f=await fb(),r=f.ref(window.rtdb,path()+'/'+me());if(rm){await f.remove(r);return;}const o={mobile:me(),name:stu().name||'Runner',dist:+(S().dist/1000).toFixed(2),st:S().st,group:group||me(),ts:Date.now()},q=S().last||S().fix;if(q){o.lat=+q.lat.toFixed(5);o.lon=+q.lon.toFixed(5);}await f.set(r,o);if(!hooked){hooked=1;f.onDisconnect(r).remove();}}catch(e){}};
+const wLive=async rm=>{try{if(!window.rtdb||!me())return;const f=await fb(),r=f.ref(window.rtdb,path()+'/'+me());if(rm){await f.remove(r);return;}const o={mobile:me(),name:stu().name||'Runner',dist:+(S().dist/1000).toFixed(2),st:S().st,group:group||me(),tk:window.__rtTalkingMe?1:0,ts:Date.now()},q=S().last||S().fix;if(q){o.lat=+q.lat.toFixed(5);o.lon=+q.lon.toFixed(5);}await f.set(r,o);if(!hooked){hooked=1;f.onDisconnect(r).remove();}}catch(e){}};
 const listen=async()=>{if(listening||!window.rtdb||!me())return;listening=1;try{const f=await fb();f.onValue(f.ref(window.rtdb,path()),sn=>{others={};const v=sn.val()||{};Object.keys(v).forEach(k=>{if(k!==me()&&v[k]&&v[k].st!=='idle')others[k]=v[k];});render();});}catch(e){listening=0;}};
 const push=(t,m,to)=>{try{const p=window.sendOneSignalPush||(typeof sendOneSignalPush==='function'?sendOneSignalPush:null);if(p)p(t,m,null,{category:'exam',data:{runner:me()}},to);}catch(e){}};
-const esc=x=>window.escHtml?window.escHtml(x):String(x);window.__rtGroup=()=>group||me();
+const esc=x=>window.escHtml?window.escHtml(x):String(x);window.__rtGroup=()=>group||me();window.__rtWLive=()=>wLive();
 const live=()=>Object.keys(others).filter(k=>Date.now()-others[k].ts<20000).map(k=>others[k]);
 function render(){
  const g=group||me(),mates=live().filter(r=>r.group===g||r.mobile===group),pl=$('rt-live');window.__rtMates=mates;
@@ -20780,7 +20817,7 @@ function draw(){if(!on||!map||!window.L)return;
  if(R.pos){if(!meM)meM=L.marker(R.pos,{icon:ic('<div class="rt-runner"><i class="fa-solid fa-person-running"></i></div>',38),interactive:false,zIndexOffset:900}).addTo(map);else meM.setLatLng(R.pos);
   if(follow)focus();}
  const seen={};(window.__rtMates||[]).forEach(r=>{if(r.lat==null||r.lon==null)return;seen[r.mobile]=1;const ll=[r.lat,r.lon];
-  if(pm[r.mobile])pm[r.mobile].setLatLng(ll);else pm[r.mobile]=L.marker(ll,{icon:ic('<div style="position:relative;width:30px;height:30px;border-radius:50%;background:'+col(r.mobile)+';border:3px solid #fff;color:#fff;font:900 12px/24px sans-serif;text-align:center">'+esc((r.name||'?').charAt(0).toUpperCase())+(function(){try{var u=window.getStudentAvatar&&window.getStudentAvatar(r.mobile,r.name);return u?'<img src="'+esc(u)+'" alt="" onerror="this.remove()" style="position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover">':'';}catch(e){return '';}})()+'<span style="position:absolute;left:50%;top:32px;transform:translateX(-50%);white-space:nowrap;font-size:10px;background:rgba(9,9,11,.85);padding:1px 7px;border-radius:9px">'+esc(r.name||'')+'</span></div>',30),interactive:false,zIndexOffset:500}).addTo(map);});
+  if(pm[r.mobile])pm[r.mobile].setLatLng(ll);else pm[r.mobile]=L.marker(ll,{icon:ic('<div style="position:relative;width:30px;height:30px;border-radius:50%;background:'+col(r.mobile)+';border:3px solid #fff;color:#fff;font:900 12px/24px sans-serif;text-align:center">'+esc((r.name||'?').charAt(0).toUpperCase())+(function(){try{var u=window.getStudentAvatar&&window.getStudentAvatar(r.mobile,r.name);return u?'<img src="'+esc(u)+'" alt="" onerror="this.remove()" style="position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover">':'';}catch(e){return '';}})()+'<span style="position:absolute;left:50%;top:32px;transform:translateX(-50%);white-space:nowrap;font-size:10px;background:rgba(9,9,11,.85);padding:1px 7px;border-radius:9px">'+esc(r.name||'')+'</span></div>',30),interactive:false,zIndexOffset:500}).addTo(map);try{const e=pm[r.mobile].getElement();if(e)e.classList.toggle('rt-talk',!!r.tk);}catch(x){}});
  Object.keys(pm).forEach(k=>{if(!seen[k]){map.removeLayer(pm[k]);delete pm[k];}});}
 setInterval(()=>{const s=S(),run=s.st!=='idle';
  if(!run){if(hadRun){hadRun=0;clear();}return;}
@@ -31233,13 +31270,27 @@ YOUR DIRECTIVES:
 .sos-btn:active{transform:scale(.96)}
 .sos-card{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:18px;padding:12px 14px;width:100%;max-width:360px;text-align:left;backdrop-filter:blur(6px)}
 .sos-card b{display:block;font-size:9px;letter-spacing:.2em;opacity:.7;font-weight:800;margin-bottom:3px}
-#sosp-map{width:100%;max-width:360px;height:150px;border:0;border-radius:16px;margin-top:10px;background:#0003}
-.rt-ptt{position:absolute;right:16px;bottom:calc(168px + env(safe-area-inset-bottom,0px));z-index:27;width:78px;height:78px;border-radius:50%;display:none;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#fff;font-size:8px;font-weight:900;letter-spacing:.08em;background:linear-gradient(135deg,#0ea5e9,#2563eb);box-shadow:0 8px 24px rgba(37,99,235,.5);touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;transition:transform .12s,background .2s}
-.rt-ptt i{font-size:22px}
-.rt-ptt.on{display:flex}
-.rt-ptt.talk{background:linear-gradient(135deg,#f43f5e,#dc2626);transform:scale(1.14);box-shadow:0 0 0 10px rgba(244,63,94,.25),0 8px 28px rgba(220,38,38,.6)}
-.rt-ptt.hear{background:linear-gradient(135deg,#22c55e,#15803d);box-shadow:0 0 0 8px rgba(34,197,94,.22),0 8px 24px rgba(21,128,61,.5)}
-#rt-lock .rt-ptt{position:relative;right:auto;bottom:auto;margin-bottom:18px;z-index:31}
+.sos-radar{position:relative;width:110px;height:110px;display:flex;align-items:center;justify-content:center;flex:none}
+.sos-radar span{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(255,255,255,.55);animation:sosRad 2.4s ease-out infinite}
+.sos-radar span:nth-child(2){animation-delay:.8s}.sos-radar span:nth-child(3){animation-delay:1.6s}
+.sos-radar b{width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:34px}
+@keyframes sosRad{0%{transform:scale(.7);opacity:.9}100%{transform:scale(1.75);opacity:0}}
+.sos-map{width:100%;height:150px;border-radius:14px;margin-top:8px;overflow:hidden;background:#0003;isolation:isolate}
+.sos-bar{height:6px;border-radius:6px;background:rgba(255,255,255,.2);margin-top:8px;overflow:hidden}.sos-bar i{display:block;height:100%;width:0;background:#fff;transition:width .5s}
+.sos-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;background:rgba(255,255,255,.16);font-size:11px;font-weight:800;border:0;color:#fff}
+.sos-act{display:flex;align-items:center;justify-content:center;gap:6px;width:auto!important;max-width:none!important;flex:1;text-decoration:none;color:#fff;padding:13px!important;font-size:13px!important}
+.sos-mk i{display:block;width:18px;height:18px;border-radius:50%;background:#ef4444;border:3px solid #fff;animation:sosMk 1.4s infinite}
+.sos-mk.me i{background:#3b82f6;animation:none;box-shadow:0 0 0 5px rgba(59,130,246,.3)}
+@keyframes sosMk{0%{box-shadow:0 0 0 0 rgba(239,68,68,.7)}100%{box-shadow:0 0 0 20px rgba(239,68,68,0)}}
+.rt-ptt{visibility:hidden;flex-direction:column;gap:4px;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;flex:none;font-size:8px;font-weight:900;letter-spacing:.06em;line-height:1}
+.rt-ptt i{font-size:18px}.rt-ptt.on{visibility:visible}
+#run-tracker .rt-ptt.talk{background:linear-gradient(135deg,#f43f5e,#dc2626);border-color:transparent;box-shadow:0 0 0 6px rgba(244,63,94,.22)}
+.rt-ptt.hear{background:rgba(52,211,153,.25);border-color:#34d399;box-shadow:0 0 0 5px rgba(52,211,153,.16)}
+.rt-lockrow{display:grid;grid-template-columns:1fr 96px 1fr;align-items:center;justify-items:center;width:100%;max-width:340px}
+.rt-ic.rt-talk>div::before,.rt-ic.rt-talk>div::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:2px solid #34d399;pointer-events:none;animation:rtWave 1.3s ease-out infinite}
+.rt-ic.rt-talk>div::after{animation-delay:.65s}
+@keyframes rtWave{0%{transform:scale(1);opacity:.95}100%{transform:scale(2.7);opacity:0}}
+@media (orientation:landscape) and (max-height:520px){#run-tracker:not(.hidden)::after{content:'Rotate your phone to portrait';position:absolute;inset:0;z-index:99;display:flex;align-items:center;justify-content:center;background:#0d1117;color:#fff;font:800 16px sans-serif}}
 /* smoother loading screen: keep the animated layers on the GPU */
 #global-loader .gl-bg,#loader-content-wrapper,#loader-text-wrapper,#global-loader .gl-dot,#global-loader .gl-ring,#global-loader .gl-o,#global-loader .gl-g{will-change:transform,opacity;backface-visibility:hidden;-webkit-backface-visibility:hidden}
 #global-loader{-webkit-font-smoothing:antialiased;text-rendering:optimizeSpeed}
@@ -31256,28 +31307,34 @@ YOUR DIRECTIVES:
 </div>
 
 <!-- SOS: sender screen -->
-<div id="sos-sender" class="sos-ov sos-red hidden">
-  <div class="sos-pulse">🆘</div>
-  <h2 style="font-size:24px;font-weight:900;margin-top:20px">SOS is active</h2>
-  <p id="soss-status" style="opacity:.9;font-size:13px;font-weight:700;margin:6px 0 16px">Getting your location…</p>
-  <div class="sos-card"><b>YOUR LOCATION</b><div id="soss-loc" style="font-size:13px;font-weight:800">Locating…</div></div>
-  <div class="sos-card" style="margin-top:10px"><b>SEEN BY</b><div id="soss-seen" style="font-size:13px;font-weight:800">0 people</div></div>
-  <p style="opacity:.75;font-size:11px;font-weight:600;margin:14px 0 18px;max-width:280px">Alerts repeat every minute until each person taps “I've seen it”. Stay where you are if it is safe.</p>
-  <button id="soss-safe" class="sos-btn" style="background:#fff;color:#15803d" onclick="window.sosCancel()">I'M SAFE — STOP SOS</button>
-  <button id="soss-retry" class="sos-btn hidden" style="background:rgba(255,255,255,.2);margin-top:10px" onclick="window.sosSendNow()">Retry sending</button>
+<div id="sos-sender" class="sos-ov sos-red hidden" style="justify-content:flex-start;overflow-y:auto">
+  <div class="sos-radar" style="margin-top:6px"><span></span><span></span><span></span><b>🆘</b></div>
+  <h2 style="font-size:24px;font-weight:900;margin-top:14px">SOS is active</h2>
+  <p id="soss-status" style="opacity:.9;font-size:13px;font-weight:700;margin:4px 0 12px">Getting your location…</p>
+  <div class="sos-card"><b>YOUR LIVE LOCATION</b><div id="soss-loc" style="font-size:13px;font-weight:800">Locating…</div><div id="soss-map" class="sos-map"></div></div>
+  <div class="sos-card" style="margin-top:10px"><b>SEEN BY</b><div id="soss-seen" style="font-size:13px;font-weight:800">0 people</div><div class="sos-bar"><i id="soss-bar"></i></div></div>
+  <p style="opacity:.75;font-size:11px;font-weight:600;margin:12px 0 14px;max-width:290px">Alerts repeat every minute until each person taps “I've seen it”. Stay where you are if it is safe.</p>
+  <button id="soss-safe" class="sos-btn" style="background:#fff;color:#15803d;flex-shrink:0" onclick="window.sosCancel()">I'M SAFE — STOP SOS</button>
+  <button id="soss-retry" class="sos-btn hidden" style="background:rgba(255,255,255,.2);margin-top:10px;flex-shrink:0" onclick="window.sosSendNow()">Retry sending</button>
 </div>
 
 <!-- SOS: receiver popup -->
 <div id="sos-popup" class="sos-ov sos-red hidden" style="z-index:10003;justify-content:flex-start;overflow-y:auto">
-  <div class="sos-pulse" style="width:84px;height:84px;font-size:38px;margin-top:6px">🚨</div>
-  <div style="font-size:11px;font-weight:900;letter-spacing:.3em;margin-top:14px;opacity:.85">SOS EMERGENCY</div>
-  <h2 id="sosp-name" style="font-size:26px;font-weight:900;margin:4px 0 12px;line-height:1.15">—</h2>
-  <div class="sos-card"><b>PHONE</b><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span id="sosp-phone" style="font-size:18px;font-weight:900;letter-spacing:.04em">—</span><a id="sosp-call" href="#" class="sos-btn" style="width:auto;padding:9px 16px;background:#22c55e;color:#fff;font-size:12px;text-decoration:none"><i class="fa-solid fa-phone"></i> CALL</a></div></div>
-  <div class="sos-card" style="margin-top:8px"><b>TIME</b><div id="sosp-time" style="font-size:14px;font-weight:800">—</div></div>
+  <div class="sos-radar" style="width:84px;height:84px;margin-top:4px"><span></span><span></span><span></span><b style="width:58px;height:58px;font-size:26px">🚨</b></div>
+  <div style="font-size:11px;font-weight:900;letter-spacing:.3em;margin-top:12px;opacity:.85">SOS EMERGENCY</div>
+  <h2 id="sosp-name" style="font-size:26px;font-weight:900;margin:4px 0 10px;line-height:1.15">—</h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><span class="sos-chip"><i class="fa-regular fa-clock"></i><span id="sosp-ago">—</span></span><span class="sos-chip"><i class="fa-solid fa-route"></i><span id="sosp-dist">distance —</span></span></div>
+  <div id="sosp-mapwrap" class="sos-card" style="margin-top:12px;padding:8px;position:relative;display:none"><div id="sosp-map" class="sos-map" style="height:230px;margin:0"></div>
+    <button type="button" class="sos-chip" onclick="window.sosRecenter()" style="position:absolute;right:16px;bottom:16px;z-index:1000;background:rgba(0,0,0,.55)"><i class="fa-solid fa-crosshairs"></i> Follow</button></div>
+  <div style="display:flex;gap:8px;width:100%;max-width:360px;margin-top:10px">
+    <a id="sosp-call" href="#" class="sos-btn sos-act" style="background:#22c55e"><i class="fa-solid fa-phone"></i> CALL</a>
+    <a id="sosp-nav" href="#" target="_blank" rel="noopener" class="sos-btn sos-act" style="background:#2563eb;display:none"><i class="fa-solid fa-diamond-turn-right"></i> NAVIGATE</a>
+  </div>
+  <div class="sos-card" style="margin-top:10px"><b>PHONE</b><div id="sosp-phone" style="font-size:18px;font-weight:900;letter-spacing:.04em">—</div></div>
+  <div class="sos-card" style="margin-top:8px"><b>SOS SENT AT</b><div id="sosp-time" style="font-size:14px;font-weight:800">—</div></div>
   <div class="sos-card" style="margin-top:8px"><b>LOCATION</b><div id="sosp-loc" style="font-size:13px;font-weight:800">—</div>
-    <a id="sosp-open" href="#" target="_blank" rel="noopener" class="sos-btn" style="display:none;margin-top:8px;padding:10px;background:rgba(255,255,255,.22);color:#fff;text-align:center;text-decoration:none;font-size:12px"><i class="fa-solid fa-location-dot"></i> Open in Maps</a></div>
-  <iframe id="sosp-map" class="hidden" loading="lazy" referrerpolicy="no-referrer"></iframe>
-  <button class="sos-btn" style="background:#fff;color:#b91c1c;margin-top:16px;flex-shrink:0" onclick="window.sosSeen()">I'VE SEEN IT — STOP ALERT</button>
+    <a id="sosp-open" href="#" target="_blank" rel="noopener" style="display:none;margin-top:6px;font-size:12px;font-weight:800;color:#fff;text-decoration:underline"><i class="fa-solid fa-location-dot"></i> Open in Google Maps</a></div>
+  <button class="sos-btn" style="background:#fff;color:#b91c1c;margin-top:14px;flex-shrink:0" onclick="window.sosSeen()">I'VE SEEN IT — STOP ALERT</button>
 </div>
 <script id="syl-home-card-js">
 /* live numbers for the Syllabus card on the student home screen */
@@ -31296,6 +31353,10 @@ YOUR DIRECTIVES:
   }
   setInterval(paint,2000); setTimeout(paint,1200);
 })();
+</script>
+<script id="rt-portrait">
+(function(){let on=false;setInterval(function(){var e=document.getElementById('run-tracker'),o=!!e&&!e.classList.contains('hidden');if(o===on)return;on=o;
+try{var so=screen.orientation;if(o){so&&so.lock&&so.lock('portrait').catch(function(){});}else{so&&so.unlock&&so.unlock();}}catch(x){}},600);})();
 </script>
 <script id="run-walkie">
 /* WALKIE-TALKIE for Run Monitor: hold the button to talk, release to listen. Uses the same 8x8 Jitsi service as Discus calls (audio only,
@@ -31317,7 +31378,7 @@ YOUR DIRECTIVES:
     document.querySelectorAll('.rt-ptt').forEach(b => {
       b.classList.toggle('on', running() && mates().length > 0);
       b.classList.toggle('talk', W.talking); b.classList.toggle('hear', !W.talking && W.others.size > 0);
-      b.querySelector('span').textContent = W.talking ? 'TALKING…' : W.others.size ? 'LISTENING' : 'HOLD TO TALK';
+      b.querySelector('span').textContent = W.talking ? 'TALKING' : W.others.size ? 'LISTEN' : 'HOLD';
     });
   }
   function connect() {
@@ -31352,22 +31413,18 @@ YOUR DIRECTIVES:
   async function down(ev) {
     ev.preventDefault(); if (W.talking) return;
     try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch (e) { }
-    connect(); W.talking = true; paint(); duck(true); beep(880, .09); if (navigator.vibrate) try { navigator.vibrate(25); } catch (e) { }
+    connect(); W.talking = true; window.__rtTalkingMe = 1; window.__rtWLive && window.__rtWLive(); paint(); duck(true); beep(880, .09); if (navigator.vibrate) try { navigator.vibrate(25); } catch (e) { }
     for (let i = 0; i < 40 && !W.joined && W.talking; i++) await new Promise(r => setTimeout(r, 150));   // first press may wait for the connection
     if (W.talking) { setMic(true); clearTimeout(W.safety); W.safety = setTimeout(up, 60000); }
   }
   function up() {
     if (!W.talking) return; clearTimeout(W.safety);
-    W.talking = false; setMic(false); beep(560, .09); duck(W.others.size > 0); paint();
+    W.talking = false; window.__rtTalkingMe = 0; window.__rtWLive && window.__rtWLive(); setMic(false); beep(560, .09); duck(W.others.size > 0); paint();
   }
   function mount() {
-    [$('run-tracker'), $('rt-lock')].forEach(p => {
-      if (!p || p.querySelector('.rt-ptt')) return;
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'rt-ptt'; b.setAttribute('aria-label', 'Push to talk');
-      b.innerHTML = '<i class="fa-solid fa-walkie-talkie"></i><span>HOLD TO TALK</span>';
+    document.querySelectorAll('.rt-ptt:not([data-b])').forEach(b => { b.dataset.b = 1;
       b.addEventListener('pointerdown', down); ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(n => b.addEventListener(n, up));
-      b.addEventListener('contextmenu', e => e.preventDefault()); p.appendChild(b);
-    });
+      b.addEventListener('contextmenu', e => e.preventDefault()); });
   }
   mount();
   setInterval(() => {                                               // join when running with mates, leave 15 s after the run ends
