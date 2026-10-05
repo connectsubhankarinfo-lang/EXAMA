@@ -5507,7 +5507,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                 <p
                     class="text-indigo-400/80 mt-3 sm:mt-4 font-semibold tracking-wide text-xs sm:text-sm break-words px-2"
                     style="font-family: 'Inter', 'Segoe UI', sans-serif;">
-                    Welcome back! Please enter your details.</p>
+                    Welcome back! Please enter your Info.</p>
             </div>
 
             <form id="login-form"
@@ -5533,7 +5533,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                     <span>Log In</span><i class="fa-solid fa-arrow-right"></i>
                 </button>
             </form>
-            <p class="lgx-foot"><i class="fa-solid fa-shield-halved"></i> Protected with one-time code verification</p>
+            <p class="lgx-foot"><i class="fa-solid fa-shield-halved"></i> Protected with Exama</p>
         </div>
 
         <!-- 1.5 ADMIN CONTROL CENTRE LOGIN -->
@@ -6872,10 +6872,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                 <div class="space-y-4">
                     
 
-                    <div class="flex items-center justify-between px-1 mt-2">
-                        <h3 class="font-bold text-gray-900 tracking-tight text-base sm:text-lg break-words">Exam
-                            Management</h3>
-                    </div>
+                    
 
                     <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
                         <div class="relative w-full">
@@ -9967,6 +9964,12 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                             class="block text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 mb-1 leading-tight">Mobile
                             Number (Login ID)</label><input type="tel" id="new-stu-mobile" required
                             placeholder="e.g. 9876543210"
+                            class="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none font-bold text-gray-900 text-sm">
+                    </div>
+                    <div class="glass-card p-2 sm:p-3 rounded-2xl"><label
+                            class="block text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1 mb-1 leading-tight">Email
+                            <span class="normal-case tracking-normal font-semibold text-gray-400">(optional &middot; for password codes &amp; reports)</span></label><input type="email" id="new-stu-email"
+                            placeholder="e.g. john@example.com" autocomplete="off" inputmode="email"
                             class="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none font-bold text-gray-900 text-sm">
                     </div>
                     <div class="glass-card p-2 sm:p-3 rounded-2xl"><label
@@ -23275,6 +23278,11 @@ async function showWallet() {
                     ['New password', 'Choose a new password for your account. Minimum 6 characters.']
                 ];
                 function say(t) { const m = $('fp-msg'); if (!m) return; m.textContent = t || ''; m.classList.remove('on'); if (t) { void m.offsetWidth; m.classList.add('on'); } }
+                function busyBtn(on) {
+                    const b = $('fp-s1').querySelector('.fp-btn'), sp = b && b.querySelector('span'), r = $('fp-resend');
+                    if (b) { b.disabled = on; if (sp) sp.textContent = on ? 'Sending…' : 'Send code'; }
+                    if (r && on) { r.disabled = true; r.textContent = 'Sending…'; } else if (r) tick();
+                }
                 function show(n, sub) {
                     ['fp-s1', 'fp-s2', 'fp-s3'].forEach((id, i) => $(id).classList.toggle('fp-hide', i !== n - 1));
                     document.querySelectorAll('#forgot-pass-modal .fp-steps span').forEach((x, i) => x.classList.toggle('on', i < n));
@@ -23330,9 +23338,8 @@ async function showWallet() {
                     if (!viaMail && !stu.telegramChatId) {
                         return window.showCustomAlert("Can't send a code", "No email or Telegram is linked to this account yet, so we can't verify you here. Please ask your admin to reset your password.", "warning");
                     }
-                    S.busy = true;
+                    S.busy = true; busyBtn(true);
                     try {
-                        window.showLoader("Sending code");
                         let otp, dest;
                         if (viaMail) {
                             otp = await window.exSendOtp(email, stu.name, 'password reset'); dest = window.exMask(email);
@@ -23346,13 +23353,12 @@ async function showWallet() {
                             const d = await r.json(); if (!d.ok) throw new Error(d.description || "Could not deliver the code on Telegram.");
                             dest = 'your Telegram';
                         }
-                        window.hideLoader();
                         Object.assign(S, { mob, stu, otp, exp: Date.now() + 3e5, bad: 0, ok: false, cool: Date.now() + 30000 });
                         slots(''); show(2, 'A 6-digit code was sent to ' + dest + '. It is valid for 5 minutes.'); tick();
                         setTimeout(() => $('fp-otp').focus(), 80);
                         window.showToast(viaMail ? "Email Sent" : "Code Sent", viaMail ? "Check your inbox (and spam) for the code." : "Enter the code from Telegram.", "info");
-                    } catch (e) { window.hideLoader(); window.showCustomAlert("Could not send code", e.message, "error"); }
-                    S.busy = false;
+                    } catch (e) { window.showCustomAlert("Could not send code", e.message, "error"); }
+                    busyBtn(false); S.busy = false;
                 }
                 window.fpSendOtp = send;
                 window.fpResend = function () { if (Date.now() < S.cool) return; send(); };
@@ -23584,10 +23590,12 @@ async function showWallet() {
                 const name = document.getElementById('new-stu-name').value.trim();
                 const mob = document.getElementById('new-stu-mobile').value.trim();
                 const pass = document.getElementById('new-stu-password').value.trim();
+                const email = ((document.getElementById('new-stu-email') || {}).value || '').trim().toLowerCase();
 
                 if (!name || !mob || !pass) return;
                 if (pass.length < 6) return window.showCustomAlert("Weak Password", "Password must be at least 6 characters.", "warning");
 
+                if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return window.showCustomAlert("Invalid Email", "Please enter a valid email address, or leave it empty.", "warning");
                 showLoader("Creating your account");
                 const authEmail = `${mob}@exama.app`;
 
@@ -23600,7 +23608,8 @@ async function showWallet() {
                     await setDoc(doc(db, window.getCollectionName("students"), mob), {
                         name: name,
                         mobile: mob,
-                        password: pass // Keeping it here just for your legacy systems/views
+                        password: pass, // Keeping it here just for your legacy systems/views
+                        ...(email ? { email: email } : {})
                     });
 
                     hideLoader();
@@ -32643,6 +32652,7 @@ html body #login-form button[type=submit]:hover i{transform:translateX(4px)}
 .fp-btn{width:100%;height:54px;margin-top:18px;border-radius:18px;border:1px solid rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;gap:10px;font-size:15px;font-weight:800;color:#fff;cursor:pointer;
   background:linear-gradient(90deg,#6366f1,#8b5cf6,#0ea5e9,#6366f1);background-size:300% 100%;box-shadow:0 16px 28px -12px rgba(99,102,241,.75),inset 0 1px 1px rgba(255,255,255,.5);transition:background-position .6s,transform .15s}
 .fp-btn:hover{background-position:100% 0}.fp-btn:active{transform:scale(.97)}
+.fp-btn:disabled{opacity:.7;pointer-events:none}
 .fp-btn i{font-size:13px}
 .fp-otp{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:4px 0 0;cursor:text}
 .fp-otp span{height:58px;border-radius:16px;display:grid;place-items:center;font:900 22px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#0f172a;background:#f8fafc;border:1.5px solid #e2e8f0;transition:all .18s}
@@ -32677,6 +32687,9 @@ html body #admin-view>div.ax-hdr.sd-hdr:first-child{padding-top:max(3rem,env(saf
 }
 html body #admin-view .ax-ctitle .s{color:#99f6e4}
 html body #admin-view #ax-greet{color:rgba(204,251,241,.95)}
+/* settings sidebar top: same background as the admin header (admin only) */
+html body #settings-menu.sg-admin .sg-hero{background:linear-gradient(135deg,#064e3b 0%,#0f766e 48%,#0891b2 100%)!important;box-shadow:0 14px 30px -16px rgba(13,148,136,.6)}
+html body #settings-menu:has(#menu-sos-wrap[data-admin="1"]) .sg-hero{background:linear-gradient(135deg,#064e3b 0%,#0f766e 48%,#0891b2 100%)!important;box-shadow:0 14px 30px -16px rgba(13,148,136,.6)}
 
 @media (orientation:landscape) and (min-width:640px){
   html.is-landscape #admin-view>div.ax-hdr .ax-crow{--sd-h:38px}
@@ -32708,6 +32721,9 @@ html body #admin-view #ax-greet{color:rgba(204,251,241,.95)}
   html.is-landscape #admin-view>button.absolute{width:48px;height:48px}
 }
 </style>
+<script id="sg-admin-flag">
+(function(){function f(){var m=document.getElementById('settings-menu');if(m)m.classList.toggle('sg-admin',window.currentRole==='admin')}f();setInterval(f,500);document.addEventListener('click',f,true)})();
+</script>
 <script id="ax-addon">
 (function(){
 var W=window,$=function(i){return document.getElementById(i)},E=function(x){return W.escHtml(x)};
