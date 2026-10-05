@@ -6881,7 +6881,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         Student Directory</h2>
                     <p
                         class="text-[9px] sm:text-[11px] text-indigo-400 font-bold tracking-widest mt-0.5 uppercase break-words leading-tight">
-                        Manage & View Profiles</p>
+                        <span id="sd-sub">Manage & View Profiles</span></p>
                 </div>
             </div>
             <!-- Interactive Search Bar -->
@@ -6913,13 +6913,15 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         <h2 id="ap-name"
                             class="text-xl sm:text-2xl font-black tracking-tight drop-shadow-md break-words leading-tight">
                             Student Name</h2>
-                        <p id="ap-mobile"
-                            class="text-[9px] sm:text-[11px] text-indigo-400 font-bold tracking-widest mt-0.5 uppercase break-words leading-tight">
-                            Mobile</p>
+                        <p id="ap-active" class="flex items-center gap-1.5 mt-1 leading-tight"><span id="ap-active-dot" class="ap-dot"></span><span id="ap-active-txt" class="ap-txt text-[11px] sm:text-xs font-bold">Checking…</span></p>
                     </div>
                 </div>
 
                 <div class="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <button onclick="window.openStudentInfo()" title="Student information" aria-label="Student information"
+                        class="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-full flex items-center justify-center active:scale-90 transition-all border border-indigo-500/30 shadow-lg">
+                        <i class="fa-solid fa-id-card text-lg sm:text-xl"></i>
+                    </button>
                     <button onclick="window.openAdminChangePassModal()"
                         class="w-10 h-10 sm:w-12 sm:h-12 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-full flex items-center justify-center active:scale-90 transition-all border border-amber-500/30 shadow-lg"
                         title="Override Password">
@@ -17048,6 +17050,8 @@ window.__tpPaint = function () {
                 await new Promise(r => requestAnimationFrame(r));
                 onSnapshot(query(collection(db, window.getCollectionName("videos")), orderBy("timestamp", "asc")), (snapshot) => {
                     window.videosDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    window.__videosReady = true;
+                    if (typeof window.__apVideoPaint === 'function') { try { window.__apVideoPaint(); } catch (e) { } }
                     if (firstVids || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
                         firstVids = false;
                         if (!document.getElementById('video-hub-view')?.classList.contains('hidden-view')) renderVideoFeed();
@@ -22264,7 +22268,7 @@ async function showWallet() {
                 if (!student) return safeBack();
 
                 document.getElementById('ap-name').innerText = student.name;
-                document.getElementById('ap-mobile').innerHTML = `${window.escHtml(student.mobile)}`;
+                window.__apMobile = mobile; if (window.__paintActive) window.__paintActive();
 
                 const myRecords = getComputedResults().filter(r => r.mobile === mobile);
                 const parseUniversalDate = (dStr) => {
@@ -22555,13 +22559,22 @@ async function showWallet() {
                     }
                 }
                             // ---- video progress (admin view) ----
-                try {
-                    const vv = (window.videosDB || []).filter(v => v.title && v.subject), g = {};
-                    vv.forEach(v => { const o = g[v.subject] = g[v.subject] || { t: 0, d: 0 }; o.t++; if ((v.watchedBy || []).includes(mobile)) o.d++; });
-                    const dn = vv.filter(v => (v.watchedBy || []).includes(mobile)).length, pp = vv.length ? Math.round(dn / vv.length * 100) : 0;
-                    document.getElementById('ap-vid-perc').innerText = pp + '% · ' + dn + '/' + vv.length;
-                    document.getElementById('ap-vid-breakdown').innerHTML = vv.length ? Object.keys(g).sort().map(n => { const q = g[n], p = Math.round(q.d / q.t * 100); return `<div><div class="flex justify-between text-xs font-bold text-gray-700 mb-1"><span>${window.escHtml(n)}</span><span class="text-gray-400">${q.d}/${q.t}</span></div><div class="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" style="width:${p}%"></div></div></div>`; }).join('') : '<div class="text-center text-gray-400 text-xs font-bold border-2 border-dashed border-gray-200 rounded-xl p-4">No lectures published yet.</div>';
-                } catch (e) { console.error(e); }
+                // Videos are only loaded when the Lecture Hub is opened, so load them here too and repaint when they arrive.
+                window.__apVideoPaint = function () {
+                    const mob = window.__apMobile, pe = document.getElementById('ap-vid-perc'), be = document.getElementById('ap-vid-breakdown');
+                    if (!mob || !pe || !be) return;
+                    try {
+                        const ready = window.__videosReady || (typeof isFirebaseConfigured !== 'undefined' && !isFirebaseConfigured);
+                        if (!ready) { pe.innerText = 'Loading…'; be.innerHTML = '<div class="text-center text-gray-400 text-xs font-bold p-4"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Loading lecture progress…</div>'; return; }
+                        const vv = (window.videosDB || []).filter(v => v.title && v.subject), g = {};
+                        vv.forEach(v => { const o = g[v.subject] = g[v.subject] || { t: 0, d: 0 }; o.t++; if ((v.watchedBy || []).includes(mob)) o.d++; });
+                        const dn = vv.filter(v => (v.watchedBy || []).includes(mob)).length, pp = vv.length ? Math.round(dn / vv.length * 100) : 0;
+                        pe.innerText = pp + '% · ' + dn + '/' + vv.length;
+                        be.innerHTML = vv.length ? Object.keys(g).sort().map(n => { const q = g[n], p = Math.round(q.d / q.t * 100); return `<div><div class="flex justify-between text-xs font-bold text-gray-700 mb-1"><span>${window.escHtml(n)}</span><span class="text-gray-400">${q.d}/${q.t}</span></div><div class="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-indigo-500 rounded-full" style="width:${p}%"></div></div></div>`; }).join('') : '<div class="text-center text-gray-400 text-xs font-bold border-2 border-dashed border-gray-200 rounded-xl p-4">No lectures published yet.</div>';
+                    } catch (e) { console.error(e); }
+                };
+                if (!window.__videosReady && typeof window.loadVideosData === 'function') window.loadVideosData();
+                window.__apVideoPaint();
             };
 
             window.downloadAdminStudentReport = function () { if (window.selectedAdminProfile) { generatePDFReport(window.selectedAdminProfile); } }
@@ -24573,16 +24586,18 @@ async function showWallet() {
                             avgStr = `Avg: ${(stuRecords.reduce((a, r) => a + r.percentage, 0) / examsTaken).toFixed(1)}%`;
                         }
                         const stuDp = window.getStudentAvatar(stu.mobile, stu.name);
+                        const act = window.__activeInfo ? window.__activeInfo(stu.mobile) : { on: false, txt: '' };
                         stuHtml += `
             <div onclick="window.selectedAdminProfile='${stu.mobile}'; window.location.hash='admin-profile';" class="glass-card p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] flex flex-col active:scale-[0.98] hover:-translate-y-1 transition-all duration-300 cursor-pointer shadow-sm gap-2 border border-gray-200 hover:border-indigo-300">
                 <div class="flex justify-between items-center w-full gap-2">
                     <div class="flex items-center gap-2 sm:gap-4 min-w-0 pr-2">
-                        <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl overflow-hidden border border-indigo-200/50 shadow-sm shrink-0 bg-indigo-50">
+                        <div class="relative shrink-0"><div class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl overflow-hidden border border-indigo-200/50 shadow-sm shrink-0 bg-indigo-50">
                             <img src="${stuDp}" class="w-full h-full object-cover" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(stu.name)}&background=4f46e5&color=fff'">
-                        </div>
+                        </div><span class="sd-dot${act.on ? ' on' : ''}" data-pm="${stu.mobile}"></span></div>
                         <div class="min-w-0">
                             <h4 class="font-bold text-gray-900 text-xs sm:text-sm break-words leading-tight">${stu.name}</h4>
                             <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold tracking-widest mt-0.5 break-words leading-tight">${stu.mobile}</p>
+                            <p class="sd-act${act.on ? ' on' : ''}" data-pm="${stu.mobile}">${act.txt}</p>
                         </div>
                     </div>
                     <div class="text-right shrink-0">
@@ -32891,20 +32906,13 @@ function stats(rs){var t=rs.filter(function(r){return r.status!=='ABSENT'});retu
 /* Directory: sort menu only */
 var g=$('ax-greet');if(g){var hr=new Date().getHours();g.textContent=hr<12?'Good morning,':hr<17?'Good afternoon,':'Good evening,'}
 var sortMode='name';
+function actRank(x){var i=W.__activeInfo?W.__activeInfo(x.mobile):{on:0},p=(W.presenceDB||{})[x.mobile];return (i.on?1e15:0)+((p&&+p.lastActive)||0)}
 function sortStudents(){var R=W.getComputedResults?W.getComputedResults():[],a={};(W.studentsDB||[]).forEach(function(s){a[s.mobile]=stats(R.filter(function(r){return r.mobile===s.mobile}))});
- (W.studentsDB||[]).sort(function(x,y){return sortMode==='high'?a[y.mobile].avg-a[x.mobile].avg:sortMode==='low'?(a[x.mobile].n?a[x.mobile].avg:999)-(a[y.mobile].n?a[y.mobile].avg:999):sortMode==='exams'?a[y.mobile].n-a[x.mobile].n:String(x.name).localeCompare(String(y.name))})}
+ (W.studentsDB||[]).sort(function(x,y){return sortMode==='active'?actRank(y)-actRank(x):sortMode==='high'?a[y.mobile].avg-a[x.mobile].avg:sortMode==='low'?(a[x.mobile].n?a[x.mobile].avg:999)-(a[y.mobile].n?a[y.mobile].avg:999):sortMode==='exams'?a[y.mobile].n-a[x.mobile].n:String(x.name).localeCompare(String(y.name))})}
 function dirBar(){var p=$('admin-student-search');if(!p||$('ax-sort'))return;var w=p.parentElement;w.style.display='flex';w.style.gap='.5rem';w.style.maxWidth='none';
- var s=document.createElement('select');s.id='ax-sort';s.className='ax-sort';s.innerHTML='<option value="name">Name A–Z</option><option value="high">Top scorers</option><option value="low">Needs help</option><option value="exams">Most exams</option>';s.onchange=function(){sortMode=s.value;W.uiLimits.adminStudents=10;W.renderStudentDirectory()};w.appendChild(s)}
+ var s=document.createElement('select');s.id='ax-sort';s.className='ax-sort';s.innerHTML='<option value="name">Name A–Z</option><option value="high">Top scorers</option><option value="low">Needs help</option><option value="exams">Most exams</option><option value="active">Active first</option>';s.onchange=function(){sortMode=s.value;W.uiLimits.adminStudents=10;W.renderStudentDirectory()};w.appendChild(s)}
 /* Profile: details card (name, mobile, email, password, class) + WhatsApp / Email / Export PDF */
-function prof(m){
- var s=(W.studentsDB||[]).find(function(x){return x.mobile===m}),box=document.querySelector('#admin-profile-view>div:nth-child(2)');if(!s||!box)return;
- var kv=function(k,v){return '<div><b>'+k+'</b><span>'+(v==null||v===''?'—':v)+'</span></div>'};
-
- var wa=String(s.mobile).replace(/\D/g,'').slice(-10);
- var h='<h4><i class="fa-solid fa-id-card" style="color:#4f46e5"></i> Student Details</h4><div class="ax-kv">'+kv('Name',E(s.name))+kv('Mobile',E(s.mobile))+kv('Email',E(s.email))+
- kv('Password','<span id="ax-pw" data-pw="'+E(s.password)+'">••••••</span> <a onclick="var p=document.getElementById(\'ax-pw\');p.textContent=p.textContent===\'••••••\'?p.dataset.pw:\'••••••\'" style="cursor:pointer;color:#4f46e5"><i class="fa-solid fa-eye"></i></a>')+'</div>'+
- '<div class="ax-acts"><button onclick="window.open(\'https://wa.me/91'+wa+'\',\'_blank\')"><i class="fa-brands fa-whatsapp" style="color:#16a34a"></i> WhatsApp</button>'+(s.email?'<button onclick="location.href=\'mailto:'+E(s.email)+'\'"><i class="fa-solid fa-envelope"></i> Email</button>':'')+'<button onclick="generatePDFReport(\''+E(s.mobile)+'\')"><i class="fa-solid fa-file-pdf" style="color:#dc2626"></i> Export Data</button></div>';
- var el=$('ax-info');if(!el){el=document.createElement('div');el.id='ax-info';el.className='ax-card';box.insertBefore(el,box.firstChild)}el.innerHTML=h}
+function prof(m){var o=$('ax-info');if(o)o.remove()}
 function wrap(name,after){var t=setInterval(function(){var o=W[name];if(typeof o!=='function')return;clearInterval(t);if(o.__ax)return;var w=function(){var r=o.apply(this,arguments);try{after.apply(null,arguments)}catch(e){console.error(e)}return r};w.__ax=1;W[name]=w},200)}
 wrap('renderStudentDirectory',function(){dirBar()});
 wrap('renderAdminProfile',function(m){prof(m)});
@@ -32959,6 +32967,60 @@ html.is-tablet.is-landscape #ax-tiles>[data-ax="alarms"]{order:8}
 html.is-tablet.is-landscape #ax-tiles>[data-ax="budget-room"]{order:9}
 html.is-tablet.is-landscape #ax-tiles>[data-ax="student-directory"]{order:10}
 </style>
+<style id="ax-active-css">
+.ap-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#6b7280;flex:none}
+.ap-dot.on{background:#22c55e;animation:apPulse 1.8s ease-out infinite}
+@keyframes apPulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.65)}70%,100%{box-shadow:0 0 0 7px rgba(34,197,94,0)}}
+.ap-txt{color:#9ca3af}.ap-txt.on{color:#4ade80}
+.sd-dot{position:absolute;right:-3px;bottom:-3px;width:13px;height:13px;border-radius:50%;background:#9ca3af;border:2.5px solid #fff}
+.sd-dot.on{background:#22c55e}
+.sd-act{font-size:10px;font-weight:700;color:#9ca3af;margin-top:2px;line-height:1.2}.sd-act.on{color:#16a34a}
+#ax-info-modal .ax-kv{grid-template-columns:1fr}
+@media (prefers-reduced-motion:reduce){.ap-dot.on{animation:none}}
+</style>
+<script id="ax-active">
+(function(){
+var W=window,$=function(i){return document.getElementById(i)},E=function(x){return W.escHtml(x)},STALE=90000;
+function now(){return Date.now()+(W._rtdbOffset||0)}
+function ago(ms){var m=Math.floor(Math.max(0,ms)/60000);if(m<1)return 'just now';if(m<60)return m+' min ago';var h=Math.floor(m/60);if(h<24)return h+' hr ago';var d=Math.floor(h/24);return d+(d===1?' day ago':' days ago')}
+/* Active status from the live presence feed (same one Discus uses) */
+W.__activeInfo=function(mob){
+ var p=(W.presenceDB||{})[mob];if(!p)return{on:false,txt:'Not active yet'};
+ var la=typeof p.lastActive==='number'?p.lastActive:0;
+ if(p.online===true&&(!la||now()-la<=STALE))return{on:true,txt:'Active now'};
+ return{on:false,txt:la?'Last active '+ago(now()-la):'Offline'}};
+function paintInfoStatus(){var m=W.__apMobile,i=m&&W.__activeInfo(m),t=$('ax-info-status'),d=$('ax-info-dot');if(!i||!t||!d)return;t.textContent=i.txt;t.className='ap-txt '+(i.on?'on':'');d.className='ap-dot'+(i.on?' on':'')}
+W.__paintActive=function(){
+ var m=W.__apMobile,i=m&&W.__activeInfo(m),t=$('ap-active-txt'),d=$('ap-active-dot');if(!i||!t||!d)return;
+ t.textContent=i.txt;t.className='ap-txt text-[11px] sm:text-xs font-bold'+(i.on?' on':'');d.className='ap-dot'+(i.on?' on':'');paintInfoStatus()};
+function paintDir(){
+ var list=$('student-directory-list');if(!list)return;
+ var all=W.studentsDB||[],on=0;all.forEach(function(s){if(W.__activeInfo(s.mobile).on)on++});
+ var sub=$('sd-sub');if(sub)sub.textContent=all.length+' student'+(all.length===1?'':'s')+' \u2022 '+on+' active now';
+ list.querySelectorAll('[data-pm]').forEach(function(el){var i=W.__activeInfo(el.getAttribute('data-pm'));
+  if(el.classList.contains('sd-dot'))el.className='sd-dot'+(i.on?' on':'');else{el.textContent=i.txt;el.className='sd-act'+(i.on?' on':'')}})}
+setInterval(function(){
+ var pv=$('admin-profile-view'),dv=$('student-directory-view');
+ if(pv&&!pv.classList.contains('hidden-view'))W.__paintActive();
+ if(dv&&!dv.classList.contains('hidden-view'))paintDir()},1500);
+/* Student information popup, opened from the profile header */
+function infoHTML(s){
+ var kv=function(k,v){return '<div><b>'+k+'</b><span>'+(v==null||v===''?'\u2014':v)+'</span></div>'},wa=String(s.mobile).replace(/\D/g,'').slice(-10);
+ return '<div class="ax-kv">'+kv('Name',E(s.name))+kv('Mobile',E(s.mobile))+kv('Email',E(s.email))+
+ kv('Password','<span id="ax-pw" data-pw="'+E(s.password)+'">\u2022\u2022\u2022\u2022\u2022\u2022</span> <a onclick="var p=document.getElementById(\'ax-pw\');p.textContent=p.textContent===\'\u2022\u2022\u2022\u2022\u2022\u2022\'?p.dataset.pw:\'\u2022\u2022\u2022\u2022\u2022\u2022\'" style="cursor:pointer;color:#4f46e5"><i class="fa-solid fa-eye"></i></a>')+'</div>'+
+ '<div class="ax-acts"><button onclick="window.open(\'https://wa.me/91'+wa+'\',\'_blank\')"><i class="fa-brands fa-whatsapp" style="color:#16a34a"></i> WhatsApp</button>'+(s.email?'<button onclick="location.href=\'mailto:'+E(s.email)+'\'"><i class="fa-solid fa-envelope"></i> Email</button>':'')+'<button onclick="generatePDFReport(\''+E(s.mobile)+'\')"><i class="fa-solid fa-file-pdf" style="color:#dc2626"></i> Export Data</button></div>'}
+W.openStudentInfo=function(){
+ var m=W.__apMobile||W.selectedAdminProfile,s=(W.studentsDB||[]).find(function(x){return x.mobile===m}),host=$('admin-profile-view');if(!s||!host)return;
+ W.__apMobile=m;var md=$('ax-info-modal');
+ if(!md){md=document.createElement('div');md.id='ax-info-modal';md.className='hidden absolute inset-0 z-30 bg-black/50 flex items-end sm:items-center justify-center sm:p-4';
+  md.onclick=function(e){if(e.target===md)W.closeStudentInfo()};
+  md.innerHTML='<div class="bg-white w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-4 shadow-2xl"><div class="flex items-center justify-between gap-3 mb-3"><div class="min-w-0"><h3 id="ax-info-name" class="font-black text-lg text-slate-900 break-words leading-tight"></h3><p class="flex items-center gap-1.5 mt-1"><span id="ax-info-dot" class="ap-dot"></span><span id="ax-info-status" class="ap-txt text-xs font-bold"></span></p></div><button onclick="closeStudentInfo()" aria-label="Close" class="w-8 h-8 shrink-0 rounded-full bg-slate-100 text-slate-500 font-bold">&#10005;</button></div><div id="ax-info-body"></div></div>';
+  host.appendChild(md)}
+ $('ax-info-name').textContent=s.name||'Student';$('ax-info-body').innerHTML=infoHTML(s);paintInfoStatus();md.classList.remove('hidden')};
+W.closeStudentInfo=function(){var md=$('ax-info-modal');if(md)md.classList.add('hidden')};
+window.addEventListener('hashchange',W.closeStudentInfo);
+})();
+</script>
 </body>
 
 </html>
