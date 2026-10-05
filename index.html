@@ -10676,20 +10676,46 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
         window.__alarmsList = async () => { const d = await api("list"); return d ? d.alarms : null; };
         function renderAlarms() {
             if (window.__mirrorAlarms) window.__mirrorAlarms(AL);
+            const ct = $("alarm-count"); if (ct) ct.textContent = AL.length ? (AL.length + (AL.length === 1 ? " alarm" : " alarms")) : "All alarms";
             $("alarm-list").innerHTML = AL.length ? AL.slice().sort((a, b) => a.time.localeCompare(b.time)).map(a => `
-              <div class="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
-                <div class="min-w-0"><div class="font-bold text-slate-900 truncate">${esc(a.title)}</div>
-                <div class="text-[11px] text-slate-500">${esc(window.tpFmt ? window.tpFmt(a.time) : a.time)} • ${a.repeat === "daily" ? "Every day" : esc(a.date)} • ${a.all ? "All students" : a.targets.length + " student(s)"}</div></div>
-                <div class="flex gap-2 shrink-0">
-                  <button onclick="toggleAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold ${a.enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}">${a.enabled ? "ON" : "OFF"}</button>
-                  <button onclick="deleteAlarm('${a.id}')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-600">Delete</button>
-                </div></div>`).join("") : '<p class="text-slate-400 text-center py-3 text-xs">No alarms yet</p>';
+              <div class="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-sm ${a.enabled ? "" : "opacity-60"}">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-400 to-red-500 text-white flex items-center justify-center shadow-md shrink-0"><i class="fa-solid fa-bell"></i></div>
+                    <div class="min-w-0"><div class="font-black text-slate-900 truncate">${esc(a.title)}</div>
+                      <div class="text-[20px] leading-tight font-black text-teal-700">${esc(window.tpFmt ? window.tpFmt(a.time) : a.time)}</div></div>
+                  </div>
+                  <button onclick="toggleAlarm('${esc(a.id)}')" aria-label="Turn ${a.enabled ? "off" : "on"}" class="alx-sw ${a.enabled ? "on" : ""}"><i></i></button>
+                </div>
+                <div class="flex flex-wrap gap-1.5 mt-2.5 text-[11px] font-bold">
+                  <span class="px-2 py-1 rounded-lg bg-slate-100 text-slate-600"><i class="fa-solid fa-repeat mr-1"></i>${a.repeat === "daily" ? "Every day" : esc(String(a.date || "").split("-").reverse().join("-"))}</span>
+                  <span class="px-2 py-1 rounded-lg bg-slate-100 text-slate-600"><i class="fa-solid fa-user-group mr-1"></i>${a.all ? "All students" : (a.targets || []).length + " student(s)"}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mt-3">
+                  <button onclick="openAlarmForm('${esc(a.id)}')" class="py-2 rounded-xl text-[12px] font-black bg-indigo-50 text-indigo-700 active:scale-95"><i class="fa-solid fa-pen mr-1"></i>Edit</button>
+                  <button onclick="deleteAlarm('${esc(a.id)}')" class="py-2 rounded-xl text-[12px] font-black bg-rose-50 text-rose-600 active:scale-95"><i class="fa-solid fa-trash-can mr-1"></i>Delete</button>
+                </div></div>`).join("") : '<div class="md:col-span-2 text-center py-14"><div class="w-16 h-16 mx-auto rounded-2xl bg-orange-50 text-orange-400 flex items-center justify-center text-2xl mb-3"><i class="fa-solid fa-bell-slash"></i></div><p class="font-black text-slate-700">No alarms yet</p><p class="text-xs text-slate-400 mt-1">Tap <b>New alarm</b> to create one</p></div>';
         }
+        let editId = null;
+        function renderStudentChecks(sel) {
+            $("al-students").innerHTML = students().map(x => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" value="${esc(x.m)}" ${sel && sel.includes(x.m) ? "checked" : ""}> ${esc(x.n)} <span class="text-slate-400">${esc(x.m)}</span></label>`).join("");
+        }
+        window.openAlarmForm = function (id) {
+            const a = id ? AL.find(x => String(x.id) === String(id)) : null; editId = a ? a.id : null;
+            $("alarm-form-title").textContent = a ? "Edit alarm" : "New alarm"; $("al-save").textContent = a ? "Save Changes" : "Add Alarm";
+            $("al-title").value = a ? a.title : ""; $("al-time").value = a ? a.time : "";
+            const lab = $("al-time-label"); lab.textContent = a ? (window.tpFmt ? window.tpFmt(a.time) : a.time) : "Select time"; lab.className = a ? "text-slate-900" : "text-slate-400";
+            const rp = a ? a.repeat : "daily"; $("al-repeat").value = rp; $("al-date").value = a && a.date ? a.date : ""; $("al-date").classList.toggle("hidden", rp !== "date");
+            const all = a ? !!a.all : true; $("al-target").value = all ? "all" : "some"; $("al-students").classList.toggle("hidden", all);
+            renderStudentChecks(a && !a.all ? (a.targets || []).map(String) : []);
+            $("alarm-form-sheet").classList.remove("hidden"); setTimeout(() => $("al-title").focus(), 80);
+        };
+        window.closeAlarmForm = () => { $("alarm-form-sheet").classList.add("hidden"); editId = null; };
         window.openAlarmManager = async function () {
             if (window.currentRole !== "admin") return;
             if (window.closeSettingsMenu) window.closeSettingsMenu();
-            $("alarm-admin-modal").classList.remove("hidden");
-            $("al-students").innerHTML = students().map(x => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" value="${esc(x.m)}"> ${esc(x.n)} <span class="text-slate-400">${esc(x.m)}</span></label>`).join("");
+            $("alarm-admin-view").classList.remove("hidden"); $("alarm-form-sheet").classList.add("hidden");
+            renderStudentChecks([]);
             let d = await api("list"); if (!d) return; AL = d.alarms;
             const all = students().map(x => x.m), cur = all.slice().sort().join();       // keep "All students" alarms in sync with new students
             const stale = AL.filter(a => a.all && all.length && a.targets.slice().sort().join() !== cur);
@@ -10697,21 +10723,22 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             if (stale.length && (d = await api("list"))) AL = d.alarms;
             renderAlarms();
         };
-        window.closeAlarmManager = () => $("alarm-admin-modal").classList.add("hidden");
+        window.closeAlarmManager = () => { $("alarm-form-sheet").classList.add("hidden"); $("alarm-admin-view").classList.add("hidden"); };
         window.saveAlarm = async function () {
             const title = $("al-title").value.trim(), time = $("al-time").value, repeat = $("al-repeat").value, date = $("al-date").value, all = $("al-target").value === "all";
             const targets = all ? students().map(x => x.m) : [...$("al-students").querySelectorAll("input:checked")].map(i => i.value);
             if (!title || !time) return toast("Alarms", "Enter a title and a time.", "error");
             if (repeat === "date" && !date) return toast("Alarms", "Pick a date.", "error");
             if (!targets.length) return toast("Alarms", "Choose at least one student.", "error");
-            const d = await api("save", { alarm: { title, time, repeat, date, all, targets, enabled: true } }); if (!d) return;
-            AL = d.alarms; renderAlarms(); $("al-title").value = ""; toast("Alarm added", title + " • " + (window.tpFmt ? window.tpFmt(time) : time), "success");
+            const old = editId ? AL.find(x => String(x.id) === String(editId)) : null;
+            const d = await api("save", { alarm: old ? { ...old, title, time, repeat, date, all, targets } : { title, time, repeat, date, all, targets, enabled: true } }); if (!d) return;
+            AL = d.alarms; renderAlarms(); window.closeAlarmForm(); toast(old ? "Alarm updated" : "Alarm added", title + " • " + (window.tpFmt ? window.tpFmt(time) : time), "success");
             // Push to ONLY the students this alarm is for: one request, one channel = the Notice Board tune ('exam')
             try {
                 const who = [...new Set(targets.map(String))].filter(m => m && m !== "admin" && m !== "9475757821" && m !== String(window.loggedInMobile));
                 if (who.length && typeof sendOneSignalPush === "function") {
                     const when = repeat === "daily" ? "Every day" : (date ? date.split("-").reverse().join("-") : "");
-                    sendOneSignalPush("Alarm set: " + title, (window.tpFmt ? window.tpFmt(time) : time) + (when ? " • " + when : ""), null, { category: "exam", data: { noNav: 1, alarmCreated: 1 } }, who);
+                    sendOneSignalPush((old ? "Alarm updated: " : "Alarm set: ") + title, (window.tpFmt ? window.tpFmt(time) : time) + (when ? " • " + when : ""), null, { category: "exam", data: { noNav: 1, alarmCreated: 1 } }, who);
                 }
             } catch (e) { console.warn("[Alarms] push failed", e && e.message); }
         };
@@ -30038,6 +30065,22 @@ YOUR DIRECTIVES:
             // ==============================================
             (function () {
                 const COL = 'daily_quotes';
+                // ----- Auto quote list: built-in defaults, replaced by the admin's own list once it is edited (daily_quotes/_pool) -----
+                const POOL_ID = '_pool';
+                const DEFAULT_QUOTES = [
+                    "The beautiful thing about learning is that no one can take it away from you. – B.B. King",
+                    "Education is the most powerful weapon which you can use to change the world. – Nelson Mandela",
+                    "The secret of getting ahead is getting started. – Mark Twain",
+                    "There are no shortcuts to any place worth going. – Beverly Sills",
+                    "Success is the sum of small efforts, repeated day in and day out. – Robert Collier",
+                    "Don't let what you cannot do interfere with what you can do. – John Wooden",
+                    "Strive for progress, not perfection. – Unknown",
+                    "I find that the harder I work, the more luck I seem to have. – Thomas Jefferson",
+                    "You don't have to be great to start, but you have to start to be great. – Zig Ziglar"
+                ];
+                let pool = null, poolUnsub = null, poolRetry = 0;
+                const getPool = () => (pool && pool.length) ? pool : DEFAULT_QUOTES;
+                const dayOfYear = () => { const n = new Date(), s = new Date(n.getFullYear(), 0, 0); return Math.floor((n - s) / 86400000); };
                 const $ = id => document.getElementById(id);
                 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
                 const toast = (t, m, k) => window.showToast && window.showToast(t, m || '', k || 'info');
@@ -30057,8 +30100,9 @@ YOUR DIRECTIVES:
 
                 // Called by the dashboard with the automatic quote; returns the custom quote if one is set for TODAY.
                 window.pickDailyQuote = function (auto) {
-                    window.__autoQuote = auto;
-                    return (custom && custom.date === dayKey() && custom.text) ? custom.text : auto;
+                    const P = getPool(), a = P[dayOfYear() % P.length] || auto;
+                    window.__autoQuote = a;
+                    return (custom && custom.date === dayKey() && custom.text) ? custom.text : a;
                 };
                 function repaint() {
                     const el = $('daily-quote-text');
@@ -30123,14 +30167,71 @@ YOUR DIRECTIVES:
                     } catch (e) { box.innerHTML = '<p class="text-slate-400 text-center py-3 text-xs">Could not load the list</p>'; fail(e, 'Could not load list'); }
                 }
 
+
+                // ---------- ADMIN SIDE: auto quote list (add / delete) ----------
+                function watchPool() {
+                    if (!ready()) return;
+                    if (!window.currentRole) { if (poolUnsub) { poolUnsub(); poolUnsub = null; } pool = null; return; }
+                    if (poolUnsub || Date.now() < poolRetry) return;
+                    try {
+                        poolUnsub = onSnapshot(doc(db, COL, POOL_ID), snap => {
+                            const d = snap.exists() ? snap.data() : null;
+                            pool = (d && Array.isArray(d.quotes)) ? d.quotes.map(x => String(x == null ? '' : x).trim()).filter(Boolean) : null;
+                            repaint(); renderPool();
+                        }, err => { console.warn('[Quote] list listener failed - using built-in list:', err && err.message); poolUnsub = null; poolRetry = Date.now() + 5 * 60 * 1000; });
+                    } catch (e) { poolRetry = Date.now() + 5 * 60 * 1000; }
+                }
+                setInterval(watchPool, 2000);
+                function renderPool() {
+                    const box = $('qp-list'); if (!box) return;
+                    const P = getPool(), today = dayOfYear() % P.length;
+                    const tt = $('qp-total'); if (tt) tt.textContent = P.length + (P.length === 1 ? ' quote in the list' : ' quotes in the list');
+                    box.innerHTML = P.map((q, i) => `
+                      <div class="flex items-start gap-3 bg-white border ${i === today ? 'border-teal-300 ring-2 ring-teal-100' : 'border-slate-200'} rounded-2xl p-3 shadow-sm">
+                        <div class="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 text-[11px] font-black flex items-center justify-center shrink-0">${i + 1}</div>
+                        <div class="min-w-0 flex-1">${i === today ? '<span class="inline-block mb-1 px-2 py-0.5 rounded-md bg-teal-600 text-white text-[9px] font-black tracking-wider">TODAY</span>' : ''}
+                          <div class="text-[13px] text-slate-700 font-medium italic break-words leading-snug">${esc(q)}</div></div>
+                        <button onclick="qpDelete(${i})" aria-label="Delete quote" class="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 active:scale-90"><i class="fa-solid fa-trash-can text-[12px]"></i></button>
+                      </div>`).join('');
+                }
+                const savePool = list => setDoc(doc(db, COL, POOL_ID), { quotes: list, updatedAt: Date.now() });
+                window.qpCount = () => { const t = $('qp-text'); if (t) $('qp-count').textContent = t.value.length + '/200'; };
+                window.qpAdd = async function () {
+                    const text = ($('qp-text').value || '').trim();
+                    if (!text) return toast('Quote', 'Type a quote first.', 'error');
+                    if (!ready()) return toast('Quote', 'Firebase is not connected.', 'error');
+                    const list = getPool().slice();
+                    if (list.some(q => q.toLowerCase() === text.toLowerCase())) return toast('Quote', 'This quote is already in the list.', 'error');
+                    list.push(text);
+                    const btn = $('qp-add'), old = btn.innerHTML; btn.disabled = true; btn.textContent = 'Adding…';
+                    try { await savePool(list); pool = list; $('qp-text').value = ''; qpCount(); renderPool(); repaint(); toast('Quote added', 'It is now part of the daily rotation.', 'success'); }
+                    catch (e) { fail(e, 'Could not add quote'); }
+                    finally { btn.disabled = false; btn.innerHTML = old; }
+                };
+                window.qpDelete = async function (i) {
+                    const list = getPool().slice(); if (!list[i]) return;
+                    if (list.length <= 1) return toast('Quote', 'Keep at least one quote in the list.', 'error');
+                    if (!ready()) return toast('Quote', 'Firebase is not connected.', 'error');
+                    if (!(await window.showCustomConfirm('Delete Quote', 'Delete this quote from the list?', 'Delete', 'Cancel', 'info'))) return;
+                    list.splice(i, 1);
+                    try { await savePool(list); pool = list; renderPool(); repaint(); toast('Quote deleted', 'Removed from the list.', 'success'); }
+                    catch (e) { fail(e, 'Could not delete quote'); }
+                };
+                window.qtTab = function (t) {
+                    const isList = t !== 'date';
+                    $('qt-pane-list').classList.toggle('hidden', !isList); $('qt-pane-date').classList.toggle('hidden', isList);
+                    $('qt-tab-list').classList.toggle('on', isList); $('qt-tab-date').classList.toggle('on', !isList);
+                };
+
                 window.openQuoteManager = function () {
                     if (window.currentRole !== 'admin') return;
                     if (window.closeSettingsMenu) window.closeSettingsMenu();
                     const dt = $('qt-date'); dt.min = dayKey(); dt.value = dayKey();
-                    $('quote-admin-modal').classList.remove('hidden');
+                    $('quote-admin-view').classList.remove('hidden');
+                    qtTab('list'); watchPool(); renderPool(); qpCount();
                     loadForDate(dt.value); loadUpcoming();
                 };
-                window.closeQuoteManager = () => $('quote-admin-modal').classList.add('hidden');
+                window.closeQuoteManager = () => $('quote-admin-view').classList.add('hidden');
                 window.qtDateChanged = () => loadForDate($('qt-date').value);
                 window.qtEdit = key => { $('qt-date').value = key; loadForDate(key); $('qt-text').focus(); };
 
@@ -31288,14 +31389,23 @@ YOUR DIRECTIVES:
             <div class="overflow-y-auto no-scrollbar flex-1 bg-slate-100" id="ios-select-options"></div>
             <div class="pb-8 bg-slate-100"></div>
         </div>
-<!-- ===== ALARMS: admin manager ===== -->
-<div id="alarm-admin-modal" class="hidden fixed inset-0 z-[9998] bg-black/50 flex items-end sm:items-center justify-center sm:p-4">
-  <div class="bg-white w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-4 space-y-3 shadow-2xl">
-    <div class="flex items-center justify-between"><h3 class="font-black text-lg text-slate-900"><i class="fa-solid fa-bell text-amber-500"></i> Alarms</h3>
-      <button onclick="closeAlarmManager()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button></div>
-    <div id="alarm-list" class="space-y-2 text-sm"></div>
-    <div class="border-t border-slate-200 pt-3 space-y-2 text-sm">
-      <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">New alarm (India time)</p>
+<!-- ===== ALARMS: admin full screen ===== -->
+<div id="alarm-admin-view" class="hidden fixed inset-0 z-[9998] flex flex-col bg-[#f8fafc]">
+  <div class="ax-subhdr"><div class="ax-crow">
+    <div style="justify-self:start"><button type="button" class="sd-ibtn" onclick="closeAlarmManager()" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button></div>
+    <div class="ax-ctitle"><div class="t">ALARMS</div><div class="s">EXAMA · INDIA TIME</div></div>
+    <div style="justify-self:end"><button type="button" class="sd-ibtn" onclick="openAlarmForm()" aria-label="Add alarm"><i class="fa-solid fa-plus"></i></button></div>
+  </div></div>
+  <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 pb-28 relative">
+    <div class="flex items-center justify-between px-1 mb-3"><p id="alarm-count" class="text-[11px] font-extrabold text-slate-400 uppercase tracking-widest">All alarms</p>
+      <button type="button" onclick="openAlarmForm()" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white text-[12px] font-black active:scale-95"><i class="fa-solid fa-plus mr-1"></i>New alarm</button></div>
+    <div id="alarm-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm"></div>
+  </div>
+  <div id="alarm-form-sheet" class="hidden absolute inset-0 z-20 bg-black/50 flex items-end sm:items-center justify-center sm:p-4">
+    <div class="bg-white w-full sm:max-w-md max-h-[92%] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-4 space-y-2 shadow-2xl text-sm">
+      <div class="flex items-center justify-between"><h3 id="alarm-form-title" class="font-black text-lg text-slate-900">New alarm</h3>
+        <button type="button" onclick="closeAlarmForm()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button></div>
+      <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Alarm (India time)</p>
       <input id="al-title" placeholder="Alarm title" maxlength="60" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
       <input id="al-time" type="hidden">
       <button type="button" id="al-time-btn" onclick="openTimePicker('al-time')" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold flex items-center justify-between text-left active:scale-[.98] transition-transform">
@@ -31306,27 +31416,44 @@ YOUR DIRECTIVES:
       <select id="al-target" onchange="document.getElementById('al-students').classList.toggle('hidden', this.value!=='some')" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
         <option value="all">All students</option><option value="some">Specific students</option></select>
       <div id="al-students" class="hidden max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1"></div>
-      <button onclick="saveAlarm()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-black active:scale-95">Add Alarm</button>
+      <button type="button" id="al-save" onclick="saveAlarm()" class="w-full py-3 rounded-xl bg-teal-600 text-white font-black active:scale-95">Add Alarm</button>
     </div>
   </div>
 </div>
-<!-- ===== DAILY QUOTE: admin manager ===== -->
-<div id="quote-admin-modal" class="hidden fixed inset-0 z-[9998] bg-black/50 flex items-end sm:items-center justify-center sm:p-4">
-  <div class="bg-white w-full sm:max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-4 space-y-3 shadow-2xl">
-    <div class="flex items-center justify-between"><h3 class="font-black text-lg text-slate-900"><i class="fa-solid fa-quote-left text-violet-500"></i> Daily Quote</h3>
-      <button onclick="closeQuoteManager()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold">✕</button></div>
-    <p class="text-[11px] text-slate-500 leading-snug">Students see the automatic quote every day. Set a custom quote below and it will show <b>only on the day you pick</b>.</p>
-    <div class="space-y-2 text-sm">
-      <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Date</p>
-      <input id="qt-date" type="date" onchange="qtDateChanged()" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
-      <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pt-1">Custom quote</p>
-      <textarea id="qt-text" rows="3" maxlength="200" oninput="qtCount()" placeholder="Type a quote… e.g. Strive for progress, not perfection. – Unknown" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold resize-none"></textarea>
-      <div class="flex items-center justify-between text-[11px]"><span id="qt-status" class="font-bold text-slate-400"></span><span id="qt-count" class="text-slate-400">0/200</span></div>
-      <button id="qt-save" onclick="saveDailyQuote()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-black active:scale-95">Save Quote</button>
-      <button id="qt-reset" onclick="resetDailyQuote()" class="hidden w-full py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-[13px] active:scale-95">Remove &amp; use auto quote for this day</button>
+<!-- ===== DAILY QUOTE: admin full screen ===== -->
+<div id="quote-admin-view" class="hidden fixed inset-0 z-[9998] flex flex-col bg-[#f8fafc]">
+  <div class="ax-subhdr"><div class="ax-crow">
+    <div style="justify-self:start"><button type="button" class="sd-ibtn" onclick="closeQuoteManager()" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button></div>
+    <div class="ax-ctitle"><div class="t">QUOTE OF THE DAY</div><div class="s">EXAMA · DAILY MOTIVATION</div></div>
+    <div style="justify-self:end"><button type="button" class="sd-ibtn" onclick="qtTab('list');setTimeout(function(){var e=document.getElementById('qp-text');e&&e.focus()},50)" aria-label="Add quote"><i class="fa-solid fa-plus"></i></button></div>
+  </div></div>
+  <div class="px-3 sm:px-5 pt-3 shrink-0"><div class="flex gap-1 p-1 bg-slate-200/70 rounded-2xl max-w-md">
+    <button type="button" id="qt-tab-list" onclick="qtTab('list')" class="qt-tab on flex-1 py-2 rounded-xl text-[12px] font-black">Auto quotes</button>
+    <button type="button" id="qt-tab-date" onclick="qtTab('date')" class="qt-tab flex-1 py-2 rounded-xl text-[12px] font-black">Pick a date</button></div></div>
+  <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 pb-24">
+    <div id="qt-pane-list" class="space-y-3 max-w-2xl">
+      <p class="text-[11px] text-slate-500 leading-snug px-1">One quote from this list is shown to students each day, in order. Add your own or delete the ones you don't want. Adding or deleting can change which quote shows today.</p>
+      <div class="bg-white border border-slate-200 rounded-2xl p-3 space-y-2 shadow-sm">
+        <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Add a new quote</p>
+        <textarea id="qp-text" rows="3" maxlength="200" oninput="qpCount()" placeholder="Type a quote… e.g. Strive for progress, not perfection. – Unknown" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold resize-none"></textarea>
+        <div class="flex items-center justify-between"><span id="qp-count" class="text-[11px] text-slate-400">0/200</span>
+          <button type="button" id="qp-add" onclick="qpAdd()" class="px-4 py-2 rounded-xl bg-teal-600 text-white text-[13px] font-black active:scale-95"><i class="fa-solid fa-plus mr-1"></i>Add quote</button></div>
+      </div>
+      <p id="qp-total" class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 pt-1">Quote list</p>
+      <div id="qp-list" class="space-y-2 text-sm"></div>
     </div>
-    <div class="border-t border-slate-200 pt-3 space-y-2">
-      <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Scheduled custom quotes</p>
+    <div id="qt-pane-date" class="hidden space-y-3 max-w-2xl">
+      <p class="text-[11px] text-slate-500 leading-snug px-1">Want a special quote on one particular day? Pick the date and type it below. It shows <b>only on that day</b>; every other day uses the auto list.</p>
+      <div class="bg-white border border-slate-200 rounded-2xl p-3 space-y-2 shadow-sm text-sm">
+        <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Date</p>
+        <input id="qt-date" type="date" onchange="qtDateChanged()" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+        <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pt-1">Custom quote</p>
+        <textarea id="qt-text" rows="3" maxlength="200" oninput="qtCount()" placeholder="Type a quote… e.g. Strive for progress, not perfection. – Unknown" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold resize-none"></textarea>
+        <div class="flex items-center justify-between text-[11px]"><span id="qt-status" class="font-bold text-slate-400"></span><span id="qt-count" class="text-slate-400">0/200</span></div>
+        <button id="qt-save" onclick="saveDailyQuote()" class="w-full py-3 rounded-xl bg-teal-600 text-white font-black active:scale-95">Save Quote</button>
+        <button id="qt-reset" onclick="resetDailyQuote()" class="hidden w-full py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-[13px] active:scale-95">Remove &amp; use auto quote for this day</button>
+      </div>
+      <p class="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-1 pt-1">Scheduled custom quotes</p>
       <div id="qt-list" class="space-y-2 text-sm"></div>
     </div>
   </div>
@@ -32670,6 +32797,22 @@ html body #settings-menu:has(#menu-sos-wrap[data-admin="1"]) .sg-hero{background
   html.is-landscape #ax-tiles#ax-tiles .glass-card>div:first-child{width:34px;height:34px;margin-bottom:.35rem}
   html.is-landscape #admin-view>button.absolute{width:48px;height:48px}
 }
+</style>
+<style id="ax-subscreen">
+/* Alarm + Quote full screens: same rounded teal header as the Admin Dashboard */
+.ax-subhdr{position:relative;z-index:5;flex-shrink:0;color:#fff;background:linear-gradient(135deg,#064e3b 0%,#0f766e 48%,#0891b2 100%);border-bottom:1px solid rgba(255,255,255,.2);border-radius:0 0 28px 28px;box-shadow:0 18px 40px -16px rgba(13,148,136,.6);padding:max(3rem,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 14px max(16px,env(safe-area-inset-left))}
+.ax-subhdr .ax-ctitle .t{text-transform:uppercase;letter-spacing:.05em;font-size:clamp(13px,3.9vw,18px)}
+.ax-subhdr .ax-ctitle .s{color:#99f6e4}
+@media (orientation:landscape) and (max-height:480px){.ax-subhdr{padding-top:max(.6rem,env(safe-area-inset-top));padding-bottom:10px;border-radius:0 0 22px 22px}}
+#alarm-admin-view:not(.hidden),#quote-admin-view:not(.hidden){animation:iosFade .3s var(--ios)}
+#alarm-form-sheet:not(.hidden)>div{animation:iosSheet .45s var(--ios)}
+/* on/off switch */
+.alx-sw{position:relative;width:46px;height:28px;border-radius:999px;background:#cbd5e1;flex-shrink:0;transition:background .2s}
+.alx-sw i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(15,23,42,.3);transition:transform .2s}
+.alx-sw.on{background:#14b8a6}.alx-sw.on i{transform:translateX(18px)}
+/* quote tabs */
+.qt-tab{color:#64748b;transition:background .2s,color .2s}
+.qt-tab.on{background:#fff;color:#0f766e;box-shadow:0 1px 4px rgba(15,23,42,.12)}
 </style>
 <style id="ax-tools-layout">
 /* Admin header title: all caps */
