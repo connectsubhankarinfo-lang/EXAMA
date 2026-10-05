@@ -10568,7 +10568,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-app.js";
             import { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, onSnapshot, deleteDoc, query, where, orderBy, arrayUnion, enableIndexedDbPersistence, limit, getDoc, writeBatch, runTransaction as fsRunTransaction, startAfter } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
             // 🔥 NEW AUTH IMPORTS
-            import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
+            import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, reauthenticateWithCredential, EmailAuthProvider, RecaptchaVerifier, signInWithPhoneNumber } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
             import { getDatabase, ref, set, get, push, update, remove, onValue, off, onDisconnect, query as rtdbQuery, orderByChild, limitToLast, endBefore, serverTimestamp as rtdbServerTimestamp, child, runTransaction } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
 
     // ==========================================================================
@@ -11774,7 +11774,8 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                     const user = auth.currentUser;
                     if (!user) throw new Error("Session expired. Please log out and log back in.");
 
-                    // 1. Update Firebase Auth & Firestore
+                    // 1. Re-authenticate, then update Firebase Auth & Firestore
+                    await window.reauthStudentForPasswordChange();
                     await updatePassword(user, state.newPassword);
                     await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { password: state.newPassword });
 
@@ -11875,6 +11876,31 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                 }
             };
 
+            // 🔐 Firebase refuses updatePassword() for sessions that signed in a while ago
+            // (auth/requires-recent-login). The user already proved identity via the email OTP,
+            // so silently re-authenticate with their current password before changing it.
+            window.reauthStudentForPasswordChange = async function () {
+                const user = auth.currentUser;
+                if (!user) throw new Error("Session expired. Please log out and log back in.");
+                const stu = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
+                const authEmail = `${window.loggedInMobile}@exama.app`;
+                // Cached login password first (it is what actually signs into Firebase Auth), Firestore copy as fallback
+                const candidates = [...new Set([localStorage.getItem('exama_pass'), stu && stu.password].filter(Boolean))];
+                let lastErr = null;
+                for (const pw of candidates) {
+                    try {
+                        await reauthenticateWithCredential(user, EmailAuthProvider.credential(authEmail, pw));
+                        return;
+                    } catch (e) {
+                        lastErr = e;
+                        if (!['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/wrong-password'].includes(e.code)) throw e;
+                    }
+                }
+                const err = new Error("For security, please log out, log in again with your current password, and then change it.");
+                err.code = 'app/reauth-failed'; err.cause = lastErr;
+                throw err;
+            };
+
             // 2. Verify OTP and Commit Changes
             window.verifyAndChangeStudentPassword = async function () {
                 const inputCode = document.getElementById('student-pass-otp-input').value.trim();
@@ -11898,7 +11924,8 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                     const user = auth.currentUser;
                     if (!user) throw new Error("Session expired. Please re-login to proceed.");
 
-                    // A. Update in Firebase Authentication
+                    // A. Re-authenticate (avoids auth/requires-recent-login), then update in Firebase Authentication
+                    await window.reauthStudentForPasswordChange();
                     await updatePassword(user, state.newPassword);
 
                     // B. Update Firestore student document
@@ -11909,6 +11936,10 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                     // C. Update in-memory database
                     const stuIndex = window.studentsDB.findIndex(s => s.mobile === window.loggedInMobile);
                     if (stuIndex !== -1) window.studentsDB[stuIndex].password = state.newPassword;
+
+                    // D. Keep the cached login password in sync, otherwise the next silent re-login
+                    //    ("Restoring session") would use the OLD password, fail, and log the student out.
+                    localStorage.setItem('exama_pass', state.newPassword);
 
                     window.hideLoader();
                     window.closeChangePasswordModal();
@@ -22638,11 +22669,69 @@ async function showWallet() {
             };
 
             window.downloadAdminStudentReport = function () { if (window.selectedAdminProfile) { generatePDFReport(window.selectedAdminProfile); } }
-            window.generatePDFReport = async function (targetMobile = null, startDate = null, endDate = null, periodLabel = 'Lifetime') {
+            // ===== Report body: one separate, numbered card per category =====
+            window.exaReportBody = async function (d) {
+                const E = x => String(x == null ? '' : x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+                const inr = n => (n < 0 ? '-' : '') + '\u20B9' + Math.abs(Number(n) || 0).toLocaleString('en-IN'), fdt = t => window.formatDateDDMMYYYY(new Date(t));
+                const bar = (pc, c) => `<div style="height:6px;background:#e2e8f0;border-radius:4px;overflow:hidden"><div style="width:${Math.min(100, Math.max(0, pc))}%;height:100%;background:${c}"></div></div>`;
+                const sec = (n, ttl, col, sub, inner) => `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;margin-bottom:22px;overflow:hidden"><div class="pdf-keep" style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:${col}14;border-bottom:2px solid ${col}"><div style="font-size:13px;font-weight:900;letter-spacing:1.2px;text-transform:uppercase;color:#0f172a"><span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;border-radius:6px;background:${col};color:#fff;font-size:11px;margin-right:8px">${n}</span>${ttl}</div><div style="font-size:10px;font-weight:700;color:#64748b">${sub || ''}</div></div><div style="padding:16px 18px">${inner}</div></div>`;
+                const kpis = a => `<div style="display:flex;gap:10px;margin-bottom:14px">${a.map(k => `<div style="flex:1;background:${k[2]}10;border:1px solid ${k[2]}33;border-radius:10px;padding:10px 6px;text-align:center"><div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.8px">${k[0]}</div><div style="font-size:17px;font-weight:900;color:${k[2]};margin-top:4px">${k[1]}</div></div>`).join('')}</div>`;
+                const tbl = (h, rows, empty, cap) => { if (!rows.length) return `<p style="margin:0;font-size:11px;color:#94a3b8;font-style:italic">${empty}</p>`; const more = cap && rows.length > cap ? rows.length - cap : 0; if (more) rows = rows.slice(0, cap);
+                    return `<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f8fafc;color:#64748b;text-transform:uppercase;font-size:9.5px;letter-spacing:.6px">${h.map(x => `<th style="padding:8px;text-align:${x[1] || 'left'}">${x[0]}</th>`).join('')}</tr></thead><tbody>${rows.map((r, i) => `<tr style="border-bottom:1px solid #f1f5f9;background:${i % 2 ? '#f8fafc' : '#fff'}">${r.map((c, j) => `<td style="padding:8px;text-align:${h[j][1] || 'left'}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>` + (more ? `<p style="margin:8px 0 0;font-size:10px;color:#94a3b8;text-align:center">+ ${more} older entries not shown</p>` : ''); };
+                const inP = t => (!d.start || t >= d.start) && (!d.end || t <= d.end), G = '#10b981', R = '#ef4444', B = '#3b82f6', V = '#8b5cf6', A = '#f59e0b', T = '#0d9488', I = '#6366f1';
+                const sub = d.periodLabel, out = [];
+
+                // --- load budget + wallet (works for the student and for the admin viewing a student) ---
+                let bud = [], wal = { balance: null, tx: [] };
+                try { if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) { (await getDocs(collection(db, window.getCollectionName('students'), d.mobile, 'budget'))).forEach(x => bud.push({ id: x.id, ...x.data() })); } else if (d.mobile === window.loggedInMobile) bud = [...(window.budgetsDB || [])]; } catch (e) { if (d.mobile === window.loggedInMobile) bud = [...(window.budgetsDB || [])]; }
+                try { if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) { const w = await getDoc(doc(db, window.getCollectionName('wallets'), d.mobile)); if (w.exists()) wal.balance = w.data().balance || 0; (await getDocs(collection(db, window.getCollectionName('wallets'), d.mobile, 'tx'))).forEach(x => wal.tx.push(x.data())); } } catch (e) { console.warn('report wallet', e); }
+                bud = bud.filter(t => inP(t.timestamp || 0)).sort((a, b) => b.timestamp - a.timestamp);
+                wal.tx = wal.tx.filter(t => inP(t.ts || t.at || 0)).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+                // --- 1. Exam performance + ranks ---
+                const all = d.allResults || [], rk = r => { const L = all.filter(x => x.examId === r.examId && x.status !== 'ABSENT').sort((a, b) => b.percentage - a.percentage), i = L.findIndex(x => x.mobile === d.mobile); return { rank: i < 0 ? 0 : i + 1, n: L.length }; };
+                const exOf = r => window.examsDB.find(e => e.id === r.examId) || { name: r.examName || 'Assessment', date: fdt(r.timestamp || Date.now()) };
+                const rows = d.records.map(r => ({ r, ex: exOf(r), k: rk(r) })), present = rows.filter(x => x.r.status !== 'ABSENT'), best = present.length ? Math.max(...present.map(x => x.r.percentage)) : 0;
+                out.push(sec(1, 'Exam Performance', B, sub, kpis([['Exams', rows.length, B], ['Average', d.avg + '%', I], ['Pass Rate', d.passRate + '%', G], ['Best Score', best.toFixed(0) + '%', A]]) +
+                    tbl([['Assessment'], ['Date'], ['Score', 'right'], ['Progress', 'left'], ['Rank', 'center'], ['Result', 'right']], rows.map(x => { const c = x.r.status === 'PASS' ? G : R; return [`<b style="color:#0f172a">${E(x.ex.name)}</b>`, `<span style="color:#64748b">${E(x.ex.date)}</span>`, `<b>${x.r.obtained}/${x.r.total}</b> <span style="color:#94a3b8;font-size:9.5px">(${x.r.percentage.toFixed(0)}%)</span>`, `<div style="width:80px">${bar(x.r.percentage, c)}</div>`, x.k.rank ? `<b>#${x.k.rank}</b><span style="color:#94a3b8"> / ${x.k.n}</span>` : '-', `<b style="color:${c}">${x.r.status}</b>`]; }), 'No exams recorded for this period.')));
+
+                // --- 2. Exams topped ---
+                const tops = rows.filter(x => x.k.rank === 1 && x.r.percentage > 0), podium = rows.filter(x => x.k.rank > 0 && x.k.rank <= 3).length, ranked = rows.filter(x => x.k.rank > 0), avgRank = ranked.length ? (ranked.reduce((a, x) => a + x.k.rank, 0) / ranked.length).toFixed(1) : '-';
+                out.push(sec(2, 'Exams Topped', A, sub, kpis([['Times Topped', tops.length, A], ['Podium (Top 3)', podium, V], ['Best Rank', ranked.length ? '#' + Math.min(...ranked.map(x => x.k.rank)) : '-', G], ['Average Rank', avgRank === '-' ? '-' : '#' + avgRank, B]]) +
+                    tbl([['Exam'], ['Date'], ['Score', 'right'], ['Students', 'right']], tops.map(x => [`<b style="color:#0f172a">\uD83C\uDFC6 ${E(x.ex.name)}</b>`, E(x.ex.date), `<b style="color:${A}">${x.r.obtained}/${x.r.total} (${x.r.percentage.toFixed(0)}%)</b>`, x.k.n]), 'No exam topped in this period.')));
+
+                // --- 3. Study & focus ---
+                const ses = d.sessions.slice().sort((a, b) => (b.totalStudyMs || 0) - (a.totalStudyMs || 0)), hm = ms => Math.floor(ms / 3600000) + 'h ' + String(Math.round(ms % 3600000 / 60000)).padStart(2, '0') + 'm';
+                out.push(sec(3, 'Study & Focus', V, sub, kpis([['Sessions', d.sessions.length, V], ['Completed', d.focusDone, G], ['Time Logged', d.studyHrs + ' h', B], ['Avg / Session', d.sessions.length ? hm(d.sessions.reduce((a, x) => a + (x.totalStudyMs || 0), 0) / d.sessions.length) : '-', A]]) +
+                    tbl([['Date'], ['Study Time', 'right'], ['Status', 'right']], ses.slice(0, 12).map(x => [E(x.dateStr || ''), `<b>${hm(x.totalStudyMs || 0)}</b>`, `<b style="color:${x.status === 'COMPLETED' ? G : '#64748b'}">${E(x.status || '')}</b>`]), 'No study sessions in this period.')));
+
+                // --- 4. Weekly targets ---
+                const done = d.todos.filter(t => t.completed).length, tp = d.todos.length ? done / d.todos.length * 100 : 0;
+                out.push(sec(4, 'Weekly Targets', T, sub, d.todos.length ? kpis([['Assigned', d.todos.length, T], ['Done', done, G], ['Pending', d.todos.length - done, R], ['Completion', tp.toFixed(0) + '%', I]]) + tbl([['Task'], ['Status', 'right']], d.todos.map(t => [`<b style="color:#0f172a">${E(t.title)}</b>${t.desc ? `<div style="color:#64748b;font-size:10px;margin-top:2px">${E(t.desc)}</div>` : ''}`, t.completed ? `<b style="color:${G}">\u2714 Done</b>` : `<b style="color:#94a3b8">Pending</b>`]), '') : '<p style="margin:0;font-size:11px;color:#94a3b8;font-style:italic">No targets set for this period.</p>'));
+
+                // --- 5. Running / fitness ---
+                const runs = d.fitness.slice().sort((a, b) => b.timestamp - a.timestamp), km = runs.reduce((a, f) => a + (parseFloat(f.distance) || 0), 0);
+                out.push(sec(5, 'Running & Fitness', R, sub, kpis([['Total Distance', km.toFixed(2) + ' km', R], ['Runs', runs.length, B], ['Avg / Run', runs.length ? (km / runs.length).toFixed(2) + ' km' : '-', G], ['Longest', runs.length ? Math.max(...runs.map(f => parseFloat(f.distance) || 0)).toFixed(2) + ' km' : '-', A]]) +
+                    tbl([['Date'], ['Distance', 'right']], runs.slice(0, 12).map(f => [fdt(f.timestamp), `<b>${(parseFloat(f.distance) || 0).toFixed(2)} km</b>`]), 'No runs logged in this period.')));
+
+                // --- 6. Budget manager ---
+                const inc = bud.filter(t => t.type === 'income').reduce((a, t) => a + Number(t.amount || 0), 0), exp = bud.filter(t => t.type !== 'income').reduce((a, t) => a + Number(t.amount || 0), 0), meth = m => bud.filter(t => t.method === m).reduce((a, t) => a + (t.type === 'income' ? 1 : -1) * Number(t.amount || 0), 0);
+                const cats = {}; bud.filter(t => t.type !== 'income').forEach(t => { const c = t.category || 'Other'; cats[c] = (cats[c] || 0) + Number(t.amount || 0); });
+                const catRows = Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c, v]) => `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:10.5px"><div style="width:90px;font-weight:700;color:#334155">${E(c)}</div><div style="flex:1">${bar(exp ? v / exp * 100 : 0, R)}</div><div style="width:70px;text-align:right;font-weight:800">${inr(v)}</div></div>`).join('');
+                out.push(sec(6, 'Budget Manager', G, sub, bud.length ? kpis([['Income', inr(inc), G], ['Spent', inr(exp), R], ['Net', inr(inc - exp), inc - exp >= 0 ? B : R], ['Online / Cash', inr(meth('online')) + ' / ' + inr(meth('cash')), V]]) + (catRows ? `<div class="pdf-keep" style="margin-bottom:14px"><div style="font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Spending by category</div>${catRows}</div>` : '') +
+                    `<div style="font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Transaction history (${bud.length})</div>` + tbl([['Date'], ['Title'], ['Category'], ['Method'], ['Amount', 'right']], bud.map(t => { const pl = t.type === 'income'; return [fdt(t.timestamp), `<b style="color:#0f172a">${E(t.title || '')}</b>`, E(t.category || ''), E((t.method || '').toUpperCase()), `<b style="color:${pl ? G : R}">${pl ? '+' : '-'}${inr(t.amount).replace('-', '')}</b>`]; }), '', 40) : '<p style="margin:0;font-size:11px;color:#94a3b8;font-style:italic">No budget transactions in this period.</p>'));
+
+                // --- 7. EXAMA wallet coins ---
+                const earn = wal.tx.filter(t => t.amount > 0).reduce((a, t) => a + t.amount, 0), pen = wal.tx.filter(t => t.amount < 0).reduce((a, t) => a + t.amount, 0);
+                out.push(sec(7, 'EXAMA Wallet \u2022 Coins', A, sub, kpis([['Current Balance', wal.balance == null ? '-' : wal.balance, A], ['Earned', '+' + earn, G], ['Penalties', String(pen), R], ['Net (period)', (earn + pen >= 0 ? '+' : '') + (earn + pen), B]]) +
+                    tbl([['Date'], ['Description'], ['Coins', 'right']], wal.tx.map(t => [E(t.date || fdt(t.ts || t.at || Date.now())), `<b style="color:#0f172a">${E(t.title || '')}</b>`, `<b style="color:${t.amount >= 0 ? G : R}">${t.amount >= 0 ? '+' : ''}${t.amount}</b>`]), 'No coin activity in this period.', 40)));
+                return out.join('');
+            };
+            window.generatePDFReport = async function (targetMobile = null, startDate = null, endDate = null, periodLabel = 'Lifetime', opts = {}) {
                 const mobileToUse = targetMobile || window.loggedInMobile;
                 const student = window.studentsDB.find(s => s.mobile === mobileToUse);
-                if (!student) return;
-                window.showLoader("Preparing your PDF");
+                if (!student) return null;
+                if (!opts.silent) window.showLoader("Preparing your PDF");
 
                 const parseDDMM = (dStr) => { const [d, m, y] = dStr.split('/'); return new Date(`${y}-${m}-${d}T00:00:00`).getTime(); };
 
@@ -22729,6 +22818,8 @@ async function showWallet() {
                 // URL ENCODED SVG to prevent attribute breaking!
                 const logoSVG = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="#ef4444" /><text x="50" y="66" font-family="Arial" font-size="38" font-weight="900" fill="white" text-anchor="middle">EX</text></svg>');
 
+                const __body = await window.exaReportBody({ mobile: mobileToUse, start: startDate, end: endDate, periodLabel: periodLabel, records: myRecords, allResults: allResults, avg: avg, passRate: passRate, sessions: mySessions, focusDone: focusSessionsCompleted, studyHrs: studyHrs, todos: myTodos, fitness: myFitness });
+
                 let html = `
                 <div style="padding: 40px; font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; width: 800px; background: #fafafa;">
                     
@@ -22776,78 +22867,7 @@ async function showWallet() {
                         </div>
                     </div>
 
-                    <!-- SPLIT CONTENT -->
-                    <div style="display: flex; gap: 30px;">
-                        
-                        <!-- LEFT COL (TASKS & FOCUS) -->
-                        <div style="flex: 1.1;">
-                            <h3 style="font-size: 14px; font-weight: 800; margin-bottom: 15px; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                                <div style="width: 8px; height: 16px; background: #ef4444; border-radius: 4px;"></div> Weekly Targets
-                            </h3>
-                            <div style="margin-bottom: 35px;">
-                                ${myTodos.length === 0 ? '<p style="font-size: 12px; color: #94a3b8; font-style: italic;">No targets set for this period.</p>' : ''}
-                                ${myTodos.map(t => `
-                                    <div style="background: #ffffff; border: 1px solid ${t.completed ? '#e2e8f0' : '#e2e8f0'}; border-radius: 8px; padding: 12px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
-                                        <div style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid ${t.completed ? '#10b981' : '#cbd5e1'}; background: ${t.completed ? '#10b981' : 'transparent'}; display: flex; align-items: center; justify-content: center; color: white; font-size: 10px; font-weight: bold; flex-shrink: 0; margin-top: 1px;">
-                                            ${t.completed ? '✔' : ''}
-                                        </div>
-                                        <div style="flex: 1;">
-                                            <p style="margin: 0; font-size: 12px; font-weight: 800; color: ${t.completed ? '#94a3b8' : '#0f172a'}; text-decoration: ${t.completed ? 'line-through' : 'none'}; line-height: 1.4;">${t.title}</p>
-                                            ${t.desc ? `<p style="margin: 4px 0 0; font-size: 10px; color: ${t.completed ? '#cbd5e1' : '#64748b'}; font-weight: 600;">${t.desc}</p>` : ''}
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                            
-                            <h3 style="font-size: 14px; font-weight: 800; margin-bottom: 15px; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                                <div style="width: 8px; height: 16px; background: #3b82f6; border-radius: 4px;"></div> Focus Log
-                            </h3>
-                            <div style="background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; padding: 15px;">
-                                <ul style="padding: 0; margin: 0; list-style: none; font-size: 12px; color: #334155; line-height: 2;">
-                                    <li style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding-bottom: 6px;"><strong>Sessions:</strong> <span style="font-weight: 800; color: #0f172a;">${focusSessionsCompleted}</span></li>
-                                    <li style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 6px 0;"><strong>Time Logged:</strong> <span style="font-weight: 800; color: #0f172a;">${studyHrs} Hrs</span></li>
-                                    <li style="display: flex; justify-content: space-between; padding-top: 6px;"><strong>Times Topped:</strong> <span style="font-weight: 800; color: #ef4444;">${timesTopped}</span></li>
-                                </ul>
-                            </div>
-                        </div>
-
-                        <!-- RIGHT COL (EXAMS) -->
-                        <div style="flex: 1.6;">
-                            <h3 style="font-size: 14px; font-weight: 800; margin-bottom: 15px; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">
-                                <div style="width: 8px; height: 16px; background: #10b981; border-radius: 4px;"></div> Exam History
-                            </h3>
-                            ${myRecords.length === 0 ? '<p style="font-size: 12px; color: #94a3b8; font-style: italic;">No exams recorded for this period.</p>' : ''}
-                            ${myRecords.length > 0 ? `
-                                <div style="background: #ffffff; border-radius: 10px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
-                                    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-                                        <thead>
-                                            <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
-                                                <th style="padding: 12px 15px;">Assessment</th>
-                                                <th style="padding: 12px 10px;">Date</th>
-                                                <th style="padding: 12px 10px; text-align: right;">Score</th>
-                                                <th style="padding: 12px 15px; text-align: right;">Result</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            ${myRecords.map((r, i) => {
-                    let exam = window.examsDB.find(e => e.id === r.examId);
-                    if (!exam) exam = { name: r.examName || 'Assessment', date: window.formatDateDDMMYYYY(new Date(r.timestamp || Date.now())) };
-                    const c = r.status === 'PASS' ? '#10b981' : '#ef4444';
-                    const bg = i % 2 === 0 ? '#ffffff' : '#f8fafc';
-                    return `
-                                                <tr style="border-bottom: 1px solid #f1f5f9; background: ${bg};">
-                                                    <td style="padding: 12px 15px; font-weight: 800; color: #0f172a;">${exam.name}</td>
-                                                    <td style="padding: 12px 10px; color: #64748b; font-weight: 600;">${exam.date}</td>
-                                                    <td style="padding: 12px 10px; font-weight: 800; text-align: right; color: #0f172a;">${r.obtained}/${r.total} <span style="font-size: 9.5px; color: #94a3b8; font-weight: 600;">(${r.percentage.toFixed(0)}%)</span></td>
-                                                    <td style="padding: 12px 15px; font-weight: 800; text-align: right; color: ${c};">${r.status}</td>
-                                                </tr>`;
-                }).join('')}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ` : ''}
-                        </div>
-                    </div>
+                    ${__body}
 
                     <!-- FOOTER -->
                     <div style="text-align: center; margin-top: 50px; padding-top: 25px; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; items-center; justify-content: center;">
@@ -22856,18 +22876,26 @@ async function showWallet() {
                     </div>
                 </div>`;
 
+                // silent = used by the weekly email: return the PDF as base64 instead of downloading it
+                if (opts.silent) return window.exaMakePdf(html, 'weekly-report.pdf', { silent: true, returnBase64: true });
                 const downloadDate = new Date().toISOString().split('T')[0];
                 window.exaMakePdf(html, `${student.name.replace(/\s+/g, '_')}_Report_${downloadDate}.pdf`);
             };
             // One PDF engine for Report + Budget: renders off-screen at A4 width (never cut by the scroll area), shows the loader at once,
             // no 8-second kill, canvases (charts) are copied as images, page breaks avoid splitting rows.
             window.exaMakePdf = function (src, filename, o) {
-                o = o || {}; const W = 800;
-                if (window.__pdfBusy) return window.showToast && window.showToast('Please wait', 'Your PDF is already being created.', 'info');
+                o = o || {}; const W = 800, silent = !!o.silent, wantB64 = !!o.returnBase64;   // silent = background job (no loader / toasts), returnBase64 = hand the PDF back instead of downloading it
+                if (window.__pdfBusy) { if (!silent && window.showToast) window.showToast('Please wait', 'Your PDF is already being created.', 'info'); return Promise.resolve(null); }
                 window.__pdfBusy = true;
-                window.showLoader && window.showLoader('Creating PDF');
+                if (!silent) window.showLoader && window.showLoader('Creating PDF');
+                // html2pdf CLONES the element it is given (inline styles included) into its own visible container before taking the snapshot.
+                // If that element itself is position:fixed;left:-10000px, the clone sits outside its container and the PDF comes out BLANK.
+                // So: hide the off-screen part on a wrapper, and give html2pdf a plain, un-positioned `host`.
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + W + 'px;pointer-events:none;';
                 const host = document.createElement('div');
-                host.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + W + 'px;background:#fff;pointer-events:none;';
+                host.style.cssText = 'width:' + W + 'px;background:#fff;';
+                wrap.appendChild(host);
                 if (typeof src === 'string') host.innerHTML = src;
                 else if (src) {
                     const c = src.cloneNode(true), a = src.querySelectorAll('canvas'), b = c.querySelectorAll('canvas');
@@ -22878,22 +22906,35 @@ async function showWallet() {
                     if (o.title) { const h = document.createElement('div'); h.innerHTML = '<div style="font:900 22px Segoe UI,Arial;color:#0f172a">' + o.title + '</div><div style="font:600 11px Segoe UI,Arial;color:#64748b;margin:3px 0 14px">Generated ' + new Date().toLocaleDateString('en-GB') + '</div>'; c.prepend(h); }
                     host.appendChild(c);
                 }
-                document.body.appendChild(host);
-                const end = (ok, err) => {
-                    clearTimeout(kill); host.remove(); window.__pdfBusy = false; window.hideLoader && window.hideLoader();
-                    if (ok) window.showToast && window.showToast('PDF ready', 'Saved to your downloads.', 'success');
-                    else { console.error(err); window.showCustomAlert && window.showCustomAlert('PDF failed', 'Could not create the PDF. Please try again.', 'info'); }
-                };
-                const kill = setTimeout(() => end(false, 'timeout'), 90000);
-                const opt = {
-                    margin: o.margin || [8, 0, 8, 0], filename: filename, image: { type: 'jpeg', quality: 0.95 },
-                    html2canvas: { scale: Math.min(2, window.devicePixelRatio || 2), useCORS: true, logging: false, windowWidth: W, scrollX: 0, scrollY: 0 },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'li', '.pdf-keep'] }
-                };
-                // two frames first so the loader paints instantly, then the heavy work starts
-                requestAnimationFrame(() => setTimeout(() => {
-                    try { html2pdf().set(opt).from(host).save().then(() => end(true)).catch(e => end(false, e)); } catch (e) { end(false, e); }
-                }, 40));
+                document.body.appendChild(wrap);
+                // html2pdf shows its own dark full-screen overlay while it renders. For a background job, park it off-screen so the student never sees a flash.
+                let hideCss = null;
+                if (silent) { hideCss = document.createElement('style'); hideCss.textContent = '.html2pdf__overlay{left:-30000px!important;right:auto!important;width:900px!important;pointer-events:none!important}'; document.head.appendChild(hideCss); }
+                return new Promise(resolve => {
+                    const end = (ok, err, data) => {
+                        clearTimeout(kill); wrap.remove(); if (hideCss) hideCss.remove(); window.__pdfBusy = false;
+                        if (!silent) {
+                            window.hideLoader && window.hideLoader();
+                            if (ok) window.showToast && window.showToast('PDF ready', 'Saved to your downloads.', 'success');
+                            else { console.error(err); window.showCustomAlert && window.showCustomAlert('PDF failed', 'Could not create the PDF. Please try again.', 'info'); }
+                        } else if (!ok) console.error('Background PDF failed', err);
+                        resolve(ok ? (data || true) : null);
+                    };
+                    const kill = setTimeout(() => end(false, 'timeout'), 90000);
+                    const opt = {
+                        margin: o.margin || [8, 0, 8, 0], filename: filename, image: { type: 'jpeg', quality: wantB64 ? 0.8 : 0.95 },   // emailed copy is a little lighter so the mail stays small
+                        html2canvas: { scale: wantB64 ? 1.5 : Math.min(2, window.devicePixelRatio || 2), useCORS: true, logging: false, windowWidth: W, scrollX: 0, scrollY: 0 },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'li', '.pdf-keep'] }
+                    };
+                    // two frames first so the loader paints instantly, then the heavy work starts
+                    requestAnimationFrame(() => setTimeout(() => {
+                        try {
+                            const w = html2pdf().set(opt).from(host);
+                            if (wantB64) w.outputPdf('datauristring').then(d => end(true, null, String(d).split(',')[1])).catch(e => end(false, e));
+                            else w.save().then(() => end(true)).catch(e => end(false, e));
+                        } catch (e) { end(false, e); }
+                    }, 40));
+                });
             };
             window.toggleReportCustomDate = function () {
                 const val = document.getElementById('report-timeframe-select').value;
@@ -23341,21 +23382,31 @@ async function showWallet() {
             // --- Weekly report: every Sunday (from 4 PM) each student's report is emailed once, automatically when the app is open ---
             (function () {
                 if (!MAIL.url) return; let tries = 0;
-                async function weekly() {
+                async function weekly(force) {   // force = manual test from the console: window.exWeeklyReportNow(true)
+                    if (window.__pdfBusy) return;   // a PDF is being made right now: try again on the next tick
                     const d = new Date(), wo = (d.getDay() === 0 && d.getHours() >= 16) ? 0 : -1;   // Sunday evening = this week, otherwise = the week that just ended
                     const stu = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
                     if (!stu || typeof window.__tpStats !== 'function' || !window.getTargetWeekInfo) return;
                     const wk = window.getTargetWeekInfo(wo), sk = 'exm_sent_' + wk.weekKey + window.loggedInMobile;
-                    if (stu.lastReportWeek === wk.weekKey || sessionStorage.getItem(sk)) return 'skip';
+                    if (!force && (stu.lastReportWeek === wk.weekKey || sessionStorage.getItem(sk))) return 'skip';
                     const email = stu.email; if (!email) return;
-                    if (tries < 3) return;   // let the data finish loading first
+                    if (!force && tries < 3) return;   // let the data finish loading first
                     const s = window.__tpStats(wo), hasT = (+stu.targetStudyHours || +stu.targetFitnessKm || +stu.targetPercentage || +stu.targetWeeklyPct);
-                    if (!s.study && !s.runKm && !s.examN && !s.wkTotal && !hasT) { sessionStorage.setItem(sk, '1'); return 'skip'; }   // nothing happened that week: no empty report
-                    sessionStorage.setItem(sk, '1');
-                    await window.exMail({ type: 'report', to: email, name: stu.name, week: wk.displayStr, study: s.study, studyT: +stu.targetStudyHours || 0, runKm: s.runKm, runT: +stu.targetFitnessKm || 0, exam: s.examN ? s.exam : null, examN: s.examN, examT: +stu.targetPercentage || 0, wkDone: s.wkDone, wkTotal: s.wkTotal, wkT: +stu.targetWeeklyPct || 0 });
-                    try { await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { lastReportWeek: wk.weekKey }); stu.lastReportWeek = wk.weekKey; } catch (e) { }
+                    if (!force && !s.study && !s.runKm && !s.examN && !s.wkTotal && !hasT) { sessionStorage.setItem(sk, '1'); return 'skip'; }   // nothing happened that week: no empty report
+                    if (!force) sessionStorage.setItem(sk, '1');
+                    // Build the same PDF the student can download (Mon-Sun of that week) and attach it. If it fails, the email still goes out as before.
+                    let pdf = null;
+                    try {
+                        const ws = new Date(wk.weekKey + 'T00:00:00').getTime(), we = ws + 7 * 864e5 - 1;
+                        pdf = await window.generatePDFReport(window.loggedInMobile, ws, we, wk.displayStr, { silent: true });
+                        if (typeof pdf !== 'string' || pdf.length < 15000) pdf = null;   // too small = blank page, do not send it
+                    } catch (e) { console.error('Weekly PDF', e); pdf = null; }
+                    const pdfName = (stu.name || 'Student').replace(/\s+/g, '_') + '_Weekly_Report_' + wk.weekKey + '.pdf';
+                    await window.exMail({ type: 'report', to: email, name: stu.name, week: wk.displayStr, pdf: pdf, pdfName: pdfName, study: s.study, studyT: +stu.targetStudyHours || 0, runKm: s.runKm, runT: +stu.targetFitnessKm || 0, exam: s.examN ? s.exam : null, examN: s.examN, examT: +stu.targetPercentage || 0, wkDone: s.wkDone, wkTotal: s.wkTotal, wkT: +stu.targetWeeklyPct || 0 });
+                    if (!force) { try { await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { lastReportWeek: wk.weekKey }); stu.lastReportWeek = wk.weekKey; } catch (e) { } }
                     return 'sent';
                 }
+                window.exWeeklyReportNow = async function (force) { const r = await weekly(!!force); console.log('Weekly report:', r || 'not sent (busy / no email saved / data not loaded)'); return r; };
                 const t = setInterval(async () => {
                     if (++tries > 60) return clearInterval(t); if (window.currentRole !== 'student') return;
                     try { if (await weekly()) clearInterval(t); } catch (e) { console.error('Weekly report', e); clearInterval(t); }
@@ -23434,11 +23485,13 @@ async function showWallet() {
                 try {
                     const user = auth.currentUser;
                     if (user) {
-                        // 1. Update securely in Firebase Auth
+                        // 1. Re-authenticate, then update securely in Firebase Auth
+                        await window.reauthStudentForPasswordChange();
                         await updatePassword(user, newPass);
 
                         // 2. Sync to Firestore (for legacy compatibility)
                         await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { password: newPass });
+                        localStorage.setItem('exama_pass', newPass);
 
                         document.getElementById('change-password-modal').classList.add('hidden-view');
                         document.getElementById('new-pass-input').value = '';
