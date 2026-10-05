@@ -23380,7 +23380,18 @@ async function showWallet() {
 
                     window.hideLoader();
                     window.closeAdminChangePassModal();
-                    window.showCustomAlert("Success", "Password updated successfully!", "success");
+                    let note = '';
+                    const stu2 = (window.studentsDB || []).find(x => x.mobile === mobile);
+                    if (window.exMailOn && window.exMailOn() && stu2 && stu2.email) {
+                        window.showLoader("Emailing student");
+                        try {
+                            try { await window.exMail({ type: 'password', to: stu2.email, name: stu2.name, mobile, password: newPass }); }
+                            catch (e1) { await window.exMail({ type: 'otp', to: stu2.email, name: stu2.name, purpose: 'new password set by your admin', code: newPass }); }
+                            note = ' The new password was emailed to ' + window.exMask(stu2.email) + '.';
+                        } catch (e2) { note = ' Could not email the student: ' + e2.message; }
+                        window.hideLoader();
+                    } else note = ' This student has no email saved, so nothing was mailed.';
+                    window.showCustomAlert("Success", "Password updated successfully!" + note, "success");
 
                     // Re-render the profile to immediately show the new PIN under the student's name
                     window.renderAdminProfile(mobile);
