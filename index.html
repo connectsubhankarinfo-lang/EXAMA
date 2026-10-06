@@ -2,6 +2,42 @@
 <html lang="en">
 
 <head>
+<script id="perf-tier">
+/* Adaptive performance: picks high / mid / low from the device, then keeps watching real scroll smoothness and steps DOWN if the phone struggles.
+   Override: add ?perf=low | mid | high to the address (?perf=auto resets). */
+(function(){try{
+var d=document.documentElement,K='exama_perf',T=['high','mid','low'];
+function rank(t){return T.indexOf(t);}
+function set(t){d.classList.remove('perf-high','perf-mid','perf-low','perf-lite');d.classList.add('perf-'+t);if(t!=='high')d.classList.add('perf-lite');window.__perf=t;d.classList.toggle('mem-low',t==='low'||!!(navigator.deviceMemory&&navigator.deviceMemory<=2));try{window.dispatchEvent(new Event('exama:tier'));}catch(e){}}
+function guess(){var m=navigator.deviceMemory,c=navigator.hardwareConcurrency,n=navigator.connection||{},ua=navigator.userAgent||'',sc=0,cr=ua.match(/Chrome\/(\d+)/);
+ if(m&&m<=2)sc+=2;else if(m&&m<=4)sc+=1; if(c&&c<=4)sc+=2;else if(c&&c<=6)sc+=1; if(n.saveData)sc++; if(cr&&+cr[1]<90)sc+=2; if(/Android [4-8]\b/.test(ua))sc++;
+ return sc>=3?'low':sc>=1?'mid':'high';}
+var q=(location.search.match(/[?&]perf=(\w+)/)||[])[1],ls=null,cur=guess();
+try{if(q){if(q==='auto')localStorage.removeItem(K);else if(rank(q)>-1)localStorage.setItem(K,JSON.stringify({t:q,f:1,ts:Date.now()}));}ls=JSON.parse(localStorage.getItem(K)||'null');}catch(e){}
+var forced=!!(ls&&ls.f);
+if(ls&&ls.t&&rank(ls.t)>-1){if(forced)cur=ls.t;else if(Date.now()-ls.ts<2592e6&&rank(ls.t)>rank(cur))cur=ls.t;}
+if(!forced&&window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches&&rank(cur)<1)cur='mid';
+set(cur);
+window.setPerf=function(t){if(rank(t)<0)return;try{localStorage.setItem(K,JSON.stringify({t:t,f:1,ts:Date.now()}));}catch(e){}set(t);};
+document.addEventListener('visibilitychange',function(){d.classList.toggle('is-bg',document.hidden);});
+/* real-world check: while the user scrolls, time the frames; two slow samples = go one step lighter and remember it */
+var bad=0,busy=false,done=0,lastEnd=0;
+function sample(ms,cb){var f=0,t0=0;function loop(t){if(!t0)t0=t;else f++;if(t-t0<ms&&!document.hidden)requestAnimationFrame(loop);else cb(document.hidden||f<6?0:(t-t0)/f);}requestAnimationFrame(loop);}
+function onScroll(){if(forced||busy||done>=8||window.__perf==='low'||Date.now()-lastEnd<4000)return;busy=true;done++;
+ sample(1200,function(ms){busy=false;lastEnd=Date.now();
+  if(ms>28&&++bad>=2){bad=0;var n=T[Math.min(2,rank(window.__perf)+1)];set(n);try{localStorage.setItem(K,JSON.stringify({t:n,ts:Date.now()}));}catch(e){}}});}
+document.addEventListener('scroll',onScroll,{capture:true,passive:true});
+}catch(e){}})();
+</script>
+<style id="perf-tier-css">
+/* Nothing here removes an animation or a visual. It only stops work nobody can see. */
+html.is-bg *,html.is-bg *::before,html.is-bg *::after{animation-play-state:paused!important}
+.rm-item,.syl-card,.syl-c,.gd-c{content-visibility:auto;contain-intrinsic-size:auto 96px}
+html.mem-low [class*="backdrop-blur-xl"],html.mem-low [class*="backdrop-blur-2xl"],html.mem-low [class*="backdrop-blur-3xl"]{--tw-backdrop-blur:blur(14px)!important}
+html.mem-low [class]:not(.flip-card):not(.sd-fold):not(.sd-quote){will-change:auto}
+</style>
+
+
 <script>
 /* Security helpers: escape user-supplied text before it is placed into HTML / inline handlers */
 window.escHtml = function (x) { return String(x == null ? '' : x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
@@ -136,7 +172,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 })();
 </script>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
     <!-- SortableJS for Drag and Drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js">
@@ -973,7 +1009,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
     </script>
 
     <!-- HTML2PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" defer>
         // ==========================================
         // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
         // ==========================================
@@ -6673,7 +6709,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         <div>
                             <h4 class="text-[13px] sm:text-sm font-black text-gray-900 leading-tight">Download Report
                             </h4>
-                            <p class="text-[9px] text-gray-500 font-bold mt-0.5">Download PDF</p>
+                            <p class="text-[9px] text-gray-500 font-bold mt-0.5">Download PDF + email copy</p>
                         </div>
                     </div>
 
@@ -7403,9 +7439,10 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                     </div>
                 </div>
                 <div class="rm-card" id="rm-week-card">
-                    <div class="rm-wkhead"><div><h3>WEEK CURVE</h3><p id="rm-g-sub">Monday to Sunday</p></div><div class="rm-wktot"><b id="rm-g-total">0.0</b><span>km this week</span></div></div>
+                    <div class="rm-wkhead"><div><h3><span class="rm-lr-ic"><i class="fa-solid fa-chart-line"></i></span>WEEK CURVE</h3><p id="rm-g-sub">Monday to Sunday</p></div><div class="rm-wktot"><b id="rm-g-total">0.0</b><span id="rm-g-unit">km this week</span></div></div>
+<div class="rm-wkbar"><div class="rm-nav"><button type="button" id="rm-wk-prev" aria-label="Previous week"><i class="fa-solid fa-chevron-left"></i></button><button type="button" id="rm-wk-next" aria-label="Next week" disabled><i class="fa-solid fa-chevron-right"></i></button></div><span class="rm-delta" id="rm-g-delta"></span><div class="rm-seg" id="rm-seg"><button type="button" data-m="km" class="on">KM</button><button type="button" data-m="min">TIME</button><button type="button" data-m="cal">KCAL</button></div></div>
                     <div style="height:196px;position:relative"><canvas id="fitnessChart"></canvas></div>
-                    <div class="rm-capsule"><span class="rm-cp l"><i class="fa-solid fa-trophy"></i><span id="rm-g-best">BEST DAY : NONE</span></span><span class="rm-cp r"><span id="rm-g-active">ACTIVE DAY : 0</span><i class="fa-solid fa-fire-flame-curved"></i></span></div>
+                    <div class="rm-capsule"><span class="rm-cp l"><i class="fa-solid fa-medal"></i><span id="rm-g-best">BEST DAY : NONE</span></span><span class="rm-cp r"><span id="rm-g-active">ACTIVE DAY : 0</span><i class="fa-solid fa-calendar-check"></i></span></div>
                 </div>
                 <div class="rm-card" id="rm-last"></div>
                 <div class="rm-tot">
@@ -7611,7 +7648,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
 (function(){
 var V=document.getElementById('fitness-view');if(!V||!('IntersectionObserver' in window))return;
 var SC=V.querySelector(':scope>.overflow-y-auto');if(!SC)return;
-var SEL='.rm-hero,#rm-week-card,#rm-last,.rm-tot,#rm-hist,.rm-grid4>div,.rm-wkhead,.rm-capsule,.rm-tot-tiles>div,.rm-tiles>div,.rm-lr-main,.rm-item,.rm-viewcard';
+var SEL='.rm-hero,#rm-week-card,#rm-last,.rm-tot,#rm-hist,.rm-grid4>div,.rm-wkhead,.rm-wkstats,.rm-capsule,.rm-tot-tiles>div,.rm-tiles>div,.rm-lr-main,.rm-item,.rm-viewcard';
 var io=null,open=false,set=new Set();
 function isOpen(){return !V.classList.contains('hidden-view');}
 function clean(el){el.classList.remove('rm-rv','rm-in');el.style.removeProperty('--d');}
@@ -7662,6 +7699,12 @@ function shapeSvg(f){if(!Array.isArray(f)||f.length<8)return '';var xs=[],ys=[],
  for(var k=0;k<xs.length;k++)pts.push((xs[k]+ox).toFixed(1)+','+(ys[k]+oy).toFixed(1));
  var a=pts[0].split(','),z=pts[pts.length-1].split(',');
  return '<div class="rm-shape" title="Shape of your route"><svg viewBox="0 0 100 100" aria-label="Route shape"><polyline points="'+pts.join(' ')+'" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><polyline points="'+pts.join(' ')+'" fill="none" stroke="#f43f5e" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="'+a[0]+'" cy="'+a[1]+'" r="5" fill="#10b981" stroke="#fff" stroke-width="2.5"/><circle cx="'+z[0]+'" cy="'+z[1]+'" r="5" fill="#f43f5e" stroke="#fff" stroke-width="2.5"/></svg></div>';}
+function routeSvg(l){var f=Array.isArray(l.route)&&l.route.length>7?l.route:l.shape;if(!Array.isArray(f)||f.length<8)return '';
+ var segs=[],g=[],xs=[],ys=[];for(var i=0;i+1<f.length;i+=2){var x=+f[i],y=+f[i+1];if(x<0&&y<0){if(g.length>1)segs.push(g);g=[];}else if(isFinite(x)&&isFinite(y)){g.push([x,y]);xs.push(x);ys.push(y);}}if(g.length>1)segs.push(g);
+ if(!segs.length)return shapeSvg(l.shape);
+ var x0=Math.min.apply(0,xs),y0=Math.min.apply(0,ys),w=Math.max.apply(0,xs)-x0||1,h=Math.max.apply(0,ys)-y0||1,k=82/Math.max(w,h),ox=(100-w*k)/2,oy=(100-h*k)/2;
+ var P=function(q){return (ox+(q[0]-x0)*k).toFixed(1)+','+(oy+(q[1]-y0)*k).toFixed(1);},ln=segs.map(function(sg){return '<polyline pathLength="1" points="'+sg.map(P).join(' ')+'"/>';}).join(''),a=P(segs[0][0]).split(','),zs=segs[segs.length-1],z=P(zs[zs.length-1]).split(',');
+ return '<div class="rm-shape rm-route2"><svg viewBox="0 0 100 100" aria-label="Your route"><defs><linearGradient id="rmRg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb7185"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><g fill="none" stroke-linecap="round" stroke-linejoin="round"><g stroke="#fff" stroke-width="8">'+ln+'</g><g stroke="url(#rmRg)" stroke-width="4">'+ln+'</g></g><circle cx="'+a[0]+'" cy="'+a[1]+'" r="4.6" fill="#10b981" stroke="#fff" stroke-width="2.4"/><circle cx="'+z[0]+'" cy="'+z[1]+'" r="4.6" fill="#f43f5e" stroke="#fff" stroke-width="2.4"/></svg></div>';}
 window.rmRunCard=function(l){
  if(l.isAbsent||l.pace==='ABSENT')return '<div class="rm-item" style="display:flex;justify-content:space-between;color:#94a3b8;font-weight:700;font-size:13px"><span><i class="fa-solid fa-bed" style="margin-right:8px"></i>Rest day</span><span>'+nice(l.date)+'</span></div>';
  var d=parseFloat(l.distance)||0,sp=spl(l),mx=sp.length?Math.max.apply(0,sp.map(function(x){return 1/x;})):0;
@@ -7684,41 +7727,50 @@ window.rmEnhance=function(logs,o){
  if($('rm-tot-eq'))$('rm-tot-eq').textContent=tot>0?((nx[0]-tot).toFixed(1)+' km to go until '+nx[1]+' ('+(tot/42.195).toFixed(1)+' marathons so far)'):'Record a run to start your total.';
 
  /* ---- 7-day graph: one bar per calendar day ---- */
- var DN=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],now=new Date(),days=[],t0=new Date(now.getFullYear(),now.getMonth(),now.getDate()),mon=new Date(t0.getFullYear(),t0.getMonth(),t0.getDate()-((t0.getDay()+6)%7)),todayIdx=(t0.getDay()+6)%7;
- for(var n=0;n<7;n++){var dt=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+n);days.push({key:window.formatDateDDMMYYYY(dt),name:DN[n],future:n>todayIdx,km:0,runs:0,cal:0});}
- logs.forEach(function(l){if(!isRun(l))return;for(var x=0;x<7;x++)if(days[x].key===l.date){days[x].km+=parseFloat(l.distance)||0;days[x].runs++;days[x].cal+=parseFloat(l.cals)||0;}});
- var wk=days.reduce(function(a,d){return a+d.km;},0),act=days.filter(function(d){return d.km>0;}).length,best=days.reduce(function(a,d){return d.km>a.km?d:a;},{km:0,name:''});
- if($('rm-g-sub')){var sun=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);$('rm-g-sub').textContent=mon.getDate()+' '+MON[mon.getMonth()]+' to '+sun.getDate()+' '+MON[sun.getMonth()];}
- if($('rm-g-best'))$('rm-g-best').textContent=best.km>0?('BEST DAY : '+best.name.toUpperCase()+' - '+best.km.toFixed(1)+' KM'):'BEST DAY : NONE';
+ var DN=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],MET=window.__rmMet||'km',OFF=Math.min(0,window.__rmWk||0),now=new Date(),t0=new Date(now.getFullYear(),now.getMonth(),now.getDate()),
+  mon=new Date(t0.getFullYear(),t0.getMonth(),t0.getDate()-((t0.getDay()+6)%7)+7*OFF),pmon=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()-7),todayIdx=OFF<0?7:(t0.getDay()+6)%7;
+ var wkVals=function(m0){var a=[];for(var n=0;n<7;n++)a.push({key:window.formatDateDDMMYYYY(new Date(m0.getFullYear(),m0.getMonth(),m0.getDate()+n)),name:DN[n],future:n>todayIdx,km:0,runs:0,cal:0,min:0,v:0});
+  logs.forEach(function(l){if(!isRun(l))return;for(var x=0;x<7;x++)if(a[x].key===l.date){a[x].km+=parseFloat(l.distance)||0;a[x].runs++;a[x].cal+=parseFloat(l.cals)||0;a[x].min+=parseFloat(l.time)||0;}});
+  a.forEach(function(d){d.v=MET==='min'?d.min:MET==='cal'?d.cal:d.km;});return a;};
+ var days=wkVals(mon),pdays=wkVals(pmon),UN=MET==='min'?'min':MET==='cal'?'kcal':'km',fmt=function(v){return MET==='km'?v.toFixed(1):String(Math.round(v));},sum=function(a){return a.reduce(function(q,d){return q+d.v;},0);};
+ var wk=sum(days),pw=sum(pdays),act=days.filter(function(d){return d.v>0;}).length,best=days.reduce(function(a,d){return d.v>a.v?d:a;},{v:0,name:''});
+ var sun=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
+ if($('rm-g-sub'))$('rm-g-sub').textContent=(OFF===0?'This week, ':OFF===-1?'Last week, ':'')+mon.getDate()+' '+MON[mon.getMonth()]+' to '+sun.getDate()+' '+MON[sun.getMonth()];
+ if($('rm-g-best'))$('rm-g-best').textContent=best.v>0?('BEST DAY : '+best.name.toUpperCase()+' - '+fmt(best.v)+' '+UN.toUpperCase()):'BEST DAY : NONE';
  if($('rm-g-active'))$('rm-g-active').textContent='ACTIVE DAY : '+act;
+ if($('rm-g-unit'))$('rm-g-unit').textContent=UN+(OFF===0?' this week':' that week');
+ var dl=$('rm-g-delta');if(dl){var df=wk-pw;dl.className='rm-delta'+(pw>0&&df>0?' up':pw>0&&df<0?' dn':'');dl.textContent=pw>0?((df>=0?'\u25B2 ':'\u25BC ')+fmt(Math.abs(df))+' '+UN+' vs previous week'):(wk>0?'First active week':'');}
+ var nx=$('rm-wk-next');if(nx)nx.disabled=OFF>=0;
+ [].forEach.call(document.querySelectorAll('#rm-seg button'),function(b){b.classList.toggle('on',b.getAttribute('data-m')===MET);});
  var cv=$('fitnessChart');
- if($('rm-g-total'))$('rm-g-total').textContent=wk.toFixed(1);
+ if($('rm-g-total'))$('rm-g-total').textContent=fmt(wk);
  if(cv&&window.Chart){
   if(window.fitnessChartInstance){try{window.fitnessChartInstance.destroy();}catch(e){}}
-  var goal=t?Math.round(t/7*10)/10:0,mxv=Math.max.apply(0,days.map(function(d){return d.km;})),ymax=Math.max(mxv,goal,2)*1.35,today=todayIdx,bi=best.km>0?days.indexOf(best):-1,F='Inter,system-ui,sans-serif';
+  var goal=(t&&MET==='km')?Math.round(t/7*10)/10:0,mxv=Math.max.apply(0,days.map(function(d){return d.v;})),ymax=Math.max(mxv,goal,2)*1.35,today=todayIdx,bi=best.v>0?days.indexOf(best):-1,F='Inter,system-ui,sans-serif';
   var rr=function(c,x,y,w,h,r){c.beginPath();if(c.roundRect)c.roundRect(x,y,w,h,r);else c.rect(x,y,w,h);c.fill();};
   var grad=function(c,c1,c2){var a=c.chart.chartArea;if(!a)return c1;var g=c.chart.ctx.createLinearGradient(0,a.top,0,a.bottom);g.addColorStop(0,c1);g.addColorStop(1,c2);return g;};
   var deco={id:'rmDeco',beforeDatasetsDraw:function(ch){var a=ch.chartArea,y=ch.scales.y,c=ch.ctx,m=ch.getDatasetMeta(0);c.save();
-    m.data.forEach(function(p,i){var w=p.width||26;c.fillStyle=i===today?'rgba(244,63,94,.10)':'#f4f6fb';rr(c,p.x-w/2,a.top,w,a.bottom-a.top,w/2);});
-    if(goal){var gy=y.getPixelForValue(goal),g='GOAL '+goal+' KM';c.setLineDash([5,5]);c.strokeStyle='rgba(13,148,136,.8)';c.lineWidth=1.5;c.beginPath();c.moveTo(a.left,gy);c.lineTo(a.right,gy);c.stroke();c.setLineDash([]);c.font='800 9.5px '+F;var tw=c.measureText(g).width+14;c.fillStyle='#0d9488';rr(c,a.right-tw,gy-19,tw,16,8);c.fillStyle='#fff';c.textAlign='center';c.fillText(g,a.right-tw/2,gy-7.5);}
+    m.data.forEach(function(p,i){var w=p.width||26;c.fillStyle=i===today?'rgba(244,63,94,.16)':'rgba(255,255,255,.05)';rr(c,p.x-w/2,a.top,w,a.bottom-a.top,w/2);});
+    if(goal){var gy=y.getPixelForValue(goal),g='GOAL '+goal+' KM';c.setLineDash([5,5]);c.strokeStyle='rgba(248,113,113,.95)';c.lineWidth=1.5;c.beginPath();c.moveTo(a.left,gy);c.lineTo(a.right,gy);c.stroke();c.setLineDash([]);c.font='800 9.5px '+F;var tw=c.measureText(g).width+14;c.fillStyle='#e11d48';rr(c,a.right-tw,gy-19,tw,16,8);c.fillStyle='#fff';c.textAlign='center';c.fillText(g,a.right-tw/2,gy-7.5);}
     c.restore();},
    afterDatasetsDraw:function(ch){var m=ch.getDatasetMeta(0),c=ch.ctx,a=ch.chartArea;c.save();c.textAlign='center';
     m.data.forEach(function(p,i){var d=days[i];
-     if(d.km>0){c.font='800 11px '+F;c.fillStyle=i===bi?'#b45309':'#334155';c.fillText(d.km.toFixed(1),p.x,p.y-8);}
-     else{c.fillStyle=i===today?'#fda4af':d.future?'#e2e8f0':'#cbd5e1';c.beginPath();c.arc(p.x,a.bottom-7,3,0,6.2832);c.fill();}});
+     if(d.v>0){c.font='800 11px '+F;c.fillStyle=i===bi?'#fecdd3':'#e2e8f0';c.fillText(fmt(d.v),p.x,p.y-8);}
+     else{c.fillStyle=i===today?'#fb7185':d.future?'rgba(255,255,255,.10)':'rgba(255,255,255,.24)';c.beginPath();c.arc(p.x,a.bottom-7,3,0,6.2832);c.fill();}});
     c.restore();}};
   window.fitnessChartInstance=new Chart(cv.getContext('2d'),{type:'bar',
-   data:{labels:days.map(function(d){return d.name;}),datasets:[{label:'KM',data:days.map(function(d){return d.future?0:Math.round(d.km*100)/100;}),
-    backgroundColor:function(c){var i=c.dataIndex,d=days[i];if(!d||d.km<=0)return 'rgba(0,0,0,0)';return i===today?grad(c,'#fb7185','#e11d48'):i===bi?grad(c,'#fcd34d','#f59e0b'):grad(c,'#fda4af','#fb7185');},
+   data:{labels:days.map(function(d){return d.name;}),datasets:[{label:'KM',data:days.map(function(d){return d.future?0:Math.round(d.v*100)/100;}),
+    backgroundColor:function(c){var i=c.dataIndex,d=days[i];if(!d||d.v<=0)return 'rgba(0,0,0,0)';return i===today?grad(c,'#fb7185','#be123c'):i===bi?grad(c,'#fecdd3','#fb7185'):grad(c,'rgba(251,113,133,.72)','rgba(159,18,57,.72)');},
     borderRadius:14,borderSkipped:false,barPercentage:.62,categoryPercentage:.92}]},
    options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:24,left:6,right:6}},animation:{duration:900,easing:'easeOutQuart'},interaction:{mode:'index',intersect:false},
-    plugins:{legend:{display:false},tooltip:{displayColors:false,padding:10,cornerRadius:12,backgroundColor:'#0f172a',
+    plugins:{legend:{display:false},tooltip:{displayColors:false,padding:10,cornerRadius:12,backgroundColor:'#1e293b',borderColor:'rgba(255,255,255,.14)',borderWidth:1,
      callbacks:{title:function(i){return (i&&i[0]&&days[i[0].dataIndex])?days[i[0].dataIndex].key:'';},label:function(i){var d=days[i&&i.dataIndex];if(!d)return '';return d.runs?[d.km.toFixed(2)+' km',d.runs+(d.runs>1?' runs':' run')+', '+Math.round(d.cal)+' kcal']:(d.future?'Upcoming':'Rest day');}}}},
-    scales:{y:{display:false,min:0,max:ymax,grid:{display:false}},x:{grid:{display:false,drawBorder:false},border:{display:false},ticks:{font:function(c){return {size:11,weight:c.index===today?'900':'700'};},color:function(c){return (c&&c.index===today)?'#e11d48':((c&&c.index>today)?'#cbd5e1':'#94a3b8');}}}}},
+    scales:{y:{display:false,min:0,max:ymax,grid:{display:false}},x:{grid:{display:false,drawBorder:false},border:{display:false},ticks:{font:function(c){return {size:11,weight:c.index===today?'900':'700'};},color:function(c){return (c&&c.index===today)?'#fb7185':((c&&c.index>today)?'#475569':'#94a3b8');}}}}},
    plugins:[deco]});
  }
 
  /* ---- latest run ---- */
+ if(window.__rmWkOnly)return;
  var runs=logs.filter(isRun),last=runs[0],el=$('rm-last');if(!el)return;
  if(!last){el.innerHTML='<h3>LATEST RUN</h3><p class="rm-k" style="margin-top:6px">Tap the red run button to record your first run.</p>';return;}
  var sp=spl(last),d=parseFloat(last.distance)||0,tm=parseFloat(last.time)||0,spd=tm>0?d/(tm/60):0,pc=d>0?tm/d*60:0,pr=runs[1],cmp='',up=0;
@@ -7726,13 +7778,16 @@ window.rmEnhance=function(logs,o){
   if(Math.abs(dd)>=0.05){parts.push(Math.abs(dd).toFixed(1)+' km '+(dd>0?'farther':'shorter'));if(dd>0)up=1;}
   if(pp>0&&Math.abs(dp)>=2){parts.push(Math.round(Math.abs(dp))+' s/km '+(dp<0?'faster':'slower'));if(dp<0)up=1;}
   cmp=parts.length?parts.join(' and ')+' than your previous run':'About the same as your previous run';}else cmp='Your first recorded run';
+ var mxD=0,bPc=1e9;runs.forEach(function(r){var dd=parseFloat(r.distance)||0,tt=parseFloat(r.time)||0;if(dd>mxD)mxD=dd;if(dd>=1&&tt>0&&tt/dd<bPc)bPc=tt/dd;});
+ var badges=(runs.length>1&&d>0&&d>=mxD?'<span class="rm-pb"><i class="fa-solid fa-trophy"></i> Longest run</span>':'')+(runs.length>1&&d>=1&&tm>0&&tm/d<=bPc+1e-9?'<span class="rm-pb"><i class="fa-solid fa-bolt"></i> Fastest pace</span>':'');
  var fastI=sp.length?sp.indexOf(Math.min.apply(0,sp)):-1,slowI=sp.length?sp.indexOf(Math.max.apply(0,sp)):-1;
  el.innerHTML='<div class="rm-row"><h3><span class="rm-lr-ic"><i class="fa-solid fa-bolt"></i></span>LATEST RUN'+(last.source==='gps'?'<span class="rm-badge">GPS</span>':'')+'</h3><span class="rm-datechip"><i class="fa-regular fa-calendar"></i> '+nice(last.date)+'</span></div>'
- +'<div class="rm-lr-main"><div style="min-width:0"><div><span class="rm-lr-d">'+d.toFixed(2)+'</span><span class="rm-lr-u">km</span></div><span class="rm-cmp'+(up?' up':'')+'"><i class="fa-solid '+(up?'fa-arrow-trend-up':'fa-equals')+'"></i>'+cmp+'</span></div>'+shapeSvg(last.shape)+'</div>'
+ +'<div class="rm-lr-main"><div style="min-width:0"><div><span class="rm-lr-d">'+d.toFixed(2)+'</span><span class="rm-lr-u">km</span></div><span class="rm-cmp'+(up?' up':'')+'"><i class="fa-solid '+(up?'fa-arrow-trend-up':'fa-equals')+'"></i>'+cmp+'</span>'+badges+'</div>'+routeSvg(last)+'</div>'
  +'<div class="rm-tiles"><div class="tl-rose"><i class="fa-solid fa-gauge-high"></i><b>'+E(last.pace)+'</b><span>Pace /km</span></div><div class="tl-violet"><i class="fa-solid fa-stopwatch"></i><b>'+mmss(tm*60)+'</b><span>Time</span></div><div class="tl-amber"><i class="fa-solid fa-fire"></i><b>'+E(last.cals)+'</b><span>kcal</span></div><div class="tl-teal"><i class="fa-solid fa-bolt"></i><b>'+spd.toFixed(1)+'</b><span>km/h</span></div></div>'
  +(sp.length?'<p class="rm-k" style="margin-top:16px">Pace for each km</p>'+splitRows(sp)+(sp.length>1?'<div class="rm-lr-sum"><span class="f">Fastest: km '+(fastI+1)+', '+mmss(sp[fastI])+'</span><span class="sl">Slowest: km '+(slowI+1)+', '+mmss(sp[slowI])+'</span></div>':''):'<p class="rm-k" style="margin-top:14px">Per-km pace shows up for runs recorded with the GPS tracker.</p>');};
 var _rmE=window.rmEnhance;
 window.rmEnhance=function(logs,o){
+ window.__rmLogs=logs;window.__rmO=o;
  var r=_rmE.apply(this,arguments);
  try{
   var el=document.getElementById('rm-last'),last=(logs||[]).filter(function(l){return !l.isAbsent&&l.pace!=='ABSENT';})[0];
@@ -34195,6 +34250,113 @@ details[open]>.gd-bd{animation:apFade .4s var(--ap) both}
 #fitness-view #rm-week-card .rm-capsule .fa-trophy{color:#f59e0b}
 #fitness-view #rm-week-card .rm-capsule .fa-fire-flame-curved{color:#f43f5e}
 </style>
+<script id="mem-saver">
+(function(){try{
+var d=document.documentElement,io=null,off=new WeakSet(),known=new WeakSet();
+/* 1) endless animations only run while on screen (same look, far less GPU/CPU). Resumes the moment they scroll into view. */
+function inf(a){var e=a.effect;return e&&e.getComputedTiming&&e.getComputedTiming().iterations===Infinity;}
+if(window.IntersectionObserver&&document.getAnimations){
+ io=new IntersectionObserver(function(en){en.forEach(function(x){var t=x.target,an;try{an=t.getAnimations({subtree:true});}catch(e){return;}
+  if(x.isIntersecting){off.delete(t);an.forEach(function(a){if(a.__apP){a.__apP=0;try{a.play();}catch(e){}}});}
+  else{off.add(t);an.forEach(function(a){if(a.playState==='running'&&a.animationName!==undefined&&inf(a)){a.__apP=1;a.pause();}});}});},{rootMargin:'160px'});
+ var scan=function(){if(document.hidden)return;var all=document.getAnimations();
+  for(var i=0;i<all.length;i++){var a=all[i],t=a.effect&&a.effect.target;if(!t||a.animationName===undefined||!inf(a))continue;
+   if(!known.has(t)){known.add(t);io.observe(t);}
+   if(off.has(t)&&a.playState==='running'){a.__apP=1;a.pause();}}};
+ setInterval(scan,2500);window.addEventListener('hashchange',function(){setTimeout(scan,400);});setTimeout(scan,800);
+}
+/* 2) charts: canvas memory grows with the square of the pixel ratio; 2x is still sharp */
+function charts(){try{if(window.Chart&&Chart.defaults)Chart.defaults.devicePixelRatio=Math.min(window.devicePixelRatio||1,d.classList.contains('mem-low')?1.5:2);}catch(e){}}
+charts();window.addEventListener('load',charts);
+/* 3) low-memory phones: the few oversized glass blurs (40-64px) are softened to 14px - still glass, much lighter */
+var clamped=false;
+function clampRules(list){for(var i=0;i<list.length;i++){var r=list[i];
+ if(r.cssRules&&!r.style){clampRules(r.cssRules);continue;}
+ if(!r.style)continue;var v=r.style.getPropertyValue('backdrop-filter')||r.style.getPropertyValue('-webkit-backdrop-filter');
+ if(v&&/blur\(/.test(v)&&!/var\(/.test(v)){var n=v.replace(/blur\((\d+(?:\.\d+)?)px\)/g,function(m,x){return 'blur('+Math.min(+x,14)+'px)';});
+  if(n!==v){r.style.setProperty('backdrop-filter',n);r.style.setProperty('-webkit-backdrop-filter',n);}}}}
+function clamp(){if(clamped||!d.classList.contains('mem-low'))return;clamped=true;
+ for(var i=0;i<document.styleSheets.length;i++){try{clampRules(document.styleSheets[i].cssRules);}catch(e){}}charts();}
+clamp();window.addEventListener('exama:tier',clamp);
+/* 4) watch the JS heap (Chrome/WebView): if it passes 70% of its limit, switch to the low-memory settings */
+setInterval(function(){var m=performance.memory;if(m&&m.jsHeapSizeLimit&&m.usedJSHeapSize/m.jsHeapSizeLimit>.7&&!d.classList.contains('mem-low')){d.classList.add('mem-low');clamp();}},15000);
+/* 5) pictures already on the page decode off the main thread */
+var im=document.images;for(var k=0;k<im.length;k++){if(!im[k].hasAttribute('decoding'))im[k].decoding='async';}
+}catch(e){}})();
+</script>
+<style id="rm-pro">
+@keyframes rmDraw{to{stroke-dashoffset:0}}
+#fitness-view .rm-wkbar{display:flex;align-items:center;gap:8px;margin:8px 0 2px}
+#fitness-view .rm-nav{display:flex;gap:6px;flex:none}
+#fitness-view .rm-nav button{width:30px;height:30px;border-radius:50%;background:#f1f5f9;color:#475569;font-size:11px;display:grid;place-items:center}
+#fitness-view .rm-nav button:disabled{opacity:.35;pointer-events:none}
+#fitness-view .rm-delta{flex:1;min-width:0;font-size:11.5px;font-weight:800;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#fitness-view .rm-delta.up{color:#16a34a}#fitness-view .rm-delta.dn{color:#e11d48}
+#fitness-view .rm-seg{display:flex;background:#f1f5f9;border-radius:99px;padding:3px;gap:2px;flex:none}
+#fitness-view .rm-seg button{font-size:10px;font-weight:800;letter-spacing:.06em;padding:6px 10px;border-radius:99px;color:#64748b;transition:background-color .3s var(--ap),color .3s var(--ap),box-shadow .3s var(--ap)}
+#fitness-view .rm-seg button.on{background:#fff;color:#e11d48;box-shadow:0 1px 4px rgba(15,23,42,.14)}
+#fitness-view .rm-pb{display:inline-block;margin:10px 0 0 6px;font-size:11px;font-weight:800;padding:6px 10px;border-radius:12px;background:#fef3c7;color:#b45309;line-height:1.35}
+#fitness-view .rm-shape.rm-route2{width:118px;height:118px;flex:none;border-radius:26px;background:linear-gradient(160deg,#fff1f2,#f5f3ff);box-shadow:inset 0 0 0 1px #ffe4e6}
+#fitness-view .rm-route2 svg{width:100%;height:100%;display:block}
+#fitness-view .rm-route2 polyline{stroke-dasharray:1;stroke-dashoffset:1;animation:rmDraw 1.6s var(--ap) .15s forwards}
+@media (prefers-reduced-motion:reduce){#fitness-view .rm-route2 polyline{animation:none;stroke-dashoffset:0}}
+@media (max-width:360px){#fitness-view .rm-seg button{padding:6px 7px}#fitness-view .rm-shape.rm-route2{width:96px;height:96px}}
+</style>
+<style id="rm-dark-cards">
+/* Week Curve + Latest Run: same dark card as THIS WEEK, one shared red palette */
+#fitness-view #rm-week-card,#fitness-view #rm-last{background:#0d1117;color:#fff;border:1px solid rgba(255,255,255,.06);border-radius:28px;padding:22px 20px 18px;box-shadow:0 14px 34px rgba(13,17,23,.22)}
+@media (min-width:600px){#fitness-view #rm-week-card,#fitness-view #rm-last{padding:26px 26px 22px}}
+#fitness-view #rm-last::before{display:none}
+/* shared red glass */
+#fitness-view #rm-week-card .rm-nav button,#fitness-view #rm-week-card .rm-seg,#fitness-view #rm-last .rm-datechip,#fitness-view #rm-last .rm-badge,#fitness-view #rm-last .rm-cmp,#fitness-view #rm-last .rm-pb,#fitness-view #rm-last .rm-tiles>div,#fitness-view #rm-last .rm-lr-sum span,#fitness-view #rm-last .rm-shape,#fitness-view #rm-last .rm-shape.rm-route2{background:linear-gradient(135deg,rgba(244,63,94,.26),rgba(159,18,57,.12));border:1px solid rgba(251,113,133,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.14);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+/* titles: white, with icon chip */
+#fitness-view #rm-week-card .rm-wkhead h3,#fitness-view #rm-last h3{color:#fff!important;display:flex;align-items:center;gap:9px;font-size:14px;font-weight:800;letter-spacing:.06em;line-height:1.2}
+#fitness-view #rm-week-card .rm-lr-ic,#fitness-view #rm-last .rm-lr-ic{box-shadow:none}
+/* ---- week curve ---- */
+#fitness-view #rm-week-card .rm-wkhead{align-items:flex-end;margin-bottom:12px;padding:0}
+#fitness-view #rm-week-card .rm-wkhead p{color:#94a3b8;font-size:12px;margin-top:6px}
+#fitness-view #rm-week-card .rm-wktot b{font-size:clamp(34px,10vw,44px);font-weight:900;font-style:italic;letter-spacing:-.04em;color:#fff}
+#fitness-view #rm-week-card .rm-wktot span{color:#94a3b8;font-size:11.5px;font-weight:600}
+#fitness-view #rm-week-card .rm-wkbar{margin:6px 0 4px}
+#fitness-view #rm-week-card .rm-nav button{color:#fecdd3}
+#fitness-view #rm-week-card .rm-delta{color:#94a3b8}
+#fitness-view #rm-week-card .rm-delta.up{color:#fecdd3}#fitness-view #rm-week-card .rm-delta.dn{color:#fb7185}
+#fitness-view #rm-week-card .rm-seg button{color:#fda4af}
+#fitness-view #rm-week-card .rm-seg button.on{background:linear-gradient(135deg,#be123c,#f43f5e);color:#fff;box-shadow:0 4px 10px -4px rgba(225,29,72,.7)}
+/* red capsule: best day / active day */
+#fitness-view #rm-week-card .rm-capsule{margin-top:16px;background:linear-gradient(135deg,#9f1239,#e11d48 55%,#fb7185)!important;border:1px solid rgba(255,255,255,.22);box-shadow:0 10px 24px -10px rgba(225,29,72,.75),inset 0 1px 0 rgba(255,255,255,.28);color:#fff!important}
+#fitness-view #rm-week-card .rm-capsule .rm-cp{color:#fff!important}
+#fitness-view #rm-week-card .rm-capsule .rm-cp>i{color:#fff;opacity:.95}
+/* ---- latest run ---- */
+#fitness-view #rm-last .rm-row{margin-bottom:16px}
+#fitness-view #rm-last .rm-badge{color:#fecdd3}
+#fitness-view #rm-last .rm-datechip{color:#fecdd3}
+#fitness-view #rm-last .rm-lr-d{background:none;-webkit-text-fill-color:#fff;color:#fff;padding-right:4px}
+#fitness-view #rm-last .rm-lr-u{color:#fb7185}
+#fitness-view #rm-last .rm-cmp{color:#ffe4e6}
+#fitness-view #rm-last .rm-cmp.up{background:linear-gradient(135deg,rgba(244,63,94,.4),rgba(190,18,60,.2));border-color:rgba(253,164,175,.45);color:#fff}
+#fitness-view #rm-last .rm-cmp>i{color:#fda4af}
+#fitness-view #rm-last .rm-pb{color:#fecdd3}
+#fitness-view #rm-last .rm-tiles{margin-top:18px}
+#fitness-view #rm-last .rm-tiles>div{color:#fff;border-radius:18px}
+#fitness-view #rm-last .rm-tiles b{color:#fff}
+#fitness-view #rm-last .rm-tiles span{color:#fecdd3;opacity:.8}
+#fitness-view #rm-last .rm-tiles>div>i{color:#fda4af;opacity:1}
+#fitness-view #rm-last .rm-split{color:#fda4af}
+#fitness-view #rm-last .rm-split span:last-child{color:#ffe4e6}
+#fitness-view #rm-last .rm-split u{background:linear-gradient(90deg,#e11d48,#9f1239)}
+#fitness-view #rm-last .rm-split.mid u{background:linear-gradient(90deg,#fb7185,#e11d48)}
+#fitness-view #rm-last .rm-split.fast u{background:linear-gradient(90deg,#fecdd3,#fb7185)}
+#fitness-view #rm-last .rm-lr-sum span{color:#ffe4e6}
+#fitness-view #rm-last .rm-lr-sum .f,#fitness-view #rm-last .rm-lr-sum .sl{color:#ffe4e6}
+@media (max-width:380px){#fitness-view #rm-week-card,#fitness-view #rm-last{padding-left:14px;padding-right:14px}}
+@media (orientation:landscape) and (max-height:520px){#fitness-view #rm-week-card,#fitness-view #rm-last{padding:14px 18px}#fitness-view #rm-week-card .rm-capsule{margin-top:10px}#fitness-view #rm-week-card .rm-wktot b{font-size:30px}#fitness-view #rm-last .rm-tiles{margin-top:10px}}
+</style>
+<script id="rm-pro-js">
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('#rm-wk-prev,#rm-wk-next,#rm-seg button');if(!b||b.disabled)return;
+ if(b.id==='rm-wk-prev')window.__rmWk=Math.max(-52,(window.__rmWk||0)-1);else if(b.id==='rm-wk-next')window.__rmWk=Math.min(0,(window.__rmWk||0)+1);else window.__rmMet=b.getAttribute('data-m');
+ if(window.rmEnhance&&window.__rmLogs){window.__rmWkOnly=1;try{window.rmEnhance(window.__rmLogs,window.__rmO);}catch(x){}window.__rmWkOnly=0;}});
+</script>
 </body>
 
 </html>
