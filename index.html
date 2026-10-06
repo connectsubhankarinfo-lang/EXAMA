@@ -6305,21 +6305,9 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         var PIN = 3;                                             // must match --sd-pin (sticky top of .sd-grab in CSS)
                         var raf = 0, rowGap = 12, folded = false, cardCur = 0, barCur = 0, barSet = -1, fadeSet = -1, trSet = -1, baseR = 30;
                         var p = 0, D = 0, padTop = 18, barMt = 16, animRaf = 0, animating = false, pendingReveal = false;
-                        /* cached geometry: measured only when something resizes, so the per-frame loop never forces a layout */
-                        var geo = { dirty: true, ch: 0, nat: 0, canFold: false, tilesTop0: 0 };
-                        function remeasureGeo() {
-                            geo.dirty = false;
-                            try {
-                                measure(); geo.dirty = false;
-                                geo.ch = card ? card.offsetHeight : 0;
-                                geo.canFold = !!(fold && foldIn && hdr.clientWidth < 900);
-                                geo.nat = geo.canFold ? foldIn.scrollHeight : 0;
-                                if (tiles) { var mt0 = parseFloat(card && card.style.marginTop) || 0; geo.tilesTop0 = tiles.getBoundingClientRect().top - sc.getBoundingClientRect().top - mt0 + sc.scrollTop; }
-                            } catch (e) {}
-                        }
                         var tTracking = false, tOwn = false, tX = 0, tY = 0, tLastY = 0, tLastT = 0, tVel = 0, tP0 = 0;
                         var wState = 0, wStart = 0, lastW = 0;
-                        var clamp = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; }, smooth = function (t) { return t * t * (3 - 2 * t); };   // smoothstep: responds right away
+                        var clamp = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; }, smooth = function (t) { return t * t * (3 - 2 * t); };
                         if (card) { card.style.willChange = 'opacity, transform'; card.style.transformOrigin = '50% 100%'; }
                         /* used by the app-level pull-to-refresh: while the card is tucked away, a downward pull brings the card back - it must not also refresh the page */
                         window.__sdCardHidden = function () { return p > 0.0005; };
@@ -6327,13 +6315,13 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                             if (!folded) return; folded = false;
                             fold.style.height = ''; fold.style.overflow = ''; fold.style.opacity = ''; if (quote) quote.style.transform = ''; if (grid) grid.style.marginBottom = '';
                         }
-                        function measure() { geo.dirty = true;
+                        function measure() {
                             try { rowGap = parseFloat(getComputedStyle(grid).rowGap) || 12; } catch (e) {}
                             try { padTop = parseFloat(getComputedStyle(sc).paddingTop) || 0; if (bar) { barMt = parseFloat(getComputedStyle(bar).marginTop) || 0; bar.style.setProperty('--sd-pad', padTop + 'px'); } } catch (e) {}
                             try { if (tiles) baseR = parseFloat(getComputedStyle(tiles).borderBottomLeftRadius) || 30; } catch (e) {}
                         }
                         /* distance the content must travel until the button grid sits flush under the header (no gap) */
-                        function calcD() { return card ? Math.max(0, padTop + (geo.ch || card.offsetHeight) + barMt + 1) : 0; }
+                        function calcD() { return card ? Math.max(0, padTop + card.offsetHeight + barMt + 1) : 0; }   // +1px overshoot: the grid tucks 1px under the header edge, never a hairline gap
                         /* collapse = pull the card (and everything after it) up by p*D, exactly like scrolling would */
                         function applyP() {
                             if (!card || !sc.clientHeight) return;
@@ -6351,7 +6339,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         function cancelAnim() { if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; } animating = false; }
                         /* Spring (critically damped, iOS-like). Animates the VIRTUAL scroll V, so card, header fold, grid and capsule all move on ONE clock.
                            v0 = release velocity in px/s, so the motion continues the finger's momentum instead of restarting. */
-                        var SP_K = 460, SP_C = 2 * Math.sqrt(460);   // quick critically-damped spring: grid rises and pins fast
+                        var SP_K = 210, SP_C = 2 * Math.sqrt(210);
                         function springTo(target, v0) {
                             cancelAnim(); D = calcD(); if (!D) return;
                             if (reduce) { setV(target); return; }
@@ -6389,17 +6377,15 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         function frame() {
                             raf = 0;
                             if (!sc.clientHeight) return;                            // view hidden
-                            if (geo.dirty) remeasureGeo(); var y = sc.scrollTop; applyP();   // reads first, then writes: no forced reflow per frame
+                            applyP();                                                // grid position first, so every read below matches this frame (no 1-frame lag)
                             /* ---- reads ---- */
-                            var scTop = 0;
-                            var bt = 999;
-                            var canFold = geo.canFold && !mqLand.matches;
-                            var nat = canFold ? geo.nat : 0;
-                            var ch = geo.ch;
-                            var tilesTop = 0;
-                            var Dn = calcD(), vy = p * Dn + y;
-                            if (bar) bt = Math.max(PIN, padTop + geo.ch + barMt - vy);
-                            if (tiles) tilesTop = geo.tilesTop0 - vy;
+                            var y = sc.scrollTop, scTop = sc.getBoundingClientRect().top;
+                            var bt = bar ? bar.getBoundingClientRect().top - scTop : 999;
+                            var canFold = fold && foldIn && hdr.clientWidth < 900 && !mqLand.matches;
+                            var nat = canFold ? foldIn.scrollHeight : 0;
+                            var ch = card ? card.offsetHeight : 0;
+                            var tilesTop = tiles ? tiles.getBoundingClientRect().top - scTop : 0;
+                            var Dn = calcD(), vy = p * Dn + y;                       // virtual scroll position
                             /* ---- ONE shared progress: 0 = card open, 1 = card tucked + grid pinned. Card, header fold, grid and capsule are all read from it, so they can never drift apart ---- */
                             var tn = Dn > 0 ? clamp(vy / Dn) : 0;
                             var qT = card && !reduce ? smooth(clamp(tn / 0.9)) : 0;
@@ -6508,7 +6494,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                                 if (sc.scrollTop > 1) springTo(0);                   // grid scrolls back AND the card returns in one motion
                                 else animateTo(p > 0.5 ? 0 : 1);
                             });
-                            if (window.ResizeObserver) { try { var ro = new ResizeObserver(function () { geo.dirty = true; kick(); }); ro.observe(card); var stk = hdr.querySelector(".sd-stack"); if (stk) ro.observe(stk); } catch (e) {} }
+                            if (window.ResizeObserver) { try { new ResizeObserver(function () { kick(); }).observe(card); } catch (e) {} }
                         } else if (bar) {
                             bar.addEventListener('click', function () { try { sc.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { sc.scrollTop = 0; } });
                         }
@@ -6555,7 +6541,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                             <div onclick="window.location.hash='video-hub'"
                                 class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm border-red-200/50 hover:bg-red-50/50">
                                 <div
-                                    class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 lh-btn text-white flex items-center justify-center shadow-md mb-2">
+                                    class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center shadow-md mb-2">
                                     <i class="fa-solid fa-circle-play text-lg"></i>
                                 </div>
                                 <h4 class="text-xs font-black text-gray-900 leading-tight">Lecture Hub</h4>
@@ -6685,15 +6671,14 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                             </div>
 
                             <div onclick="window.location.hash='target-calc'"
-                                class="glass-card p-3 rounded-2xl flex items-center gap-2.5 cursor-pointer active:scale-95 transition-all shadow-sm border-cyan-200/50 hover:bg-cyan-50/50">
+                                class="glass-card p-3 rounded-2xl flex items-center gap-2.5 cursor-pointer active:scale-95 transition-all shadow-sm border-orange-200/50 hover:bg-orange-50/50">
                                 <div
-                                    class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-500 text-white flex items-center justify-center shadow-md shrink-0">
+                                    class="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-orange-600 text-white flex items-center justify-center shadow-md shrink-0">
                                     <i class="fa-solid fa-bullseye text-sm"></i>
                                 </div>
                                 <div>
-                                    <h4 class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight">Target
-                                        Planner</h4>
-                                    <p class="text-[8px] text-gray-500 font-bold">Goal Setup</p>
+                                    <h4 class="text-[11px] sm:text-xs font-black text-gray-900 leading-tight">Goal Planner</h4>
+                                    <p class="text-[8px] text-gray-500 font-bold">Set Your Targets</p>
                                 </div>
                             </div>
                             <div onclick="window.location.hash='syllabus'"
@@ -6871,7 +6856,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
 </div></div>
 
             <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 pb-24 sm:pb-28 space-y-6 sm:space-y-8">
-<div class="ax-tw ax-panel"><h3 class="font-black text-gray-900 mb-2.5 px-1 tracking-tight text-[13px] sm:text-sm uppercase"><i class="fa-solid fa-screwdriver-wrench mr-1.5"></i>Admin Tools</h3><div id="ax-tiles"><div data-ax="materials" onclick="window.location.hash='materials'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><span id="admin-material-badge" class="hidden absolute top-1.5 right-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full animate-pulse">0</span><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-folder-open text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Material Hub</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">PDFs & Notes</p></div><div data-ax="weekly-targets" onclick="window.location.hash='weekly-targets'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-list-check text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Weekly Targets</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Assign Tasks</p></div><div data-ax="syllabus" onclick="window.location.hash='syllabus'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-book-bookmark text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Syllabus</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Track Topics</p></div><div data-ax="notices" onclick="window.location.hash='notices'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-bullhorn text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Notices</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Announcements</p></div><div data-ax="chat" onclick="window.location.hash='chat'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><span class="chat-unread-badge hidden absolute top-1.5 right-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">0</span><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-400 to-fuchsia-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-comments text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Discuss</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Community Chat</p></div><div data-ax="video-hub" onclick="window.location.hash='video-hub'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 lh-btn text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-circle-play text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Lecture Hub</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Video Classes</p></div><div data-ax="alarms" onclick="window.location.hash='alarms'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-bell text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Alarms</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Reminders</p></div><div data-ax="quotes" onclick="window.location.hash='quotes'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-quote-left text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Daily Quote</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Set by date</p></div><div data-ax="budget-room" onclick="window.location.hash='budget-room'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-door-open text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Budget Room</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Shared rooms</p></div><div data-ax="student-directory" onclick="window.location.hash='student-directory'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm ax-span"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-users text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Student Directory</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Manage & View Profiles</p></div></div></div>
+<div class="ax-tw ax-panel"><h3 class="font-black text-gray-900 mb-2.5 px-1 tracking-tight text-[13px] sm:text-sm uppercase"><i class="fa-solid fa-screwdriver-wrench mr-1.5"></i>Admin Tools</h3><div id="ax-tiles"><div data-ax="materials" onclick="window.location.hash='materials'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><span id="admin-material-badge" class="hidden absolute top-1.5 right-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full animate-pulse">0</span><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-folder-open text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Material Hub</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">PDFs & Notes</p></div><div data-ax="weekly-targets" onclick="window.location.hash='weekly-targets'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-list-check text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Weekly Targets</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Assign Tasks</p></div><div data-ax="syllabus" onclick="window.location.hash='syllabus'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-book-bookmark text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Syllabus</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Track Topics</p></div><div data-ax="notices" onclick="window.location.hash='notices'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-bullhorn text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Notices</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Announcements</p></div><div data-ax="chat" onclick="window.location.hash='chat'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><span class="chat-unread-badge hidden absolute top-1.5 right-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">0</span><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-400 to-fuchsia-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-comments text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Discuss</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Community Chat</p></div><div data-ax="video-hub" onclick="window.location.hash='video-hub'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-circle-play text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Lecture Hub</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Video Classes</p></div><div data-ax="alarms" onclick="window.location.hash='alarms'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-bell text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Alarms</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Reminders</p></div><div data-ax="quotes" onclick="window.location.hash='quotes'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-quote-left text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Daily Quote</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Set by date</p></div><div data-ax="budget-room" onclick="window.location.hash='budget-room'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-door-open text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Budget Room</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Shared rooms</p></div><div data-ax="student-directory" onclick="window.location.hash='student-directory'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm ax-span"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-users text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Student Directory</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Manage & View Profiles</p></div></div></div>
 
 
                 <!-- NEW: DIRECTORY BUTTON & SEARCH/FILTER BAR -->
@@ -8498,35 +8483,17 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
 
         <!-- 11. PW-STYLE MATERIAL HUB VIEW -->
         <div id="materials-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
-            <!-- PW Style Top Navigation Bar -->
-            <div
-                class="hdr-r hdr-p hdr-w bg-white text-gray-900 pt-10 sm:pt-12 pb-3.5 px-4 sm:px-5 flex items-center justify-between shadow-sm border-b border-gray-200 relative z-10 shrink-0">
-                <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
-                    <button onclick="mhGoBack()"
-                        class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full active:scale-90 transition-all text-gray-700">
-                        <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
-                    </button>
-                    <div class="min-w-0">
-                        <h2 id="mh-header-title"
-                            class="text-lg sm:text-xl font-black tracking-tight break-words leading-tight text-indigo-950">
-                            Study Material</h2>
-                        <p id="mh-header-subtitle"
-                            class="text-[9px] sm:text-[10px] text-gray-500 font-bold tracking-widest uppercase break-words leading-tight mt-0.5">
-                            Select a Subject</p>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-2 shrink-0">
-                    <button id="btn-upload-material" onclick="openMaterialUploadModal()"
-                        class="hidden w-9 h-9 sm:w-10 sm:h-10 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-full flex items-center justify-center active:scale-90 transition-all border border-indigo-200 shadow-sm"
-                        title="Upload Material">
-                        <i class="fa-solid fa-cloud-arrow-up text-sm sm:text-base"></i>
-                    </button>
+            <!-- Dark gradient header + collapsing info card -->
+            <div class="dk-hdr hdr-r hdr-p">
+                <div class="dk-row">
+                    <button onclick="mhGoBack()" class="dk-btn" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button>
+                    <div style="min-width:0;flex:1"><h2 id="mh-header-title">Study Material</h2><p id="mh-header-subtitle" class="dk-sub">Select a Subject</p></div>
+                    <button id="btn-upload-material" onclick="openMaterialUploadModal()" class="dk-btn hidden" title="Upload Material"><i class="fa-solid fa-cloud-arrow-up"></i></button>
                 </div>
             </div>
 
             <!-- Dynamic PW Content Container -->
-            <div class="flex-1 overflow-y-auto no-scrollbar relative md:w-3/4 md:mx-auto flex flex-col bg-gray-50/40">
+            <div id="mh-scroll" class="flex-1 overflow-y-auto no-scrollbar relative md:w-3/4 md:mx-auto flex flex-col bg-gray-50/40">
                 <div id="mh-dynamic-container" class="p-3.5 sm:p-5 pb-24 space-y-4">
                     <!-- Subjects, Chapters, or Notes render dynamically here -->
                 </div>
@@ -8801,14 +8768,14 @@ window.rtKmWords=function(km){var w=Math.floor(km+1e-6),h=km-w>.25,o=[];if(w<1)r
         </div>
 
         <div id="video-hub-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
-            <!-- Light header with built-in progress -->
-            <div class="vx-hdr hdr-r hdr-p">
-                <div class="vx-hrow">
-                    <button onclick="vhGoBack()" class="vx-iconbtn" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button>
-                    <div style="min-width:0;flex:1"><h2 id="vh-header-title">My Classes</h2><p id="vh-header-subtitle">Select a Subject</p></div>
-                    <button id="btn-upload-video" onclick="document.getElementById('video-upload-modal')?.classList.remove('hidden-view')" class="vx-iconbtn pri hidden" title="Post New Video"><i class="fa-solid fa-plus"></i></button>
+            <!-- Dark gradient header + collapsing lecture progress -->
+            <div class="vx-hdr dk-hdr hdr-r hdr-p">
+                <div class="dk-row">
+                    <button onclick="vhGoBack()" class="dk-btn" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button>
+                    <div style="min-width:0;flex:1"><h2 id="vh-header-title">My Classes</h2><p id="vh-header-subtitle" class="dk-sub">Select a Subject</p></div>
+                    <button id="btn-upload-video" onclick="document.getElementById('video-upload-modal')?.classList.remove('hidden-view')" class="dk-btn hidden" title="Post New Video"><i class="fa-solid fa-plus"></i></button>
                 </div>
-                <div id="vh-prog" class="vx-prog"></div>
+                <div class="dk-fold"><div class="dk-fold-in"><div id="vh-prog" class="dk-wrap"></div></div></div>
             </div>
             <div class="vx-scroll no-scrollbar">
                 <div id="vh-dynamic-container" class="vx-wrap p-3 sm:p-6 pb-24">
@@ -9279,9 +9246,9 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left overflow-hidden">
             <!-- Header -->
             <div
-                class="hdr-r hdr-p hdr-w bg-white text-gray-900 pt-10 sm:pt-12 pb-3.5 px-4 sm:px-5 flex items-center justify-between shadow-[0_4px_20px_rgba(0,0,0,0.03)] border-b border-gray-100 relative z-20 shrink-0">
+                class="mw-hdr hdr-r hdr-p pt-10 sm:pt-12 pb-3.5 px-4 sm:px-5 flex items-center justify-between relative z-20 shrink-0">
                 <div class="flex items-center gap-3 sm:gap-4 min-w-0 pr-2">
-                    <button onclick="window.quitMathWorkout()"
+                    <button onclick="window.mathBack()"
                         class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-full active:scale-90 transition-all text-gray-700">
                         <i class="fa-solid fa-arrow-left text-sm sm:text-base"></i>
                     </button>
@@ -9297,37 +9264,197 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                 </div>
             </div>
 
-            <!-- MATH WORKOUT (redesigned): setup / play / result -->
-            <div id="math-setup-screen" class="mw-screen">
-                <div class="mw-wrap">
-                    <div class="mw-stats"><div class="mw-stat"><b id="mw-st-g">0</b><small>Games</small></div><div class="mw-stat"><b id="mw-st-a">--</b><small>Accuracy</small></div><div class="mw-stat"><b id="mw-st-s">0</b><small>Best streak</small></div></div>
-                    <section><h3 class="mw-h"><i class="fa-solid fa-layer-group"></i> Operations <span class="mw-quick"><button type="button" onclick="mwPick('all')">All</button><button type="button" onclick="mwPick('basic')">Basic</button><button type="button" onclick="mwPick('pow')">Powers</button></span></h3><div class="mw-ops" id="mw-ops"></div></section>
-                    <section><h3 class="mw-h"><i class="fa-solid fa-gauge-high"></i> Difficulty</h3><div class="mw-seg" id="mw-diff"><label><input type="radio" name="mw-diff" value="easy" checked><span>Easy</span></label><label><input type="radio" name="mw-diff" value="moderate"><span>Moderate</span></label><label><input type="radio" name="mw-diff" value="hard"><span>Hard</span></label></div></section>
-                    <section><h3 class="mw-h"><i class="fa-solid fa-bullseye"></i> Mode</h3><div class="mw-seg" id="mw-mode"><label><input type="radio" name="mw-mode" value="timed" checked><span>Timed</span></label><label><input type="radio" name="mw-mode" value="survival"><span>3 Lives</span></label><label><input type="radio" name="mw-mode" value="practice"><span>Practice</span></label></div><p class="mw-note" id="mw-note"></p></section>
-                    <section id="mw-time-sec"><h3 class="mw-h"><i class="fa-solid fa-stopwatch"></i> Time</h3><div class="mw-seg"><label><input type="radio" name="mw-time" value="30"><span>30s</span></label><label><input type="radio" name="mw-time" value="60" checked><span>60s</span></label><label><input type="radio" name="mw-time" value="120"><span>2 min</span></label><label><input type="radio" name="mw-time" value="300"><span>5 min</span></label></div></section>
-                    <button type="button" class="mw-go" onclick="window.startMathWorkout()"><i class="fa-solid fa-play"></i> Start Workout</button>
-                </div>
-            </div>
-            <div id="math-game-screen" class="hidden mw-screen">
-                <div class="mw-play">
-                    <div class="mw-hud">
-                        <div class="mw-pill" id="mw-time-pill"><i class="fa-solid fa-stopwatch"></i><span id="math-timer-display">60s</span></div>
-                        <div class="mw-pill"><i class="fa-solid fa-star"></i><span id="math-score-display">0</span></div>
-                        <div class="mw-pill"><i class="fa-solid fa-fire"></i><span id="mw-streak">0</span></div>
-                        <div class="mw-pill hidden" id="mw-lives"></div>
-                        <button type="button" class="mw-fin" onclick="window.endMathWorkout()"><i class="fa-solid fa-flag-checkered"></i> Finish</button>
+            <!-- STAGE 1: SETUP SCREEN -->
+            <div id="math-setup-screen"
+                class="flex-1 overflow-y-auto no-scrollbar p-4 sm:p-6 space-y-6 relative bg-gradient-to-b from-gray-50 to-white">
+
+                <div>
+                    <h3
+                        class="font-black text-slate-800 mb-3 text-xs sm:text-sm uppercase tracking-widest flex items-center gap-2">
+                        <i class="fa-solid fa-layer-group text-orange-500"></i> Select Operations
+                    </h3>
+                    <div class="grid grid-cols-3 gap-2.5 sm:gap-3">
+                        <!-- Addition -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="add" class="math-op-cb peer sr-only" checked>
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <i
+                                    class="fa-solid fa-plus text-xl mb-0.5 peer-checked:scale-110 transition-transform"></i>
+                                Addition
+                            </div>
+                        </label>
+                        <!-- Subtraction -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="sub" class="math-op-cb peer sr-only" checked>
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <i
+                                    class="fa-solid fa-minus text-xl mb-0.5 peer-checked:scale-110 transition-transform"></i>
+                                Subtract
+                            </div>
+                        </label>
+                        <!-- Multiplication -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="mul" class="math-op-cb peer sr-only" checked>
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <i
+                                    class="fa-solid fa-xmark text-xl mb-0.5 peer-checked:scale-110 transition-transform"></i>
+                                Multiply
+                            </div>
+                        </label>
+                        <!-- Division -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="div" class="math-op-cb peer sr-only">
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <i
+                                    class="fa-solid fa-divide text-xl mb-0.5 peer-checked:scale-110 transition-transform"></i>
+                                Division
+                            </div>
+                        </label>
+                        <!-- Squares -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="sqr" class="math-op-cb peer sr-only">
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <span
+                                    class="text-xl font-black mb-0.5 leading-none peer-checked:scale-110 transition-transform">x²</span>
+                                Squares
+                            </div>
+                        </label>
+                        <!-- Cubes -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="cub" class="math-op-cb peer sr-only">
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <span
+                                    class="text-xl font-black mb-0.5 leading-none peer-checked:scale-110 transition-transform">x³</span>
+                                Cubes
+                            </div>
+                        </label>
+                        <!-- Square Root -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="sqrt" class="math-op-cb peer sr-only">
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <span
+                                    class="text-xl font-black mb-0.5 leading-none peer-checked:scale-110 transition-transform">√x</span>
+                                Roots
+                            </div>
+                        </label>
+                        <!-- Cube Root -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="cbrt" class="math-op-cb peer sr-only">
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <span
+                                    class="text-xl font-black mb-0.5 leading-none peer-checked:scale-110 transition-transform">∛x</span>
+                                C.Roots
+                            </div>
+                        </label>
+                        <!-- Percentage -->
+                        <label class="relative cursor-pointer group">
+                            <input type="checkbox" value="perc" class="math-op-cb peer sr-only">
+                            <div
+                                class="px-2 py-4 rounded-2xl bg-white border-2 border-gray-100 text-gray-400 font-bold text-[10px] sm:text-xs text-center peer-checked:border-orange-500 peer-checked:bg-orange-50 peer-checked:text-orange-600 transition-all shadow-sm hover:shadow-md flex flex-col items-center gap-1.5">
+                                <i
+                                    class="fa-solid fa-percent text-xl mb-0.5 peer-checked:scale-110 transition-transform"></i>
+                                Percent
+                            </div>
+                        </label>
                     </div>
-                    <div class="mw-bar" id="mw-bar-wrap"><i id="mw-bar"></i></div>
-                    <div class="mw-qcard" id="mw-qcard"><div class="mw-q" id="math-question-display">--</div><div class="mw-ans" id="math-answer-input"></div></div>
-                    <div class="mw-pad" id="mw-pad"></div>
+                </div>
+
+                <div>
+                    <h3
+                        class="font-black text-slate-800 mb-3 text-xs sm:text-sm uppercase tracking-widest flex items-center gap-2">
+                        <i class="fa-solid fa-gauge-high text-red-500"></i> Difficulty Level
+                    </h3>
+                    <div class="relative">
+                        <select id="math-difficulty"
+                            class="w-full p-4 pl-12 bg-white border border-gray-200 rounded-2xl outline-none font-bold text-sm text-gray-800 focus:border-red-400 transition-all cursor-pointer shadow-sm appearance-none">
+                            <option value="easy">Fundamentals</option>
+                            <option value="moderate" selected>Competitive Level</option>
+                            <option value="tough">Advanced Drill</option>
+                        </select>
+                        <i
+                            class="fa-solid fa-fire absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+                        <i
+                            class="fa-solid fa-chevron-down absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
+                    </div>
+                </div>
+
+                <div class="mw-box">
+                    <h3 class="font-black text-slate-800 mb-3 text-xs sm:text-sm uppercase tracking-widest flex items-center gap-2"><i class="fa-solid fa-hourglass-half text-orange-500"></i> Duration</h3>
+                    <div class="mw-seg" id="mw-dur"><button data-v="30" onclick="window.mathSet(30)">30s</button><button data-v="60" onclick="window.mathSet(60)" class="on">60s</button><button data-v="120" onclick="window.mathSet(120)">2 min</button><button data-v="180" onclick="window.mathSet(180)">3 min</button><button data-v="0" onclick="window.mathSet(0)" aria-label="Unlimited, counts up"><i class="fa-solid fa-infinity"></i></button></div>
+                    <div class="mw-row mw-padrow"><span><i class="fa-solid fa-calculator"></i> On-screen numpad</span><button type="button" id="mw-padsw" class="mw-sw on" onclick="window.mathPadToggle()" aria-label="Toggle numpad"><i></i></button></div>
+                    <p class="mw-stats">Best <b id="mw-best">0</b><em>·</em>Games <b id="mw-games">0</b><em>·</em>Accuracy <b id="mw-acc">–</b><em>·</em>Streak <b id="mw-bs">0</b></p>
+                </div>
+                <div class="pt-4">
+                    <button onclick="window.startMathWorkout()"
+                        class="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-black py-4 sm:py-5 rounded-[1.25rem] shadow-[0_8px_25px_rgba(239,68,68,0.3)] active:scale-95 transition-all text-base uppercase tracking-widest flex items-center justify-center gap-2">
+                        Start <span id="mw-st">60s</span> Sprint <i class="fa-solid fa-bolt"></i>
+                    </button>
                 </div>
             </div>
-            <div id="math-result-screen" class="hidden mw-screen">
-                <div class="mw-wrap">
-                    <div class="mw-res"><small id="mw-res-mode"></small><div class="mw-big" id="math-final-score">0</div><div class="mw-rt" id="mw-res-title"></div><span class="mw-nb hidden" id="mw-newbest"><i class="fa-solid fa-trophy"></i> New personal best!</span></div>
-                    <div class="mw-stats mw-stats4"><div class="mw-stat"><b id="mw-r-acc">0%</b><small>Accuracy</small></div><div class="mw-stat"><b id="mw-r-avg">--</b><small>Avg / answer</small></div><div class="mw-stat"><b id="mw-r-str">0</b><small>Best streak</small></div><div class="mw-stat"><b id="mw-r-time">0s</b><small>Time</small></div></div>
-                    <section id="mw-miss-sec"><h3 class="mw-h"><i class="fa-solid fa-circle-xmark"></i> Review mistakes</h3><div class="mw-miss" id="mw-miss"></div></section>
-                    <div class="mw-btns"><button type="button" class="mw-sec" onclick="window.quitMathWorkout()">Back</button><button type="button" class="mw-sec" onclick="mwSetup()">Settings</button><button type="button" class="mw-go" onclick="window.startMathWorkout()"><i class="fa-solid fa-rotate-right"></i> Play again</button></div>
+
+            <!-- STAGE 2: LIVE GAME SCREEN -->
+            <div id="math-game-screen" class="hidden mw-game">
+                <div id="math-feedback-bg" class="mw-fb"></div>
+                <div class="mw-hud">
+                    <div class="mw-pill t"><i class="fa-solid fa-stopwatch"></i><span id="math-timer-display">60s</span></div>
+                    <div class="mw-pill s"><i class="fa-solid fa-star"></i><span id="math-score-display">0</span></div>
+                    <div class="mw-pill k" id="mw-streak"><i class="fa-solid fa-fire"></i><span id="mw-streak-n">0</span></div>
+                    <button class="mw-pbtn mw-fin" onclick="window.endMathWorkout()" aria-label="Finish"><i class="fa-solid fa-flag-checkered"></i></button>
+                    <button class="mw-pbtn" onclick="window.mathPause()" aria-label="Pause"><i class="fa-solid fa-pause"></i></button>
+                    <div class="mw-bar"><i id="mw-bar-i"></i></div>
+                </div>
+                <div class="mw-arena">
+                    <h1 id="math-question-display">12 × 8</h1>
+                    <div id="math-answer-input" class="mw-ans mw-ph">?</div>
+                    <button class="mw-skip" onclick="window.mathSkip()">Skip <i class="fa-solid fa-forward-step"></i></button>
+                </div>
+                <div id="mw-pad" class="mw-pad" onpointerdown="window.mathKey(event)">
+                    <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button><button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button><button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+                    <button data-k="c" class="x">C</button><button data-k="0">0</button><button data-k="b" class="x" aria-label="Backspace"><i class="fa-solid fa-delete-left"></i></button>
+                </div>
+                <div id="mw-pause" class="mw-pause hidden"><div><i class="fa-solid fa-pause"></i><h3>Paused</h3><button onclick="window.mathResume()" class="go">Resume</button><button onclick="window.quitMathWorkout()">Quit</button></div></div>
+            </div>
+            <!-- STAGE 3: RESULTS SCREEN -->
+            <div id="math-result-screen"
+                class="hidden flex-1 flex flex-col items-center justify-center p-6 bg-slate-50 w-full h-full relative z-20">
+                <div
+                    class="w-full max-w-sm glass-card p-8 sm:p-10 rounded-[2rem] shadow-2xl border border-white text-center relative overflow-hidden bg-white/80 backdrop-blur-xl">
+                    <!-- Confetti / Glow effects -->
+                    <div class="absolute -top-12 -right-12 w-40 h-40 bg-orange-400/20 rounded-full blur-3xl"></div>
+                    <div class="absolute -bottom-12 -left-12 w-40 h-40 bg-emerald-400/20 rounded-full blur-3xl"></div>
+
+                    <div
+                        class="w-24 h-24 mx-auto bg-gradient-to-br from-emerald-400 to-green-500 text-white rounded-full flex items-center justify-center text-5xl shadow-[0_10px_20px_rgba(16,185,129,0.3)] mb-6 relative z-10">
+                        <i class="fa-solid fa-trophy"></i>
+                    </div>
+
+                    <h2 class="text-2xl font-black text-slate-800 uppercase tracking-widest mb-1 relative z-10">Sprint
+                        Complete!</h2>
+                    <p class="text-xs font-bold text-slate-400 mb-8 relative z-10">Calculation Accuracy & Speed</p>
+
+                    <div
+                        class="bg-slate-50 rounded-[1.5rem] p-5 border border-slate-100 shadow-inner mb-8 relative z-10">
+                        <p class="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">Final Score</p>
+                        <div class="text-[5rem] leading-none font-black text-indigo-600 font-mono tracking-tighter drop-shadow-sm"
+                            id="math-final-score">0</div>
+                        <p id="math-final-sub" class="text-[10px] font-bold text-slate-400 mt-2">Correct Answers in 60s</p>
+                    </div>
+
+                    <div class="flex gap-3 relative z-10">
+                        <button onclick="window.quitMathWorkout()"
+                            class="flex-1 bg-white text-slate-600 font-black py-4 rounded-xl border border-slate-200 active:scale-95 transition-all text-xs uppercase tracking-wider hover:bg-slate-50 shadow-sm">Exit</button>
+                        <button onclick="window.startMathWorkout()"
+                            class="flex-[2] bg-gradient-to-r from-orange-500 to-red-500 text-white font-black py-4 rounded-xl shadow-[0_8px_20px_rgba(239,68,68,0.3)] active:scale-95 transition-all text-xs uppercase tracking-wider flex justify-center items-center gap-2">Play
+                            Again <i class="fa-solid fa-rotate-right"></i></button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -14239,11 +14366,6 @@ ${textContent ? `
                 }
             }
 
-            window.getFolderSkeletonHTML = function (count = 6) {
-                let h = '<div class="vx-grid">';
-                for (let i = 0; i < count; i++) h += '<div class="vx-card vx-sk-card"><div class="vx-ic sk"></div><div class="sk sk-t"></div><div class="sk sk-m"></div><div class="sk sk-b"></div></div>';
-                return h + '</div>';
-            };
             window.getSkeletonHTML = function (type, count = 3) {
                 let html = '';
 
@@ -14816,7 +14938,7 @@ window.__tpPaint = function () {
                         targetAnalysisHtml = `<div class="bg-green-50 border border-green-200 rounded-xl p-3 sm:p-4 shadow-sm"><h4 class="text-xs sm:text-sm font-black text-green-800 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-bullseye text-green-500"></i> Target Gap</h4><p class="text-[10px] sm:text-xs text-green-700 mt-1 font-medium leading-relaxed break-words">Your set target is <strong>${target}%</strong>. You are currently averaging <strong>${avg.toFixed(1)}%</strong>. You are safely <strong>surpassing</strong> your goal by <strong>${Math.abs(gap).toFixed(1)}%</strong>. Outstanding consistency!</p></div>`;
                     }
                 } else {
-                    targetAnalysisHtml = `<div class="bg-gray-50 border border-gray-200 rounded-xl p-3 sm:p-4 shadow-sm"><h4 class="text-xs sm:text-sm font-black text-gray-800 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-bullseye text-indigo-500"></i> Target Gap</h4><p class="text-[10px] sm:text-xs text-gray-600 mt-1 font-medium leading-relaxed break-words">You haven't set a target yet. Head over to the Target Planner to set a goal and let NOVA track your trajectory.</p></div>`;
+                    targetAnalysisHtml = `<div class="bg-gray-50 border border-gray-200 rounded-xl p-3 sm:p-4 shadow-sm"><h4 class="text-xs sm:text-sm font-black text-gray-800 flex items-center gap-1.5 sm:gap-2 break-words"><i class="fa-solid fa-bullseye text-indigo-500"></i> Target Gap</h4><p class="text-[10px] sm:text-xs text-gray-600 mt-1 font-medium leading-relaxed break-words">You haven't set a target yet. Head over to the Goal Planner to set a goal and let NOVA track your trajectory.</p></div>`;
                 }
 
                 let ratioHtml = '';
@@ -15402,7 +15524,7 @@ window.__tpPaint = function () {
                     container.innerHTML = window.getSkeletonHTML('video', 5);
                 } else {
                     // Use the grid-style 'card' skeleton for Subjects and Folders
-                    container.innerHTML = window.getFolderSkeletonHTML(6);
+                    container.innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">${window.getSkeletonHTML('card', 6)}</div>`;
                 }
 
                 // 2. DELAY THE ACTUAL RENDERING BY 300ms TO SHOW THE SKELETON EFFECT
@@ -15450,13 +15572,10 @@ window.__tpPaint = function () {
 
             // 4.1-4.3 REDESIGNED RENDERERS (subjects / chapters / lectures) - same handlers, same data
             const vxE = x => window.escHtml(x), vxJ = x => window.escJsAttr(x);
-            function vxHdr(vids) { const el = document.getElementById('vh-prog'); if (!el) return; const t = vids.length, d = vids.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length, p = t ? Math.round(d / t * 100) : 0;
-                if (window.currentRole === 'admin') el.innerHTML = `<span>${t} lecture${t === 1 ? '' : 's'}</span>`;
-                else {
-                    const msg = !t ? 'No lectures yet' : p >= 100 ? 'All lectures completed' : d ? 'Keep going' : 'Start watching';
-                    el.innerHTML = `<div class="tp2-score"><div class="tp2-sring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke-width="3.4"/><circle cx="18" cy="18" r="15.9" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="0 100" style="transition:stroke-dasharray .8s cubic-bezier(.4,0,.2,1)"/></svg><b>${p}%</b></div><div class="tp2-sinfo"><span class="hx-lab">Lecture progress</span><strong>${msg}</strong><div class="hx-stats3"><div><b>${t}</b><span>Total</span></div><div><b>${d}</b><span>Done</span></div><div><b>${t - d}</b><span>Left</span></div></div><div class="hx-bar"><i style="width:0%"></i></div></div></div>`;
-                    requestAnimationFrame(() => requestAnimationFrame(() => { const r = el.querySelector('circle:last-child'), b = el.querySelector('.hx-bar i'); if (r) r.setAttribute('stroke-dasharray', p + ' 100'); if (b) b.style.width = p + '%'; }));
-                } }
+            function vxHdr(vids) { const el = document.getElementById('vh-prog'); if (!el) return; const admin = window.currentRole === 'admin', t = vids.length, d = vids.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length, p = admin ? 100 : (t ? Math.round(d / t * 100) : 0), C = 97.4;
+                const st = admin ? [new Set(vids.map(v => v.subject)).size, new Set(vids.map(v => v.subject + '|' + v.topic)).size, t] : [d, t - d, t], lb = admin ? ['Subjects', 'Topics', 'Lectures'] : ['Done', 'Left', 'Total'];
+                el.innerHTML = `<div class="dk-grid"><div class="dk-info"><div class="dk-ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" stroke-width="3.4"/><circle class="v" cx="18" cy="18" r="15.5" stroke-width="3.4" stroke-dasharray="${C}" stroke-dashoffset="${(C * (1 - p / 100)).toFixed(1)}"/></svg><b>${admin ? t : p + '%'}</b></div><div class="dk-meta"><span>${admin ? 'Lectures' : 'Lecture progress'}</span><strong>${admin ? t + ' in this view' : (t ? d + ' of ' + t + ' completed' : 'No lectures yet')}</strong></div></div><div class="dk-stats">${st.map((n, k) => `<div><b>${n}</b><small>${lb[k]}</small></div>`).join('')}</div></div>`;
+                window.dkFoldReset && window.dkFoldReset('video-hub-view'); }
             const vxDone = (v) => (v.watchedBy || []).includes(window.loggedInMobile);
             function renderVHSubjects(vids, container) {
                 const admin = window.currentRole === 'admin', subs = [...new Set(vids.map(v => v.subject))];
@@ -15485,7 +15604,7 @@ window.__tpPaint = function () {
                     h += `<div class="video-item vx-lec ${admin ? 'adm' : ''} ${d ? 'done' : ''}" data-id="${vxE(v.id)}">
                         ${admin ? `<div class="vx-ctl"><button onclick="event.stopPropagation(); window.moveVideoDirectly('${id}',-1)" title="Move up"><i class="fa-solid fa-caret-up"></i></button><div class="drag-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div><button onclick="event.stopPropagation(); window.moveVideoDirectly('${id}',1)" title="Move down"><i class="fa-solid fa-caret-down"></i></button></div>` : ''}
                         <div class="vx-th" ${play}><img src="${vxE(v.thumbnail)}" loading="lazy" alt=""><span class="n">Lec ${i + 1}</span>${d ? '<div class="ck"><i class="fa-solid fa-check"></i></div>' : ''}</div>
-                        <div class="vx-body" ${play}><h4>${vxE(v.title)}</h4>${v.uploader ? `<span>${vxE(v.uploader)}</span>` : ''}</div>
+                        <div class="vx-body" ${play}><h4>${vxE(v.title)}</h4><span>${v.videoType === 'youtube' ? 'YouTube' : 'Drive'}${v.uploader ? ' · ' + vxE(v.uploader) : ''}</span></div>
                         ${admin ? `<div class="vx-acts"><button onclick="event.stopPropagation(); window.openEditVideo('${id}')" title="Edit"><i class="fa-solid fa-pen"></i></button><button class="del" onclick="event.stopPropagation(); deleteVideo('${id}')" title="Delete"><i class="fa-solid fa-trash"></i></button></div>` : ''}
                     </div>`;
                 });
@@ -17083,10 +17202,10 @@ window.__tpPaint = function () {
                         if (typeof renderSyllabusTracker === 'function') renderSyllabusTracker();
                         break;
                     case 'math-workout':
+                        window.mathReset && window.mathReset();
                         document.getElementById('math-setup-screen')?.classList.remove('hidden');
                         document.getElementById('math-game-screen')?.classList.add('hidden');
                         document.getElementById('math-result-screen')?.classList.add('hidden');
-                        window.mwRefresh && window.mwRefresh();
                         break;
                     case 'my-profile':
                         if (window.currentRole !== 'student' && !window.__mpTarget) { history.replaceState(null, '', '#admin'); window.handleHashChange(); return; }
@@ -17501,7 +17620,6 @@ window.__tpPaint = function () {
                     Array.from(w).forEach(function (ch) { const c = document.createElement('span'); c.className = 'gl-c'; c.style.setProperty('--i', Math.min(i++, 40)); c.textContent = ch; ws.appendChild(c); });
                     el.appendChild(ws); if (wi < words.length - 1) el.appendChild(document.createTextNode(' '));
                 });
-                if (el.classList.contains('gl-live')) { const d = document.createElement('span'); d.className = 'gl-dots'; d.setAttribute('aria-hidden', 'true'); d.innerHTML = '<i></i><i></i><i></i>'; el.appendChild(d); }
                 el.style.setProperty('--d0', window.__glD0()); el.classList.add('gl-chars');
             };
             window.__glText = function (msg) { const p = document.getElementById('loader-text'); if (!p) return; p.dataset.msg = msg; p.classList.add('gl-live'); window.__glSplit(p, msg); };
@@ -19256,7 +19374,7 @@ window.__tpPaint = function () {
                 if (window.mhState.view === 'files') {
                     container.innerHTML = window.getSkeletonHTML('video', 5);
                 } else {
-                    container.innerHTML = window.getFolderSkeletonHTML(6);
+                    container.innerHTML = window.getSkeletonHTML('card', 4);
                 }
 
                 // 2. DELAY
@@ -19282,7 +19400,7 @@ window.__tpPaint = function () {
                         titleEl.innerText = "Study Material";
                         subEl.innerText = "Select a Subject";
                         const uniqueSubjects = [...new Set(materials.map(m => m.subject))];
-                        let html = '<div class="vx-grid">';
+                        let html = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">';
                         uniqueSubjects.forEach(sub => {
                             const subMaterials = materials.filter(m => m.subject === sub);
                             const uniqueTopics = [...new Set(subMaterials.map(m => m.topic))];
@@ -19296,7 +19414,19 @@ window.__tpPaint = function () {
                             const glowClass = pendingInSubject > 0 ? 'unapproved-glow' : '';
                             const pendingBadge = pendingInSubject > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm z-20 animate-pulse">${pendingInSubject} Pending</span>` : '';
 
-                            html += `<div class="vx-card ${glowClass}" onclick="window.openMHSubject('${String(sub).replace(/'/g, "\\'")}')">${pendingBadge}<div class="vx-ic ${theme.bg} ${theme.color}"><i class="fa-solid ${theme.icon}"></i></div><h3>${window.escHtml(sub)}</h3><span class="vx-meta">${uniqueTopics.length} chapter${uniqueTopics.length === 1 ? '' : 's'} \u00b7 ${totalFiles} item${totalFiles === 1 ? '' : 's'}</span></div>`;
+                            html += `
+                <div onclick="window.openMHSubject('${String(sub).replace(/'/g, "\\'")}')" class="relative bg-white rounded-[1.5rem] p-4 sm:p-5 shadow-sm border ${theme.border} hover:shadow-lg hover:border-indigo-300 transition-all duration-300 cursor-pointer flex flex-col items-center text-center group hover:-translate-y-1 ${glowClass}">
+                    ${pendingBadge}
+                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl ${theme.bg} ${theme.color} flex justify-center items-center text-2xl sm:text-3xl mb-3 group-hover:scale-110 transition-transform shadow-inner">
+                        <i class="fa-solid ${theme.icon}"></i>
+                    </div>
+                    <h3 class="font-black text-gray-900 text-xs sm:text-[14px] leading-tight w-full truncate px-1 group-hover:text-indigo-600 transition-colors">${sub}</h3>
+                    <div class="flex items-center gap-1.5 mt-1.5">
+                        <span class="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest">${uniqueTopics.length} Chapters</span>
+                        <span class="text-gray-300">•</span>
+                        <span class="text-[8px] sm:text-[9px] font-black ${theme.color} uppercase tracking-widest">${totalFiles} Items</span>
+                    </div>
+                </div>`;
                         });
                         html += '</div>';
                         container.innerHTML = html;
@@ -19306,7 +19436,7 @@ window.__tpPaint = function () {
                         subEl.innerText = "Select a Chapter / Folder";
                         const subMats = materials.filter(m => m.subject === window.mhState.subject);
                         const uniqueTopics = [...new Set(subMats.map(m => m.topic))];
-                        let html = '<div class="vx-grid">';
+                        let html = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">';
                         uniqueTopics.forEach(top => {
                             const topMaterials = subMats.filter(m => m.topic === top);
                             let fileCount = 0;
@@ -19318,7 +19448,17 @@ window.__tpPaint = function () {
                             const glowClass = pendingInTopic > 0 ? 'unapproved-glow' : '';
                             const pendingBadge = pendingInTopic > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm z-20 animate-pulse">${pendingInTopic} Pending</span>` : '';
 
-                            html += `<div class="vx-card ${glowClass}" onclick="window.openMHTopic('${String(top).replace(/'/g, "\\'")}')">${pendingBadge}<div class="vx-ic bg-indigo-50 text-indigo-600"><i class="fa-solid fa-folder-open"></i></div><h3>${window.escHtml(top)}</h3><span class="vx-meta">${fileCount} file${fileCount === 1 ? '' : 's'} / note${fileCount === 1 ? '' : 's'}</span></div>`;
+                            html += `
+                <div onclick="window.openMHTopic('${String(top).replace(/'/g, "\\'")}')" class="bg-white p-4 sm:p-5 rounded-[1.5rem] flex flex-col items-center justify-center text-center cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-all duration-300 border border-gray-200/80 shadow-sm group relative overflow-hidden ${glowClass}">
+                    ${pendingBadge}
+                    <div class="relative z-10 w-full flex flex-col items-center">
+                        <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center text-2xl mb-3 shadow-inner group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-folder-open text-indigo-500"></i>
+                        </div>
+                        <h3 class="font-black text-gray-900 text-xs sm:text-[13px] leading-tight break-words mb-1 line-clamp-2 px-1 group-hover:text-indigo-600 transition-colors">${top}</h3>
+                        <span class="text-[8px] sm:text-[9px] font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-wider mt-1">${fileCount} Files / Notes</span>
+                    </div>
+                </div>`;
                         });
                         html += '</div>';
                         container.innerHTML = html;
@@ -19394,64 +19534,163 @@ window.__tpPaint = function () {
 
             // 3.3 RENDER: NOTES & ATTACHMENTS (Detailed Action View)
             window.renderMHFiles = function (materials, container) {
-                const isAdmin = window.currentRole === 'admin';
-                const e = x => window.escHtml(x);
-                const q = x => String(x == null ? '' : x).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                const card = o => `<article class="mh-card${o.pc}"><div class="mh-cover ${o.kind}" onclick="${o.act}">${o.img ? `<img src="${o.img}" loading="lazy" alt="">` : `<i class="fa-solid ${o.icon}"></i>`}<span class="mh-tag">${o.tag}</span></div><div class="mh-info" onclick="${o.act}"><h4>${o.title}</h4><span>${o.sub}</span></div><div class="mh-foot"><button type="button" class="mh-read" onclick="${o.act}"><i class="fa-solid ${o.cta}"></i> ${o.ctaText}</button>${o.dl || ''}</div>${o.qa || ''}</article>`;
-                let html = '<div class="vx-list">';
+                let html = '<div class="space-y-4">';
 
                 materials.forEach(mat => {
-                    const pend = mat.isApproved === false, pc = pend ? ' pend' : '';
+                    const isAdmin = window.currentRole === 'admin';
+
+                    // 🔥 NEW: Action Buttons
                     const delBtn = isAdmin ? `<button onclick="deleteStudyMaterial('${mat.id}')" class="text-gray-400 hover:text-red-500 transition-colors p-1.5" title="Delete"><i class="fa-solid fa-trash text-sm"></i></button>` : '';
                     const editBtn = isAdmin ? `<button onclick="openEditMaterialModal('${mat.id}')" class="text-gray-400 hover:text-indigo-500 transition-colors p-1.5 mr-1" title="Edit"><i class="fa-solid fa-pen text-sm"></i></button>` : '';
-                    let approveBtn = '', statusBadge = '';
-                    if (pend) {
+
+                    let approveBtn = '';
+                    let statusBadge = '';
+                    if (mat.isApproved === false) {
                         statusBadge = `<span class="bg-amber-100 text-amber-700 text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm uppercase tracking-widest ml-2 border border-amber-200 align-middle"><i class="fa-solid fa-clock mr-1"></i>Pending</span>`;
                         if (isAdmin) approveBtn = `<button onclick="toggleMaterialApproval('${mat.id}', true)" class="text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg px-2.5 py-1.5 transition-colors flex items-center shadow-sm text-[10px] font-bold mr-1"><i class="fa-solid fa-check mr-1.5"></i> Approve</button>`;
-                    } else if (isAdmin) {
-                        approveBtn = `<button onclick="toggleMaterialApproval('${mat.id}', false)" class="text-gray-500 bg-gray-50 hover:bg-amber-50 border border-gray-200 hover:border-amber-200 hover:text-amber-600 rounded-lg px-2.5 py-1.5 transition-colors flex items-center shadow-sm text-[10px] font-bold mr-1"><i class="fa-solid fa-eye-slash mr-1.5"></i> Hide</button>`;
-                    }
+                    } else {
+                        if (isAdmin) approveBtn = `<button onclick="toggleMaterialApproval('${mat.id}', false)" class="text-gray-500 bg-gray-50 hover:bg-amber-50 border border-gray-200 hover:border-amber-200 hover:text-amber-600 rounded-lg px-2.5 py-1.5 transition-colors flex items-center shadow-sm text-[10px] font-bold mr-1"><i class="fa-solid fa-eye-slash mr-1.5"></i> Hide</button>`;
+                    } let filesHtml = '';
 
-                    let rows = '';
-                    // 1. External link
+                    // 1. External Links
                     if (mat.extLink) {
-                        const act = `window.openCustomPDFViewer('${mat.extLink}', '${q(mat.title)}')`;
-                        rows += card({ pc, kind: 'lnk', icon: 'fa-link', tag: 'Link', title: e(mat.title), sub: 'External link', act, cta: 'fa-arrow-up-right-from-square', ctaText: 'Open' });
+                        filesHtml += `
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-indigo-300 transition-colors gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-file-pdf"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs sm:text-sm font-bold text-gray-900 truncate">${mat.title}</p>
+                        <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-0.5"></p>
+                    </div>
+                </div>
+                <button onclick="window.openCustomPDFViewer('${mat.extLink}', '${mat.title.replace(/'/g, "\\'")}')" class="px-4 py-2 bg-indigo-600 text-white text-[10px] sm:text-xs font-black rounded-lg shadow-sm hover:bg-indigo-700 active:scale-95 transition-all shrink-0">
+                    Read
+                </button>
+            </div>`;
                     }
 
-                    // 2. File attachments
-                    (mat.files || []).forEach((f, idx) => {
-                        const isPdf = f.type === 'pdf';
-                        const fname = String(f.name || '');
-                        const isQuestionSet = f.type === 'image' && (mat.subject === 'Question Set' || String(mat.subject).toLowerCase().includes('question'));
-                        const readAction = isPdf ? `window.openCustomPDFViewer('${f.url}', '${q(fname)}')` : `window.open('${f.url}', '_blank')`;
+                    // 2. File Attachments
+                    if (mat.files && mat.files.length > 0) {
+                        mat.files.forEach((f, idx) => {
+                            const isPdf = f.type === 'pdf';
+                            const isQuestionSet = f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLowerCase().includes('question'));
 
-                        let uniqueKey = f.url;
-                        const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
-                        if (match) uniqueKey = match[1];
-                        else uniqueKey = btoa(encodeURIComponent(f.url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
-                        const storageKey = isPdf ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
-                        const btnId = `dl-btn-${storageKey}`;
+                            // 🔥 MODIFIED: If it is an image, trigger the Native Image Opener (_blank)
+                            const readAction = isPdf
+                                ? `window.openCustomPDFViewer('${f.url}', '${f.name.replace(/'/g, "\\'")}')`
+                                : `window.open('${f.url}', '_blank')`;
 
-                        window.checkIsOffline(storageKey).then(isSaved => {
-                            const btn = document.getElementById(btnId);
-                            if (btn && isSaved) { btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`; btn.classList.add('bg-emerald-50', 'border-emerald-200'); }
+                            let uniqueKey = f.url;
+                            const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+                            if (match) uniqueKey = match[1];
+                            else uniqueKey = btoa(encodeURIComponent(f.url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+
+                            const storageKey = isPdf ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
+                            const btnId = `dl-btn-${storageKey}`;
+
+                            window.checkIsOffline(storageKey).then(isSaved => {
+                                const btn = document.getElementById(btnId);
+                                if (btn && isSaved) {
+                                    btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`;
+                                    btn.classList.add('bg-emerald-50', 'border-emerald-200');
+                                }
+                            });
+
+                            if (isQuestionSet) {
+                                // 🔥 NEAT & CLEAN UI ONLY FOR QUESTION SETS
+                                filesHtml += `
+                    <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 bg-white rounded-2xl border border-indigo-100 shadow-sm relative group hover:border-indigo-300 transition-colors">
+                        <!-- Image Preview -->
+                        <div class="w-full sm:w-32 h-32 sm:h-24 shrink-0 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 cursor-pointer relative" onclick="${readAction}">
+                            <img src="${f.url}" class="w-full h-full object-cover">
+                            <div class="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div class="bg-white/90 w-8 h-8 rounded-full flex items-center justify-center text-gray-900 shadow-sm"><i class="fa-solid fa-expand text-xs"></i></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Info & Actions -->
+                        <div class="flex flex-col flex-1 justify-between min-w-0">
+                            <div class="flex justify-between items-start mb-2">
+                                <div class="min-w-0 pr-2 cursor-pointer" onclick="${readAction}">
+                                    <h5 class="font-bold text-gray-900 text-xs sm:text-sm truncate">${f.name || `Question Page ${idx + 1}`}</h5>
+                                    <span class="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-0.5 block flex items-center gap-1"><i class="fa-solid fa-file-circle-question"></i> Question Paper</span>
+                                </div>
+                                <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g, "\\'")}', '${f.type}', this)" class="w-8 h-8 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-500 border border-gray-200 rounded-lg transition-colors shrink-0" title="Download">
+                                    <i class="fa-solid fa-cloud-arrow-down text-[10px] sm:text-xs"></i>
+                                </button>
+                            </div>
+                            
+                            <!-- AI Tool Buttons -->
+                            <div class="flex items-center gap-2 mt-auto pt-2 border-t border-gray-100/80">
+                                <button onclick="window.solveQuestionWithNOVA('${f.url}')" class="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2 sm:py-2.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5" title="Solve with NOVA">
+                                    <img src="https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true" class="w-3.5 h-3.5 rounded-full object-cover shadow-sm"> Nova Analysis
+                                </button>
+                                <button onclick="window.generateImageQuiz('${f.url}', '${mat.topic.replace(/'/g, "\\'")}')" class="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 py-2 sm:py-2.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5" title="Generate 20Q Quiz">
+                                    <i class="fa-solid fa-bolt text-amber-500"></i>Quiz
+                                </button>
+                            </div>
+                        </div>
+                    </div>`;
+                            } else {
+                                // 📁 NORMAL FILES (PDFs & Regular Images) - Clean and Simple List Row
+                                const fileIcon = isPdf ? 'fa-file-pdf text-red-500' : 'fa-file-image text-blue-500';
+                                const iconBg = isPdf ? 'bg-red-50' : 'bg-blue-50';
+
+                                filesHtml += `
+                    <div class="flex items-center justify-between gap-3 p-2.5 sm:p-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
+                        <div class="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onclick="${readAction}">
+                            <div class="w-10 h-10 rounded-lg ${iconBg} flex items-center justify-center shrink-0">
+                                <i class="fa-solid ${fileIcon} text-lg"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h5 class="font-bold text-gray-800 text-xs sm:text-sm truncate leading-tight">${f.name}</h5>
+                                <span class="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5 block">${isPdf ? 'PDF Document' : 'Image File'}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g, "\\'")}', '${f.type}', this)" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-gray-100 text-gray-500 border border-gray-200 rounded-lg transition-colors shadow-sm" title="Download">
+                                <i class="fa-solid fa-cloud-arrow-down text-xs"></i>
+                            </button>
+                            <button onclick="${readAction}" class="px-3 py-1.5 sm:px-4 sm:py-2 bg-gray-900 text-white hover:bg-black text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors shadow-sm">
+                                ${isPdf ? 'Read' : 'View'}
+                            </button>
+                        </div>
+                    </div>`;
+                            }
                         });
-
-                        const dl = `<button type="button" id="${btnId}" class="mh-dl" onclick="event.stopPropagation(); window.downloadMaterialFile('${f.url}', '${q(fname)}', '${f.type}', this)" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button>`;
-                        if (isQuestionSet) {
-                            rows += card({ pc, kind: 'qs', img: f.url, tag: 'Q' + (idx + 1), title: e(fname || 'Question Page ' + (idx + 1)), sub: 'Question Paper', act: readAction, cta: 'fa-book-open', ctaText: 'Read', dl,
-                                qa: `<div class="mh-qa"><button type="button" onclick="window.solveQuestionWithNOVA('${f.url}')" class="nv"><img src="https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true" alt=""> Nova Analysis</button><button type="button" onclick="window.generateImageQuiz('${f.url}', '${q(mat.topic)}')" class="qz"><i class="fa-solid fa-bolt"></i> Quiz</button></div>` });
-                        } else {
-                            rows += card({ pc, kind: isPdf ? 'pdf' : 'img', icon: isPdf ? 'fa-file-pdf' : 'fa-file-image', tag: isPdf ? 'PDF' : 'Image', title: e(fname || mat.title), sub: isPdf ? 'PDF Document' : 'Image File', act: readAction, cta: 'fa-book-open', ctaText: 'Read', dl });
-                        }
-                    });
+                    }
 
                     const dateStr = new Date(mat.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-                    html += `<div class="vx-mgrp"><div class="vx-mhead"><div style="min-width:0;flex:1"><h4>${e(mat.title)}${statusBadge}</h4><p>${e(mat.uploader || 'Faculty')} \u00b7 ${dateStr}</p></div><div class="vx-macts">${approveBtn}${editBtn}${delBtn}</div></div><div class="mh-cards">${rows}</div></div>`;
+
+                    // Container Card
+                    html += `
+        <div class="bg-white p-4 sm:p-5 rounded-[1.25rem] sm:rounded-[1.5rem] border ${mat.isApproved === false ? 'border-amber-300 shadow-md bg-amber-50/10' : 'border-gray-200 shadow-sm'} flex flex-col gap-3 relative">
+            <div class="flex justify-between items-start border-b border-gray-100 pb-3 mb-1">
+                <div class="min-w-0 pr-2 flex-1">
+                    <h4 class="font-black text-gray-900 text-sm sm:text-base leading-tight break-words">${mat.title} ${statusBadge}</h4>
+                    <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
+                        <i class="fa-regular fa-user"></i> ${mat.uploader || 'Faculty'} 
+                        <span class="text-gray-300 mx-1">|</span> 
+                        <i class="fa-regular fa-calendar"></i> ${dateStr}
+                    </p>
+                </div>
+                <!-- 🔥 Inject Buttons Here -->
+                <div class="flex items-center gap-1 shrink-0">
+                    ${approveBtn}
+                    ${editBtn}
+                    ${delBtn}
+                </div>
+            </div>
+            <div class="space-y-2.5">
+                ${filesHtml}
+            </div>
+        </div>`;
                 });
 
-                container.innerHTML = html + '</div>';
+                html += '</div>';
+                container.innerHTML = html;
             };
 
             window.tokenClient = null; window.gdriveAccessToken = null;
@@ -28868,113 +29107,80 @@ YOUR DIRECTIVES:
             // ==========================================
             // MATH WORKOUT GAME ENGINE (NATIVE KEYBOARD + PRO FEATURES)
             // ==========================================
+            window.mathState = { timer: null, timeLeft: 60, score: 0, correctAnswer: null, activeTypes: [], difficulty: 'easy', buf: '', run: false, paused: false, lock: false, dur: 60, miss: 0, streak: 0, bestStreak: 0, pad: null };
             (function () {
-                const $ = id => document.getElementById(id), R = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
-                window.getRandomInt = R;
-                const OPS = [['add', 'plus', 'Add'], ['sub', 'minus', 'Subtract'], ['mul', 'xmark', 'Multiply'], ['div', 'divide', 'Divide'], ['sqr', 'superscript', 'Square'], ['cub', 'cube', 'Cube'], ['sqrt', 'square-root-variable', 'Sq. root'], ['cbrt', 'cubes', 'Cube root'], ['perc', 'percent', 'Percent'], ['tbl', 'table-cells', 'Tables']];
-                const S = window.mathState = { timer: null, timeLeft: 60, score: 0, correctAnswer: null, activeTypes: [], difficulty: 'easy' };
-                let G = null;
-                const lvl = d => ({ easy: 0, moderate: 1, hard: 2 })[d] || 0, pr = r => R(r[0], r[1]);
-                function gen(t, d) {
-                    const i = lvl(d); let a, b, x, q;
-                    switch (t) {
-                        case 'add': a = pr([[2, 50], [15, 150], [100, 999]][i]); b = pr([[2, 50], [15, 99], [100, 999]][i]); x = a + b; q = a + ' + ' + b; break;
-                        case 'sub': a = pr([[10, 50], [50, 200], [200, 999]][i]); b = R([1, 10, 50][i], a); x = a - b; q = a + ' − ' + b; break;
-                        case 'mul': a = pr([[2, 10], [5, 20], [12, 99]][i]); b = pr([[2, 10], [2, 15], [5, 20]][i]); x = a * b; q = a + ' × ' + b; break;
-                        case 'div': b = pr([[2, 10], [3, 15], [5, 25]][i]); x = pr([[2, 10], [5, 20], [10, 50]][i]); a = b * x; q = a + ' ÷ ' + b; break;
-                        case 'sqr': a = pr([[2, 15], [10, 25], [15, 40]][i]); x = a * a; q = a + '²'; break;
-                        case 'cub': a = pr([[2, 6], [5, 12], [10, 20]][i]); x = a * a * a; q = a + '³'; break;
-                        case 'sqrt': x = pr([[2, 15], [10, 30], [20, 50]][i]); q = '√' + x * x; break;
-                        case 'cbrt': x = pr([[2, 6], [5, 12], [10, 20]][i]); q = '∛' + x * x * x; break;
-                        case 'perc': a = [10, 20, 25, 50, 75][R(0, 4)]; b = 20 * pr([[1, 10], [5, 20], [10, 40]][i]); x = b * a / 100; q = a + '% of ' + b; break;
-                        default: a = pr([[11, 19], [11, 25], [21, 40]][i]); b = pr([[2, 9], [3, 12], [6, 15]][i]); x = a * b; q = a + ' × ' + b;
+                const S = window.mathState, $ = i => document.getElementById(i), ri = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a, KEY = 'exama_mw';
+                const ld = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } }, sv = o => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { } };
+                window.getRandomInt = ri;
+                const R = (d, a) => ri.apply(0, a[d]), D = () => ({ easy: 0, moderate: 1, tough: 2 }[S.difficulty] || 0);
+                const GEN = {
+                    add: d => { const a = R(d, [[2, 50], [15, 150], [100, 999]]), b = R(d, [[2, 50], [15, 99], [100, 999]]); return [a + ' + ' + b, a + b]; },
+                    sub: d => { const a = R(d, [[10, 50], [50, 200], [200, 999]]), b = ri([1, 10, 50][d], a); return [a + ' − ' + b, a - b]; },
+                    mul: d => { const a = R(d, [[2, 10], [5, 20], [12, 99]]), b = R(d, [[2, 10], [2, 15], [5, 20]]); return [a + ' × ' + b, a * b]; },
+                    div: d => { const b = R(d, [[2, 10], [3, 15], [5, 25]]), x = R(d, [[2, 10], [5, 20], [10, 50]]); return [b * x + ' ÷ ' + b, x]; },
+                    sqr: d => { const a = R(d, [[2, 15], [10, 25], [15, 40]]); return [a + '²', a * a]; },
+                    cub: d => { const a = R(d, [[2, 6], [5, 12], [10, 20]]); return [a + '³', a * a * a]; },
+                    sqrt: d => { const x = R(d, [[2, 15], [10, 30], [20, 50]]); return ['√' + x * x, x]; },
+                    cbrt: d => { const x = R(d, [[2, 6], [5, 12], [10, 20]]); return ['∛' + x * x * x, x]; },
+                    perc: d => { const a = [10, 20, 25, 50, 75][ri(0, 4)], g = (m, n) => n ? g(n, m % n) : m, step = 100 / g(a, 100), b = step * R(d, [[2, 20], [5, 40], [10, 80]]); return [a + '% of ' + b, a * b / 100]; }
+                };
+                const fmt = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+                const paint = () => { const a = $('math-answer-input'); a.textContent = S.buf || '?'; a.classList.toggle('mw-ph', !S.buf); };
+                const best = () => (ld().best || {})[S.difficulty + '_' + S.dur] || 0;
+                const info = () => { const d = ld(); $('mw-best').textContent = S.dur ? ((d.best || {})[($('math-difficulty').value) + '_' + S.dur] || 0) : '–'; $('mw-games').textContent = d.games || 0; $('mw-acc').textContent = (d.ok || d.bad) ? Math.round(100 * d.ok / ((d.ok || 0) + (d.bad || 0))) + '%' : '–'; $('mw-bs').textContent = d.bs || 0; $('mw-st').textContent = S.dur === 0 ? '∞' : (S.dur >= 120 ? S.dur / 60 + ' min' : S.dur + 's'); };
+                const applyPad = () => { $('math-game-screen').classList.toggle('mw-nopad', !S.pad); $('mw-padsw').classList.toggle('on', !!S.pad); };
+                const stop = () => { clearInterval(S.timer); S.timer = null; S.run = false; S.paused = false; };
+                const flash = ok => { const b = $('math-feedback-bg'); b.className = 'mw-fb ' + (ok ? 'ok' : 'no'); void b.offsetWidth; b.classList.add('go'); };
+                const hud = () => { $('math-score-display').textContent = S.score; $('mw-streak-n').textContent = S.streak; $('mw-streak').classList.toggle('hot', S.streak >= 5); };
+                const tick = () => {
+                    const v = $('math-workout-view'); if (!v || v.classList.contains('hidden-view')) { stop(); return; }
+                    const t = $('math-timer-display');
+                    if (!S.dur) { S.timeLeft = Math.floor((performance.now() - S.t0) / 1000); t.textContent = fmt(S.timeLeft); return; }   /* unlimited: counts up */
+                    const rem = Math.max(0, S.end - performance.now()); S.timeLeft = Math.ceil(rem / 1000);
+                    t.textContent = S.timeLeft + 's'; t.parentNode.classList.toggle('low', S.timeLeft <= 10);
+                    $('mw-bar-i').style.transform = 'scaleX(' + (rem / (S.dur * 1000)).toFixed(3) + ')'; if (rem <= 0) window.endMathWorkout();
+                };
+                window.mathReset = () => { stop(); if (S.pad === null) { const d = ld(); S.pad = d.pad != null ? d.pad : true; } applyPad(); $('mw-pause').classList.add('hidden'); info(); };
+                window.mathSet = n => { S.dur = n; document.querySelectorAll('#mw-dur button').forEach(b => b.classList.toggle('on', +b.dataset.v === n)); info(); };
+                window.mathPadToggle = () => { S.pad = !S.pad; const d = ld(); d.pad = S.pad; sv(d); applyPad(); };
+                window.quitMathWorkout = () => { stop(); window.safeBack(); };
+                window.mathBack = () => { if (S.run && !S.paused) window.mathPause(); else window.quitMathWorkout(); };
+                window.mathPause = () => { if (!S.run || S.paused) return; S.paused = true; S.rem = S.dur ? S.end - performance.now() : performance.now() - S.t0; clearInterval(S.timer); $('mw-pause').classList.remove('hidden'); };
+                window.mathResume = () => { if (!S.run || !S.paused) return; S.paused = false; if (S.dur) S.end = performance.now() + S.rem; else S.t0 = performance.now() - S.rem; S.timer = setInterval(tick, 200); $('mw-pause').classList.add('hidden'); };
+                window.startMathWorkout = () => {
+                    S.activeTypes = Array.from(document.querySelectorAll('.math-op-cb:checked')).map(c => c.value);
+                    if (!S.activeTypes.length) return window.showCustomAlert("Notice", "Please select at least one mathematical operation to practice.", "info");
+                    S.difficulty = $('math-difficulty').value; Object.assign(S, { score: 0, miss: 0, streak: 0, bestStreak: 0, buf: '', lock: false, paused: false, run: true, timeLeft: S.dur, t0: performance.now(), end: performance.now() + S.dur * 1000 });
+                    ['math-setup-screen', 'math-result-screen'].forEach(i => $(i).classList.add('hidden')); $('math-game-screen').classList.remove('hidden'); $('mw-pause').classList.add('hidden');
+                    $('math-timer-display').textContent = S.dur ? S.dur + 's' : '0:00'; $('math-timer-display').parentNode.classList.remove('low'); $('math-game-screen').classList.toggle('mw-unl', !S.dur); $('mw-bar-i').style.transform = 'scaleX(1)'; applyPad(); hud(); paint(); window.generateNextMathQuestion();
+                    clearInterval(S.timer); S.timer = setInterval(tick, 200);
+                };
+                window.generateNextMathQuestion = () => { let q, k = 0; do { const t = S.activeTypes[ri(0, S.activeTypes.length - 1)], r = GEN[t](D()); q = r; } while (q[0] === S.q && ++k < 5); S.q = q[0]; S.correctAnswer = q[1]; S.buf = ''; $('math-question-display').textContent = q[0]; paint(); };
+                window.mathSkip = () => { if (S.run && !S.paused && !S.lock) window.generateNextMathQuestion(); };
+                const check = () => {
+                    if (+S.buf === S.correctAnswer) { S.score++; S.streak++; S.bestStreak = Math.max(S.bestStreak, S.streak); flash(true); hud(); window.generateNextMathQuestion(); }
+                    else if (S.buf.length >= String(S.correctAnswer).length) {
+                        S.miss++; S.streak = 0; S.lock = true; hud(); flash(false); if (navigator.vibrate) navigator.vibrate(40);
+                        const a = $('math-answer-input'); a.classList.add('bad'); setTimeout(() => { a.classList.remove('bad'); S.buf = ''; S.lock = false; paint(); }, 280);
                     }
-                    return { q, x };
-                }
-                const store = () => { try { return JSON.parse(localStorage.getItem('mw_stats')) || {}; } catch (e) { return {}; } };
-                const save = o => { try { localStorage.setItem('mw_stats', JSON.stringify(o)); } catch (e) { } };
-                const sel = n => { const el = document.querySelector('input[name="' + n + '"]:checked'); return el ? el.value : ''; };
-                function build() {
-                    $('mw-ops').innerHTML = OPS.map((o, i) => '<label class="mw-op"><input type="checkbox" value="' + o[0] + '"' + (i < 2 ? ' checked' : '') + '><span><i class="fa-solid fa-' + o[1] + '"></i>' + o[2] + '</span></label>').join('');
-                    $('mw-pad').innerHTML = ['7', '8', '9', '4', '5', '6', '1', '2', '3', 'S', '0', 'B'].map(k => '<button type="button" class="mw-k' + (k === 'S' || k === 'B' ? ' fn' : '') + '" data-k="' + k + '">' + (k === 'S' ? '<i class="fa-solid fa-forward"></i>' : k === 'B' ? '<i class="fa-solid fa-delete-left"></i>' : k) + '</button>').join('');
-                    $('mw-pad').addEventListener('pointerdown', e => { const k = e.target.closest('.mw-k'); if (k) { e.preventDefault(); key(k.dataset.k); } });
-                    document.querySelectorAll('input[name="mw-mode"]').forEach(r => r.addEventListener('change', modeUi));
-                    modeUi();
-                }
-                function modeUi() {
-                    const m = sel('mw-mode');
-                    $('mw-time-sec').style.display = m === 'timed' ? '' : 'none';
-                    $('mw-note').textContent = m === 'timed' ? 'Answer as many as you can before the clock runs out.' : m === 'survival' ? 'No clock. A wrong answer or skip costs a life. Three lives.' : 'No clock, no pressure. Tap Finish when you are done.';
-                }
-                window.mwPick = g => document.querySelectorAll('#mw-ops input').forEach(c => { c.checked = g === 'all' || (g === 'basic' && ['add', 'sub', 'mul', 'div'].includes(c.value)) || (g === 'pow' && ['sqr', 'cub', 'sqrt', 'cbrt'].includes(c.value)); });
-                window.mwRefresh = function () {
-                    const st = store(), t = (st.r || 0) + (st.w || 0);
-                    $('mw-st-g').textContent = st.g || 0; $('mw-st-a').textContent = t ? Math.round(st.r / t * 100) + '%' : '--'; $('mw-st-s').textContent = st.s || 0;
                 };
-                window.mwSetup = function () { $('math-result-screen').classList.add('hidden'); $('math-game-screen').classList.add('hidden'); $('math-setup-screen').classList.remove('hidden'); window.mwRefresh(); };
-                window.quitMathWorkout = function () { clearInterval(S.timer); if (G) G.over = 1; window.safeBack(); };
-                function lives() { $('mw-lives').textContent = '❤️'.repeat(Math.max(0, G.lives)) + '🖤'.repeat(Math.max(0, 3 - G.lives)); }
-                function paint() { $('math-answer-input').textContent = G.typed; $('math-score-display').textContent = G.right; $('mw-streak').textContent = G.streak; }
-                function next() { const o = gen(G.types[R(0, G.types.length - 1)], G.diff); G.q = o.q; S.correctAnswer = o.x; G.typed = ''; G.missed = 0; G.t = Date.now(); $('math-question-display').textContent = o.q; paint(); }
-                function flash(c) { const el = $('mw-qcard'); el.classList.remove('ok', 'bad'); void el.offsetWidth; el.classList.add(c); }
-                function miss() { if (!G.missed) { G.missed = 1; G.wrong++; G.miss.push({ q: G.q, a: S.correctAnswer }); } G.streak = 0; }
-                function lose() { if (G.mode === 'survival') { G.lives--; lives(); if (G.lives <= 0) { setTimeout(window.endMathWorkout, 380); return true; } } return false; }
-                function ok() { G.right++; G.streak++; G.best = Math.max(G.best, G.streak); G.times.push(Date.now() - G.t); S.score = G.right; flash('ok'); next(); }
-                function bad() { miss(); flash('bad'); if (G.mode === 'survival') { if (!lose()) setTimeout(next, 380); } else setTimeout(() => { G.typed = ''; paint(); }, 260); }
-                function key(k) {
-                    if (!G || G.over) return;
-                    if (k === 'B') G.typed = G.typed.slice(0, -1);
-                    else if (k === 'S') { miss(); if (lose()) return; next(); return; }
-                    else if (G.typed.length < 7) G.typed += k;
-                    paint();
-                    const t = String(S.correctAnswer);
-                    if (k !== 'B' && G.typed === t) ok(); else if (k !== 'B' && G.typed.length >= t.length) bad();
-                }
+                window.checkNativeMathAnswer = () => check();
+                window.mathInput = v => { if (!S.run || S.paused || S.lock || S.buf.length >= 7) return; if (S.buf === '' && v === 0 && S.correctAnswer !== 0) return; S.buf += String(v); paint(); check(); };
+                window.mathBackspace = () => { if (!S.run || S.paused || S.lock) return; S.buf = S.buf.slice(0, -1); paint(); };
+                window.mathKey = e => { const b = e.target.closest('button[data-k]'); if (!b) return; e.preventDefault(); const k = b.dataset.k; if (k === 'b') window.mathBackspace(); else if (k === 'c') { if (S.run && !S.paused && !S.lock) { S.buf = ''; paint(); } } else window.mathInput(+k); };
                 document.addEventListener('keydown', e => {
-                    if (!G || G.over || $('math-game-screen').classList.contains('hidden') || $('math-workout-view').classList.contains('hidden-view')) return;
-                    if (/^\d$/.test(e.key)) key(e.key); else if (e.key === 'Backspace') key('B'); else if (e.key === 'Enter' && G.typed) { G.typed === String(S.correctAnswer) ? ok() : bad(); }
+                    if (!S.run) return; if (e.key === 'Escape') { window.mathBack(); return; } if (S.paused || e.ctrlKey || e.metaKey || e.altKey) return;
+                    if (/^[0-9]$/.test(e.key)) { e.preventDefault(); window.mathInput(+e.key); } else if (e.key === 'Backspace') { e.preventDefault(); window.mathBackspace(); } else if (e.key === 'Enter' && S.buf) { e.preventDefault(); S.buf.length < String(S.correctAnswer).length && (S.buf = S.buf.padEnd(String(S.correctAnswer).length, 'x')); check(); }
                 });
-                function tick() {
-                    if ($('math-workout-view').classList.contains('hidden-view')) { clearInterval(S.timer); G.over = 1; return; }
-                    G.el++;
-                    if (G.mode === 'timed') {
-                        S.timeLeft = G.limit - G.el; $('math-timer-display').textContent = S.timeLeft + 's'; $('mw-bar').style.width = (S.timeLeft / G.limit * 100) + '%';
-                        $('mw-time-pill').classList.toggle('low', S.timeLeft <= 10);
-                        if (S.timeLeft <= 0) window.endMathWorkout();
-                    } else $('math-timer-display').textContent = Math.floor(G.el / 60) + ':' + String(G.el % 60).padStart(2, '0');
-                }
-                window.startMathWorkout = function () {
-                    S.activeTypes = Array.from(document.querySelectorAll('#mw-ops input:checked')).map(c => c.value);
-                    if (!S.activeTypes.length) return window.showCustomAlert('Notice', 'Please select at least one operation to practice.', 'info');
-                    S.difficulty = sel('mw-diff') || 'easy';
-                    const mode = sel('mw-mode') || 'timed', limit = +sel('mw-time') || 60;
-                    G = { mode, limit, diff: S.difficulty, types: S.activeTypes.slice(), right: 0, wrong: 0, streak: 0, best: 0, lives: 3, el: 0, miss: [], times: [], over: 0 };
-                    S.score = 0; S.timeLeft = limit;
-                    $('math-setup-screen').classList.add('hidden'); $('math-result-screen').classList.add('hidden'); $('math-game-screen').classList.remove('hidden');
-                    $('mw-lives').classList.toggle('hidden', mode !== 'survival'); $('mw-bar-wrap').style.display = mode === 'timed' ? '' : 'none';
-                    $('mw-bar').style.width = '100%'; $('mw-time-pill').classList.remove('low');
-                    $('math-timer-display').textContent = mode === 'timed' ? limit + 's' : '0:00'; if (mode === 'survival') lives();
-                    next(); clearInterval(S.timer); S.timer = setInterval(tick, 1000);
+                document.addEventListener('visibilitychange', () => { if (document.hidden) window.mathPause(); });
+                window.endMathWorkout = () => {
+                    const prev = best(), secs = S.dur || Math.max(1, Math.round((performance.now() - S.t0) / 1000)); stop(); $('math-game-screen').classList.add('hidden'); $('math-result-screen').classList.remove('hidden'); $('math-final-score').textContent = S.score;
+                    const d = ld(); d.best = d.best || {}; const nb = S.dur > 0 && S.score > prev; if (nb) d.best[S.difficulty + '_' + S.dur] = S.score;
+                    d.games = (d.games || 0) + 1; d.ok = (d.ok || 0) + S.score; d.bad = (d.bad || 0) + S.miss; d.bs = Math.max(d.bs || 0, S.bestStreak); sv(d);
+                    const att = S.score + S.miss, acc = att ? Math.round(100 * S.score / att) + '%' : '–', avg = S.score ? (secs / S.score).toFixed(1) + 's' : '–';
+                    $('math-final-sub').innerHTML = `Correct Answers in ${S.dur ? (S.dur >= 120 ? S.dur / 60 + ' min' : S.dur + 's') : fmt(secs)}${nb ? ' · <span class="mw-nb">New best!</span>' : (S.dur ? ' · Best ' + prev : '')}<span class="mw-chips"><span><b>${acc}</b>Accuracy</span><span><b>${S.bestStreak}</b>Streak</span><span><b>${avg}</b>Per answer</span></span>`;
                 };
-                window.endMathWorkout = function () {
-                    clearInterval(S.timer); if (!G || G.over) return; G.over = 1;
-                    const n = G.right + G.wrong, acc = n ? Math.round(G.right / n * 100) : 0, avg = G.times.length ? (G.times.reduce((a, b) => a + b, 0) / G.times.length / 1000).toFixed(1) + 's' : '--';
-                    const st = store(), key2 = G.mode === 'timed' ? 'timed' + G.limit : G.mode; st.b = st.b || {};
-                    const nb = G.mode !== 'practice' && G.right > 0 && G.right > (st.b[key2] || 0);
-                    if (nb) st.b[key2] = G.right;
-                    st.g = (st.g || 0) + 1; st.r = (st.r || 0) + G.right; st.w = (st.w || 0) + G.wrong; st.s = Math.max(st.s || 0, G.best); save(st);
-                    $('math-game-screen').classList.add('hidden'); $('math-result-screen').classList.remove('hidden');
-                    $('math-final-score').textContent = G.right;
-                    $('mw-res-mode').textContent = (G.mode === 'timed' ? 'Timed · ' + G.limit + 's' : G.mode === 'survival' ? '3 Lives' : 'Practice') + ' · ' + G.diff;
-                    $('mw-res-title').textContent = G.right >= 30 ? 'Math Wizard' : G.right >= 20 ? 'Sharp Mind' : G.right >= 10 ? 'Getting Faster' : 'Keep Practising';
-                    $('mw-newbest').classList.toggle('hidden', !nb);
-                    $('mw-r-acc').textContent = acc + '%'; $('mw-r-avg').textContent = avg; $('mw-r-str').textContent = G.best; $('mw-r-time').textContent = G.el >= 60 ? Math.floor(G.el / 60) + 'm ' + (G.el % 60) + 's' : G.el + 's';
-                    $('mw-miss-sec').style.display = G.miss.length ? '' : 'none';
-                    $('mw-miss').innerHTML = G.miss.slice(0, 12).map(m => '<div><span>' + m.q + '</span><b>= ' + m.a + '</b></div>').join('');
-                };
-                build(); window.mwRefresh();
             })();
-
 
             // ==========================================
             // 📥 FORCED FULL-SCREEN IMAGE DOWNLOADER
@@ -33973,501 +34179,117 @@ document.addEventListener('click',function(e){var b=e.target.closest&&e.target.c
  #exam-analysis-view>div.overflow-y-auto{padding-top:12px!important;gap:12px}
 }
 </style>
+<style id="hdr-dark-mw-loader-v2">
+/* ===== 1. no glow on Goal Planner / Weekly Targets / Syllabus Tracker headers ===== */
+#target-calc-view .tp2-hero,#weekly-targets-view .tp2-hero,#syllabus-view .tp2-hero{box-shadow:none!important}
+#target-calc-view .tp2-hero{background:linear-gradient(160deg,#4338ca,#312e81 55%,#1e1b4b)!important}
+#weekly-targets-view .tp2-hero.hx-teal{background:linear-gradient(160deg,#0f766e,#115e59 55%,#134e4a)!important}
+#syllabus-view .tp2-hero.hx-blue{background:linear-gradient(160deg,#1e40af,#1e3a8a 55%,#172554)!important}
+/* ===== 2. black gradient headers (Study Material + Lecture Hub) with a collapsing info card ===== */
+.dk-hdr{display:flex!important;flex-direction:column;align-items:stretch;gap:0;position:relative;z-index:10;flex:none;color:#fff;background:linear-gradient(165deg,#2e2e33,#17171b 50%,#050506)!important;border:0!important;box-shadow:0 10px 24px -16px rgba(0,0,0,.5)!important;padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));padding-bottom:16px!important}
+.dk-row{display:flex;align-items:center;gap:12px;min-width:0}
+.dk-btn{width:40px;height:40px;border-radius:13px;flex:none;align-items:center;justify-content:center;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.16);color:#fff;transition:transform .15s}
+.dk-btn:not(.hidden){display:inline-flex}.dk-btn.hidden{display:none!important}.dk-btn:active{transform:scale(.9)}
+.dk-hdr h2{margin:0;font-size:1.2rem;font-weight:900;line-height:1.15;color:#fff;overflow-wrap:anywhere}
+.dk-hdr p.dk-sub{margin:3px 0 0;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#a1a1aa}
+.dk-fold{display:grid;grid-template-rows:1fr;margin-top:14px;transition:grid-template-rows .42s cubic-bezier(.32,.72,0,1),margin-top .42s cubic-bezier(.32,.72,0,1),opacity .3s}
+.dk-fold-in{min-height:0;overflow:hidden}.dk-wrap{max-width:1040px;margin:0 auto}
+.dk-hdr.dk-folded .dk-fold{grid-template-rows:0fr;margin-top:0;opacity:0}
+.dk-info{display:flex;align-items:center;gap:14px;padding:12px 14px 12px 12px;border-radius:22px;background:linear-gradient(135deg,rgba(255,255,255,.13),rgba(255,255,255,.04));border:1px solid rgba(255,255,255,.12)}
+.dk-ring{position:relative;width:66px;height:66px;flex:none}.dk-ring svg{display:block;width:100%;height:100%;transform:rotate(-90deg)}
+.dk-ring circle{fill:none;stroke:rgba(255,255,255,.14)}.dk-ring circle.v{stroke:#5eead4;stroke-linecap:round;transition:stroke-dashoffset .8s cubic-bezier(.3,.8,.3,1)}
+.dk-ring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:900;font-variant-numeric:tabular-nums}
+.dk-ic{width:54px;height:54px;border-radius:18px;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px;background:rgba(255,255,255,.12)}
+.dk-meta{min-width:0;flex:1}.dk-meta span{display:block;font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#a1a1aa}
+.dk-meta strong{display:block;font-size:16px;font-weight:900;line-height:1.2;margin-top:4px;overflow-wrap:anywhere}
+.dk-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.dk-stats>div{background:rgba(255,255,255,.08);border-radius:14px;padding:8px 4px;text-align:center}
+.dk-stats b{display:block;font-size:16px;font-weight:900;line-height:1.1}.dk-stats small{display:block;font-size:8.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#a1a1aa;margin-top:3px}
+.dk-stats>div:nth-child(2) b{color:#5eead4}.dk-stats>div:nth-child(3) b{color:#fde68a}
+@media (min-width:768px){.dk-hdr{padding-left:28px;padding-right:28px}}
+@media (min-width:900px){.dk-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch}.dk-stats{margin-top:0}.dk-stats>div{display:flex;flex-direction:column;justify-content:center}}
+@media (orientation:landscape) and (max-height:520px){.dk-ring{width:48px;height:48px}.dk-ring b{font-size:13px}.dk-info{padding:8px 12px}.dk-stats{margin-top:6px}.dk-stats>div{padding:5px 4px}.dk-fold{margin-top:8px}}
+@media (prefers-reduced-motion:reduce){.dk-fold{transition:none}}
+/* ===== 3. Math Workout ===== */
+#math-workout-view{background:#fff7ed!important}
+.mw-hdr{background:linear-gradient(135deg,#fb923c,#f97316 50%,#ea580c)!important;color:#fff;border:0!important;box-shadow:0 8px 20px -14px rgba(0,0,0,.4)!important;padding-left:max(16px,env(safe-area-inset-left))!important;padding-right:max(16px,env(safe-area-inset-right))!important}
+.mw-hdr h2{color:#fff!important}.mw-hdr p{color:#ffedd5!important}.mw-hdr button{background:rgba(255,255,255,.2)!important;border-color:rgba(255,255,255,.32)!important;color:#fff!important}
+#math-setup-screen{width:100%;max-width:1000px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+.mw-box>*+*{margin-top:12px}.mw-seg{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.mw-row.mw-padrow{display:none}html.is-tablet.is-landscape .mw-row.mw-padrow{display:flex}
+.mw-seg button{padding:12px 4px;border-radius:14px;background:#fff;border:2px solid #f1f5f9;font-weight:900;font-size:12px;color:#94a3b8;transition:.15s}.mw-seg button.on{background:#fff7ed;border-color:#f97316;color:#ea580c}
+.mw-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:16px;background:#fff;border:1px solid #f1f5f9;font-size:12px;font-weight:800;color:#475569}.mw-row i{color:#f97316;margin-right:6px}
+.mw-sw{position:relative;width:46px;height:26px;border-radius:99px;background:#cbd5e1;flex:none;transition:background .2s}.mw-sw i{position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;margin:0;transition:transform .2s}.mw-sw.on{background:#f97316}.mw-sw.on i{transform:translateX(20px)}
+.mw-stats{font-size:11px;font-weight:700;color:#94a3b8;text-align:center}.mw-stats b{color:#ea580c;font-weight:900}.mw-stats em{font-style:normal;margin:0 6px;opacity:.5}
+@media (min-width:820px),(orientation:landscape) and (min-width:640px){#math-setup-screen:not(.hidden){display:grid;grid-template-columns:1.25fr 1fr;column-gap:24px;align-content:start}#math-setup-screen>*{margin-top:0!important}#math-setup-screen>div:first-child{grid-row:1/span 4}#math-setup-screen{row-gap:20px}}
+.mw-game:not(.hidden){display:grid;grid-template-rows:auto 1fr auto;flex:1;min-height:0;position:relative;overflow:hidden;background:#fff7ed;padding-bottom:env(safe-area-inset-bottom)}
+.mw-fb{position:absolute;inset:0;opacity:0;pointer-events:none}.mw-fb.ok{background:#10b981}.mw-fb.no{background:#ef4444}.mw-fb.go{animation:mwFb .35s ease-out}@keyframes mwFb{0%{opacity:.28}100%{opacity:0}}
+.mw-hud{position:relative;z-index:2;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px max(14px,env(safe-area-inset-right)) 8px max(14px,env(safe-area-inset-left))}
+.mw-pill{display:flex;align-items:center;gap:7px;padding:7px 14px;border-radius:99px;background:#fff;border:1px solid #fed7aa;font:900 15px ui-monospace,monospace;color:#ea580c}
+.mw-pill.t.low{color:#dc2626;background:#fef2f2;border-color:#fecaca;animation:mwPulse 1s infinite}.mw-pill.s{color:#059669;border-color:#a7f3d0}.mw-pill.k{color:#cbd5e1;border-color:#e2e8f0;margin-right:auto}.mw-pill.k.hot{color:#f97316;border-color:#fdba74;background:#fff7ed}
+@keyframes mwPulse{50%{opacity:.6}}
+.mw-pbtn{width:38px;height:38px;border-radius:50%;background:#fff;border:1px solid #fed7aa;color:#ea580c}
+.mw-bar{flex-basis:100%;height:6px;border-radius:9px;background:#fed7aa;overflow:hidden}.mw-bar i{display:block;height:100%;background:linear-gradient(90deg,#f97316,#ef4444);transform-origin:0 50%;transition:transform .25s linear}
+.mw-arena{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(8px,2.2vh,22px);min-height:0;padding:8px 16px}
+.mw-arena h1{margin:0;width:100%;text-align:center;font-size:clamp(2.6rem,min(14vw,15vh),6.5rem);font-weight:900;line-height:1;color:#1f2937;letter-spacing:-.03em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.mw-ans{min-width:min(280px,80%);min-height:1.3em;padding:.1em .6em;border-radius:1.2rem;border:2px solid #fed7aa;background:#fff;color:#ea580c;text-align:center;font-size:clamp(2rem,min(10vw,10vh),4rem);font-weight:900;font-variant-numeric:tabular-nums;transition:border-color .15s}
+.mw-ans.mw-ph{color:#cbd5e1}.mw-ans.bad{border-color:#ef4444;color:#dc2626;background:#fef2f2;animation:mwShake .28s}@keyframes mwShake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.mw-skip{padding:9px 22px;border-radius:99px;background:#fff;border:1px solid #fed7aa;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#94a3b8}.mw-skip:active{transform:scale(.95)}
+.mw-pad{position:relative;z-index:2;display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(6px,1.6vh,12px);width:100%;max-width:460px;margin:0 auto;padding:10px max(14px,env(safe-area-inset-right)) 14px max(14px,env(safe-area-inset-left));background:rgba(255,237,213,.6);border-top:1px solid #fed7aa;border-radius:1.6rem 1.6rem 0 0}
+.mw-pad button{min-height:clamp(46px,8.4vh,80px);border-radius:1rem;background:#fff;border-bottom:3px solid #fed7aa;font-size:clamp(1.3rem,3.4vh,2rem);font-weight:900;color:#334155;touch-action:manipulation;-webkit-user-select:none;user-select:none}.mw-pad button.x{background:#ffedd5;color:#ea580c}.mw-pad button:active{transform:translateY(2px);border-bottom-width:1px;background:#ffedd5}
+html.is-tablet.is-landscape .mw-game.mw-nopad .mw-pad{display:none}.mw-fin{display:none}.mw-unl .mw-fin{display:block}.mw-unl .mw-bar{display:none}
+@media (orientation:landscape) and (min-width:600px){.mw-game:not(.hidden){grid-template-columns:1fr minmax(260px,44%);grid-template-rows:auto 1fr}.mw-hud{grid-column:1/-1}.mw-arena{grid-column:1;grid-row:2}.mw-pad{grid-column:2;grid-row:2;align-self:center;border:0;border-radius:1.4rem;background:transparent;max-width:none}html.is-tablet.is-landscape .mw-game.mw-nopad:not(.hidden){grid-template-columns:1fr}}
+.mw-pause{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(255,247,237,.92)}.mw-pause.hidden{display:none}
+.mw-pause>div{display:flex;flex-direction:column;gap:12px;align-items:center;min-width:220px}.mw-pause i{font-size:34px;color:#f97316}.mw-pause h3{margin:0;font-size:22px;font-weight:900;color:#1f2937}
+.mw-pause button{width:100%;padding:13px;border-radius:14px;background:#fff;border:1px solid #fed7aa;font-weight:900;font-size:13px;color:#64748b}.mw-pause button.go{background:linear-gradient(135deg,#f97316,#ef4444);color:#fff;border:0}
+.mw-nb{color:#059669;font-weight:900}.mw-chips{display:flex;justify-content:center;gap:8px;margin-top:12px}.mw-chips span{flex:1;padding:8px 4px;border-radius:12px;background:#fff;border:1px solid #f1f5f9;font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8}.mw-chips b{display:block;font-size:16px;color:#4f46e5;letter-spacing:0;margin-bottom:2px}
+#math-result-screen{overflow-y:auto}
+/* ===== 4. loader: new SHOW animation (entrance only: the exit is unchanged) ===== */
+@keyframes glPop2{0%{opacity:0;transform:translate3d(0,30px,0) scale(.7)}46%{opacity:1;transform:translate3d(0,-7px,0) scale(1.07)}70%{transform:translate3d(0,2px,0) scale(.985)}86%{transform:translate3d(0,-1px,0) scale(1.008)}100%{opacity:1;transform:none}}
+#global-loader .gl-logo{animation:glPop2 calc(1.15s*var(--k)) cubic-bezier(.22,1,.36,1) calc(.04s*var(--k)) forwards}
+#global-loader .gl-sweep{animation-delay:calc(.55s*var(--k))}
+@keyframes glInQ{from{opacity:0}to{opacity:1}}@keyframes glWrapIn{from{transform:scale(.93)}to{transform:none}}
+#global-loader.gl-quick{animation:glInQ .26s cubic-bezier(.2,.8,.2,1) both}
+#global-loader.gl-quick:not(.gl-out) #loader-content-wrapper{animation:glWrapIn .45s cubic-bezier(.16,1,.3,1) both}
+@keyframes glChIn2{0%{opacity:0;transform:translate3d(0,14px,0) scale(.8)}60%{opacity:1;transform:translate3d(0,-2px,0) scale(1.05)}100%{opacity:1;transform:none}}
+@media (prefers-reduced-motion:no-preference){#loader-text .gl-c{animation:glChIn2 .62s cubic-bezier(.16,1,.3,1) calc(var(--d0,0s) + var(--i,0)*24ms) backwards,glChWave 2.6s ease-in-out calc(var(--d0,0s) + .6s + var(--i,0)*85ms) infinite}}
 
-<style id="hub-progress-responsive-v1">
-/* ===== Lecture Hub progress bar (redesigned) ===== */
-@keyframes vxShine { 0% { transform:translateX(-100%); } 60%,100% { transform:translateX(100%); } }
-#video-hub-view .vx-prog { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"label pct" "bar bar"; align-items:center; gap:8px 12px; padding:12px 14px; border-radius:18px;
-  background:linear-gradient(135deg,#eef2ff,#f5f3ff 60%,#ecfeff); border:1px solid #e0e7ff; box-shadow:inset 0 1px 0 #fff; }
-#video-hub-view .vx-prog > span { grid-area:label; min-width:0; font-size:.78rem; font-weight:800; color:#334155; }
-#video-hub-view .vx-prog > span:only-child { grid-column:1 / -1; }
-#video-hub-view .vx-prog > b { grid-area:pct; min-width:48px; text-align:center; padding:3px 10px; border-radius:999px; background:#4f46e5; color:#fff !important; font-size:.75rem; font-weight:800; }
-#video-hub-view .vx-prog .vx-bar { grid-area:bar; height:10px !important; margin:0 !important; border-radius:999px; background:#fff !important; box-shadow:inset 0 1px 3px rgba(15,23,42,.14); overflow:hidden; }
-.vx-bar:not(.ok) i { background:linear-gradient(90deg,#6366f1,#8b5cf6 55%,#38bdf8) !important; border-radius:999px; position:relative; overflow:hidden; transition:width .7s cubic-bezier(.32,.72,0,1); }
-.vx-bar:not(.ok) i::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent); animation:vxShine 2.6s ease-in-out infinite; }
-@media (min-width:640px) { #video-hub-view .vx-prog { grid-template-columns:auto minmax(0,1fr) auto; grid-template-areas:"label bar pct"; gap:14px; } }
-/* ===== Responsive: Lecture Hub ===== */
-#video-hub-view .vx-hdr { padding-left:max(16px,env(safe-area-inset-left,0px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px)) !important; }
-@media (min-width:768px) { #video-hub-view .vx-hdr { padding-left:max(28px,env(safe-area-inset-left,0px)) !important; padding-right:max(28px,env(safe-area-inset-right,0px)) !important; } }
-@media (orientation:landscape) and (max-height:520px) { #video-hub-view .vx-hdr { padding-top:max(.6rem,env(safe-area-inset-top,0px)) !important; padding-bottom:10px !important; gap:8px !important; } }
-#video-hub-view .vx-wrap { padding-left:max(12px,env(safe-area-inset-left,0px)); padding-right:max(12px,env(safe-area-inset-right,0px)); }
-@media (min-width:1100px) { .vx-wrap { max-width:1180px; } .vx-grid { grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); } }
-@media (min-width:900px) { .vx-list:not(:has(.vx-lec.adm)) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; } }
-@media (max-width:380px) { .vx-lec:not(.adm) { grid-template-columns:1fr; } .vx-lec:not(.adm) .vx-th { width:100%; } .vx-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .vx-card { padding:12px; } }
-@media (max-width:480px) { .vx-hero { padding:14px; gap:12px; } .vx-ring { width:54px; height:54px; } .vx-ring b { width:42px; height:42px; font-size:.72rem; } }
-/* ===== Responsive: Material Hub ===== */
-#materials-view > div:first-child { padding-left:max(16px,env(safe-area-inset-left,0px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px)) !important; }
-#materials-view > div:nth-child(2) { width:100% !important; max-width:1100px; margin-left:auto; margin-right:auto; }
-#mh-dynamic-container { padding-left:max(14px,env(safe-area-inset-left,0px)); padding-right:max(14px,env(safe-area-inset-right,0px)); }
-#mh-dynamic-container .grid.grid-cols-2 { grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr)) !important; }
-@media (min-width:900px) {
-  #mh-dynamic-container .grid.grid-cols-2 { grid-template-columns:repeat(auto-fill,minmax(190px,1fr)) !important; }
-  #mh-dynamic-container > .space-y-4 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; }
-  #mh-dynamic-container > .space-y-4 > * { margin:0 !important; }
-}
-@media (max-width:360px) { #mh-dynamic-container [onclick^="window.openMH"] { padding:12px !important; } #mh-dynamic-container .grid.grid-cols-2 { grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:10px !important; } }
-@media (orientation:landscape) and (max-height:520px) { #materials-view > div:first-child { padding-bottom:8px !important; } }
-/* student dashboard tiles: softer spring on press */
-#student-view .sd-tiles .glass-card { transition:transform .32s cubic-bezier(.32,.72,0,1), box-shadow .3s ease, border-color .3s ease !important; will-change:transform; }
-@media (prefers-reduced-motion:reduce) { .vx-bar i::after { animation:none !important; } }
-</style>
-<style id="hub-headers-v1">
-/* ===== Gradient headers (Goal Planner style), one colour per feature = its dashboard icon colour ===== */
-#materials-view    { --h1:#10b981; --h2:#0f766e; --h3:#064e3b; --hl:#a7f3d0; --hs:rgba(6,78,59,.6); }     /* Material Hub: emerald / teal */
-#video-hub-view    { --h1:#ef4444; --h2:#be123c; --h3:#4c0519; --hl:#fecdd3; --hs:rgba(136,19,55,.6); }   /* Lecture Hub: red / rose */
-#math-workout-view { --h1:#fb923c; --h2:#ea580c; --h3:#7c2d12; --hl:#fed7aa; --hs:rgba(124,45,18,.6); }   /* Math Workout: orange */
-#materials-view > div:first-child, #video-hub-view > .vx-hdr, #math-workout-view > div:first-child {
-  background:radial-gradient(circle at 85% 0,var(--h1) 0,var(--h2) 55%,var(--h3)) !important; color:#fff !important; border:0 !important;
-  border-radius:0 0 26px 26px !important; box-shadow:0 14px 30px -10px var(--hs) !important; padding-bottom:18px !important; position:relative; z-index:20 !important; }
-@media (orientation:landscape) and (max-height:520px) { #materials-view > div:first-child, #video-hub-view > .vx-hdr, #math-workout-view > div:first-child { padding-bottom:12px !important; border-radius:0 0 20px 20px !important; } }
-#mh-header-title, #video-hub-view .vx-hdr h2, #math-workout-view > div:first-child h2 { color:#fff !important; font-size:20px !important; font-weight:900 !important; line-height:1.1 !important; letter-spacing:0 !important; }
-#mh-header-subtitle, #video-hub-view .vx-hdr p, #math-workout-view > div:first-child p { color:var(--hl) !important; font-size:10px !important; font-weight:700 !important; letter-spacing:.14em !important; text-transform:uppercase; margin-top:3px !important; }
-#materials-view > div:first-child button, #video-hub-view .vx-hdr .vx-iconbtn, #math-workout-view > div:first-child button {
-  width:38px !important; height:38px !important; border-radius:13px !important; background:rgba(255,255,255,.16) !important; border:0 !important; color:#fff !important; box-shadow:none !important; display:flex; align-items:center; justify-content:center; }
-#materials-view > div:first-child button:active, #video-hub-view .vx-hdr .vx-iconbtn:active, #math-workout-view > div:first-child button:active { transform:scale(.9); }
-#btn-upload-material, #video-hub-view .vx-iconbtn.pri { background:rgba(255,255,255,.26) !important; }
-#materials-view > div:first-child button.hidden, #video-hub-view .vx-iconbtn.hidden { display:none !important; }
-@media (min-width:1024px) { #mh-header-title, #video-hub-view .vx-hdr h2, #math-workout-view > div:first-child h2 { font-size:26px !important; } }
-/* matching accents inside the screens */
-#video-hub-view .vx-prog { background:color-mix(in srgb,var(--h1) 8%,#fff) !important; border-color:color-mix(in srgb,var(--h1) 20%,#fff) !important; }
-#video-hub-view .vx-prog > b { background:var(--h2) !important; }
-#video-hub-view .vx-bar:not(.ok) i { background:linear-gradient(90deg,var(--h1),var(--h2)) !important; }
-#video-hub-view .vx-hero { background:radial-gradient(circle at 85% 0,var(--h1) 0,var(--h2) 55%,var(--h3)) !important; }
-#video-hub-view .vx-ring b { background:var(--h3) !important; }
-#video-hub-view .vx-card:hover { border-color:color-mix(in srgb,var(--h1) 45%,#fff) !important; box-shadow:0 14px 30px -16px color-mix(in srgb,var(--h2) 55%,transparent) !important; }
-#mh-dynamic-container [onclick^="window.openMHTopic"] > div > div:first-child { background:color-mix(in srgb,var(--h1) 14%,#fff) !important; }
-#mh-dynamic-container [onclick^="window.openMHTopic"] i { color:var(--h2) !important; }
-#mh-dynamic-container [onclick^="window.openMHTopic"] span { background:color-mix(in srgb,var(--h1) 14%,#fff) !important; color:var(--h2) !important; }
-#mh-dynamic-container [onclick^="window.openMH"]:hover { border-color:color-mix(in srgb,var(--h1) 45%,#fff) !important; }
-#mh-dynamic-container button.bg-indigo-600 { background:linear-gradient(135deg,var(--h1),var(--h2)) !important; }
-#mh-dynamic-container .bg-indigo-100 { background:color-mix(in srgb,var(--h1) 16%,#fff) !important; } #mh-dynamic-container .bg-indigo-100 i { color:var(--h2) !important; }
-</style>
-<style id="hub-progress-weekly-v1">
-/* Lecture Hub progress: same card as Weekly Targets (ring + Total/Done/Left + white bar) inside the gradient header */
-#video-hub-view .vx-prog { display:block !important; padding:0 !important; background:none !important; border:0 !important; box-shadow:none !important; }
-#video-hub-view .vx-prog > span:only-child { display:block; color:rgba(255,255,255,.92); font-size:.78rem; font-weight:800; letter-spacing:.04em; }
-#video-hub-view .tp2-score { margin-top:2px; color:#fff; }
-#video-hub-view .tp2-sring circle:first-child { stroke:rgba(255,255,255,.2); }
-#video-hub-view .tp2-sring circle:last-child { stroke:#fecdd3; }
-#video-hub-view .tp2-sinfo span.hx-lab { color:#fecdd3; }
-#video-hub-view .tp2-sinfo .hx-stats3 span { color:#fecdd3; }
-</style>
-<style id="hub-sheet-v1">
-/* ===== rounded white sheet curving up over every rounded gradient header; Lecture Hub progress: white text + auto-hide ===== */
-:root { --hub-sheet:26px; }
-#materials-view > div:first-child, #video-hub-view > .vx-hdr, #math-workout-view > div:first-child, #target-calc-view > .tp2-hero { border-radius:0 !important; box-shadow:none !important; padding-bottom:calc(18px + var(--hub-sheet)) !important; z-index:10 !important; }
-#materials-view > div:nth-child(2), #video-hub-view > .vx-scroll, #math-workout-view > div:not(:first-child), #target-calc-view > .tp2-hero + div { position:relative; z-index:20; margin-top:calc(-1 * var(--hub-sheet)) !important; border-radius:var(--hub-sheet) var(--hub-sheet) 0 0 !important; box-shadow:0 -10px 24px -14px var(--hs, rgba(30,27,75,.45)); }
-#materials-view > div:nth-child(2) { max-width:none !important; margin-left:0 !important; margin-right:0 !important; background-color:#f6f8fc !important; }
-#mh-dynamic-container { max-width:1100px; margin-left:auto; margin-right:auto; padding-top:20px; }
-#video-hub-view > .vx-scroll { background-color:#f5f6fb; } #target-calc-view > .tp2-hero + div { background-color:#f4f6fb; } #vh-dynamic-container { padding-top:18px; }
-#math-workout-view > div:not(:first-child) { background-color:#f9fafb; }
-@media (orientation:landscape) and (max-height:520px) { #materials-view > div:first-child, #video-hub-view > .vx-hdr, #math-workout-view > div:first-child, #target-calc-view > .tp2-hero { padding-bottom:calc(12px + var(--hub-sheet)) !important; } }
-@media (max-width:1000px) {   /* Weekly Targets + Syllabus content column is centred and narrower on big screens, so the sheet is applied up to 1000px */
-  #weekly-targets-view > .tp2-hero, #syllabus-view > .tp2-hero { border-radius:0 !important; box-shadow:none !important; padding-bottom:calc(18px + var(--hub-sheet)) !important; z-index:10 !important; }
-  #weekly-targets-view > div:nth-child(2), #syllabus-view > div:nth-child(2) { position:relative; z-index:20; margin-top:calc(-1 * var(--hub-sheet)) !important; padding-top:22px !important; border-radius:var(--hub-sheet) var(--hub-sheet) 0 0 !important; background-color:#f8fafc; box-shadow:0 -10px 24px -14px rgba(30,27,75,.4); }
-}
-/* Lecture Hub progress card: all white text */
-#video-hub-view .tp2-sring circle:last-child { stroke:#fff; }
-#video-hub-view .tp2-sinfo span.hx-lab, #video-hub-view .tp2-sinfo strong, #video-hub-view .tp2-sinfo .hx-stats3 span, #video-hub-view .hx-stats3 > div b, #video-hub-view .tp2-sring b, #video-hub-view .vx-prog > span:only-child { color:#fff !important; }
-/* auto-hide on scroll down (JS toggles .vx-prog-off on the header) */
-#video-hub-view #vh-prog { max-height:260px; overflow:hidden; transition:max-height .5s cubic-bezier(.32,.72,0,1), opacity .35s ease, margin .5s cubic-bezier(.32,.72,0,1); }
-#video-hub-view .vx-hdr.vx-prog-off #vh-prog { max-height:0; opacity:0; margin-top:-12px; }
-@media (prefers-reduced-motion:reduce) { #video-hub-view #vh-prog { transition:none; } }
-</style>
-<style id="hub-round-v2">
-/* Material Hub + Lecture Hub: the header itself is rounded at the bottom (same 26px curve + shadow as Goal Planner / Discuss). Replaces the square header + overlapping sheet. */
-:root { --hub-r:26px; }
-#materials-view { background:#f6f8fc !important; }
-#video-hub-view { background:#f5f6fb !important; }
-#materials-view > div:first-child, #video-hub-view > .vx-hdr {
-  border-radius:0 0 var(--hub-r) var(--hub-r) !important; box-shadow:0 14px 30px -10px var(--hs) !important;
-  padding-bottom:18px !important; position:relative; z-index:30 !important; }
-#materials-view > div:nth-child(2), #video-hub-view > .vx-scroll { margin-top:0 !important; border-radius:0 !important; box-shadow:none !important; z-index:1 !important; }
-/* header content lines up with the content column on tablets and desktops */
-#materials-view > div:first-child { padding-left:max(16px,env(safe-area-inset-left,0px),calc((100% - 1100px)/2 + 16px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px),calc((100% - 1100px)/2 + 16px)) !important; }
-#video-hub-view > .vx-hdr { padding-left:max(16px,env(safe-area-inset-left,0px),calc((100% - 1040px)/2 + 16px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px),calc((100% - 1040px)/2 + 16px)) !important; }
-@media (min-width:1100px) { #video-hub-view > .vx-hdr { padding-left:max(16px,env(safe-area-inset-left,0px),calc((100% - 1180px)/2 + 16px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px),calc((100% - 1180px)/2 + 16px)) !important; } }
-/* sizes */
-#materials-view > div:first-child > div:first-child, #video-hub-view .vx-hrow { gap:12px; min-width:0; }
-#mh-header-title, #video-hub-view .vx-hdr h2 { overflow-wrap:anywhere; }
-@media (min-width:768px) { #mh-header-title, #video-hub-view .vx-hdr h2 { font-size:23px !important; } #materials-view > div:first-child { padding-bottom:22px !important; } #video-hub-view > .vx-hdr { padding-bottom:22px !important; } }
-@media (min-width:1024px) { #mh-header-title, #video-hub-view .vx-hdr h2 { font-size:26px !important; } }
-@media (max-width:360px) {
-  :root { --hub-r:22px; }
-  #mh-header-title, #video-hub-view .vx-hdr h2 { font-size:18px !important; }
-  #materials-view > div:first-child button, #video-hub-view .vx-hdr .vx-iconbtn { width:34px !important; height:34px !important; border-radius:11px !important; }
-  #materials-view > div:first-child, #video-hub-view > .vx-hdr { padding-left:max(12px,env(safe-area-inset-left,0px)) !important; padding-right:max(12px,env(safe-area-inset-right,0px)) !important; }
-}
-@media (orientation:landscape) and (max-height:520px) {
-  :root { --hub-r:20px; }
-  #materials-view > div:first-child, #video-hub-view > .vx-hdr { padding-bottom:12px !important; }
-}
-</style>
-<style id="mh-rows-v1">
-/* Material Hub rows = Lecture Hub rows (.vx-card grid for subjects/chapters, .vx-lec rows for files) */
-#mh-dynamic-container .vx-ic i { color:inherit !important; }
-#mh-dynamic-container .vx-card .vx-meta { background:none !important; color:var(--vx-mut) !important; padding:0 !important; }
-#mh-dynamic-container .vx-card > span.bg-amber-500 { background:#f59e0b !important; color:#fff !important; }
-#materials-view .vx-card:hover { border-color:color-mix(in srgb,var(--h1) 45%,#fff); box-shadow:0 14px 30px -16px color-mix(in srgb,var(--h2) 55%,transparent); }
-.vx-mgrp { display:flex; flex-direction:column; gap:10px; min-width:0; }
-.vx-mhead { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:2px 4px 0; }
-.vx-mhead h4 { font-size:.9rem; font-weight:800; color:var(--vx-ink); line-height:1.3; margin:0; word-break:break-word; }
-.vx-mhead p { font-size:.7rem; color:var(--vx-mut); font-weight:600; margin:2px 0 0; }
-.vx-macts { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:2px; flex-shrink:0; }
-.vx-lec.mh { grid-template-columns:auto minmax(0,1fr) auto !important; }
-.vx-lec.mh.pend { border-color:#fcd34d; background:#fffbeb; }
-.vx-lec.mh .vx-body h4 { -webkit-line-clamp:2; }
-.vx-th.mhf { display:grid; place-items:center; font-size:1.7rem; }
-.vx-th.mhf.pdf { background:#fef2f2; color:#dc2626; }
-.vx-th.mhf.img { background:#eff6ff; color:#2563eb; }
-.vx-th.mhf .n { background:rgba(15,23,42,.7); }
-.vx-acts button.bg-emerald-50 { background:#ecfdf5; color:#059669; }
-.vx-qa { grid-column:1 / -1; display:flex; gap:8px; padding-top:8px; border-top:1px solid var(--vx-line); }
-.vx-qa button { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 8px; border:0; border-radius:10px; font-size:.7rem; font-weight:800; }
-.vx-qa .nv { background:#eef2ff; color:#4338ca; } .vx-qa .nv img { width:16px; height:16px; border-radius:50%; object-fit:cover; }
-.vx-qa .qz { background:#fffbeb; color:#b45309; }
-@media (max-width:380px) { .vx-lec.mh .vx-th { width:92px; } }
-</style>
-<style id="hub-tablet-v1">
-/* Lecture Hub button: same gradient as the Lecture Hub header */
-.lh-btn { background-image:radial-gradient(circle at 85% 0,#ef4444 0,#be123c 55%,#4c0519) !important; box-shadow:0 8px 16px -6px rgba(136,19,55,.6) !important; }
-/* Tablet (landscape + portrait): lectures and files sit in 2 columns, like Lecture Hub on a wide screen */
-html.is-tablet .vx-list { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:12px !important; align-items:start; }
-html.is-tablet .vx-th { width:132px; }
-html.is-tablet.is-landscape .vx-th { width:164px; }
-html.is-tablet.is-portrait .vx-lec.adm .vx-th { width:112px; }
-html.is-tablet .vx-lec { padding:10px; gap:12px; }
-html.is-tablet .vx-body h4 { font-size:.92rem; }
-html.is-tablet .vx-mhead h4 { font-size:.95rem; }
-@media (min-width:768px) and (max-width:1400px) and (hover:none) and (pointer:coarse) {
-  .vx-list { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:12px !important; align-items:start; }
-}
-</style>
-<style id="loader-text-v2">
-/* Loader status text: letters spring in one by one, a rainbow wave (the 4 logo-dot colours) travels through them, then three dots bounce */
-#loader-text { font-size:13px; letter-spacing:.09em; }
-@media (min-width:640px) { #loader-text { font-size:15px; } }
-#loader-text.gl-chars.gl-live::after { content:none !important; }
-#loader-text .gl-c { animation:glChIn2 .6s cubic-bezier(.34,1.56,.64,1) calc(var(--d0,0s) + var(--i,0) * 24ms) backwards, glChWave2 3s ease-in-out calc(var(--d0,0s) + .7s + var(--i,0) * 80ms) infinite; }
-@keyframes glChIn2 { from { opacity:0; transform:translate3d(0,14px,0) scale(.7); } to { opacity:1; transform:none; } }
-@keyframes glChWave2 {
-  0%, 60%, 100% { color:#475569; transform:none; }
-  10% { color:#6366f1; transform:translate3d(0,-3px,0) scale(1.1); }
-  22% { color:#06b6d4; transform:translate3d(0,-1px,0) scale(1.04); }
-  34% { color:#f59e0b; transform:none; }
-  46% { color:#f43f5e; transform:none; }
-}
-#loader-text .gl-dots { display:inline-flex; align-items:flex-end; gap:4px; margin-left:7px; height:1em; vertical-align:baseline; opacity:0; animation:glDotsIn .4s ease calc(var(--d0,0s) + .45s) forwards; }
-#loader-text .gl-dots i { display:block; width:5px; height:5px; border-radius:50%; background:#6366f1; animation:glDotB 1.15s ease-in-out infinite; }
-#loader-text .gl-dots i:nth-child(2) { background:#06b6d4; animation-delay:.15s; }
-#loader-text .gl-dots i:nth-child(3) { background:#f43f5e; animation-delay:.3s; }
-@keyframes glDotsIn { to { opacity:1; } }
-@keyframes glDotB { 0%, 60%, 100% { transform:translate3d(0,0,0) scale(.8); opacity:.5; } 30% { transform:translate3d(0,-6px,0) scale(1.15); opacity:1; } }
-#global-loader.gl-out #loader-text .gl-dots i { animation-play-state:paused; }
-@media (prefers-reduced-motion:reduce) { #loader-text .gl-c, #loader-text .gl-dots i { animation:none; } #loader-text .gl-dots { animation:none; opacity:1; } }
-</style>
-<style id="mh-grid-v2">
-/* Material Hub files flow in the same multi-column grid as Lecture Hub rows. The per-material wrapper dissolves, so every file row is a grid item; the material title line spans the full width. */
-.vx-list > .vx-mgrp { display:contents !important; }
-.vx-list > .vx-mgrp > .vx-mhead { grid-column:1 / -1; padding-top:8px; }
-.vx-list > .vx-mgrp:first-child > .vx-mhead { padding-top:0; }
-/* 2 columns from 700px wide (phones stay 1 column); tablets are handled by the html.is-tablet rule above */
-@media (min-width:700px) { .vx-list:not(:has(.vx-lec.adm)) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; } }
-</style>
-<style id="hub-folder-grid-responsive">
-/* ===== Lecture Hub + Material Hub folder grids: mobile & tablet layout =====
-   Phones: 2 columns | Tablet portrait: 3 columns | Tablet landscape: 4 columns | very narrow (<=300px): 1 column
-   Covers subject folders and chapter/topic folders in both hubs (.vx-grid > .vx-card). */
+#video-hub-view .dk-meta span,#video-hub-view .dk-meta strong,#video-hub-view .dk-stats b,#video-hub-view .dk-stats small,#video-hub-view .dk-ring b{color:#fff!important}
+/* Upload Material popup: black + grey only */
+#material-upload-modal>div{background:#18181b!important;border:1px solid #3f3f46!important;box-shadow:0 24px 60px -20px rgba(0,0,0,.85)!important}
+#material-upload-modal>div>button:first-child{background:#3f3f46!important;color:#e4e4e7!important}
+#material-upload-modal h3{color:#fff!important}#material-upload-modal h3 i,#material-upload-modal label i{color:#a1a1aa!important}
+#material-upload-modal p,#material-upload-modal label{color:#a1a1aa!important}
+#material-upload-modal .glass-card{background:#27272a!important;border:1px solid #3f3f46!important;box-shadow:none!important;-webkit-backdrop-filter:none;backdrop-filter:none}
+#material-upload-modal input,#material-upload-modal select{color:#fff!important}#material-upload-modal input::placeholder{color:#71717a}#material-upload-modal select option{background:#27272a;color:#fff}
+#material-upload-modal #btn-gdrive-upload{background:#3f3f46!important;border-color:#52525b!important;color:#e4e4e7!important}#material-upload-modal #btn-gdrive-upload *{color:#e4e4e7!important}
+#material-upload-modal #gdrive-progress-container{background:#3f3f46!important}#material-upload-modal #gdrive-progress-bar{background:#e4e4e7!important}
+#material-upload-modal #gdrive-upload-status{color:#d4d4d8!important}
+#material-upload-modal button[type=submit]{background:linear-gradient(135deg,#52525b,#27272a)!important;border:1px solid #71717a!important;color:#fff!important;box-shadow:none!important}
 
-/* --- Phones (default): 2 compact columns --- */
-#vh-dynamic-container .vx-grid,
-#mh-dynamic-container .vx-grid,
-#mh-dynamic-container .grid.grid-cols-2 {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap: 12px !important;
-  align-items: stretch;
-}
-#vh-dynamic-container .vx-card,
-#mh-dynamic-container .vx-card {
-  min-width: 0; padding: 12px; gap: 4px; border-radius: 16px;
-  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
-}
-#vh-dynamic-container .vx-ic,
-#mh-dynamic-container .vx-ic {
-  width: 42px; height: 42px; border-radius: 12px; font-size: 1.1rem; margin-bottom: 4px; flex-shrink: 0;
-}
-#vh-dynamic-container .vx-card h3,
-#mh-dynamic-container .vx-card h3 { font-size: .86rem; line-height: 1.25; overflow-wrap: anywhere; }
-#vh-dynamic-container .vx-meta,
-#mh-dynamic-container .vx-meta { font-size: .68rem; line-height: 1.3; overflow-wrap: anywhere; }
-/* progress bar sits at the bottom of every card so rows line up even when titles wrap differently */
-#vh-dynamic-container .vx-card .vx-bar,
-#mh-dynamic-container .vx-card .vx-bar { margin-top: auto; flex-shrink: 0; }
-
-/* --- Tablet portrait / large phones: 3 columns --- */
-@media (min-width: 600px) {
-  #video-hub-view #vh-dynamic-container,
-  #materials-view #mh-dynamic-container {
-    padding-left: max(20px, env(safe-area-inset-left, 0px)) !important;
-    padding-right: max(20px, env(safe-area-inset-right, 0px)) !important;
-  }
-  #vh-dynamic-container .vx-grid,
-  #mh-dynamic-container .vx-grid,
-  #mh-dynamic-container .grid.grid-cols-2 {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    gap: 16px !important;
-  }
-  #vh-dynamic-container .vx-card,
-  #mh-dynamic-container .vx-card { padding: 16px; gap: 6px; border-radius: 18px; }
-  #vh-dynamic-container .vx-ic,
-  #mh-dynamic-container .vx-ic { width: 52px; height: 52px; border-radius: 15px; font-size: 1.4rem; margin-bottom: 6px; }
-  #vh-dynamic-container .vx-card h3,
-  #mh-dynamic-container .vx-card h3 { font-size: .98rem; }
-  #vh-dynamic-container .vx-meta,
-  #mh-dynamic-container .vx-meta { font-size: .74rem; }
-}
-
-/* --- Tablet landscape: 4 columns (touch devices only, so desktop keeps its own auto-fill grid) --- */
-@media (min-width: 900px) and (max-width: 1399px) and (pointer: coarse) {
-  #video-hub-view #vh-dynamic-container,
-  #materials-view #mh-dynamic-container {
-    padding-left: max(24px, env(safe-area-inset-left, 0px)) !important;
-    padding-right: max(24px, env(safe-area-inset-right, 0px)) !important;
-  }
-  #vh-dynamic-container .vx-grid,
-  #mh-dynamic-container .vx-grid,
-  #mh-dynamic-container .grid.grid-cols-2 {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-    gap: 18px !important;
-  }
-  #vh-dynamic-container .vx-card,
-  #mh-dynamic-container .vx-card { padding: 18px; }
-  #vh-dynamic-container .vx-card h3,
-  #mh-dynamic-container .vx-card h3 { font-size: 1rem; }
-}
-
-/* --- Very narrow screens (folded phones, tiny viewports): single column --- */
-@media (max-width: 300px) {
-  #vh-dynamic-container .vx-grid,
-  #mh-dynamic-container .vx-grid,
-  #mh-dynamic-container .grid.grid-cols-2 { grid-template-columns: minmax(0, 1fr) !important; }
-}
-
-/* --- Phones in landscape / short screens: tighter cards so more folders fit --- */
-@media (orientation: landscape) and (max-height: 520px) {
-  #vh-dynamic-container .vx-grid,
-  #mh-dynamic-container .vx-grid,
-  #mh-dynamic-container .grid.grid-cols-2 { gap: 12px !important; }
-  #vh-dynamic-container .vx-card,
-  #mh-dynamic-container .vx-card { padding: 12px; }
-  #vh-dynamic-container .vx-ic,
-  #mh-dynamic-container .vx-ic { width: 40px; height: 40px; font-size: 1.05rem; }
-}
-
-/* --- Touch screens: no sticky hover-lift, give press feedback + a bigger reset button --- */
-@media (hover: none) {
-  #vh-dynamic-container .vx-card:hover,
-  #mh-dynamic-container .vx-card:hover { transform: none; }
-  #vh-dynamic-container .vx-card:active,
-  #mh-dynamic-container .vx-card:active { transform: scale(.97); }
-  #vh-dynamic-container .vx-card .vx-reset { width: 34px; height: 34px; top: 8px; right: 8px; font-size: .8rem; }
-}
 </style>
-<style id="hub-no-glow-and-fold">
-/* ===== Lecture Hub + Material Hub: glow removed (header shadow + hover shadow on folders / lecture rows) ===== */
-#materials-view > div:first-child,
-#video-hub-view > .vx-hdr { box-shadow: none !important; }
-#vh-dynamic-container .vx-card:hover,
-#mh-dynamic-container .vx-card:hover,
-#vh-dynamic-container .vx-lec:hover,
-#mh-dynamic-container .vx-lec:hover { box-shadow: none !important; }
-
-/* ===== Lecture Hub: the progress card folds away on scroll, like the Student Dashboard info slide =====
-   (JS toggles .vx-prog-off on the header: scroll down = fold away, back to the top = unfold) */
-#video-hub-view #vh-prog.vx-prog {
-  display: grid !important; grid-template-rows: 1fr; max-height: none; overflow: visible;
-  transition: grid-template-rows .45s cubic-bezier(.32,.72,0,1), opacity .3s ease, margin-top .45s cubic-bezier(.32,.72,0,1);
-}
-#video-hub-view #vh-prog.vx-prog > * { min-height: 0; overflow: hidden; }
-#video-hub-view .vx-hdr.vx-prog-off #vh-prog.vx-prog { grid-template-rows: 0fr; opacity: 0; margin-top: -12px; max-height: none; }
-#video-hub-view .vx-hdr.vx-prog-off #vh-prog.vx-prog > * { margin-top: 0 !important; }
-/* short lists can still scroll far enough for the card to fold (room = height of the card, set by JS) */
-#vh-dynamic-container { min-height: calc(100% + var(--vh-room, 170px)); }
-@media (prefers-reduced-motion: reduce) { #video-hub-view #vh-prog.vx-prog { transition: none; } }
-</style>
-<style id="hub-headers-normal-and-math">
-/* Lecture Hub progress: full width again (an old 3-column template had crept back in) */
-#video-hub-view #vh-prog.vx-prog { grid-template-columns: minmax(0,1fr) !important; grid-template-areas: none !important; gap: 0 !important; padding: 0 !important; width: 100%; }
-#video-hub-view #vh-prog.vx-prog > * { grid-area: 1 / 1 / 2 / 2 !important; width: 100%; }
-
-/* Goal Planner, Weekly Targets, Syllabus Tracker: normal rounded header, no glow, no overlapping sheet */
-#target-calc-view > .tp2-hero, #weekly-targets-view > .tp2-hero, #syllabus-view > .tp2-hero {
-  border-radius: 0 0 26px 26px !important; box-shadow: none !important; padding-bottom: 18px !important; z-index: 10 !important; }
-#target-calc-view > .tp2-hero + div, #weekly-targets-view > div:nth-child(2), #syllabus-view > div:nth-child(2) {
-  margin-top: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
-@media (min-width: 640px) { #target-calc-view > .tp2-hero, #weekly-targets-view > .tp2-hero, #syllabus-view > .tp2-hero { padding-bottom: 22px !important; } }
-@media (orientation: landscape) and (max-height: 520px) { #target-calc-view > .tp2-hero, #weekly-targets-view > .tp2-hero, #syllabus-view > .tp2-hero { border-radius: 0 0 20px 20px !important; padding-bottom: 12px !important; } }
-
-/* ===== Math Workout (redesign) ===== */
-#math-workout-view .mw-screen { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 22px max(14px,env(safe-area-inset-left,0px)) calc(24px + env(safe-area-inset-bottom,0px)); }
-.mw-wrap { width: 100%; max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-.mw-h { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #475569; }
-.mw-h > i { color: #ea580c; }
-.mw-quick { margin-left: auto; display: flex; gap: 6px; }
-.mw-quick button { padding: 4px 10px; border-radius: 99px; border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
-.mw-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; } .mw-stats4 { grid-template-columns: repeat(2,1fr); }
-.mw-stat { background: #fff; border: 1px solid #eef0f6; border-radius: 16px; padding: 12px 8px; text-align: center; }
-.mw-stat b { display: block; font-size: 1.25rem; font-weight: 900; color: #c2410c; }
-.mw-stat small { font-size: .62rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #64748b; }
-.mw-ops { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
-.mw-op input, .mw-seg input { position: absolute; opacity: 0; pointer-events: none; }
-.mw-op { position: relative; cursor: pointer; }
-.mw-op span { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 4px; border-radius: 16px; background: #fff; border: 2px solid #eef0f6; color: #94a3b8; font-size: 11px; font-weight: 800; text-align: center; transition: .15s; }
-.mw-op span i { font-size: 1.25rem; }
-.mw-op input:checked + span { border-color: #f97316; background: #fff7ed; color: #c2410c; }
-.mw-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; background: #eef0f6; border-radius: 14px; }
-.mw-seg label { position: relative; cursor: pointer; }
-.mw-seg span { display: block; padding: 11px 4px; border-radius: 11px; text-align: center; font-size: 12px; font-weight: 800; color: #64748b; transition: .15s; }
-.mw-seg input:checked + span { background: #fff; color: #c2410c; box-shadow: 0 1px 4px rgba(15,23,42,.12); }
-.mw-note { margin: 8px 2px 0; font-size: 11px; font-weight: 600; color: #94a3b8; }
-.mw-go, .mw-sec { height: 54px; border: 0; border-radius: 16px; font-size: 15px; font-weight: 900; letter-spacing: .02em; display: flex; align-items: center; justify-content: center; gap: 8px; touch-action: manipulation; }
-.mw-go { background: linear-gradient(135deg,#fb923c,#ea580c); color: #fff; } .mw-go:active, .mw-sec:active { transform: scale(.97); }
-.mw-sec { background: #fff; color: #475569; border: 1px solid #e2e8f0; padding: 0 18px; font-size: 13px; }
-.mw-play { display: grid; gap: 12px; max-width: 560px; min-height: 100%; margin: 0 auto; grid-template-columns: minmax(0,1fr); grid-template-rows: auto auto 1fr auto; grid-template-areas: "hud" "bar" "q" "pad"; }
-.mw-hud { grid-area: hud; display: flex; align-items: center; gap: 8px; }
-.mw-pill { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 99px; background: #fff; border: 1px solid #eef0f6; font-size: 14px; font-weight: 900; color: #334155; }
-.mw-pill i { color: #ea580c; } .mw-pill.low { background: #fef2f2; border-color: #fecaca; color: #dc2626; } .mw-pill.low i { color: #dc2626; }
-.mw-fin { margin-left: auto; padding: 8px 12px; border: 0; border-radius: 99px; background: #fff7ed; color: #c2410c; font-size: 12px; font-weight: 800; }
-.mw-bar { grid-area: bar; height: 8px; border-radius: 99px; background: #e5e7eb; overflow: hidden; } .mw-bar i { display: block; height: 100%; width: 100%; border-radius: 99px; background: linear-gradient(90deg,#fb923c,#ea580c); transition: width 1s linear; }
-.mw-qcard { grid-area: q; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px 12px; border-radius: 26px; background: #fff; border: 2px solid #eef0f6; transition: background .15s, border-color .15s; }
-.mw-qcard.ok { background: #ecfdf5; border-color: #6ee7b7; } .mw-qcard.bad { background: #fef2f2; border-color: #fca5a5; animation: mwShake .3s; }
-@keyframes mwShake { 25% { transform: translateX(-7px); } 75% { transform: translateX(7px); } }
-.mw-q { font-size: clamp(2.2rem,11vw,4.2rem); font-weight: 900; line-height: 1.1; color: #1e293b; text-align: center; word-break: break-word; }
-.mw-ans { min-width: 150px; min-height: 1.3em; padding: 2px 18px; border-bottom: 3px solid #fdba74; font-size: clamp(2rem,9vw,3.2rem); font-weight: 900; text-align: center; color: #ea580c; }
-.mw-ans:empty::before { content: "?"; color: #fed7aa; }
-.mw-pad { grid-area: pad; display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
-.mw-k { height: clamp(54px,9vh,76px); border-radius: 18px; border: 1px solid #e5e7eb; background: #fff; box-shadow: 0 2px 0 #e5e7eb; font-size: 1.6rem; font-weight: 800; color: #1e293b; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
-.mw-k:active { transform: translateY(2px); box-shadow: none; background: #ffedd5; } .mw-k.fn { background: #f1f5f9; color: #475569; font-size: 1.15rem; }
-.mw-res { text-align: center; padding: 22px 12px; border-radius: 26px; color: #fff; background: radial-gradient(circle at 85% 0,#fb923c 0,#ea580c 55%,#7c2d12); }
-.mw-res small { font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; opacity: .8; }
-.mw-big { font-size: 4.5rem; font-weight: 900; line-height: 1.05; } .mw-rt { font-size: 1.05rem; font-weight: 800; }
-.mw-nb { display: inline-block; margin-top: 10px; padding: 5px 12px; border-radius: 99px; background: rgba(255,255,255,.2); font-size: 11px; font-weight: 800; }
-.mw-miss { display: grid; grid-template-columns: 1fr; gap: 6px; }
-.mw-miss div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 12px; background: #fff; border: 1px solid #fee2e2; font-weight: 800; color: #334155; } .mw-miss b { color: #059669; }
-.mw-btns { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; }
-@media (min-width: 600px) { .mw-ops { grid-template-columns: repeat(5,minmax(0,1fr)); } .mw-stats4 { grid-template-columns: repeat(4,1fr); } .mw-miss { grid-template-columns: 1fr 1fr; } .mw-k { height: clamp(64px,9vh,88px); font-size: 1.9rem; border-radius: 22px; } .mw-play { max-width: 620px; gap: 16px; } .mw-pad { gap: 14px; } }
-@media (min-width: 820px) and (orientation: landscape), (orientation: landscape) and (max-height: 520px) {
-  .mw-play { max-width: 1000px; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); grid-template-rows: auto auto 1fr; grid-template-areas: "hud hud" "bar bar" "q pad"; align-items: stretch; }
-  .mw-pad { align-self: center; } .mw-k { height: clamp(46px,12vh,84px); }
-}
-@media (orientation: landscape) and (max-height: 520px) { #math-workout-view .mw-screen { padding-top: 14px; } .mw-q { font-size: clamp(1.8rem,10vh,3rem); } .mw-qcard { padding: 10px; gap: 8px; } }
-</style>
-<style id="hub-hover-skeleton-upload">
-/* no coloured border on hover (Lecture Hub + Material Hub) */
-#vh-dynamic-container .vx-card:not(.unapproved-glow):hover,
-#mh-dynamic-container .vx-card:not(.unapproved-glow):hover,
-#mh-dynamic-container [onclick^="window.openMH"]:not(.unapproved-glow):not(.pend):hover { border-color: var(--vx-line) !important; }
-
-/* folder skeleton (same shape as a folder card, same responsive columns) */
-.vx-sk-card { pointer-events: none; cursor: default; }
-.vx-sk-card:hover { transform: none; }
-.vx-sk-card .sk { position: relative; overflow: hidden; background: #e9ecf3; border-radius: 8px; }
-.vx-sk-card .sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.75), transparent); animation: vxSkShimmer 1.4s infinite; }
-.vx-sk-card .vx-ic.sk { display: block; border-radius: 14px; }
-.vx-sk-card .sk-t { height: 14px; width: 75%; margin-top: 2px; }
-.vx-sk-card .sk-m { height: 10px; width: 50%; }
-.vx-sk-card .sk-b { height: 6px; width: 100%; margin-top: auto; border-radius: 9px; }
-@keyframes vxSkShimmer { to { transform: translateX(100%); } }
-@media (prefers-reduced-motion: reduce) { .vx-sk-card .sk::after { animation: none; } }
-
-/* Upload / Add Material: same black gradient as the Material Hub header */
-#material-upload-modal button[type="submit"],
-#edit-material-modal button[type="submit"] { background-image: linear-gradient(135deg,#000 0%,#111114 50%,#27272a 100%) !important; }
-#material-upload-modal .fa-folder-plus, #edit-material-modal .fa-pen-to-square,
-#edit-material-modal .fa-folder-plus, #edit-material-modal .fa-pen-to-square { color: #18181b !important; }
-#btn-gdrive-upload { background: #f4f4f5 !important; border-color: #d4d4d8 !important; color: #18181b !important; }
-#btn-gdrive-upload:hover { background: #e4e4e7 !important; }
-#btn-gdrive-upload i { color: #18181b !important; }
-</style>
-<style id="lecture-hub-black">
-/* Lecture Hub: black gradient header (PW style). The header gradient and the hub accents all read these variables. */
-#video-hub-view { --h1:#3f3f46; --h2:#18181b; --h3:#000; --hl:#d4d4d8; --hs:rgba(0,0,0,.6); }
-#video-hub-view > .vx-hdr { background: linear-gradient(135deg,#000 0%,#111114 50%,#27272a 100%) !important; }
-</style>
-<style id="material-hub-black-and-qgrid">
-/* Material Hub: same black gradient header as the Lecture Hub (accents follow the same variables) */
-#materials-view { --h1:#3f3f46; --h2:#18181b; --h3:#000; --hl:#d4d4d8; --hs:rgba(0,0,0,.6); }
-#materials-view > div:first-child { background: linear-gradient(135deg,#000 0%,#111114 50%,#27272a 100%) !important; }
-
-/* Quiz question palette: responsive number grid (fills the drawer / sidebar width, square buttons) */
-#quiz-palette-grid { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 8px !important; padding: 4px; }
-#quiz-palette-grid > button { width: 100% !important; height: auto !important; min-width: 0; aspect-ratio: 1 / 1; font-size: clamp(12px, 3.4vw, 15px) !important; touch-action: manipulation; }
-@media (min-width: 768px) { #quiz-palette-grid { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 10px !important; } #quiz-palette-grid > button { font-size: 15px !important; } }
-@media (max-width: 340px) { #quiz-palette-grid { grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px !important; } }
-</style>
-<style id="mh-read-cards">
-/* Material Hub chapter notes: read cards in a responsive grid (2 / 3 / 4 columns) */
-#mh-dynamic-container .vx-list { display: flex !important; flex-direction: column !important; gap: 22px !important; }
-#mh-dynamic-container .vx-mgrp { gap: 12px; }
-.mh-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch; }
-@media (min-width: 600px) { .mh-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; } }
-@media (min-width: 900px) { .mh-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; } }
-@media (max-width: 300px) { .mh-cards { grid-template-columns: minmax(0, 1fr); } }
-.mh-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 10px; background: #fff; border: 1px solid var(--vx-line); border-radius: 20px; transition: transform .15s; }
-.mh-card:active { transform: scale(.98); }
-.mh-card.pend { border-color: #fcd34d; background: #fffbeb; }
-.mh-cover { position: relative; aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; display: grid; place-items: center; cursor: pointer; }
-.mh-cover > i { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; font-size: 1.7rem; background: rgba(255,255,255,.94); }
-.mh-cover.pdf { background: linear-gradient(135deg, #fecaca, #fca5a5 55%, #f87171); } .mh-cover.pdf > i { color: #dc2626; }
-.mh-cover.img { background: linear-gradient(135deg, #bfdbfe, #93c5fd 55%, #60a5fa); } .mh-cover.img > i { color: #2563eb; }
-.mh-cover.lnk { background: linear-gradient(135deg, #ddd6fe, #c4b5fd 55%, #a78bfa); } .mh-cover.lnk > i { color: #7c3aed; }
-.mh-cover.qs { background: #0f172a; } .mh-cover.qs img { width: 100%; height: 100%; object-fit: cover; }
-.mh-tag { position: absolute; left: 8px; top: 8px; padding: 3px 9px; border-radius: 99px; background: rgba(15,23,42,.78); color: #fff; font-size: .62rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-.mh-info { flex: 1; min-width: 0; cursor: pointer; }
-.mh-info h4 { margin: 0; font-size: .88rem; font-weight: 800; line-height: 1.3; color: var(--vx-ink); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-.mh-info span { display: block; margin-top: 3px; font-size: .7rem; font-weight: 600; color: var(--vx-mut); }
-.mh-foot { display: flex; gap: 8px; }
-.mh-read { flex: 1; min-width: 0; height: 40px; border: 0; border-radius: 12px; background: linear-gradient(135deg, #000, #27272a); color: #fff; font-size: .8rem; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 7px; touch-action: manipulation; }
-.mh-read:active { transform: scale(.97); }
-.mh-dl { width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px; border: 1px solid var(--vx-line); background: #f4f4f5; color: #27272a; display: grid; place-items: center; font-size: .85rem; touch-action: manipulation; }
-.mh-dl.bg-emerald-50 { background: #ecfdf5 !important; border-color: #a7f3d0 !important; }
-.mh-qa { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--vx-line); }
-.mh-qa button { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 8px; border: 0; border-radius: 10px; font-size: .7rem; font-weight: 800; }
-.mh-qa .nv { background: #eef2ff; color: #4338ca; } .mh-qa .nv img { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; }
-.mh-qa .qz { background: #fffbeb; color: #b45309; }
-</style>
-<script id="vx-prog-autohide">
+<script>
 (function () {
-    function init() {
-        var v = document.getElementById('video-hub-view'); if (!v) return;
-        var sc = v.querySelector('.vx-scroll'), hdr = v.querySelector('.vx-hdr'), prog = document.getElementById('vh-prog'), box = document.getElementById('vh-dynamic-container');
-        if (!sc || !hdr || !prog || !box || sc.__ah) return; sc.__ah = 1;
-        var HIDE_AT = 24, SHOW_AT = 2, off = false, lock = 0, timer = 0;
-        function setRoom() {
-            var c = prog.firstElementChild, h = c ? c.scrollHeight : 0;
-            if (!off && h > 20) box.style.setProperty('--vh-room', Math.ceil(h + 28) + 'px');
-        }
-        function evaluate() {
-            var y = sc.scrollTop;
-            if (!off && y > HIDE_AT) set(true);
-            else if (off && y <= SHOW_AT) set(false);
-        }
-        function set(next) {
-            if (next === off) return; off = next;
-            hdr.classList.toggle('vx-prog-off', off);
-            lock = performance.now() + 650;                 // ignore the scroll events caused by the resize itself
-            clearTimeout(timer); timer = setTimeout(evaluate, 700);
-        }
-        sc.addEventListener('scroll', function () { if (performance.now() >= lock) evaluate(); }, { passive: true });
-        if (window.MutationObserver) new MutationObserver(function () {
-            lock = 0; sc.scrollTop = 0; set(false); setRoom();
-        }).observe(box, { childList: true });
-        window.addEventListener('resize', setRoom);
-        setRoom();
+    /* collapsing header info card (Study Material + Lecture Hub): folds away when the list scrolls, comes back at the top */
+    function bind(viewId, sel) {
+        var v = document.getElementById(viewId); if (!v || v.__dk) return; var sc = v.querySelector(sel), hd = v.querySelector('.dk-hdr'); if (!sc || !hd) return;
+        v.__dk = 1; var folded = false, busy = false;
+        function set(f) { if (f !== folded) { folded = f; hd.classList.toggle('dk-folded', f); } }
+        sc.addEventListener('scroll', function () {
+            if (busy) return; busy = true;
+            requestAnimationFrame(function () {
+                busy = false; var t = sc.scrollTop;
+                if (!folded) { var fi = hd.querySelector('.dk-fold-in'); if (t > 40 && sc.scrollHeight - sc.clientHeight > (fi ? fi.offsetHeight : 120) + 90) set(true); }
+                else if (t < 8) set(false);
+            });
+        }, { passive: true });
+        v.__dkReset = function () { set(false); };
     }
+    window.dkFoldReset = function (id) { var v = document.getElementById(id); if (v && v.__dkReset) v.__dkReset(); };
+    function init() { bind('video-hub-view', '.vx-scroll'); }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
+document.addEventListener('DOMContentLoaded', function () { var d = document.getElementById('math-difficulty'); if (d) d.addEventListener('change', function () { window.mathSet && window.mathSet(window.mathState.dur); }); });
+
 </script>
 </body>
 
