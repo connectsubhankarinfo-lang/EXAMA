@@ -6305,9 +6305,21 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         var PIN = 3;                                             // must match --sd-pin (sticky top of .sd-grab in CSS)
                         var raf = 0, rowGap = 12, folded = false, cardCur = 0, barCur = 0, barSet = -1, fadeSet = -1, trSet = -1, baseR = 30;
                         var p = 0, D = 0, padTop = 18, barMt = 16, animRaf = 0, animating = false, pendingReveal = false;
+                        /* cached geometry: measured only when something resizes, so the per-frame loop never forces a layout */
+                        var geo = { dirty: true, ch: 0, nat: 0, canFold: false, tilesTop0: 0 };
+                        function remeasureGeo() {
+                            geo.dirty = false;
+                            try {
+                                measure(); geo.dirty = false;
+                                geo.ch = card ? card.offsetHeight : 0;
+                                geo.canFold = !!(fold && foldIn && hdr.clientWidth < 900);
+                                geo.nat = geo.canFold ? foldIn.scrollHeight : 0;
+                                if (tiles) { var mt0 = parseFloat(card && card.style.marginTop) || 0; geo.tilesTop0 = tiles.getBoundingClientRect().top - sc.getBoundingClientRect().top - mt0 + sc.scrollTop; }
+                            } catch (e) {}
+                        }
                         var tTracking = false, tOwn = false, tX = 0, tY = 0, tLastY = 0, tLastT = 0, tVel = 0, tP0 = 0;
                         var wState = 0, wStart = 0, lastW = 0;
-                        var clamp = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; }, smooth = function (t) { return t * t * (3 - 2 * t); };
+                        var clamp = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; }, smooth = function (t) { return t * t * (3 - 2 * t); };   // smoothstep: responds right away
                         if (card) { card.style.willChange = 'opacity, transform'; card.style.transformOrigin = '50% 100%'; }
                         /* used by the app-level pull-to-refresh: while the card is tucked away, a downward pull brings the card back - it must not also refresh the page */
                         window.__sdCardHidden = function () { return p > 0.0005; };
@@ -6315,13 +6327,13 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                             if (!folded) return; folded = false;
                             fold.style.height = ''; fold.style.overflow = ''; fold.style.opacity = ''; if (quote) quote.style.transform = ''; if (grid) grid.style.marginBottom = '';
                         }
-                        function measure() {
+                        function measure() { geo.dirty = true;
                             try { rowGap = parseFloat(getComputedStyle(grid).rowGap) || 12; } catch (e) {}
                             try { padTop = parseFloat(getComputedStyle(sc).paddingTop) || 0; if (bar) { barMt = parseFloat(getComputedStyle(bar).marginTop) || 0; bar.style.setProperty('--sd-pad', padTop + 'px'); } } catch (e) {}
                             try { if (tiles) baseR = parseFloat(getComputedStyle(tiles).borderBottomLeftRadius) || 30; } catch (e) {}
                         }
                         /* distance the content must travel until the button grid sits flush under the header (no gap) */
-                        function calcD() { return card ? Math.max(0, padTop + card.offsetHeight + barMt + 1) : 0; }   // +1px overshoot: the grid tucks 1px under the header edge, never a hairline gap
+                        function calcD() { return card ? Math.max(0, padTop + (geo.ch || card.offsetHeight) + barMt + 1) : 0; }
                         /* collapse = pull the card (and everything after it) up by p*D, exactly like scrolling would */
                         function applyP() {
                             if (!card || !sc.clientHeight) return;
@@ -6339,7 +6351,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         function cancelAnim() { if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; } animating = false; }
                         /* Spring (critically damped, iOS-like). Animates the VIRTUAL scroll V, so card, header fold, grid and capsule all move on ONE clock.
                            v0 = release velocity in px/s, so the motion continues the finger's momentum instead of restarting. */
-                        var SP_K = 210, SP_C = 2 * Math.sqrt(210);
+                        var SP_K = 460, SP_C = 2 * Math.sqrt(460);   // quick critically-damped spring: grid rises and pins fast
                         function springTo(target, v0) {
                             cancelAnim(); D = calcD(); if (!D) return;
                             if (reduce) { setV(target); return; }
@@ -6377,15 +6389,17 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         function frame() {
                             raf = 0;
                             if (!sc.clientHeight) return;                            // view hidden
-                            applyP();                                                // grid position first, so every read below matches this frame (no 1-frame lag)
+                            if (geo.dirty) remeasureGeo(); var y = sc.scrollTop; applyP();   // reads first, then writes: no forced reflow per frame
                             /* ---- reads ---- */
-                            var y = sc.scrollTop, scTop = sc.getBoundingClientRect().top;
-                            var bt = bar ? bar.getBoundingClientRect().top - scTop : 999;
-                            var canFold = fold && foldIn && hdr.clientWidth < 900 && !mqLand.matches;
-                            var nat = canFold ? foldIn.scrollHeight : 0;
-                            var ch = card ? card.offsetHeight : 0;
-                            var tilesTop = tiles ? tiles.getBoundingClientRect().top - scTop : 0;
-                            var Dn = calcD(), vy = p * Dn + y;                       // virtual scroll position
+                            var scTop = 0;
+                            var bt = 999;
+                            var canFold = geo.canFold && !mqLand.matches;
+                            var nat = canFold ? geo.nat : 0;
+                            var ch = geo.ch;
+                            var tilesTop = 0;
+                            var Dn = calcD(), vy = p * Dn + y;
+                            if (bar) bt = Math.max(PIN, padTop + geo.ch + barMt - vy);
+                            if (tiles) tilesTop = geo.tilesTop0 - vy;
                             /* ---- ONE shared progress: 0 = card open, 1 = card tucked + grid pinned. Card, header fold, grid and capsule are all read from it, so they can never drift apart ---- */
                             var tn = Dn > 0 ? clamp(vy / Dn) : 0;
                             var qT = card && !reduce ? smooth(clamp(tn / 0.9)) : 0;
@@ -6494,7 +6508,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                                 if (sc.scrollTop > 1) springTo(0);                   // grid scrolls back AND the card returns in one motion
                                 else animateTo(p > 0.5 ? 0 : 1);
                             });
-                            if (window.ResizeObserver) { try { new ResizeObserver(function () { kick(); }).observe(card); } catch (e) {} }
+                            if (window.ResizeObserver) { try { var ro = new ResizeObserver(function () { geo.dirty = true; kick(); }); ro.observe(card); var stk = hdr.querySelector(".sd-stack"); if (stk) ro.observe(stk); } catch (e) {} }
                         } else if (bar) {
                             bar.addEventListener('click', function () { try { sc.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { sc.scrollTop = 0; } });
                         }
@@ -6541,8 +6555,8 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                             <div onclick="window.location.hash='video-hub'"
                                 class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm border-red-200/50 hover:bg-red-50/50">
                                 <div
-                                    class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center shadow-md mb-2">
-                                    <i class="fa-brands fa-youtube text-lg"></i>
+                                    class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 lh-btn text-white flex items-center justify-center shadow-md mb-2">
+                                    <i class="fa-solid fa-circle-play text-lg"></i>
                                 </div>
                                 <h4 class="text-xs font-black text-gray-900 leading-tight">Lecture Hub</h4>
                                 <p class="text-[9px] text-gray-500 font-bold mt-0.5">Video Classes</p>
@@ -6857,7 +6871,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
 </div></div>
 
             <div class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 pb-24 sm:pb-28 space-y-6 sm:space-y-8">
-<div class="ax-tw ax-panel"><h3 class="font-black text-gray-900 mb-2.5 px-1 tracking-tight text-[13px] sm:text-sm uppercase"><i class="fa-solid fa-screwdriver-wrench mr-1.5"></i>Admin Tools</h3><div id="ax-tiles"><div data-ax="materials" onclick="window.location.hash='materials'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><span id="admin-material-badge" class="hidden absolute top-1.5 right-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full animate-pulse">0</span><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-folder-open text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Material Hub</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">PDFs & Notes</p></div><div data-ax="weekly-targets" onclick="window.location.hash='weekly-targets'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-list-check text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Weekly Targets</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Assign Tasks</p></div><div data-ax="syllabus" onclick="window.location.hash='syllabus'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-book-bookmark text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Syllabus</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Track Topics</p></div><div data-ax="notices" onclick="window.location.hash='notices'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-bullhorn text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Notices</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Announcements</p></div><div data-ax="chat" onclick="window.location.hash='chat'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><span class="chat-unread-badge hidden absolute top-1.5 right-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">0</span><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-400 to-fuchsia-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-comments text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Discuss</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Community Chat</p></div><div data-ax="video-hub" onclick="window.location.hash='video-hub'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-brands fa-youtube text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Lecture Hub</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Video Classes</p></div><div data-ax="alarms" onclick="window.location.hash='alarms'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-bell text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Alarms</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Reminders</p></div><div data-ax="quotes" onclick="window.location.hash='quotes'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-quote-left text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Daily Quote</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Set by date</p></div><div data-ax="budget-room" onclick="window.location.hash='budget-room'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-door-open text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Budget Room</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Shared rooms</p></div><div data-ax="student-directory" onclick="window.location.hash='student-directory'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm ax-span"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-users text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Student Directory</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Manage & View Profiles</p></div></div></div>
+<div class="ax-tw ax-panel"><h3 class="font-black text-gray-900 mb-2.5 px-1 tracking-tight text-[13px] sm:text-sm uppercase"><i class="fa-solid fa-screwdriver-wrench mr-1.5"></i>Admin Tools</h3><div id="ax-tiles"><div data-ax="materials" onclick="window.location.hash='materials'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><span id="admin-material-badge" class="hidden absolute top-1.5 right-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full animate-pulse">0</span><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-folder-open text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Material Hub</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">PDFs & Notes</p></div><div data-ax="weekly-targets" onclick="window.location.hash='weekly-targets'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-list-check text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Weekly Targets</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Assign Tasks</p></div><div data-ax="syllabus" onclick="window.location.hash='syllabus'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-book-bookmark text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Syllabus</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Track Topics</p></div><div data-ax="notices" onclick="window.location.hash='notices'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-bullhorn text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Notices</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Announcements</p></div><div data-ax="chat" onclick="window.location.hash='chat'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><span class="chat-unread-badge hidden absolute top-1.5 right-1.5 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full">0</span><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-400 to-fuchsia-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-comments text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Discuss</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Community Chat</p></div><div data-ax="video-hub" onclick="window.location.hash='video-hub'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 lh-btn text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-circle-play text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Lecture Hub</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Video Classes</p></div><div data-ax="alarms" onclick="window.location.hash='alarms'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-bell text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Alarms</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Reminders</p></div><div data-ax="quotes" onclick="window.location.hash='quotes'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-quote-left text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Daily Quote</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Set by date</p></div><div data-ax="budget-room" onclick="window.location.hash='budget-room'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-door-open text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Budget Room</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Shared rooms</p></div><div data-ax="student-directory" onclick="window.location.hash='student-directory'" class="glass-card p-3 sm:p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer active:scale-95 transition-all shadow-sm ax-span"><div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center shadow-md mb-2"><i class="fa-solid fa-users text-lg"></i></div><h4 class="text-xs font-black text-gray-900 leading-tight">Student Directory</h4><p class="text-[9px] text-gray-500 font-bold mt-0.5">Manage & View Profiles</p></div></div></div>
 
 
                 <!-- NEW: DIRECTORY BUTTON & SEARCH/FILTER BAR -->
@@ -15638,7 +15652,12 @@ window.__tpPaint = function () {
             // 4.1-4.3 REDESIGNED RENDERERS (subjects / chapters / lectures) - same handlers, same data
             const vxE = x => window.escHtml(x), vxJ = x => window.escJsAttr(x);
             function vxHdr(vids) { const el = document.getElementById('vh-prog'); if (!el) return; const t = vids.length, d = vids.filter(v => (v.watchedBy || []).includes(window.loggedInMobile)).length, p = t ? Math.round(d / t * 100) : 0;
-                el.innerHTML = window.currentRole === 'admin' ? `<span>${t} lecture${t === 1 ? '' : 's'}</span>` : `<span>${d} of ${t} completed</span><div class="vx-bar"><i style="width:${p}%"></i></div><b>${p}%</b>`; }
+                if (window.currentRole === 'admin') el.innerHTML = `<span>${t} lecture${t === 1 ? '' : 's'}</span>`;
+                else {
+                    const msg = !t ? 'No lectures yet' : p >= 100 ? 'All lectures completed' : d ? 'Keep going' : 'Start watching';
+                    el.innerHTML = `<div class="tp2-score"><div class="tp2-sring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke-width="3.4"/><circle cx="18" cy="18" r="15.9" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="0 100" style="transition:stroke-dasharray .8s cubic-bezier(.4,0,.2,1)"/></svg><b>${p}%</b></div><div class="tp2-sinfo"><span class="hx-lab">Lecture progress</span><strong>${msg}</strong><div class="hx-stats3"><div><b>${t}</b><span>Total</span></div><div><b>${d}</b><span>Done</span></div><div><b>${t - d}</b><span>Left</span></div></div><div class="hx-bar"><i style="width:0%"></i></div></div></div>`;
+                    requestAnimationFrame(() => requestAnimationFrame(() => { const r = el.querySelector('circle:last-child'), b = el.querySelector('.hx-bar i'); if (r) r.setAttribute('stroke-dasharray', p + ' 100'); if (b) b.style.width = p + '%'; }));
+                } }
             const vxDone = (v) => (v.watchedBy || []).includes(window.loggedInMobile);
             function renderVHSubjects(vids, container) {
                 const admin = window.currentRole === 'admin', subs = [...new Set(vids.map(v => v.subject))];
@@ -17682,6 +17701,7 @@ window.__tpPaint = function () {
                     Array.from(w).forEach(function (ch) { const c = document.createElement('span'); c.className = 'gl-c'; c.style.setProperty('--i', Math.min(i++, 40)); c.textContent = ch; ws.appendChild(c); });
                     el.appendChild(ws); if (wi < words.length - 1) el.appendChild(document.createTextNode(' '));
                 });
+                if (el.classList.contains('gl-live')) { const d = document.createElement('span'); d.className = 'gl-dots'; d.setAttribute('aria-hidden', 'true'); d.innerHTML = '<i></i><i></i><i></i>'; el.appendChild(d); }
                 el.style.setProperty('--d0', window.__glD0()); el.classList.add('gl-chars');
             };
             window.__glText = function (msg) { const p = document.getElementById('loader-text'); if (!p) return; p.dataset.msg = msg; p.classList.add('gl-live'); window.__glSplit(p, msg); };
@@ -19462,7 +19482,7 @@ window.__tpPaint = function () {
                         titleEl.innerText = "Study Material";
                         subEl.innerText = "Select a Subject";
                         const uniqueSubjects = [...new Set(materials.map(m => m.subject))];
-                        let html = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">';
+                        let html = '<div class="vx-grid">';
                         uniqueSubjects.forEach(sub => {
                             const subMaterials = materials.filter(m => m.subject === sub);
                             const uniqueTopics = [...new Set(subMaterials.map(m => m.topic))];
@@ -19476,19 +19496,7 @@ window.__tpPaint = function () {
                             const glowClass = pendingInSubject > 0 ? 'unapproved-glow' : '';
                             const pendingBadge = pendingInSubject > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm z-20 animate-pulse">${pendingInSubject} Pending</span>` : '';
 
-                            html += `
-                <div onclick="window.openMHSubject('${String(sub).replace(/'/g, "\\'")}')" class="relative bg-white rounded-[1.5rem] p-4 sm:p-5 shadow-sm border ${theme.border} hover:shadow-lg hover:border-indigo-300 transition-all duration-300 cursor-pointer flex flex-col items-center text-center group hover:-translate-y-1 ${glowClass}">
-                    ${pendingBadge}
-                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl ${theme.bg} ${theme.color} flex justify-center items-center text-2xl sm:text-3xl mb-3 group-hover:scale-110 transition-transform shadow-inner">
-                        <i class="fa-solid ${theme.icon}"></i>
-                    </div>
-                    <h3 class="font-black text-gray-900 text-xs sm:text-[14px] leading-tight w-full truncate px-1 group-hover:text-indigo-600 transition-colors">${sub}</h3>
-                    <div class="flex items-center gap-1.5 mt-1.5">
-                        <span class="text-[8px] sm:text-[9px] font-bold text-gray-400 uppercase tracking-widest">${uniqueTopics.length} Chapters</span>
-                        <span class="text-gray-300">•</span>
-                        <span class="text-[8px] sm:text-[9px] font-black ${theme.color} uppercase tracking-widest">${totalFiles} Items</span>
-                    </div>
-                </div>`;
+                            html += `<div class="vx-card ${glowClass}" onclick="window.openMHSubject('${String(sub).replace(/'/g, "\\'")}')">${pendingBadge}<div class="vx-ic ${theme.bg} ${theme.color}"><i class="fa-solid ${theme.icon}"></i></div><h3>${window.escHtml(sub)}</h3><span class="vx-meta">${uniqueTopics.length} chapter${uniqueTopics.length === 1 ? '' : 's'} \u00b7 ${totalFiles} item${totalFiles === 1 ? '' : 's'}</span></div>`;
                         });
                         html += '</div>';
                         container.innerHTML = html;
@@ -19498,7 +19506,7 @@ window.__tpPaint = function () {
                         subEl.innerText = "Select a Chapter / Folder";
                         const subMats = materials.filter(m => m.subject === window.mhState.subject);
                         const uniqueTopics = [...new Set(subMats.map(m => m.topic))];
-                        let html = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">';
+                        let html = '<div class="vx-grid">';
                         uniqueTopics.forEach(top => {
                             const topMaterials = subMats.filter(m => m.topic === top);
                             let fileCount = 0;
@@ -19510,17 +19518,7 @@ window.__tpPaint = function () {
                             const glowClass = pendingInTopic > 0 ? 'unapproved-glow' : '';
                             const pendingBadge = pendingInTopic > 0 ? `<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm z-20 animate-pulse">${pendingInTopic} Pending</span>` : '';
 
-                            html += `
-                <div onclick="window.openMHTopic('${String(top).replace(/'/g, "\\'")}')" class="bg-white p-4 sm:p-5 rounded-[1.5rem] flex flex-col items-center justify-center text-center cursor-pointer hover:-translate-y-1 hover:shadow-lg transition-all duration-300 border border-gray-200/80 shadow-sm group relative overflow-hidden ${glowClass}">
-                    ${pendingBadge}
-                    <div class="relative z-10 w-full flex flex-col items-center">
-                        <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center text-2xl mb-3 shadow-inner group-hover:scale-110 transition-transform">
-                            <i class="fa-solid fa-folder-open text-indigo-500"></i>
-                        </div>
-                        <h3 class="font-black text-gray-900 text-xs sm:text-[13px] leading-tight break-words mb-1 line-clamp-2 px-1 group-hover:text-indigo-600 transition-colors">${top}</h3>
-                        <span class="text-[8px] sm:text-[9px] font-black text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full uppercase tracking-wider mt-1">${fileCount} Files / Notes</span>
-                    </div>
-                </div>`;
+                            html += `<div class="vx-card ${glowClass}" onclick="window.openMHTopic('${String(top).replace(/'/g, "\\'")}')">${pendingBadge}<div class="vx-ic bg-indigo-50 text-indigo-600"><i class="fa-solid fa-folder-open"></i></div><h3>${window.escHtml(top)}</h3><span class="vx-meta">${fileCount} file${fileCount === 1 ? '' : 's'} / note${fileCount === 1 ? '' : 's'}</span></div>`;
                         });
                         html += '</div>';
                         container.innerHTML = html;
@@ -19596,163 +19594,62 @@ window.__tpPaint = function () {
 
             // 3.3 RENDER: NOTES & ATTACHMENTS (Detailed Action View)
             window.renderMHFiles = function (materials, container) {
-                let html = '<div class="space-y-4">';
+                const isAdmin = window.currentRole === 'admin';
+                const e = x => window.escHtml(x);
+                const q = x => String(x == null ? '' : x).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                let html = '<div class="vx-list">';
 
                 materials.forEach(mat => {
-                    const isAdmin = window.currentRole === 'admin';
-
-                    // 🔥 NEW: Action Buttons
+                    const pend = mat.isApproved === false, pc = pend ? ' pend' : '';
                     const delBtn = isAdmin ? `<button onclick="deleteStudyMaterial('${mat.id}')" class="text-gray-400 hover:text-red-500 transition-colors p-1.5" title="Delete"><i class="fa-solid fa-trash text-sm"></i></button>` : '';
                     const editBtn = isAdmin ? `<button onclick="openEditMaterialModal('${mat.id}')" class="text-gray-400 hover:text-indigo-500 transition-colors p-1.5 mr-1" title="Edit"><i class="fa-solid fa-pen text-sm"></i></button>` : '';
-
-                    let approveBtn = '';
-                    let statusBadge = '';
-                    if (mat.isApproved === false) {
+                    let approveBtn = '', statusBadge = '';
+                    if (pend) {
                         statusBadge = `<span class="bg-amber-100 text-amber-700 text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm uppercase tracking-widest ml-2 border border-amber-200 align-middle"><i class="fa-solid fa-clock mr-1"></i>Pending</span>`;
                         if (isAdmin) approveBtn = `<button onclick="toggleMaterialApproval('${mat.id}', true)" class="text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg px-2.5 py-1.5 transition-colors flex items-center shadow-sm text-[10px] font-bold mr-1"><i class="fa-solid fa-check mr-1.5"></i> Approve</button>`;
-                    } else {
-                        if (isAdmin) approveBtn = `<button onclick="toggleMaterialApproval('${mat.id}', false)" class="text-gray-500 bg-gray-50 hover:bg-amber-50 border border-gray-200 hover:border-amber-200 hover:text-amber-600 rounded-lg px-2.5 py-1.5 transition-colors flex items-center shadow-sm text-[10px] font-bold mr-1"><i class="fa-solid fa-eye-slash mr-1.5"></i> Hide</button>`;
-                    } let filesHtml = '';
+                    } else if (isAdmin) {
+                        approveBtn = `<button onclick="toggleMaterialApproval('${mat.id}', false)" class="text-gray-500 bg-gray-50 hover:bg-amber-50 border border-gray-200 hover:border-amber-200 hover:text-amber-600 rounded-lg px-2.5 py-1.5 transition-colors flex items-center shadow-sm text-[10px] font-bold mr-1"><i class="fa-solid fa-eye-slash mr-1.5"></i> Hide</button>`;
+                    }
 
-                    // 1. External Links
+                    let rows = '';
+                    // 1. External link
                     if (mat.extLink) {
-                        filesHtml += `
-            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-indigo-300 transition-colors gap-3">
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
-                        <i class="fa-solid fa-file-pdf"></i>
-                    </div>
-                    <div class="min-w-0">
-                        <p class="text-xs sm:text-sm font-bold text-gray-900 truncate">${mat.title}</p>
-                        <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-0.5"></p>
-                    </div>
-                </div>
-                <button onclick="window.openCustomPDFViewer('${mat.extLink}', '${mat.title.replace(/'/g, "\\'")}')" class="px-4 py-2 bg-indigo-600 text-white text-[10px] sm:text-xs font-black rounded-lg shadow-sm hover:bg-indigo-700 active:scale-95 transition-all shrink-0">
-                    Read
-                </button>
-            </div>`;
+                        const act = `window.openCustomPDFViewer('${mat.extLink}', '${q(mat.title)}')`;
+                        rows += `<div class="vx-lec mh${pc}"><div class="vx-th mhf pdf" onclick="${act}"><i class="fa-solid fa-link"></i><span class="n">Link</span></div><div class="vx-body" onclick="${act}"><h4>${e(mat.title)}</h4><span>External link</span></div></div>`;
                     }
 
-                    // 2. File Attachments
-                    if (mat.files && mat.files.length > 0) {
-                        mat.files.forEach((f, idx) => {
-                            const isPdf = f.type === 'pdf';
-                            const isQuestionSet = f.type === 'image' && (mat.subject === 'Question Set' || mat.subject.toLowerCase().includes('question'));
+                    // 2. File attachments
+                    (mat.files || []).forEach((f, idx) => {
+                        const isPdf = f.type === 'pdf';
+                        const fname = String(f.name || '');
+                        const isQuestionSet = f.type === 'image' && (mat.subject === 'Question Set' || String(mat.subject).toLowerCase().includes('question'));
+                        const readAction = isPdf ? `window.openCustomPDFViewer('${f.url}', '${q(fname)}')` : `window.open('${f.url}', '_blank')`;
 
-                            // 🔥 MODIFIED: If it is an image, trigger the Native Image Opener (_blank)
-                            const readAction = isPdf
-                                ? `window.openCustomPDFViewer('${f.url}', '${f.name.replace(/'/g, "\\'")}')`
-                                : `window.open('${f.url}', '_blank')`;
+                        let uniqueKey = f.url;
+                        const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+                        if (match) uniqueKey = match[1];
+                        else uniqueKey = btoa(encodeURIComponent(f.url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
+                        const storageKey = isPdf ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
+                        const btnId = `dl-btn-${storageKey}`;
 
-                            let uniqueKey = f.url;
-                            const match = f.url.match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
-                            if (match) uniqueKey = match[1];
-                            else uniqueKey = btoa(encodeURIComponent(f.url)).replace(/[^a-zA-Z0-9]/g, '').slice(-30);
-
-                            const storageKey = isPdf ? `exama_pdf_${uniqueKey}` : `exama_img_${uniqueKey}`;
-                            const btnId = `dl-btn-${storageKey}`;
-
-                            window.checkIsOffline(storageKey).then(isSaved => {
-                                const btn = document.getElementById(btnId);
-                                if (btn && isSaved) {
-                                    btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`;
-                                    btn.classList.add('bg-emerald-50', 'border-emerald-200');
-                                }
-                            });
-
-                            if (isQuestionSet) {
-                                // 🔥 NEAT & CLEAN UI ONLY FOR QUESTION SETS
-                                filesHtml += `
-                    <div class="flex flex-col sm:flex-row gap-3 sm:gap-4 p-3 sm:p-4 bg-white rounded-2xl border border-indigo-100 shadow-sm relative group hover:border-indigo-300 transition-colors">
-                        <!-- Image Preview -->
-                        <div class="w-full sm:w-32 h-32 sm:h-24 shrink-0 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 cursor-pointer relative" onclick="${readAction}">
-                            <img src="${f.url}" class="w-full h-full object-cover">
-                            <div class="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div class="bg-white/90 w-8 h-8 rounded-full flex items-center justify-center text-gray-900 shadow-sm"><i class="fa-solid fa-expand text-xs"></i></div>
-                            </div>
-                        </div>
-                        
-                        <!-- Info & Actions -->
-                        <div class="flex flex-col flex-1 justify-between min-w-0">
-                            <div class="flex justify-between items-start mb-2">
-                                <div class="min-w-0 pr-2 cursor-pointer" onclick="${readAction}">
-                                    <h5 class="font-bold text-gray-900 text-xs sm:text-sm truncate">${f.name || `Question Page ${idx + 1}`}</h5>
-                                    <span class="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-0.5 block flex items-center gap-1"><i class="fa-solid fa-file-circle-question"></i> Question Paper</span>
-                                </div>
-                                <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g, "\\'")}', '${f.type}', this)" class="w-8 h-8 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-500 border border-gray-200 rounded-lg transition-colors shrink-0" title="Download">
-                                    <i class="fa-solid fa-cloud-arrow-down text-[10px] sm:text-xs"></i>
-                                </button>
-                            </div>
-                            
-                            <!-- AI Tool Buttons -->
-                            <div class="flex items-center gap-2 mt-auto pt-2 border-t border-gray-100/80">
-                                <button onclick="window.solveQuestionWithNOVA('${f.url}')" class="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2 sm:py-2.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5" title="Solve with NOVA">
-                                    <img src="https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true" class="w-3.5 h-3.5 rounded-full object-cover shadow-sm"> Nova Analysis
-                                </button>
-                                <button onclick="window.generateImageQuiz('${f.url}', '${mat.topic.replace(/'/g, "\\'")}')" class="flex-1 bg-amber-50 hover:bg-amber-100 text-amber-700 py-2 sm:py-2.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5" title="Generate 20Q Quiz">
-                                    <i class="fa-solid fa-bolt text-amber-500"></i>Quiz
-                                </button>
-                            </div>
-                        </div>
-                    </div>`;
-                            } else {
-                                // 📁 NORMAL FILES (PDFs & Regular Images) - Clean and Simple List Row
-                                const fileIcon = isPdf ? 'fa-file-pdf text-red-500' : 'fa-file-image text-blue-500';
-                                const iconBg = isPdf ? 'bg-red-50' : 'bg-blue-50';
-
-                                filesHtml += `
-                    <div class="flex items-center justify-between gap-3 p-2.5 sm:p-3 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-colors">
-                        <div class="flex items-center gap-3 min-w-0 cursor-pointer flex-1" onclick="${readAction}">
-                            <div class="w-10 h-10 rounded-lg ${iconBg} flex items-center justify-center shrink-0">
-                                <i class="fa-solid ${fileIcon} text-lg"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <h5 class="font-bold text-gray-800 text-xs sm:text-sm truncate leading-tight">${f.name}</h5>
-                                <span class="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-0.5 block">${isPdf ? 'PDF Document' : 'Image File'}</span>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2 shrink-0">
-                            <button id="${btnId}" onclick="window.downloadMaterialFile('${f.url}', '${f.name.replace(/'/g, "\\'")}', '${f.type}', this)" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-gray-100 text-gray-500 border border-gray-200 rounded-lg transition-colors shadow-sm" title="Download">
-                                <i class="fa-solid fa-cloud-arrow-down text-xs"></i>
-                            </button>
-                            <button onclick="${readAction}" class="px-3 py-1.5 sm:px-4 sm:py-2 bg-gray-900 text-white hover:bg-black text-[9px] sm:text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors shadow-sm">
-                                ${isPdf ? 'Read' : 'View'}
-                            </button>
-                        </div>
-                    </div>`;
-                            }
+                        window.checkIsOffline(storageKey).then(isSaved => {
+                            const btn = document.getElementById(btnId);
+                            if (btn && isSaved) { btn.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-600"></i>`; btn.classList.add('bg-emerald-50', 'border-emerald-200'); }
                         });
-                    }
+
+                        const dl = `<div class="vx-acts"><button id="${btnId}" onclick="event.stopPropagation(); window.downloadMaterialFile('${f.url}', '${q(fname)}', '${f.type}', this)" title="Download"><i class="fa-solid fa-cloud-arrow-down"></i></button></div>`;
+                        if (isQuestionSet) {
+                            rows += `<div class="vx-lec mh${pc}"><div class="vx-th" onclick="${readAction}"><img src="${f.url}" loading="lazy" alt=""><span class="n">Q${idx + 1}</span></div><div class="vx-body" onclick="${readAction}"><h4>${e(fname || 'Question Page ' + (idx + 1))}</h4><span>Question Paper</span></div>${dl}<div class="vx-qa"><button onclick="window.solveQuestionWithNOVA('${f.url}')" class="nv"><img src="https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true" alt=""> Nova Analysis</button><button onclick="window.generateImageQuiz('${f.url}', '${q(mat.topic)}')" class="qz"><i class="fa-solid fa-bolt"></i> Quiz</button></div></div>`;
+                        } else {
+                            rows += `<div class="vx-lec mh${pc}"><div class="vx-th mhf ${isPdf ? 'pdf' : 'img'}" onclick="${readAction}"><i class="fa-solid ${isPdf ? 'fa-file-pdf' : 'fa-file-image'}"></i><span class="n">${isPdf ? 'PDF' : 'Image'}</span></div><div class="vx-body" onclick="${readAction}"><h4>${e(fname)}</h4><span>${isPdf ? 'PDF Document' : 'Image File'}</span></div>${dl}</div>`;
+                        }
+                    });
 
                     const dateStr = new Date(mat.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-
-                    // Container Card
-                    html += `
-        <div class="bg-white p-4 sm:p-5 rounded-[1.25rem] sm:rounded-[1.5rem] border ${mat.isApproved === false ? 'border-amber-300 shadow-md bg-amber-50/10' : 'border-gray-200 shadow-sm'} flex flex-col gap-3 relative">
-            <div class="flex justify-between items-start border-b border-gray-100 pb-3 mb-1">
-                <div class="min-w-0 pr-2 flex-1">
-                    <h4 class="font-black text-gray-900 text-sm sm:text-base leading-tight break-words">${mat.title} ${statusBadge}</h4>
-                    <p class="text-[9px] sm:text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
-                        <i class="fa-regular fa-user"></i> ${mat.uploader || 'Faculty'} 
-                        <span class="text-gray-300 mx-1">|</span> 
-                        <i class="fa-regular fa-calendar"></i> ${dateStr}
-                    </p>
-                </div>
-                <!-- 🔥 Inject Buttons Here -->
-                <div class="flex items-center gap-1 shrink-0">
-                    ${approveBtn}
-                    ${editBtn}
-                    ${delBtn}
-                </div>
-            </div>
-            <div class="space-y-2.5">
-                ${filesHtml}
-            </div>
-        </div>`;
+                    html += `<div class="vx-mgrp"><div class="vx-mhead"><div style="min-width:0;flex:1"><h4>${e(mat.title)}${statusBadge}</h4><p>${e(mat.uploader || 'Faculty')} \u00b7 ${dateStr}</p></div><div class="vx-macts">${approveBtn}${editBtn}${delBtn}</div></div>${rows}</div>`;
                 });
 
-                html += '</div>';
-                container.innerHTML = html;
+                container.innerHTML = html + '</div>';
             };
 
             window.tokenClient = null; window.gdriveAccessToken = null;
@@ -34406,6 +34303,227 @@ document.addEventListener('click',function(e){var b=e.target.closest&&e.target.c
  #exam-analysis-view>div.overflow-y-auto{padding-top:12px!important;gap:12px}
 }
 </style>
+
+<style id="hub-progress-responsive-v1">
+/* ===== Lecture Hub progress bar (redesigned) ===== */
+@keyframes vxShine { 0% { transform:translateX(-100%); } 60%,100% { transform:translateX(100%); } }
+#video-hub-view .vx-prog { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"label pct" "bar bar"; align-items:center; gap:8px 12px; padding:12px 14px; border-radius:18px;
+  background:linear-gradient(135deg,#eef2ff,#f5f3ff 60%,#ecfeff); border:1px solid #e0e7ff; box-shadow:inset 0 1px 0 #fff; }
+#video-hub-view .vx-prog > span { grid-area:label; min-width:0; font-size:.78rem; font-weight:800; color:#334155; }
+#video-hub-view .vx-prog > span:only-child { grid-column:1 / -1; }
+#video-hub-view .vx-prog > b { grid-area:pct; min-width:48px; text-align:center; padding:3px 10px; border-radius:999px; background:#4f46e5; color:#fff !important; font-size:.75rem; font-weight:800; }
+#video-hub-view .vx-prog .vx-bar { grid-area:bar; height:10px !important; margin:0 !important; border-radius:999px; background:#fff !important; box-shadow:inset 0 1px 3px rgba(15,23,42,.14); overflow:hidden; }
+.vx-bar:not(.ok) i { background:linear-gradient(90deg,#6366f1,#8b5cf6 55%,#38bdf8) !important; border-radius:999px; position:relative; overflow:hidden; transition:width .7s cubic-bezier(.32,.72,0,1); }
+.vx-bar:not(.ok) i::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent); animation:vxShine 2.6s ease-in-out infinite; }
+@media (min-width:640px) { #video-hub-view .vx-prog { grid-template-columns:auto minmax(0,1fr) auto; grid-template-areas:"label bar pct"; gap:14px; } }
+/* ===== Responsive: Lecture Hub ===== */
+#video-hub-view .vx-hdr { padding-left:max(16px,env(safe-area-inset-left,0px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px)) !important; }
+@media (min-width:768px) { #video-hub-view .vx-hdr { padding-left:max(28px,env(safe-area-inset-left,0px)) !important; padding-right:max(28px,env(safe-area-inset-right,0px)) !important; } }
+@media (orientation:landscape) and (max-height:520px) { #video-hub-view .vx-hdr { padding-top:max(.6rem,env(safe-area-inset-top,0px)) !important; padding-bottom:10px !important; gap:8px !important; } }
+#video-hub-view .vx-wrap { padding-left:max(12px,env(safe-area-inset-left,0px)); padding-right:max(12px,env(safe-area-inset-right,0px)); }
+@media (min-width:1100px) { .vx-wrap { max-width:1180px; } .vx-grid { grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); } }
+@media (min-width:900px) { .vx-list:not(:has(.vx-lec.adm)) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; } }
+@media (max-width:380px) { .vx-lec:not(.adm) { grid-template-columns:1fr; } .vx-lec:not(.adm) .vx-th { width:100%; } .vx-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; } .vx-card { padding:12px; } }
+@media (max-width:480px) { .vx-hero { padding:14px; gap:12px; } .vx-ring { width:54px; height:54px; } .vx-ring b { width:42px; height:42px; font-size:.72rem; } }
+/* ===== Responsive: Material Hub ===== */
+#materials-view > div:first-child { padding-left:max(16px,env(safe-area-inset-left,0px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px)) !important; }
+#materials-view > div:nth-child(2) { width:100% !important; max-width:1100px; margin-left:auto; margin-right:auto; }
+#mh-dynamic-container { padding-left:max(14px,env(safe-area-inset-left,0px)); padding-right:max(14px,env(safe-area-inset-right,0px)); }
+#mh-dynamic-container .grid.grid-cols-2 { grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr)) !important; }
+@media (min-width:900px) {
+  #mh-dynamic-container .grid.grid-cols-2 { grid-template-columns:repeat(auto-fill,minmax(190px,1fr)) !important; }
+  #mh-dynamic-container > .space-y-4 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; }
+  #mh-dynamic-container > .space-y-4 > * { margin:0 !important; }
+}
+@media (max-width:360px) { #mh-dynamic-container [onclick^="window.openMH"] { padding:12px !important; } #mh-dynamic-container .grid.grid-cols-2 { grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:10px !important; } }
+@media (orientation:landscape) and (max-height:520px) { #materials-view > div:first-child { padding-bottom:8px !important; } }
+/* student dashboard tiles: softer spring on press */
+#student-view .sd-tiles .glass-card { transition:transform .32s cubic-bezier(.32,.72,0,1), box-shadow .3s ease, border-color .3s ease !important; will-change:transform; }
+@media (prefers-reduced-motion:reduce) { .vx-bar i::after { animation:none !important; } }
+</style>
+<style id="hub-headers-v1">
+/* ===== Gradient headers (Goal Planner style), one colour per feature = its dashboard icon colour ===== */
+#materials-view    { --h1:#10b981; --h2:#0f766e; --h3:#064e3b; --hl:#a7f3d0; --hs:rgba(6,78,59,.6); }     /* Material Hub: emerald / teal */
+#video-hub-view    { --h1:#ef4444; --h2:#be123c; --h3:#4c0519; --hl:#fecdd3; --hs:rgba(136,19,55,.6); }   /* Lecture Hub: red / rose */
+#math-workout-view { --h1:#fb923c; --h2:#ea580c; --h3:#7c2d12; --hl:#fed7aa; --hs:rgba(124,45,18,.6); }   /* Math Workout: orange */
+#materials-view > div:first-child, #video-hub-view > .vx-hdr, #math-workout-view > div:first-child {
+  background:radial-gradient(circle at 85% 0,var(--h1) 0,var(--h2) 55%,var(--h3)) !important; color:#fff !important; border:0 !important;
+  border-radius:0 0 26px 26px !important; box-shadow:0 14px 30px -10px var(--hs) !important; padding-bottom:18px !important; position:relative; z-index:20 !important; }
+@media (orientation:landscape) and (max-height:520px) { #materials-view > div:first-child, #video-hub-view > .vx-hdr, #math-workout-view > div:first-child { padding-bottom:12px !important; border-radius:0 0 20px 20px !important; } }
+#mh-header-title, #video-hub-view .vx-hdr h2, #math-workout-view > div:first-child h2 { color:#fff !important; font-size:20px !important; font-weight:900 !important; line-height:1.1 !important; letter-spacing:0 !important; }
+#mh-header-subtitle, #video-hub-view .vx-hdr p, #math-workout-view > div:first-child p { color:var(--hl) !important; font-size:10px !important; font-weight:700 !important; letter-spacing:.14em !important; text-transform:uppercase; margin-top:3px !important; }
+#materials-view > div:first-child button, #video-hub-view .vx-hdr .vx-iconbtn, #math-workout-view > div:first-child button {
+  width:38px !important; height:38px !important; border-radius:13px !important; background:rgba(255,255,255,.16) !important; border:0 !important; color:#fff !important; box-shadow:none !important; display:flex; align-items:center; justify-content:center; }
+#materials-view > div:first-child button:active, #video-hub-view .vx-hdr .vx-iconbtn:active, #math-workout-view > div:first-child button:active { transform:scale(.9); }
+#btn-upload-material, #video-hub-view .vx-iconbtn.pri { background:rgba(255,255,255,.26) !important; }
+#materials-view > div:first-child button.hidden, #video-hub-view .vx-iconbtn.hidden { display:none !important; }
+@media (min-width:1024px) { #mh-header-title, #video-hub-view .vx-hdr h2, #math-workout-view > div:first-child h2 { font-size:26px !important; } }
+/* matching accents inside the screens */
+#video-hub-view .vx-prog { background:color-mix(in srgb,var(--h1) 8%,#fff) !important; border-color:color-mix(in srgb,var(--h1) 20%,#fff) !important; }
+#video-hub-view .vx-prog > b { background:var(--h2) !important; }
+#video-hub-view .vx-bar:not(.ok) i { background:linear-gradient(90deg,var(--h1),var(--h2)) !important; }
+#video-hub-view .vx-hero { background:radial-gradient(circle at 85% 0,var(--h1) 0,var(--h2) 55%,var(--h3)) !important; }
+#video-hub-view .vx-ring b { background:var(--h3) !important; }
+#video-hub-view .vx-card:hover { border-color:color-mix(in srgb,var(--h1) 45%,#fff) !important; box-shadow:0 14px 30px -16px color-mix(in srgb,var(--h2) 55%,transparent) !important; }
+#mh-dynamic-container [onclick^="window.openMHTopic"] > div > div:first-child { background:color-mix(in srgb,var(--h1) 14%,#fff) !important; }
+#mh-dynamic-container [onclick^="window.openMHTopic"] i { color:var(--h2) !important; }
+#mh-dynamic-container [onclick^="window.openMHTopic"] span { background:color-mix(in srgb,var(--h1) 14%,#fff) !important; color:var(--h2) !important; }
+#mh-dynamic-container [onclick^="window.openMH"]:hover { border-color:color-mix(in srgb,var(--h1) 45%,#fff) !important; }
+#mh-dynamic-container button.bg-indigo-600 { background:linear-gradient(135deg,var(--h1),var(--h2)) !important; }
+#mh-dynamic-container .bg-indigo-100 { background:color-mix(in srgb,var(--h1) 16%,#fff) !important; } #mh-dynamic-container .bg-indigo-100 i { color:var(--h2) !important; }
+</style>
+<style id="hub-progress-weekly-v1">
+/* Lecture Hub progress: same card as Weekly Targets (ring + Total/Done/Left + white bar) inside the gradient header */
+#video-hub-view .vx-prog { display:block !important; padding:0 !important; background:none !important; border:0 !important; box-shadow:none !important; }
+#video-hub-view .vx-prog > span:only-child { display:block; color:rgba(255,255,255,.92); font-size:.78rem; font-weight:800; letter-spacing:.04em; }
+#video-hub-view .tp2-score { margin-top:2px; color:#fff; }
+#video-hub-view .tp2-sring circle:first-child { stroke:rgba(255,255,255,.2); }
+#video-hub-view .tp2-sring circle:last-child { stroke:#fecdd3; }
+#video-hub-view .tp2-sinfo span.hx-lab { color:#fecdd3; }
+#video-hub-view .tp2-sinfo .hx-stats3 span { color:#fecdd3; }
+</style>
+<style id="hub-sheet-v1">
+/* ===== rounded white sheet curving up over every rounded gradient header; Lecture Hub progress: white text + auto-hide ===== */
+:root { --hub-sheet:26px; }
+#materials-view > div:first-child, #video-hub-view > .vx-hdr, #math-workout-view > div:first-child, #target-calc-view > .tp2-hero { border-radius:0 !important; box-shadow:none !important; padding-bottom:calc(18px + var(--hub-sheet)) !important; z-index:10 !important; }
+#materials-view > div:nth-child(2), #video-hub-view > .vx-scroll, #math-workout-view > div:not(:first-child), #target-calc-view > .tp2-hero + div { position:relative; z-index:20; margin-top:calc(-1 * var(--hub-sheet)) !important; border-radius:var(--hub-sheet) var(--hub-sheet) 0 0 !important; box-shadow:0 -10px 24px -14px var(--hs, rgba(30,27,75,.45)); }
+#materials-view > div:nth-child(2) { max-width:none !important; margin-left:0 !important; margin-right:0 !important; background-color:#f6f8fc !important; }
+#mh-dynamic-container { max-width:1100px; margin-left:auto; margin-right:auto; padding-top:20px; }
+#video-hub-view > .vx-scroll { background-color:#f5f6fb; } #target-calc-view > .tp2-hero + div { background-color:#f4f6fb; } #vh-dynamic-container { padding-top:18px; }
+#math-workout-view > div:not(:first-child) { background-color:#f9fafb; }
+@media (orientation:landscape) and (max-height:520px) { #materials-view > div:first-child, #video-hub-view > .vx-hdr, #math-workout-view > div:first-child, #target-calc-view > .tp2-hero { padding-bottom:calc(12px + var(--hub-sheet)) !important; } }
+@media (max-width:1000px) {   /* Weekly Targets + Syllabus content column is centred and narrower on big screens, so the sheet is applied up to 1000px */
+  #weekly-targets-view > .tp2-hero, #syllabus-view > .tp2-hero { border-radius:0 !important; box-shadow:none !important; padding-bottom:calc(18px + var(--hub-sheet)) !important; z-index:10 !important; }
+  #weekly-targets-view > div:nth-child(2), #syllabus-view > div:nth-child(2) { position:relative; z-index:20; margin-top:calc(-1 * var(--hub-sheet)) !important; padding-top:22px !important; border-radius:var(--hub-sheet) var(--hub-sheet) 0 0 !important; background-color:#f8fafc; box-shadow:0 -10px 24px -14px rgba(30,27,75,.4); }
+}
+/* Lecture Hub progress card: all white text */
+#video-hub-view .tp2-sring circle:last-child { stroke:#fff; }
+#video-hub-view .tp2-sinfo span.hx-lab, #video-hub-view .tp2-sinfo strong, #video-hub-view .tp2-sinfo .hx-stats3 span, #video-hub-view .hx-stats3 > div b, #video-hub-view .tp2-sring b, #video-hub-view .vx-prog > span:only-child { color:#fff !important; }
+/* auto-hide on scroll down (JS toggles .vx-prog-off on the header) */
+#video-hub-view #vh-prog { max-height:260px; overflow:hidden; transition:max-height .5s cubic-bezier(.32,.72,0,1), opacity .35s ease, margin .5s cubic-bezier(.32,.72,0,1); }
+#video-hub-view .vx-hdr.vx-prog-off #vh-prog { max-height:0; opacity:0; margin-top:-12px; }
+@media (prefers-reduced-motion:reduce) { #video-hub-view #vh-prog { transition:none; } }
+</style>
+<style id="hub-round-v2">
+/* Material Hub + Lecture Hub: the header itself is rounded at the bottom (same 26px curve + shadow as Goal Planner / Discuss). Replaces the square header + overlapping sheet. */
+:root { --hub-r:26px; }
+#materials-view { background:#f6f8fc !important; }
+#video-hub-view { background:#f5f6fb !important; }
+#materials-view > div:first-child, #video-hub-view > .vx-hdr {
+  border-radius:0 0 var(--hub-r) var(--hub-r) !important; box-shadow:0 14px 30px -10px var(--hs) !important;
+  padding-bottom:18px !important; position:relative; z-index:30 !important; }
+#materials-view > div:nth-child(2), #video-hub-view > .vx-scroll { margin-top:0 !important; border-radius:0 !important; box-shadow:none !important; z-index:1 !important; }
+/* header content lines up with the content column on tablets and desktops */
+#materials-view > div:first-child { padding-left:max(16px,env(safe-area-inset-left,0px),calc((100% - 1100px)/2 + 16px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px),calc((100% - 1100px)/2 + 16px)) !important; }
+#video-hub-view > .vx-hdr { padding-left:max(16px,env(safe-area-inset-left,0px),calc((100% - 1040px)/2 + 16px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px),calc((100% - 1040px)/2 + 16px)) !important; }
+@media (min-width:1100px) { #video-hub-view > .vx-hdr { padding-left:max(16px,env(safe-area-inset-left,0px),calc((100% - 1180px)/2 + 16px)) !important; padding-right:max(16px,env(safe-area-inset-right,0px),calc((100% - 1180px)/2 + 16px)) !important; } }
+/* sizes */
+#materials-view > div:first-child > div:first-child, #video-hub-view .vx-hrow { gap:12px; min-width:0; }
+#mh-header-title, #video-hub-view .vx-hdr h2 { overflow-wrap:anywhere; }
+@media (min-width:768px) { #mh-header-title, #video-hub-view .vx-hdr h2 { font-size:23px !important; } #materials-view > div:first-child { padding-bottom:22px !important; } #video-hub-view > .vx-hdr { padding-bottom:22px !important; } }
+@media (min-width:1024px) { #mh-header-title, #video-hub-view .vx-hdr h2 { font-size:26px !important; } }
+@media (max-width:360px) {
+  :root { --hub-r:22px; }
+  #mh-header-title, #video-hub-view .vx-hdr h2 { font-size:18px !important; }
+  #materials-view > div:first-child button, #video-hub-view .vx-hdr .vx-iconbtn { width:34px !important; height:34px !important; border-radius:11px !important; }
+  #materials-view > div:first-child, #video-hub-view > .vx-hdr { padding-left:max(12px,env(safe-area-inset-left,0px)) !important; padding-right:max(12px,env(safe-area-inset-right,0px)) !important; }
+}
+@media (orientation:landscape) and (max-height:520px) {
+  :root { --hub-r:20px; }
+  #materials-view > div:first-child, #video-hub-view > .vx-hdr { padding-bottom:12px !important; }
+}
+</style>
+<style id="mh-rows-v1">
+/* Material Hub rows = Lecture Hub rows (.vx-card grid for subjects/chapters, .vx-lec rows for files) */
+#mh-dynamic-container .vx-ic i { color:inherit !important; }
+#mh-dynamic-container .vx-card .vx-meta { background:none !important; color:var(--vx-mut) !important; padding:0 !important; }
+#mh-dynamic-container .vx-card > span.bg-amber-500 { background:#f59e0b !important; color:#fff !important; }
+#materials-view .vx-card:hover { border-color:color-mix(in srgb,var(--h1) 45%,#fff); box-shadow:0 14px 30px -16px color-mix(in srgb,var(--h2) 55%,transparent); }
+.vx-mgrp { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.vx-mhead { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:2px 4px 0; }
+.vx-mhead h4 { font-size:.9rem; font-weight:800; color:var(--vx-ink); line-height:1.3; margin:0; word-break:break-word; }
+.vx-mhead p { font-size:.7rem; color:var(--vx-mut); font-weight:600; margin:2px 0 0; }
+.vx-macts { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:2px; flex-shrink:0; }
+.vx-lec.mh { grid-template-columns:auto minmax(0,1fr) auto !important; }
+.vx-lec.mh.pend { border-color:#fcd34d; background:#fffbeb; }
+.vx-lec.mh .vx-body h4 { -webkit-line-clamp:2; }
+.vx-th.mhf { display:grid; place-items:center; font-size:1.7rem; }
+.vx-th.mhf.pdf { background:#fef2f2; color:#dc2626; }
+.vx-th.mhf.img { background:#eff6ff; color:#2563eb; }
+.vx-th.mhf .n { background:rgba(15,23,42,.7); }
+.vx-acts button.bg-emerald-50 { background:#ecfdf5; color:#059669; }
+.vx-qa { grid-column:1 / -1; display:flex; gap:8px; padding-top:8px; border-top:1px solid var(--vx-line); }
+.vx-qa button { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:9px 8px; border:0; border-radius:10px; font-size:.7rem; font-weight:800; }
+.vx-qa .nv { background:#eef2ff; color:#4338ca; } .vx-qa .nv img { width:16px; height:16px; border-radius:50%; object-fit:cover; }
+.vx-qa .qz { background:#fffbeb; color:#b45309; }
+@media (max-width:380px) { .vx-lec.mh .vx-th { width:92px; } }
+</style>
+<style id="hub-tablet-v1">
+/* Lecture Hub button: same gradient as the Lecture Hub header */
+.lh-btn { background-image:radial-gradient(circle at 85% 0,#ef4444 0,#be123c 55%,#4c0519) !important; box-shadow:0 8px 16px -6px rgba(136,19,55,.6) !important; }
+/* Tablet (landscape + portrait): lectures and files sit in 2 columns, like Lecture Hub on a wide screen */
+html.is-tablet .vx-list { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:12px !important; align-items:start; }
+html.is-tablet .vx-th { width:132px; }
+html.is-tablet.is-landscape .vx-th { width:164px; }
+html.is-tablet.is-portrait .vx-lec.adm .vx-th { width:112px; }
+html.is-tablet .vx-lec { padding:10px; gap:12px; }
+html.is-tablet .vx-body h4 { font-size:.92rem; }
+html.is-tablet .vx-mhead h4 { font-size:.95rem; }
+@media (min-width:768px) and (max-width:1400px) and (hover:none) and (pointer:coarse) {
+  .vx-list { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:12px !important; align-items:start; }
+}
+</style>
+<style id="loader-text-v2">
+/* Loader status text: letters spring in one by one, a rainbow wave (the 4 logo-dot colours) travels through them, then three dots bounce */
+#loader-text { font-size:13px; letter-spacing:.09em; }
+@media (min-width:640px) { #loader-text { font-size:15px; } }
+#loader-text.gl-chars.gl-live::after { content:none !important; }
+#loader-text .gl-c { animation:glChIn2 .6s cubic-bezier(.34,1.56,.64,1) calc(var(--d0,0s) + var(--i,0) * 24ms) backwards, glChWave2 3s ease-in-out calc(var(--d0,0s) + .7s + var(--i,0) * 80ms) infinite; }
+@keyframes glChIn2 { from { opacity:0; transform:translate3d(0,14px,0) scale(.7); } to { opacity:1; transform:none; } }
+@keyframes glChWave2 {
+  0%, 60%, 100% { color:#475569; transform:none; }
+  10% { color:#6366f1; transform:translate3d(0,-3px,0) scale(1.1); }
+  22% { color:#06b6d4; transform:translate3d(0,-1px,0) scale(1.04); }
+  34% { color:#f59e0b; transform:none; }
+  46% { color:#f43f5e; transform:none; }
+}
+#loader-text .gl-dots { display:inline-flex; align-items:flex-end; gap:4px; margin-left:7px; height:1em; vertical-align:baseline; opacity:0; animation:glDotsIn .4s ease calc(var(--d0,0s) + .45s) forwards; }
+#loader-text .gl-dots i { display:block; width:5px; height:5px; border-radius:50%; background:#6366f1; animation:glDotB 1.15s ease-in-out infinite; }
+#loader-text .gl-dots i:nth-child(2) { background:#06b6d4; animation-delay:.15s; }
+#loader-text .gl-dots i:nth-child(3) { background:#f43f5e; animation-delay:.3s; }
+@keyframes glDotsIn { to { opacity:1; } }
+@keyframes glDotB { 0%, 60%, 100% { transform:translate3d(0,0,0) scale(.8); opacity:.5; } 30% { transform:translate3d(0,-6px,0) scale(1.15); opacity:1; } }
+#global-loader.gl-out #loader-text .gl-dots i { animation-play-state:paused; }
+@media (prefers-reduced-motion:reduce) { #loader-text .gl-c, #loader-text .gl-dots i { animation:none; } #loader-text .gl-dots { animation:none; opacity:1; } }
+</style>
+<style id="mh-grid-v2">
+/* Material Hub files flow in the same multi-column grid as Lecture Hub rows. The per-material wrapper dissolves, so every file row is a grid item; the material title line spans the full width. */
+.vx-list > .vx-mgrp { display:contents !important; }
+.vx-list > .vx-mgrp > .vx-mhead { grid-column:1 / -1; padding-top:8px; }
+.vx-list > .vx-mgrp:first-child > .vx-mhead { padding-top:0; }
+/* 2 columns from 700px wide (phones stay 1 column); tablets are handled by the html.is-tablet rule above */
+@media (min-width:700px) { .vx-list:not(:has(.vx-lec.adm)) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; } }
+</style>
+<script id="vx-prog-autohide">
+(function () {
+    function init() {
+        var v = document.getElementById('video-hub-view'); if (!v) return;
+        var sc = v.querySelector('.vx-scroll'), hdr = v.querySelector('.vx-hdr'), box = document.getElementById('vh-dynamic-container');
+        if (!sc || !hdr || sc.__ah) return; sc.__ah = 1;
+        var last = 0, acc = 0, off = false;
+        function show() { if (off) { off = false; hdr.classList.remove('vx-prog-off'); } acc = 0; }
+        sc.addEventListener('scroll', function () {
+            var y = sc.scrollTop, d = y - last; last = y;
+            if (y <= 8) { show(); return; }
+            if ((d > 0) !== (acc > 0)) acc = 0; acc += d;
+            if (!off && acc > 28 && y > 60 && sc.scrollHeight - sc.clientHeight > 280) { off = true; hdr.classList.add('vx-prog-off'); acc = 0; }
+            else if (off && acc < -24) show();
+        }, { passive: true });
+        if (box && window.MutationObserver) new MutationObserver(function () { sc.scrollTop = 0; last = 0; show(); }).observe(box, { childList: true });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
 </body>
 
 </html>
