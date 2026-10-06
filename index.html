@@ -21203,22 +21203,37 @@ async function moreRun() {
     } catch (e) { if (!rows.children.length || !lastDoc) rows.innerHTML = '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Could not load history. Check your internet.</p>'; hDone = true; }
     if (io && !hDone) { const e = $('wlt-end'); if (e) { io.unobserve(e); io.observe(e); } }
 }
-// ---------- ranking (trophy button) ----------
-const rkRow = (x, i, mine, lab) => { const nm = x.name || 'Student', col = i < 3 ? ['#fcd34d', '#e2e8f0', '#fdba74'][i] : 'rgba(255,255,255,.45)', u = (window.getStudentAvatar && window.getStudentAvatar(x.mobile, nm)) || '';
-    return '<div class="wl-rk" role="button" tabindex="0" onclick="window.wltOpenProfile(\'' + String(x.mobile).replace(/\W/g, '') + '\')" onkeydown="if(event.key===\'Enter\')this.click()" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:16px;margin-bottom:8px;cursor:pointer;background:' + (mine ? 'rgba(245,158,11,.18)' : 'rgba(255,255,255,.06)') + ';' + (mine ? 'border:1px solid rgba(245,158,11,.5)' : '') + '"><span style="width:34px;text-align:center;font-weight:900;font-size:' + (lab ? 12 : 15) + 'px;color:' + col + '">' + (lab || (i + 1)) + '</span>'
-        + (u ? '<img alt="" src="' + esc(u) + '" onerror="this.style.visibility=\'hidden\'" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex:none;background:#27272a">' : '<span style="width:38px;height:38px;flex:none"></span>')
-        + '<div class="truncate" style="min-width:0;flex:1;font-size:13px;font-weight:800">' + esc(nm) + (mine ? ' (You)' : '') + '</div><div style="font-size:16px;font-weight:900;color:' + (x.balance < 0 ? '#fb7185' : '#fcd34d') + '">' + x.balance + '</div><i class="fa-solid fa-chevron-right" style="font-size:10px;color:rgba(255,255,255,.3)"></i></div>'; };
-async function loadRank() {
-    const box = $('wlt-rank'); if (!box) return; if (rankHtml) { box.innerHTML = rankHtml; return; } box.innerHTML = '<p style="text-align:center;padding:40px;color:rgba(255,255,255,.4);font-size:12px;font-weight:800">Loading...</p>';
+// ---------- ranking (trophy button in the wallet header) ----------
+const rkCss = () => { if ($('wlt-rk-css')) return; const e = document.createElement('style'); e.id = 'wlt-rk-css'; e.textContent = `
+.rk-me{position:relative;overflow:hidden;border-radius:18px;padding:14px 16px;background:linear-gradient(120deg,#78350f,#d97706 60%,#fcd34d);color:#1b1033;box-shadow:0 8px 26px rgba(245,158,11,.3);display:flex;align-items:center;gap:14px}
+.rk-me .n{font-size:38px;font-weight:900;font-style:italic;line-height:1}.rk-me small{display:block;font-size:10px;font-weight:800;opacity:.75}.rk-me b{display:block;font-size:13px;font-weight:900;margin-top:2px}.rk-me .c{margin-left:auto;text-align:right;font-size:22px;font-weight:900;display:flex;align-items:center;gap:6px}
+.rk-pod{display:flex;align-items:flex-end;justify-content:center;gap:8px;margin:18px 0 12px}.rk-p{flex:1;max-width:130px;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;text-align:center}.rk-p .nm{max-width:100%;font-size:12px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rk-p .cn{font-size:13px;font-weight:900;color:#fcd34d}
+.rk-p .ring{position:relative;border-radius:50%;padding:3px;background:var(--r)}.rk-p .ring .wl-ico{border:2px solid #1a1230}.rk-p .cr{position:absolute;top:-17px;left:50%;transform:translateX(-50%);color:#fcd34d;font-size:16px}
+.rk-bar{width:100%;border-radius:14px 14px 4px 4px;display:flex;justify-content:center;padding-top:8px;font-size:20px;font-weight:900;color:#1b1033;background:var(--r);transform-origin:bottom;animation:rkUp .6s cubic-bezier(.2,.8,.2,1) both}@keyframes rkUp{from{transform:scaleY(0)}}
+.rk-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:16px;margin-bottom:8px;cursor:pointer;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);transition:transform .15s}.rk-row:active{transform:scale(.985)}.rk-row.me{background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.5)}
+.rk-row .r{width:30px;text-align:center;font-weight:900;font-size:14px;color:rgba(255,255,255,.55)}.rk-row .nm{flex:1;min-width:0;font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rk-row .cn{font-size:16px;font-weight:900;color:#fcd34d}
+@media (prefers-reduced-motion:reduce){.rk-bar{animation:none}}`; document.head.appendChild(e); };
+const rkOpen = m => 'onclick="window.wltOpenProfile(\'' + String(m).replace(/\W/g, '') + '\')"';
+async function loadRank(force) {
+    const box = $('wlt-rank'); if (!box) return; if (rankHtml && !force) { box.innerHTML = rankHtml; return; }
+    box.innerHTML = '<div class="wl-sk" style="height:84px"></div><div class="wl-sk" style="height:150px"></div>' + '<div class="wl-sk"></div>'.repeat(3);
     try {
         const sn = await getDocs(query(collection(db, COL('wallets')), orderBy('balance', 'desc'), limit(50))), L = [];
-        sn.forEach(d => { const w = d.data(), s = (window.studentsDB || []).find(z => String(z.mobile) === String(w.mobile || d.id)); L.push({ mobile: String(w.mobile || d.id), name: s ? s.name : 'Student ' + String(w.mobile || d.id).slice(-4), balance: w.balance || 0 }); });
-        let h = L.map((x, i) => rkRow(x, i, x.mobile === me())).join('');
-        if (L.length && !L.some(x => x.mobile === me())) { const s = stu(); h += '<div style="text-align:center;font-size:10px;color:rgba(255,255,255,.35);margin:4px 0 8px">· · ·</div>' + rkRow({ mobile: me(), name: s.name || 'You', balance: curBal }, 99, true, '50+'); }
-        rankHtml = h || '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">No ranking yet.</p>'; box.innerHTML = rankHtml;
+        sn.forEach(d => { const w = d.data(), m = String(w.mobile || d.id), s = (window.studentsDB || []).find(z => String(z.mobile) === m); L.push({ mobile: m, name: s ? s.name : 'Student ' + m.slice(-4), balance: w.balance || 0 }); });
+        L.forEach((x, i) => { x.rank = i && x.balance === L[i - 1].balance ? L[i - 1].rank : i + 1; });
+        const mi = L.findIndex(x => x.mobile === me()), mine = mi > -1 ? L[mi] : null, bal = mine ? mine.balance : curBal, rk = mine ? mine.rank : '50+';
+        const above = mine ? L.slice(0, mi).reverse().find(x => x.balance > bal) : L.length ? L[L.length - 1] : null;
+        const hint = mine && mine.rank === 1 ? 'You are leading the class' : above ? (above.balance - bal + 1) + ' more coins to pass ' + esc(above.name) : 'Earn coins to enter the top 50';
+        let h = `<div class="rk-me"><span class="n">#${rk}</span><div style="min-width:0"><small>YOUR RANK</small><b>${hint}</b></div><div class="c">${coin(24)}${bal}</div></div>`;
+        const T = L.slice(0, 3), C = ['linear-gradient(180deg,#fde68a,#f59e0b)', 'linear-gradient(180deg,#f1f5f9,#94a3b8)', 'linear-gradient(180deg,#fdba74,#c2410c)'], H = [104, 78, 58];
+        if (T.length) h += '<div class="rk-pod">' + [1, 0, 2].filter(i => T[i]).map(i => { const x = T[i]; return `<div class="rk-p" role="button" tabindex="0" ${rkOpen(x.mobile)} style="--r:${C[i]}"><span class="ring">${i === 0 ? '<i class="fa-solid fa-crown cr"></i>' : ''}${av(x.mobile, x.name, i === 0 ? 64 : 52)}</span><span class="nm">${esc(x.name)}${x.mobile === me() ? ' (You)' : ''}</span><span class="cn">${x.balance}</span><div class="rk-bar" style="height:${H[i]}px">${x.rank}</div></div>`; }).join('') + '</div>';
+        h += L.slice(3).map(x => `<div class="rk-row${x.mobile === me() ? ' me' : ''}" role="button" tabindex="0" ${rkOpen(x.mobile)} onkeydown="if(event.key==='Enter')this.click()"><span class="r">${x.rank}</span>${av(x.mobile, x.name, 38)}<span class="nm">${esc(x.name)}${x.mobile === me() ? ' (You)' : ''}</span><span class="cn">${x.balance}</span><i class="fa-solid fa-chevron-right" style="font-size:10px;color:rgba(255,255,255,.3)"></i></div>`).join('');
+        if (mine ? 0 : L.length) h += '<div style="text-align:center;font-size:10px;color:rgba(255,255,255,.35);margin:4px 0 8px">\u00b7 \u00b7 \u00b7</div>' + `<div class="rk-row me"><span class="r">50+</span>${av(me(), stu().name || 'You', 38)}<span class="nm">${esc(stu().name || 'You')} (You)</span><span class="cn">${bal}</span></div>`;
+        rankHtml = L.length ? h : '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">No ranking yet. Earn coins to appear here.</p>'; box.innerHTML = rankHtml;
     } catch (e) { box.innerHTML = '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Could not load ranking. Check your internet.</p>'; }
 }
-window.wltRank = function () { if (!isFirebaseConfigured) return; ov(head('window.wltOvBack()', 'RANKING') + '<div id="wlt-rank" class="wl-pane" style="width:100%;max-width:440px;margin-top:16px"></div>'); loadRank(); };
+window.wltRankRefresh = () => loadRank(true);
+window.wltRank = function () { if (!isFirebaseConfigured) return; rkCss(); ov(head('window.wltBack()', 'COIN RANKING', '<button type="button" class="wl-ib" onclick="window.wltRankRefresh()" aria-label="Refresh ranking"><i class="fa-solid fa-rotate"></i></button>') + '<div id="wlt-rank" class="wl-pane" style="width:100%;max-width:440px;margin-top:16px"></div>'); loadRank(); };
 window.wltOpenProfile = function (m) { m = String(m || ''); if (!m) return; WN.leave(); setTimeout(function () { if (typeof window.showStudentStats === 'function') window.showStudentStats(m); }, 260); };
 window.wltRules = function (v) { const r = $('wlt-rules'), bt = $('wlt-rbtn'); if (!r || !bt) return; const on = v === undefined ? !r.classList.contains('open') : !!v; r.classList.toggle('open', on); bt.classList.toggle('on', on); bt.setAttribute('aria-expanded', on ? 'true' : 'false'); r.setAttribute('aria-hidden', on ? 'false' : 'true'); };
 window.wltFlip = function (b) { if (b) window.wltRules(0); const f = $('wlt-flip'); if (!f) return; f.classList.toggle('flip', !!b); $('wlt-front').style.pointerEvents = b ? 'none' : ''; $('wlt-back').style.pointerEvents = b ? '' : 'none'; };
@@ -21336,7 +21351,7 @@ window.wltDone = function () { window.wltHome(); window.wltFlip(0); const r = $(
 async function showWallet() {
     const p = $('wlt'); if (!p) return; lastDoc = null; hDone = false; rankHtml = ''; mb = false; lastDay = ''; if (io) { io.disconnect(); io = null; }
     const qr = me() ? qrSvg('exama:' + me()) : '';
-    p.innerHTML = `${head('window.closeWallet()', 'MY WALLET', '<span style="display:flex;gap:8px"><button type="button" class="wl-ib" onclick="window.wltStore()" aria-label="Store" style="color:#fcd34d"><i class="fa-solid fa-store"></i></button></span>')}
+    p.innerHTML = `${head('window.closeWallet()', 'MY WALLET', '<span style="display:flex;gap:8px"><button type="button" class="wl-ib" onclick="window.wltRank()" aria-label="Ranking" style="color:#fcd34d"><i class="fa-solid fa-trophy"></i></button></span>')}
 <div class="wl-wrap"><div class="wl-left"><div class="wl-card"><div class="wl-in" id="wlt-flip">
 <div class="wl-face" id="wlt-front"><span class="wl-glow"></span><button type="button" class="wl-qrb" onclick="window.wltFlip(1)" aria-label="Show my QR code"><i class="fa-solid fa-qrcode"></i></button>
 <div class="wl-brand">${coin(16)}EXAMA WALLET</div>
