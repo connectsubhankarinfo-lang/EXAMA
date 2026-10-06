@@ -11796,12 +11796,11 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                     if (!user) throw new Error("Session expired. Please log out and log back in.");
 
                     // 1. Re-authenticate, then update Firebase Auth & Firestore
-                    await window.reauthStudentForPasswordChange();
-                    await updatePassword(user, state.newPassword);
-                    await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { password: state.newPassword });
+                    await window.__setPw(window.loggedInMobile, state.newPassword, true);
+                    
 
                     // 2. 🔥 CACHE THE NEW PASSWORD IMMEDIATELY SO REFRESHES KEEP THEM LOGGED IN
-                    localStorage.setItem('exama_pass', state.newPassword);
+                    
 
                     window.hideLoader();
                     window.closeChangePasswordModal();
@@ -11906,7 +11905,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                 const stu = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
                 const authEmail = `${window.loggedInMobile}@exama.app`;
                 // Cached login password first (it is what actually signs into Firebase Auth), Firestore copy as fallback
-                const candidates = [...new Set([localStorage.getItem('exama_pass'), stu && stu.password].filter(Boolean))];
+                const candidates = [];
                 let lastErr = null;
                 for (const pw of candidates) {
                     try {
@@ -11946,21 +11945,18 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                     if (!user) throw new Error("Session expired. Please re-login to proceed.");
 
                     // A. Re-authenticate (avoids auth/requires-recent-login), then update in Firebase Authentication
-                    await window.reauthStudentForPasswordChange();
-                    await updatePassword(user, state.newPassword);
+                    await window.__setPw(window.loggedInMobile, state.newPassword, true);
 
                     // B. Update Firestore student document
-                    await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), {
-                        password: state.newPassword
-                    });
+                    
 
                     // C. Update in-memory database
                     const stuIndex = window.studentsDB.findIndex(s => s.mobile === window.loggedInMobile);
-                    if (stuIndex !== -1) window.studentsDB[stuIndex].password = state.newPassword;
+                    
 
                     // D. Keep the cached login password in sync, otherwise the next silent re-login
                     //    ("Restoring session") would use the OLD password, fail, and log the student out.
-                    localStorage.setItem('exama_pass', state.newPassword);
+                    
 
                     window.hideLoader();
                     window.closeChangePasswordModal();
@@ -18572,7 +18568,7 @@ window.__tpPaint = function () {
                     await new Promise(r => setTimeout(r, 800));
                 } else {
                     // Dummy Data Fallback...
-                    window.studentsDB = [{ mobile: '123', password: '123', name: 'Demo Student' }];
+                    window.studentsDB = [{ mobile: '123', name: 'Demo Student' }];
                     window.examsDB = [{ id: 'e1', name: 'Demo Math Exam', date: window.formatDateDDMMYYYY(new Date(Date.now() + 86400000)), totalMarks: 100, duration: 60, passPercentage: 40, examPin: '', globalStartTime: null, isPaused: false, pausedElapsed: 0, isProctored: false }];
                     window.resultsDB = []; window.noticesDB = []; window.peerMaterialsDB = []; window.materialsDB = []; window.fitnessDB = []; window.weeklyTasksDB = []; window.studentTasksDB = [];
                     window.chatDB = [{ id: '1', mobile: 'admin', name: 'Admin', text: 'Welcome to Exama Community!', timestamp: Date.now() }];
@@ -21051,16 +21047,16 @@ const cpCss = () => { if ($('wlt-cp-css')) return; const st = document.createEle
 .wl-cpf>i{color:#fcd34d;font-size:14px}.wl-cpf input{flex:1;min-width:0;height:48px;background:transparent;border:0;outline:0;color:#fff;font-size:16px;font-weight:700}
 .wl-cpf input::placeholder{color:rgba(255,255,255,.4);font-weight:600}.wl-cpf button{width:34px;height:34px;color:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:center}
 .wl-cpb{width:100%;max-width:320px;height:48px;border-radius:16px;font-size:13px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#1b1033;background:linear-gradient(135deg,#fde68a,#f59e0b);touch-action:manipulation}.wl-cpb:active{transform:scale(.98)}.wl-cpb:disabled{opacity:.6}`; document.head.appendChild(st); };
-const pwOk = x => { const c = [stu().password, localStorage.getItem('exama_mob') === me() ? localStorage.getItem('exama_pass') : null].filter(Boolean); return !!x && c.indexOf(x) >= 0; };
+const pwOk = x => !!x && window.__verifyPw(me(), x);
 const ttl = t => `<div style="font-size:12px;font-weight:900;letter-spacing:.3em;margin-top:6px">${t}</div>`;
 window.wltChangePin = function () {
     window.wltRules(0); cpCss();
     const o = ov(head('window.wltOvBack()', 'CHANGE PIN') + `<div class="wl-mid">${coin(56)}${ttl('VERIFY PASSWORD')}<div class="wl-cpm" id="wlt-cpm">Enter your login password to continue</div><div class="wl-cpf"><i class="fa-solid fa-lock"></i><input id="wlt-cpp" type="password" autocomplete="current-password" placeholder="Login password"><button type="button" id="wlt-cpe" aria-label="Show password"><i class="fa-solid fa-eye"></i></button></div><button type="button" class="wl-cpb" id="wlt-cpg">Continue</button></div>`);
     if (!o) return; const inp = $('wlt-cpp'), msg = t => { const m = $('wlt-cpm'); if (m) m.textContent = t; };
     $('wlt-cpe').onclick = () => { const on = inp.type === 'password'; inp.type = on ? 'text' : 'password'; $('wlt-cpe').firstChild.className = 'fa-solid ' + (on ? 'fa-eye-slash' : 'fa-eye'); };
-    const go = () => {
+    const go = async () => {
         if (Date.now() < cpLock) return msg('Too many tries. Wait ' + Math.ceil((cpLock - Date.now()) / 1000) + 's');
-        if (pwOk(inp.value)) { cpTries = 0; return cpPin(1, ''); }
+        if (await pwOk(inp.value)) { cpTries = 0; return cpPin(1, ''); }
         cpTries++; inp.value = ''; try { navigator.vibrate && navigator.vibrate(120); } catch (x) { }
         if (cpTries >= 5) { cpLock = Date.now() + 30000; cpTries = 0; msg('Too many tries. Wait 30s'); } else msg('Wrong password, try again');
     };
@@ -23252,7 +23248,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 // 1. Grab the saved credentials from the device memory first
                 const savedRole = localStorage.getItem('exama_role');
                 const savedMob = localStorage.getItem('exama_mob');
-                const savedPass = localStorage.getItem('exama_pass');
+                try { localStorage.removeItem('exama_pass'); } catch (e) { }
                 const savedName = localStorage.getItem('exama_name');
 
                 // 2. Personalize the loader message!
@@ -23269,11 +23265,17 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 // ⏳ 3. PAUSE HERE: Keeps the loader visible for 1.2 seconds (1200ms)
                 await new Promise(r => setTimeout(r, 1200));
                 // 3. Fetch DB data without blocking the UI
-                fetchInitialData();
+                (function () {
+                    let started = false, wasIn = false; const start = () => { if (!started) { started = true; fetchInitialData(); } };
+                    if (isFirebaseConfigured && auth) auth.onAuthStateChanged(u => {
+                        if (u) { wasIn = true; start(); }
+                        else if (wasIn && !window.__noReload) { try { ['exama_role', 'exama_mob', 'exama_name'].forEach(k => localStorage.removeItem(k)); } catch (e) { } location.reload(); }
+                    }); else start();
+                })();
                 initGoogleDriveAPI();
                 setTimeout(window.checkForAppUpdates, 3000);
 
-                if (savedRole && savedMob && savedPass) {
+                if (savedRole && savedMob) {
                     window.currentRole = savedRole;
                     window.loggedInMobile = savedMob;
 
@@ -23291,7 +23293,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                                 try {
                                     showLoader("Restoring session");
                                     const authEmail = `${savedMob}@exama.app`;
-                                    await signInWithEmailAndPassword(auth, authEmail, savedPass);
+                                    throw new Error("No active session");
 
                                     // Re-auth successful!
                                     executeLoginUI(savedRole, savedMob);
@@ -23339,6 +23341,25 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
             };
 
             // 👨‍🎓 STUDENT LOGIN LISTENER
+            window.__setPw = async function (mobile, pass, relogin) {
+                const fb = 'https://www.gstatic.com/firebasejs/10.5.0/'; let done = false;
+                try {
+                    const [{ getFunctions, httpsCallable }, { getApp }] = await Promise.all([import(fb + 'firebase-functions.js'), import(fb + 'firebase-app.js')]);
+                    await httpsCallable(getFunctions(getApp()), 'setStudentPassword')({ mobile: String(mobile), password: String(pass) }); done = true;
+                } catch (e) {
+                    if (!/not-found|NOT_FOUND|unavailable|internal|Failed to fetch|Failed to load/i.test((e && e.code || '') + ' ' + (e && e.message || ''))) throw new Error((e && e.message) || 'Could not update the password.');
+                }
+                if (done) { if (relogin) await signInWithEmailAndPassword(auth, mobile + '@exama.app', pass); return; }
+                // No Cloud Function deployed: a student can still change their OWN password after re-entering the current one
+                if (!relogin) throw new Error('Resetting another student needs the optional Cloud Function (not deployed). The student can change it inside the app instead.');
+                const cur = window.prompt('To confirm it is you, enter your CURRENT password:'); if (!cur) throw new Error('Password not changed.');
+                const A = await import(fb + 'firebase-auth.js');
+                await A.reauthenticateWithCredential(auth.currentUser, A.EmailAuthProvider.credential(mobile + '@exama.app', cur));
+                await A.updatePassword(auth.currentUser, pass);
+            };
+            window.__verifyPw = async function (mobile, pass) {
+                try { await signInWithEmailAndPassword(secondaryAuth, mobile + '@exama.app', pass); try { await secondaryAuth.signOut(); } catch (e) { } return true; } catch (e) { return false; }
+            };
             document.getElementById('login-form').addEventListener('submit', async function (e) {
                 e.preventDefault();
                 const mob = document.getElementById('mobile').value.trim();
@@ -23350,20 +23371,14 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 try {
                     if (!isFirebaseConfigured) throw new Error("Firebase is not connected.");
 
-                    const stu = window.studentsDB.find(s => s.mobile === mob);
-                    if (!stu) throw new Error("Student account not found. Please check your mobile number.");
-                    const authorizedLegacyPass = stu.password;
+                    const stu = (window.studentsDB || []).find(s => s.mobile === mob) || { name: '' };
+                    
 
                     try {
                         await signInWithEmailAndPassword(auth, authEmail, pass);
                     } catch (authError) {
                         if (['auth/invalid-login-credentials', 'auth/user-not-found', 'auth/invalid-credential'].includes(authError.code)) {
-                            if (pass === authorizedLegacyPass) {
-                                showLoader("Securing your account");
-                                await createUserWithEmailAndPassword(auth, authEmail, pass);
-                            } else {
-                                throw new Error("Incorrect Password.");
-                            }
+                            throw new Error("Incorrect password. If this keeps happening, ask your admin to reset it.");
                         } else {
                             throw authError;
                         }
@@ -23373,7 +23388,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     localStorage.setItem('exama_name', stu.name);
                     localStorage.setItem('exama_role', 'student');
                     localStorage.setItem('exama_mob', mob);
-                    localStorage.setItem('exama_pass', pass);
+                    
 
                     window.currentRole = 'student';
                     window.loggedInMobile = mob;
@@ -23398,26 +23413,22 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 try {
                     if (!isFirebaseConfigured) throw new Error("Firebase is not connected.");
 
-                    const adminRef = await getDoc(doc(db, window.getCollectionName("admins"), mob));
-                    if (!adminRef.exists()) throw new Error("This number is not registered as an Admin.");
-                    const adminData = adminRef.data();
-                    const authorizedLegacyPass = adminData.password;
+                    
+                    
 
                     try {
                         await signInWithEmailAndPassword(auth, authEmail, pass);
                     } catch (authError) {
                         if (['auth/invalid-login-credentials', 'auth/user-not-found', 'auth/invalid-credential'].includes(authError.code)) {
-                            if (pass === authorizedLegacyPass) {
-                                showLoader("Securing your account");
-                                await createUserWithEmailAndPassword(auth, authEmail, pass);
-                            } else {
-                                throw new Error("Incorrect Master Password.");
-                            }
+                            throw new Error("Incorrect Master Password.");
                         } else {
                             throw authError;
                         }
                     }
 
+                    const adminRef = await getDoc(doc(db, window.getCollectionName("admins"), mob));
+                    if (!adminRef.exists()) { window.__noReload = true; try { await auth.signOut(); } catch (e) { } setTimeout(() => { window.__noReload = false; }, 2000); throw new Error("This number is not registered as an Admin."); }
+                    const adminData = adminRef.data();
                     hideLoader();
                     window.startTelegramAdminOTP(mob, adminData); // Trigger 2FA OTP
 
@@ -23497,7 +23508,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 // 3. Save to local storage to keep admin logged in on refresh
                 localStorage.setItem('exama_role', 'admin');
                 localStorage.setItem('exama_mob', mob);
-                localStorage.setItem('exama_pass', pass);
+                
 
                 window.currentRole = 'admin';
                 window.loggedInMobile = mob;
@@ -23745,23 +23756,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     const mob = S.mob, stu = S.stu, authEmail = `${mob}@exama.app`;
                     try {
                         window.showLoader("Resetting password");
-                        const cands = [...new Set([stu.password, localStorage.getItem('exama_mob') === mob ? localStorage.getItem('exama_pass') : null].filter(Boolean))];
-                        const soft = ['auth/invalid-credential', 'auth/invalid-login-credentials', 'auth/wrong-password', 'auth/user-not-found'];
-                        let user = null;
-                        for (const pw of cands) {
-                            try { user = (await signInWithEmailAndPassword(auth, authEmail, pw)).user; break; }
-                            catch (e) { if (!soft.includes(e.code)) throw e; }
-                        }
-                        if (user) { await updatePassword(user, p1); }
-                        else {
-                            try { await createUserWithEmailAndPassword(auth, authEmail, p1); }
-                            catch (e) {
-                                if (e.code === 'auth/email-already-in-use') throw new Error("We could not update your login automatically. Please ask your admin to reset your password.");
-                                throw e;
-                            }
-                        }
-                        await updateDoc(doc(db, window.getCollectionName("students"), mob), { password: p1 });
-                        stu.password = p1;
+                        throw new Error("Self-service reset is turned off for security. Please ask your admin to reset your password.");
                         try { await auth.signOut(); } catch (e) { }
                         window.hideLoader(); close();
                         const lm = $('mobile'), lp = $('password'); if (lm) lm.value = mob; if (lp) lp.value = '';
@@ -23875,7 +23870,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
 
                 try {
                     if (isFirebaseConfigured) {
-                        await updateDoc(doc(db, window.getCollectionName("students"), mobile), { password: newPass });
+                        await window.__setPw(mobile, newPass, false);
                     } else {
                         const stu = window.studentsDB.find(s => s.mobile === mobile);
                         if (stu) stu.password = newPass;
@@ -23918,12 +23913,11 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     const user = auth.currentUser;
                     if (user) {
                         // 1. Re-authenticate, then update securely in Firebase Auth
-                        await window.reauthStudentForPasswordChange();
-                        await updatePassword(user, newPass);
+                        await window.__setPw(window.loggedInMobile, newPass, true);
 
                         // 2. Sync to Firestore (for legacy compatibility)
-                        await updateDoc(doc(db, window.getCollectionName("students"), window.loggedInMobile), { password: newPass });
-                        localStorage.setItem('exama_pass', newPass);
+                        
+                        
 
                         document.getElementById('change-password-modal').classList.add('hidden-view');
                         document.getElementById('new-pass-input').value = '';
@@ -23966,8 +23960,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     await setDoc(doc(db, window.getCollectionName("students"), mob), {
                         name: name,
                         mobile: mob,
-                        password: pass, // Keeping it here just for your legacy systems/views
-                        ...(email ? { email: email } : {})
+                                                ...(email ? { email: email } : {})
                     });
 
                     hideLoader();
@@ -33335,7 +33328,6 @@ setInterval(function(){
 function infoHTML(s){
  var kv=function(k,v){return '<div><b>'+k+'</b><span>'+(v==null||v===''?'\u2014':v)+'</span></div>'},wa=String(s.mobile).replace(/\D/g,'').slice(-10);
  return '<div class="ax-kv">'+kv('Name',E(s.name))+kv('Mobile',E(s.mobile))+kv('Email',E(s.email))+
- kv('Password','<span id="ax-pw" data-pw="'+E(s.password)+'">\u2022\u2022\u2022\u2022\u2022\u2022</span> <a onclick="var p=document.getElementById(\'ax-pw\');p.textContent=p.textContent===\'\u2022\u2022\u2022\u2022\u2022\u2022\'?p.dataset.pw:\'\u2022\u2022\u2022\u2022\u2022\u2022\'" style="cursor:pointer;color:#4f46e5"><i class="fa-solid fa-eye"></i></a>')+'</div>'+
  '<div class="ax-acts"><button onclick="window.open(\'https://wa.me/91'+wa+'\',\'_blank\')"><i class="fa-brands fa-whatsapp" style="color:#16a34a"></i> WhatsApp</button>'+(s.email?'<button onclick="location.href=\'mailto:'+E(s.email)+'\'"><i class="fa-solid fa-envelope"></i> Email</button>':'')+'<button onclick="generatePDFReport(\''+E(s.mobile)+'\')"><i class="fa-solid fa-file-pdf" style="color:#dc2626"></i> Export Data</button></div>'}
 W.openStudentInfo=function(){
  var m=W.__apMobile||W.selectedAdminProfile,s=(W.studentsDB||[]).find(function(x){return x.mobile===m}),host=$('admin-profile-view');if(!s||!host)return;
