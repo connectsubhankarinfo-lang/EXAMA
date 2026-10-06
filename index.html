@@ -17086,6 +17086,7 @@ window.__tpPaint = function () {
             window.handleHashChange = function () {
                 const rawHash = window.location.hash.replace('#', '');
                 const hash = rawHash || 'login';
+                if (/^wallet(\/\d+)?$/.test(rawHash) && window.currentRole === 'student') return;   // wallet screens are handled by the wallet itself
 
                 // Auth security gate
                 if (hash !== 'login' && !window.currentRole) {
@@ -20953,7 +20954,7 @@ async function evaluate() {
                 if (all.length > 1 && !all.some(x => x.status === 'EVALUATING') && rp(r) >= Math.max.apply(null, all.filter(x => x.status === 'PASS').map(rp))) await award('examtop_' + ex.id, 5, 'Exam topper: ' + ex.name, ex.date);
             }
         }
-    } catch (e) { console.warn('wallet eval', e); } try { if (window.__loanSweep) await window.__loanSweep(); } catch (e) { }
+    } catch (e) { console.warn('wallet eval', e); } 
     flushPush(); busy = false;
 }
 let tries = 0; const iv = setInterval(() => { if (++tries > 40) return clearInterval(iv); if (window.currentRole === 'student' && me() && (window.sessionsDB || []).length) { clearInterval(iv); setTimeout(evaluate, 8000); } }, 3000);
@@ -21011,15 +21012,15 @@ return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+(n+q*2)+' '+(n+q*
 let io = null; const PAGE = 6; let mb = false, hDone = false, rankHtml = '', lastDay = '', curBal = 0; const sc = { s: null, t: 0 };
 function stopScan() { clearInterval(sc.t); if (sc.s) { sc.s.getTracks().forEach(t => t.stop()); sc.s = null; } }
 window.closeWallet = function () { stopScan(); const p = $('wlt'); if (p) p.remove(); lastDoc = null; if (io) { io.disconnect(); io = null; } };
-if (!window.__wltEsc) { window.__wltEsc = 1; document.addEventListener('keydown', e => { if (e.key !== 'Escape' || !$('wlt')) return; if ($('wlt-ov')) ovClose(); else window.closeWallet(); }); }
-window.openWallet = function () { window.closeWallet(); ensureCss(); tries2 = 0; const p = document.createElement('div'); p.id = 'wlt'; p.style.cssText = SH; document.body.appendChild(p); pinScreen(); phLoad(); };
-const back = (fn, l) => `<button type="button" class="wl-ib" onclick="${fn}" aria-label="${l}"><i class="fa-solid fa-chevron-left"></i></button>`;
+if (!window.__wltEsc) { window.__wltEsc = 1; document.addEventListener('keydown', e => { if (e.key !== 'Escape' || !$('wlt')) return; window.wltBack(); }); }
+window.openWallet = function () { window.closeWallet(); ensureCss(); tries2 = 0; const p = document.createElement('div'); p.id = 'wlt'; p.style.cssText = SH; document.body.appendChild(p); WN.open(); pinScreen(); phLoad(); };
+const back = (fn, l) => `<button type="button" class="wl-ib" onclick="window.wltBack()" aria-label="${l}"><i class="fa-solid fa-chevron-left"></i></button>`;
 const head = (fn, t, r) => `<div class="wl-head">${back(fn, 'Back')}<span class="wl-ttl">${t}</span>${r || '<span style="width:36px"></span>'}</div>`;
 const dotsH = '<div id="wlt-dots" style="display:flex;gap:16px;margin:14px 0 22px">' + [0, 1, 2, 3].map(() => '<i style="width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.5)"></i>').join('') + '</div>';
 const padH = c => `<div class="wl-pad ${c || ''}">` + [1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, 'x'].map(k => k === '' ? '<span></span>' : `<button type="button" class="wl-k" data-k="${k}">` + (k === 'x' ? '<i class="fa-solid fa-delete-left" style="font-size:20px"></i>' : k) + '</button>').join('') + '</div>';
-const ov = h => { const p = $('wlt'); if (!p) return null; const o0 = $('wlt-ov'); if (o0) o0.remove(); const o = document.createElement('div'); o.id = 'wlt-ov'; o.style.cssText = SH.replace('position:fixed', 'position:absolute').replace('z-index:150', 'z-index:5').replace('overflow:hidden', 'overflow-y:auto'); o.innerHTML = h; p.appendChild(o); return o; };
+const ov = h => { const p = $('wlt'); if (!p) return null; const o0 = $('wlt-ov'); if (o0) o0.remove(); const o = document.createElement('div'); o.id = 'wlt-ov'; if (!o0) o.className = 'wl-slide'; o.style.cssText = SH.replace('position:fixed', 'position:absolute').replace('z-index:150', 'z-index:5').replace('overflow:hidden', 'overflow-y:auto'); o.innerHTML = h; p.appendChild(o); return o; };
 const ovClose = () => { stopScan(); const o = $('wlt-ov'); if (o) o.remove(); };
-window.wltOvBack = ovClose;
+
 // shared 4-digit PIN pad (PIN = first 4 digits of the mobile number, same as before)
 function pinCheck(root, onOk) {
     let v = '', busy = false; const def = me().replace(/\D/g, '').slice(0, 4);
@@ -21077,14 +21078,14 @@ function cpPin(stage, first) {
         if (stage === 1) { setTimeout(() => cpPin(2, v), 160); busy = true; return; }
         if (v !== first) { v = ''; paint(); try { navigator.vibrate && navigator.vibrate(120); } catch (x) { } if (msg) msg.textContent = 'PINs did not match. Start again.'; busy = true; setTimeout(() => cpPin(1, ''), 900); return; }
         busy = true; if (msg) msg.textContent = 'Saving...';
-        try { const hh = hp(v); await setDoc(wRef(), { pinHash: hh, pinAt: Date.now(), updatedAt: Date.now() }, { merge: true }); ph = hh; phOk = true; ovClose(); if (window.showToast) window.showToast('PIN changed', 'Your wallet PIN has been updated.', 'success'); }
+        try { const hh = hp(v); await setDoc(wRef(), { pinHash: hh, pinAt: Date.now(), updatedAt: Date.now() }, { merge: true }); ph = hh; phOk = true; window.wltHome(); if (window.showToast) window.showToast('PIN changed', 'Your wallet PIN has been updated.', 'success'); }
         catch (x) { console.error('Wallet PIN save', x); busy = false; v = ''; paint(); if (msg) msg.textContent = 'Could not save. Check your connection.'; }
     });
 }
 function pinScreen() {
     const p = $('wlt'); if (!p) return;
     p.innerHTML = `<div style="width:100%;max-width:360px;display:flex">${back('window.closeWallet()', 'Back')}</div><div class="wl-pinbox" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%;max-width:360px">${coin(64)}<div style="font-size:12px;font-weight:900;letter-spacing:.3em;margin-top:8px">WALLET PIN</div><div id="wlt-msg" style="font-size:12px;color:rgba(255,255,255,.55);font-weight:700;height:16px">Enter your 4-digit PIN</div>${dotsH}${padH()}</div>`;
-    pinCheck(p, showWallet);
+    pinCheck(p, () => { WN.unlock(); showWallet(); });
 }
 const when = ts => new Date(ts).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
 // Always the exact date: the day an entry is FOR (never "Today"/"Yesterday")
@@ -21109,8 +21110,10 @@ const ico = (x, k) => { const key = String(x.key || ''), snd = key.indexOf('send
     if (!snd && key.indexOf('recv_') !== 0) return `<span class="wl-ico" style="background:linear-gradient(135deg,${k[1]})"><i class="fa-solid ${k[0]}"></i></span>`;
     const nm = String(x.title || '').replace(/^(Sent to|Received from)\s+/i, ''), u = (x.peer && window.getStudentAvatar && window.getStudentAvatar(String(x.peer), nm)) || '';
     return `<span class="wl-ico wl-dp">${esc((nm || '?').trim().charAt(0).toUpperCase())}${u ? `<img alt="" loading="lazy" src="${esc(u)}" onerror="this.remove()">` : ''}<b class="wl-dir" style="background:${snd ? '#6366f1' : '#10b981'}"><i class="fa-solid ${snd ? 'fa-arrow-up' : 'fa-arrow-down'}"></i></b></span>`; };
-const row = x => { const pos = x.amount >= 0, k = kind(x), c = pos ? '#34d399' : '#fb7185';
-    return `<div class="wl-row">${ico(x, k)}<div style="min-width:0;flex:1"><div class="truncate" style="font-size:13px;font-weight:800">${esc(x.title || '')}</div><div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.45);margin-top:2px">${esc(sub(x))}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span style="font-size:16px;font-weight:900;color:${c}">${pos ? '+' : ''}${x.amount}</span><span class="wl-chip" style="color:${c};background:${pos ? 'rgba(52,211,153,.14)' : 'rgba(251,113,133,.14)'}">${k[2]}</span></div></div>`; };
+const row = x => { const key = String(x.key || ''), gift = /^(giftsent|giftrecv)_/.test(key), zero = !x.amount, pos = x.amount >= 0, k = kind(x), c = pos ? '#34d399' : '#fb7185';
+    const right = (gift || zero) ? `<span class="wl-chip" style="color:${gift ? '#f9a8d4' : '#c4b5fd'};background:${gift ? 'rgba(244,114,182,.16)' : 'rgba(167,139,250,.16)'}">${gift ? (key.indexOf('giftsent_') === 0 ? 'GIFT SENT' : 'GIFT RECEIVED') : k[2]}</span>`
+        : `<span style="font-size:16px;font-weight:900;color:${c}">${pos ? '+' : ''}${x.amount}</span><span class="wl-chip" style="color:${c};background:${pos ? 'rgba(52,211,153,.14)' : 'rgba(251,113,133,.14)'}">${k[2]}</span>`;
+    return `<div class="wl-row${gift ? ' gift' : ''}">${ico(x, k)}<div style="min-width:0;flex:1"><div class="truncate" style="font-size:13px;font-weight:800">${esc(x.title || '')}</div><div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.45);margin-top:2px">${esc(sub(x))}</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">${right}</div></div>`; };
 const CSS = `:root{--wl-top:max(3rem,env(safe-area-inset-top,0px))}html.is-tablet{--wl-top:max(4rem,env(safe-area-inset-top,0px))}html.is-tablet.is-landscape{--wl-top:max(3rem,env(safe-area-inset-top,0px))}@media (orientation:landscape) and (max-height:540px){:root,html.is-tablet.is-landscape{--wl-top:max(.75rem,env(safe-area-inset-top,0px))}}
 .wl-head{width:100%;max-width:440px;display:flex;align-items:center;justify-content:space-between;flex:none}.wl-ttl{font-size:11px;font-weight:900;letter-spacing:.35em}.wl-ib{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;display:flex;align-items:center;justify-content:center}
 .wl-wrap{width:100%;max-width:440px;flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;margin-top:16px}.wl-left{flex:none}.wl-right{flex:1;min-height:0;display:flex;flex-direction:column;min-width:0}.wl-pane{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
@@ -21178,7 +21181,16 @@ const CSS = `:root{--wl-top:max(3rem,env(safe-area-inset-top,0px))}html.is-table
 @media (max-width:480px){#wlt-ov .st-inv{position:relative;top:auto;right:auto;margin:0 0 10px}#wlt-ov .st-hd{padding-right:0}.st-grid{gap:8px}}
 @media (max-width:360px){.st-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.st-art{width:52px!important;height:52px!important;font-size:22px!important}.ln-k b{font-size:17px}.wl-btn{padding:0 12px;font-size:12px}}
 @media (prefers-reduced-motion:reduce){.wl-in,.wl-rules,.wl-rc{transition:none}.wl-fr b,.wl-ok,.wl-glow{animation:none}}`;
-const ensureCss = () => { if (!$('wlt-css')) { const s = document.createElement('style'); s.id = 'wlt-css'; s.textContent = CSS; document.head.appendChild(s); } };
+const CSS2 = `#wlt{animation:wlFade .25s ease both}@keyframes wlFade{from{opacity:0}}#wlt *{-webkit-tap-highlight-color:transparent}
+.wl-slide{animation:wlSlide .3s cubic-bezier(.2,.8,.2,1) both}@keyframes wlSlide{from{opacity:0;transform:translateX(28px)}}
+.wl-qa{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.wl-qa button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:11px 4px;border-radius:16px;font-size:11px;font-weight:800;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);transition:transform .15s,background .2s;touch-action:manipulation}
+.wl-qa button i{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;color:#451a03;background:linear-gradient(135deg,#fde68a,#f59e0b)}.wl-qa button:active{transform:scale(.95);background:rgba(255,255,255,.16)}
+.wl-sk{height:64px;border-radius:14px;margin-bottom:8px;background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.12),rgba(255,255,255,.05)) 0 0/200% 100%;animation:wlSk 1.2s linear infinite}@keyframes wlSk{to{background-position:-200% 0}}
+.wl-row{transition:transform .15s,background .2s}.wl-row:active{transform:scale(.99)}.wl-row.gift{border-color:rgba(244,114,182,.35);background:linear-gradient(90deg,rgba(244,114,182,.12),rgba(255,255,255,.05))}
+.wl-pane{scroll-behavior:smooth}.st-tabs{position:sticky;top:0;z-index:2;background:rgba(21,13,43,.92);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}.st-tab{transition:color .2s,border-color .2s}
+.st-card{transition:transform .2s cubic-bezier(.2,.8,.2,1),filter .2s}.st-card:hover{transform:translateY(-3px);filter:brightness(1.1)}.st-grid{gap:12px}
+@media (prefers-reduced-motion:reduce){#wlt,.wl-slide,.wl-sk{animation:none}.st-card{transition:none}}`;
+const ensureCss = () => { if (!$('wlt-css')) { const s = document.createElement('style'); s.id = 'wlt-css'; s.textContent = CSS + CSS2; document.head.appendChild(s); } };
 async function more() { if (mb) return; mb = true; try { await moreRun(); } finally { mb = false; } }
 async function moreRun() {
     const rows = $('wlt-rows'); if (!rows || hDone) return;
@@ -21207,7 +21219,7 @@ async function loadRank() {
     } catch (e) { box.innerHTML = '<p style="text-align:center;padding:40px 10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Could not load ranking. Check your internet.</p>'; }
 }
 window.wltRank = function () { if (!isFirebaseConfigured) return; ov(head('window.wltOvBack()', 'RANKING') + '<div id="wlt-rank" class="wl-pane" style="width:100%;max-width:440px;margin-top:16px"></div>'); loadRank(); };
-window.wltOpenProfile = function (m) { m = String(m || ''); if (!m) return; window.closeWallet(); setTimeout(function () { if (typeof window.showStudentStats === 'function') window.showStudentStats(m); }, 80); };
+window.wltOpenProfile = function (m) { m = String(m || ''); if (!m) return; WN.leave(); setTimeout(function () { if (typeof window.showStudentStats === 'function') window.showStudentStats(m); }, 260); };
 window.wltRules = function (v) { const r = $('wlt-rules'), bt = $('wlt-rbtn'); if (!r || !bt) return; const on = v === undefined ? !r.classList.contains('open') : !!v; r.classList.toggle('open', on); bt.classList.toggle('on', on); bt.setAttribute('aria-expanded', on ? 'true' : 'false'); r.setAttribute('aria-hidden', on ? 'false' : 'true'); };
 window.wltFlip = function (b) { if (b) window.wltRules(0); const f = $('wlt-flip'); if (!f) return; f.classList.toggle('flip', !!b); $('wlt-front').style.pointerEvents = b ? 'none' : ''; $('wlt-back').style.pointerEvents = b ? '' : 'none'; };
 const setBal = n => { curBal = n; window.__wltBalance = n; const el = $('wlt-bal'); if (el) { el.textContent = n; el.style.color = n < 0 ? '#fb7185' : '#fff'; } };
@@ -21320,11 +21332,11 @@ async function doPay(peer, n) {
         ov(`<div class="wl-mid"><div class="wl-ok bad"><i class="fa-solid fa-xmark"></i></div><div style="font-size:20px;font-weight:900;margin-top:8px">Payment failed</div><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6)">${e && e.message === 'LOW' ? 'You do not have enough coins.' : 'Nothing was deducted. Check your internet and try again.'}</div><button type="button" class="wl-send" style="margin-top:22px;width:200px" onclick="window.wltOvBack()">Close</button></div>`);
     }
 }
-window.wltDone = function () { ovClose(); window.wltFlip(0); const r = $('wlt-rows'); if (r) { lastDoc = null; hDone = false; lastDay = ''; r.innerHTML = ''; more(); } };
+window.wltDone = function () { window.wltHome(); window.wltFlip(0); const r = $('wlt-rows'); if (r) { lastDoc = null; hDone = false; lastDay = ''; r.innerHTML = ''; more(); } };
 async function showWallet() {
     const p = $('wlt'); if (!p) return; lastDoc = null; hDone = false; rankHtml = ''; mb = false; lastDay = ''; if (io) { io.disconnect(); io = null; }
     const qr = me() ? qrSvg('exama:' + me()) : '';
-    p.innerHTML = `${head('window.closeWallet()', 'MY WALLET', '<span style="display:flex;gap:8px"><button type="button" class="wl-ib" onclick="window.wltLoans()" aria-label="Loans" style="color:#fcd34d"><i class="fa-solid fa-hand-holding-dollar"></i></button><button type="button" class="wl-ib" onclick="window.wltStore()" aria-label="Store" style="color:#fcd34d""><i class="fa-solid fa-store"></i></button></span>')}
+    p.innerHTML = `${head('window.closeWallet()', 'MY WALLET', '<span style="display:flex;gap:8px"><button type="button" class="wl-ib" onclick="window.wltStore()" aria-label="Store" style="color:#fcd34d"><i class="fa-solid fa-store"></i></button></span>')}
 <div class="wl-wrap"><div class="wl-left"><div class="wl-card"><div class="wl-in" id="wlt-flip">
 <div class="wl-face" id="wlt-front"><span class="wl-glow"></span><button type="button" class="wl-qrb" onclick="window.wltFlip(1)" aria-label="Show my QR code"><i class="fa-solid fa-qrcode"></i></button>
 <div class="wl-brand">${coin(16)}EXAMA WALLET</div>
@@ -21333,8 +21345,8 @@ async function showWallet() {
 <div class="wl-strap"><div class="wl-rules" id="wlt-rules" aria-hidden="true" onclick="window.wltRules(0)"><div class="wl-cell up"><b>+5</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Daily run goal" aria-label="Daily run goal"></i><i class="fa-solid fa-book-open" role="img" title="4h study done" aria-label="4h study done"></i><i class="fa-solid fa-bullseye" role="img" title="Exam score goal" aria-label="Exam score goal"></i><i class="fa-solid fa-trophy" role="img" title="Exam topper" aria-label="Exam topper"></i></span><em>Goals</em></div><div class="wl-cell bn"><b>+2</b><span class="wl-ics"><i class="fa-solid fa-star" role="img" title="Bonus for going past the run or study goal" aria-label="Bonus for going past the run or study goal"></i></span><em>Extra bonus</em></div><div class="wl-cell dn"><b>−10</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Absent on run goal" aria-label="Absent on run goal"></i><i class="fa-solid fa-book-open" role="img" title="Absent on study goal" aria-label="Absent on study goal"></i><i class="fa-solid fa-file-circle-xmark" role="img" title="Failed exam" aria-label="Failed exam"></i></span><em>Absent/Fail</em></div><div class="wl-sun"><i class="fa-solid fa-sun"></i>No penalty on Sundays</div><button type="button" class="wl-chpin" onclick="event.stopPropagation();window.wltChangePin()"><i class="fa-solid fa-key"></i>Change Wallet PIN<i class="fa-solid fa-chevron-right"></i></button></div><button type="button" class="wl-rulebtn" id="wlt-rbtn" aria-expanded="false" aria-controls="wlt-rules" onclick="window.wltRules()"><i class="fa-solid fa-circle-info"></i>Wallet Rules<i class="fa-solid fa-chevron-up wl-rc"></i></button></div></div>
 <div class="wl-face wl-back" id="wlt-back" style="pointer-events:none"><button type="button" class="wl-qrb" onclick="window.wltFlip(0)" aria-label="Back to card"><i class="fa-solid fa-rotate-left"></i></button>
 <div class="wl-qr">${qr}</div><div class="truncate" style="font-size:14px;font-weight:900;max-width:80%">${esc(stu().name || 'My QR')}</div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.5)">Show this QR to receive coins</div>
-<button type="button" class="wl-send" style="margin-top:6px" onclick="window.wltScan()"><i class="fa-solid fa-paper-plane"></i>Send Coin</button></div></div></div></div>
-<div class="wl-right"><div class="wl-hh"><i class="fa-solid fa-clock-rotate-left"></i>History</div><div id="wlt-list" class="wl-pane"><div id="wlt-rows"><p style="text-align:center;padding:40px;color:rgba(255,255,255,.4);font-size:12px;font-weight:800">Loading...</p></div><div id="wlt-end" style="height:2px"></div></div></div></div>`;
+<button type="button" class="wl-send" style="margin-top:6px" onclick="window.wltScan()"><i class="fa-solid fa-paper-plane"></i>Send Coin</button></div></div></div><div class="wl-qa"><button type="button" onclick="window.wltScan()"><i class="fa-solid fa-paper-plane"></i>Send</button><button type="button" onclick="window.wltFlip(1)"><i class="fa-solid fa-qrcode"></i>Receive</button><button type="button" onclick="window.wltStore()"><i class="fa-solid fa-store"></i>Store</button><button type="button" onclick="window.wltInv()"><i class="fa-solid fa-box-open"></i>Items</button></div></div>
+<div class="wl-right"><div class="wl-hh"><i class="fa-solid fa-clock-rotate-left"></i>History</div><div id="wlt-list" class="wl-pane"><div id="wlt-rows">${'<div class="wl-sk"></div>'.repeat(4)}</div><div id="wlt-end" style="height:2px"></div></div></div></div>`;
     if (!isFirebaseConfigured) { $('wlt-rows').innerHTML = '<p style="text-align:center;padding:40px;font-size:12px;font-weight:800;color:rgba(255,255,255,.4)">Wallet needs the online database.</p>'; $('wlt-bal').textContent = '0'; return; }
     if (window.IntersectionObserver) { io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(); }, { root: $('wlt-list'), rootMargin: '0px 0px 120px 0px' }); io.observe($('wlt-end')); }
     evaluate().catch(() => { }).then(async () => {
@@ -21498,7 +21510,7 @@ window.wltGiveDo = async function () {
     try {
         await fsRunTransaction(db, async t => { const sR = doc(db, COL('wallets'), me(), 'tx', x.key), cur = await t.get(sR); if (!cur.exists() || cur.data().gone || cur.data().date) throw new Error('gone');
             t.set(sR, { gone: true }, { merge: true });
-            const g = Object.assign({}, x, { key: nk, ts: now, at: now, fromName: mine, from: me(), note: note });
+            const g = Object.assign({}, x, { key: nk, ts: now, at: now, fromName: mine, from: me(), note: note, opened: false });
             t.set(doc(db, COL('wallets'), mob, 'tx', nk), g);
             t.set(doc(db, COL('wallets'), mob, 'tx', 'giftrecv_' + id), { key: 'giftrecv_' + id, amount: 0, title: 'Immunity gift from ' + mine + ': ' + imLab(x), date: '', ts: now, at: now });
             t.set(doc(db, COL('wallets'), me(), 'tx', 'giftsent_' + id), { key: 'giftsent_' + id, amount: 0, title: 'Gifted ' + imLab(x) + ' to ' + pn, date: '', ts: now, at: now }); });
@@ -21506,13 +21518,7 @@ window.wltGiveDo = async function () {
     } catch (e) { console.warn('gift', e); imFail('Could not send the gift. It may already be used.'); }
 };
 
-// ===== ASK COIN + WEEKLY LOANS + FRESH START =====
-const LN_FINE = 100, LN_MAX = 500, LNC = {}; let lnCur = null, lnShown = {};
-const lnNm = m => { const z = (window.studentsDB || []).find(s => String(s.mobile) === String(m)); return z ? (z.name || 'Student') : 'Student'; };
-const lnWeekEnd = () => { const d = imToday(); d.setDate(d.getDate() + (7 - d.getDay()) % 7); return fd(d); };
-const lnDue = x => { const T = imToday().getTime(), dl = pd(x.deadline), late = dl ? Math.max(0, Math.floor((T - dl.getTime()) / 864e5)) : 0, fine = late > 0 ? LN_FINE : 0; return { late: late, extra: late, fine: fine, total: Math.max(0, (x.principal || 0) + late + fine - (x.paid || 0)) }; };
-const lnRules = () => `<div style="width:100%;box-sizing:border-box;text-align:left;padding:12px 14px;border-radius:14px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.35);font-size:11px;font-weight:700;line-height:1.55;color:rgba(255,255,255,.85)"><div style="font-size:10px;font-weight:900;letter-spacing:.2em;color:#fcd34d;margin-bottom:4px"><i class="fa-solid fa-scale-balanced"></i> RETURN RULES</div>1. Return the coins within this week (by Sunday).<br>2. After the week ends, 1 extra coin is added for every day late.<br>3. If not returned, the system automatically cuts the coins + extra coins + a ${LN_FINE}-coin fine from the borrower's account and gives it to the sender.<br>4. The auto-cut happens whenever the borrower has coins in the account.</div>`;
-const lnDone = (t, s, bad) => ov(head('window.wltOvBack()', bad ? 'FAILED' : 'DONE') + `<div class="wl-mid"><div class="wl-ok ${bad ? 'bad' : ''}"><i class="fa-solid fa-${bad ? 'xmark' : 'check'}"></i></div><div style="font-size:18px;font-weight:900">${esc(t)}</div><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6)">${esc(s)}</div><div style="display:flex;gap:8px;width:100%;margin-top:14px">${stBtn('#6366f1', 'My Loans', 'window.wltLoans()')}</div></div>`);
+// ===== FRESH START + WALLET NAVIGATION (hash based back button) + GIFT INBOX =====
 // every student starts again from 0 coins from today (once per student)
 async function freshStart(w, tk, yest) {
     const id = imId(), now = Date.now();
@@ -21521,112 +21527,82 @@ async function freshStart(w, tk, yest) {
         const nd = { balance: 0, mobile: me(), backfilled: true, sunFix: true, absFix: true, resetV: 1, since: tk, evalUpTo: dk(yest), updatedAt: now }; t.set(wRef(), nd, { merge: true }); return Object.assign({}, d, nd); });
     window.__wltBalance = nw.balance || 0; return nw;
 }
-// ---------- ask coin ----------
-window.wltAsk = function () {
-    ov(head('window.wltLoans()', 'ASK COIN') + `<div class="wl-col"><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6);margin-bottom:10px">Who do you want to ask for coins?</div><label class="gf-search" style="margin-top:0"><i class="fa-solid fa-magnifying-glass" style="opacity:.6"></i><input id="wlt-aq" placeholder="Search a friend" oninput="window.wltAskList()" autocomplete="off"></label><div id="wlt-al" class="wl-pane" style="margin-top:12px"></div></div>`); window.wltAskList();
-};
-window.wltAskList = function () { const el = $('wlt-al'); if (el) el.innerHTML = peerRows((($('wlt-aq') || {}).value || '').toLowerCase(), 'window.wltAskTo', 'fa-hand-holding-dollar', '#fcd34d'); };
-window.wltAskTo = function (mob) {
-    IS.ask = mob;
-    ov(head('window.wltAsk()', 'ASK COIN') + `<div class="wl-pane" style="width:100%;max-width:440px;margin-top:12px"><div style="text-align:center;font-size:13px;font-weight:800">Ask <b style="color:#fcd34d">${esc(lnNm(mob))}</b> for coins</div><input id="wlt-aa" type="number" inputmode="numeric" min="1" max="${LN_MAX}" class="wl-inp" placeholder="Coins (max ${LN_MAX})" style="margin:14px auto;display:block"><div style="display:flex;gap:8px;justify-content:center;margin-bottom:14px">${[10, 20, 50, 100].map(v => `<button type="button" class="wl-lnk" onclick="document.getElementById('wlt-aa').value=${v}">${v}</button>`).join('')}</div>${lnRules()}<button type="button" class="wl-btn g" onclick="window.wltAskSend()" style="width:100%;margin-top:14px">I agree, send request</button><div id="wlt-amsg" style="text-align:center;font-size:12px;font-weight:700;color:#fb7185;margin-top:10px;min-height:16px"></div></div>`);
-};
-window.wltAskSend = async function () {
-    const a = Math.floor(+(($('wlt-aa') || {}).value)), msg = $('wlt-amsg'), to = IS.ask; if (!to || !(a >= 1 && a <= LN_MAX)) { if (msg) msg.textContent = 'Enter 1 to ' + LN_MAX + ' coins.'; return; }
-    const id = imId(), now = Date.now(), mine = stu().name || 'A friend';
-    try { await setDoc(doc(db, COL('wallets'), to, 'tx', 'ask_' + id), { key: 'ask_' + id, kind: 'ask', status: 'pending', from: String(me()), fromName: mine, amount: 0, coins: a, deadline: lnWeekEnd(), ts: now, at: now });
-        wPush('Coin request', mine + ' is asking you for ' + a + ' coins', [to], { ask: 1 }); lnDone('Request sent', 'Asked ' + lnNm(to) + ' for ' + a + ' coins');
-    } catch (e) { if (msg) msg.textContent = 'Could not send. Check your connection.'; }
-};
-// ---------- popup for the student who is asked ----------
-async function lnCheck() {
-    if (window.currentRole !== 'student' || !me() || !isFirebaseConfigured || $('wlt') || $('wlt-ask')) return;
-    try { const sn = await getDocs(query(collection(db, COL('wallets'), me(), 'tx'), where('kind', '==', 'ask'), where('status', '==', 'pending'))), L = []; sn.forEach(d => { const x = d.data(); if (!lnShown[x.key]) L.push(x); }); L.sort((a, b) => a.ts - b.ts); if (L.length) lnPopup(L[0]); } catch (e) { console.warn('ask check', e); }
+// ---------- navigation: every wallet screen is its own #wallet/N history entry, so the phone back button steps back one screen ----------
+const WN = (() => {
+    const TH = []; let D = 0, last = 0, nm = '', unlocked = false, opened = false, rp = false;
+    const reset = () => { TH.length = 0; D = last = 0; nm = ''; unlocked = false; opened = false; };
+    const api = {
+        open() { reset(); opened = true; try { location.hash = 'wallet'; } catch (e) { } },
+        unlock() { unlocked = true; },
+        leave() { const n = D + 1, had = opened; window.closeWallet(); reset(); if (had) history.go(-n); },
+        wrap(fn, name, eph) { return function () {
+            const a = arguments;
+            if (rp || !$('wlt') || !unlocked) return fn.apply(null, a);
+            if (name === 'wltStore' && typeof a[0] === 'string' && nm === 'wltStore') return fn.apply(null, a);   // tab switch, not a new screen
+            const th = () => fn.apply(null, a); th.eph = !!eph; th.n = name; D++; TH.length = D; TH[D] = th; nm = name; last = D;
+            try { location.hash = 'wallet/' + D; } catch (e) { }
+            return fn.apply(null, a); }; },
+        home() { if (D > 0) history.go(-D); else ovClose(); },
+        back() { if (opened) history.back(); else window.closeWallet(); },
+        route() {
+            const m = /^wallet(?:\/(\d+))?$/.exec(location.hash.slice(1));
+            if (!m) { if ($('wlt')) { window.closeWallet(); reset(); } return; }
+            if (!$('wlt')) { history.replaceState(null, '', '#student'); try { window.handleHashChange(); } catch (e) { } return; }
+            let d = +(m[1] || 0); if (d === last) return; if (d > 0 && !unlocked) { history.replaceState(null, '', '#wallet'); d = 0; }
+            last = D = d; stopScan();
+            if (d === 0) { ovClose(); return; }
+            const th = TH[d]; if (!th) { history.replaceState(null, '', '#wallet'); last = D = 0; ovClose(); return; }
+            if (th.eph) { history.back(); return; }
+            nm = th.n; rp = true; try { th(); } finally { rp = false; }
+        }
+    };
+    window.addEventListener('hashchange', api.route);
+    return api;
+})();
+window.wltBack = WN.back; window.wltHome = WN.home; window.wltOvBack = () => WN.home();
+[['wltStore', 0], ['wltInv', 0], ['wltAct', 0], ['wltBuy', 0], ['wltBuyPin', 1], ['wltGift', 0], ['wltGiveTo', 1], ['wltScan', 0], ['wltManual', 0], ['wltRank', 0], ['wltChangePin', 0]].forEach(a => { if (window[a[0]]) window[a[0]] = WN.wrap(window[a[0]], a[0], a[1]); });
+payScreen = WN.wrap(payScreen, 'payScreen', 1); pinStep = WN.wrap(pinStep, 'pinStep', 1); cpPin = WN.wrap(cpPin, 'cpPin', 1);
+// ---------- gift inbox: a gift lands on the dashboard wrapped, tap to unwrap ----------
+const gfCss = () => { if ($('wlt-gf-css')) return; const e = document.createElement('style'); e.id = 'wlt-gf-css'; e.textContent = `
+#wlt-gift-ov{position:fixed;inset:0;z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;color:#fff;text-align:center;overflow:hidden;background:radial-gradient(80% 55% at 50% 36%,rgba(244,114,182,.38),transparent 70%),linear-gradient(160deg,#0b0f1a,#1b1033 60%,#2a0f1c);animation:wlFade .3s ease both}
+.gb{position:relative;width:140px;height:140px;margin-bottom:10px;cursor:pointer;animation:gbHop 1.7s ease-in-out infinite}@keyframes gbHop{0%,100%{transform:translateY(0)}45%{transform:translateY(-14px) rotate(-3deg)}60%{transform:translateY(0) rotate(2deg)}}
+.gb i{position:absolute;display:block;font-style:normal}.gb .bd{left:10px;right:10px;bottom:0;height:84px;border-radius:12px;background:linear-gradient(145deg,#ec4899,#9d174d);box-shadow:0 18px 36px rgba(236,72,153,.4)}
+.gb .ld{left:0;right:0;bottom:76px;height:38px;border-radius:12px;background:linear-gradient(145deg,#f472b6,#be185d);transform-origin:0 100%;transition:transform .75s cubic-bezier(.3,1.5,.4,1),opacity .5s .35s}
+.gb .rb{left:50%;width:24px;margin-left:-12px;top:0;bottom:0;background:linear-gradient(90deg,#fde68a,#f59e0b)}.gb .ld .rb{border-radius:0}
+.gb .bw{left:50%;bottom:108px;width:34px;height:34px;margin-left:-40px;border:7px solid #fcd34d;border-radius:50% 50% 0 50%;transform:rotate(-20deg);z-index:2;transition:opacity .3s}.gb .bw.r{margin-left:6px;border-radius:50% 50% 50% 0;transform:rotate(20deg)}
+.gb.open{animation:none}.gb.open .ld{transform:translate(42px,-110px) rotate(34deg);opacity:0}.gb.open .bw{opacity:0}
+.gf-pop{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;max-width:340px;animation:wlpop .55s cubic-bezier(.3,1.5,.5,1) both}
+#wlt-gfab{position:fixed;right:14px;bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:140;width:54px;height:54px;border-radius:50%;color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f472b6,#be185d);box-shadow:0 8px 22px rgba(190,24,93,.5);animation:gbHop 1.8s ease-in-out infinite}
+#wlt-gfab b{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;border-radius:99px;background:#fcd34d;color:#78350f;font-size:11px;font-weight:900;display:flex;align-items:center;justify-content:center}
+@media (prefers-reduced-motion:reduce){.gb,#wlt-gfab{animation:none}}`; document.head.appendChild(e); };
+let GQ = []; const gfShown = {};
+const gfHide = () => { const o = $('wlt-gift-ov'); if (o) o.remove(); gfFab(); };
+function gfFab() {
+    let b = $('wlt-gfab'); const sv = $('student-view'), on = GQ.length && window.currentRole === 'student' && sv && !sv.classList.contains('hidden-view');
+    if (!on) { if (b) b.remove(); return; } gfCss();
+    if (!b) { b = document.createElement('button'); b.id = 'wlt-gfab'; b.type = 'button'; b.setAttribute('aria-label', 'Open your gift'); b.onclick = () => gfOpen(GQ[0]); document.body.appendChild(b); }
+    b.innerHTML = '<i class="fa-solid fa-gift"></i><b>' + GQ.length + '</b>';
 }
-function lnPopup(x) { lnShown[x.key] = 1; lnCur = x; ensureCss(); const o = $('wlt-ask'); if (o) o.remove(); const p = document.createElement('div'); p.id = 'wlt-ask'; p.style.cssText = SH.replace('z-index:150', 'z-index:400').replace('overflow:hidden', 'overflow-y:auto') + ';justify-content:center'; document.body.appendChild(p);
-    p.innerHTML = `<div style="width:100%;max-width:380px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center">${coin(56)}<div style="font-size:10px;font-weight:900;letter-spacing:.3em;color:#fcd34d">COIN REQUEST</div><div style="font-size:18px;font-weight:900;line-height:1.25">${esc(x.fromName)} is asking you for <span style="color:#fcd34d">${x.coins}</span> coins</div>${lnRules()}<div style="display:flex;gap:10px;width:100%"><button type="button" class="wl-btn n" onclick="window.wltAskDecline()" style="flex:1">Decline</button><button type="button" class="wl-btn g" onclick="window.wltAskPin()" style="flex:1">Send ${x.coins}</button></div><button type="button" onclick="window.wltAskLater()" style="font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">Not now</button></div>`; }
-window.wltAskLater = () => { const p = $('wlt-ask'); if (p) p.remove(); };
-window.wltAskOpen = key => { const x = LNC[key]; if (x) lnPopup(x); };
-window.wltAskDecline = async function () { const x = lnCur; if (!x) return; try { await setDoc(doc(db, COL('wallets'), me(), 'tx', x.key), { status: 'declined' }, { merge: true }); wPush('Coin request declined', (stu().name || 'A friend') + ' declined your request for ' + x.coins + ' coins', [String(x.from)]); } catch (e) { } window.wltAskLater(); };
-window.wltAskPin = async function () {
-    const x = lnCur, p = $('wlt-ask'); if (!x || !p) return; try { await phLoad(); } catch (e) { }
-    p.innerHTML = `<div class="wl-pinbox" style="width:100%;max-width:360px;display:flex;flex-direction:column;align-items:center">${coin(56)}<div style="font-size:12px;font-weight:900;letter-spacing:.3em;margin-top:8px">ENTER PIN</div><div id="wlt-msg" style="font-size:12px;color:rgba(255,255,255,.55);font-weight:700;height:16px;margin-top:6px">Send ${x.coins} coins to ${esc(x.fromName)}</div>${dotsH}${padH('sm')}<button type="button" onclick="window.wltAskLater()" style="margin-top:10px;font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">Cancel</button></div>`;
-    pinCheck(p, () => lnGive(x));
-};
-async function lnGive(x) {
-    const p = $('wlt-ask'), id = imId(), now = Date.now(), A = String(x.from), amt = x.coins, an = lnNm(A), gn = stu().name || 'A friend', dl = lnWeekEnd();
-    const res = (ok, t, s) => { if (p) p.innerHTML = `<div class="wl-mid"><div class="wl-ok ${ok ? '' : 'bad'}"><i class="fa-solid fa-${ok ? 'check' : 'xmark'}"></i></div><div style="font-size:18px;font-weight:900">${esc(t)}</div><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6)">${esc(s)}</div><button type="button" class="wl-btn n" onclick="window.wltAskLater()" style="width:100%;max-width:300px;margin-top:14px">Close</button></div>`; };
-    try {
-        await fsRunTransaction(db, async t => { const ar = doc(db, COL('wallets'), me(), 'tx', x.key), a0 = await t.get(ar), gw = await t.get(wRef()), aw = await t.get(doc(db, COL('wallets'), A));
-            if (!a0.exists() || a0.data().status !== 'pending') throw new Error('gone'); const gb = gw.exists() ? (gw.data().balance || 0) : 0, ab = aw.exists() ? (aw.data().balance || 0) : 0; if (gb < amt) throw new Error('low');
-            t.set(wRef(), { balance: gb - amt, mobile: me(), updatedAt: now }, { merge: true }); t.set(doc(db, COL('wallets'), A), { balance: ab + amt, mobile: A, updatedAt: now }, { merge: true });
-            t.set(doc(db, COL('wallets'), me(), 'tx', 'loanout_' + id), { key: 'loanout_' + id, amount: -amt, title: 'Lent to ' + an + ' (return by ' + dl + ')', date: '', ts: now, at: now, peer: A });
-            t.set(doc(db, COL('wallets'), A, 'tx', 'loanin_' + id), { key: 'loanin_' + id, amount: amt, title: 'Borrowed from ' + gn + ' (return by ' + dl + ')', date: '', ts: now, at: now, peer: String(me()) });
-            const L = { kind: 'loan', amount: 0, principal: amt, paid: 0, deadline: dl, status: 'open', ts: now, at: now, lender: String(me()), borrower: A, lenderName: gn, borrowerName: an };
-            t.set(doc(db, COL('wallets'), me(), 'tx', 'loan_' + id), Object.assign({ key: 'loan_' + id, role: 'lender' }, L)); t.set(doc(db, COL('wallets'), A, 'tx', 'loan_' + id), Object.assign({ key: 'loan_' + id, role: 'borrower' }, L));
-            t.set(ar, { status: 'accepted', loanId: id }, { merge: true }); window.__wltBalance = gb - amt; });
-        wPush('Coins received', gn + ' sent you ' + amt + ' coins. Return them by ' + dl + '.', [A], { loan: 1 }); res(true, 'Coins sent', amt + ' coins to ' + an);
-    } catch (e) { res(false, e.message === 'low' ? 'Not enough coins' : e.message === 'gone' ? 'Request no longer open' : 'Could not send', 'Nothing was deducted.'); }
+function gfOpen(x) {
+    if (!x || $('wlt-gift-ov')) return; gfShown[x.key] = 1; gfCss(); stCss(); pmCss(); const o = document.createElement('div'); o.id = 'wlt-gift-ov'; document.body.appendChild(o);
+    o.innerHTML = `<div class="gb" role="button" tabindex="0" aria-label="Open gift"><i class="bd"><i class="rb"></i></i><i class="ld"><i class="rb"></i></i><i class="bw"></i><i class="bw r"></i></div><div style="font-size:11px;font-weight:900;letter-spacing:.3em;color:#f9a8d4">A GIFT FOR YOU</div><div style="font-size:20px;font-weight:900;line-height:1.25"><span style="color:#fcd34d">${esc(x.fromName || 'A friend')}</span> sent you a gift</div><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.6)">Tap the box to open it</div><button type="button" id="wlt-gl8" style="margin-top:14px;font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">Open later</button>`;
+    let t = 0; const box = o.querySelector('.gb'); $('wlt-gl8').onclick = gfHide;
+    const unwrap = async () => { if (t) return; t = 1; box.classList.add('open'); try { navigator.vibrate && navigator.vibrate([40, 30, 80]); } catch (e) { } pmChime();
+        const C = ['#fde68a', '#fff', '#f9a8d4', '#fbbf24', '#c4b5fd', '#fcd34d']; o.insertAdjacentHTML('beforeend', Array.from({ length: 30 }, (_, i) => { const a = Math.random() * 6.283, r = 90 + Math.random() * 170; return '<i class="pm-cf" style="top:42%;--x:' + Math.round(Math.cos(a) * r) + 'px;--y:' + Math.round(Math.sin(a) * r - 40) + 'px;--c:' + C[i % 6] + ';--d:.1s"></i>'; }).join(''));
+        try { await setDoc(doc(db, COL('wallets'), me(), 'tx', x.key), { opened: true, openedAt: Date.now() }, { merge: true }); } catch (e) { } GQ = GQ.filter(z => z.key !== x.key); try { await immLoad(); } catch (e) { }
+        setTimeout(() => { if (!$('wlt-gift-ov')) return; const m = IMT[x.itype] || IMT.run; o.innerHTML = `<div class="gf-pop">${stArt(m, 96, 42)}<div style="font-size:11px;font-weight:900;letter-spacing:.3em;color:#f9a8d4;margin-top:8px">YOU GOT</div><div style="font-size:21px;font-weight:900">${esc(imNm(x.itype))}</div><div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.65)">${x.scope === 'day' ? 'Full Day' : 'Partial'} \u2022 ${esc(stUnit(x.itype, x.scope))}</div>${x.note ? `<div class="ln-card" style="width:100%;box-sizing:border-box;margin:6px 0 0">\u201C${esc(x.note)}\u201D<div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:4px">from ${esc(x.fromName || 'a friend')}</div></div>` : `<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.55)">from ${esc(x.fromName || 'a friend')}</div>`}<div style="display:flex;gap:10px;width:100%;margin-top:16px"><button type="button" class="wl-btn n" id="wlt-gl9" style="flex:1">Close</button><button type="button" class="wl-btn p" id="wlt-gl10" style="flex:1"><i class="fa-solid fa-box-open"></i>My items</button></div></div>`;
+            $('wlt-gl9').onclick = gfHide; $('wlt-gl10').onclick = () => { gfHide(); window.openWallet(); }; gfFab(); }, 750); };
+    box.onclick = unwrap; box.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') unwrap(); };
 }
-// ---------- loans screen, return, auto-cut ----------
-async function lnSettle(x, auto) {
-    const B = String(x.borrower), Ld = String(x.lender), now = Date.now(), uid = imId();
-    return fsRunTransaction(db, async t => {
-        const br = doc(db, COL('wallets'), B, 'tx', x.key), lr = doc(db, COL('wallets'), Ld, 'tx', x.key), bw = doc(db, COL('wallets'), B), lw = doc(db, COL('wallets'), Ld);
-        const b0 = await t.get(br), l0 = await t.get(lr), bs = await t.get(bw), ls = await t.get(lw);
-        if (!b0.exists() || b0.data().status !== 'open') return 0;
-        const cur = b0.data(), d = lnDue(cur), bb = bs.exists() ? (bs.data().balance || 0) : 0, lb = ls.exists() ? (ls.data().balance || 0) : 0;
-        if (auto && (d.late < 1 || bb <= 0 || d.total <= 0)) return 0;
-        const pay = auto ? Math.min(bb, d.total) : d.total; if (pay <= 0) return 0; if (!auto && bb < pay) throw new Error('low');
-        const closed = pay >= d.total, patch = { paid: (cur.paid || 0) + pay, status: closed ? 'closed' : 'open', closedAt: closed ? now : 0, lastPay: now };
-        t.set(bw, { balance: bb - pay, mobile: B, updatedAt: now }, { merge: true }); t.set(lw, { balance: lb + pay, mobile: Ld, updatedAt: now }, { merge: true });
-        t.set(doc(db, COL('wallets'), B, 'tx', 'loanpay_' + uid), { key: 'loanpay_' + uid, amount: -pay, title: auto ? 'Auto-cut for ' + cur.lenderName + ' (coins + ' + d.extra + ' extra + ' + d.fine + ' fine)' : 'Returned to ' + cur.lenderName, date: '', ts: now, at: now, peer: Ld });
-        t.set(doc(db, COL('wallets'), Ld, 'tx', 'loanrecv_' + uid), { key: 'loanrecv_' + uid, amount: pay, title: (auto ? 'Auto-collected from ' : 'Returned by ') + cur.borrowerName, date: '', ts: now, at: now, peer: B });
-        t.set(br, patch, { merge: true }); if (l0.exists()) t.set(lr, patch, { merge: true });
-        if (B === String(me())) window.__wltBalance = bb - pay; else if (Ld === String(me())) window.__wltBalance = lb + pay;
-        return pay; });
+function gfRender(A) {
+    GQ = A.filter(x => x.from && !x.opened && !x.date && !x.gone).sort((a, b) => a.ts - b.ts); gfFab();
+    const nx = GQ.find(x => !gfShown[x.key] && (x.at || x.ts || 0) > Date.now() - 6048e5);
+    if (nx && !$('wlt-gift-ov') && !$('wlt') && location.hash !== '#active-exam') gfOpen(nx);
 }
-window.__loanSweep = async function () {
-    if (!me() || !isFirebaseConfigured) return; const A = [];
-    try { (await getDocs(query(collection(db, COL('wallets'), me(), 'tx'), where('kind', '==', 'loan'), where('status', '==', 'open')))).forEach(d => A.push(d.data())); } catch (e) { return; }
-    for (const x of A) { if (lnDue(x).late < 1) continue; try { const p = await lnSettle(x, true); if (p > 0) wPush('Overdue coin loan', p + ' coins were automatically cut and sent to ' + x.lenderName, [String(x.lender), String(x.borrower)], { loan: 1 }); } catch (e) { } }
-};
-// what the student can still earn today (coins are credited after the day is checked)
-function lnEarn() {
-    const s = stu(), ds = fd(new Date()), goal = (parseFloat(s.targetFitnessKm) || 0) / 7, tp = parseFloat(s.targetPercentage) || 0; let km = 0;
-    (window.fitnessDB || []).forEach(l => { if (String(l.mobile) === me() && l.date === ds && !l.isAbsent) km += parseFloat(l.distance) || 0; });
-    const full = (window.sessionsDB || []).filter(x => String(x.mobile) === me() && x.dateStr === ds && (x.totalStudyMs || 0) >= 14400000 - 60000).length, R = [];
-    if (goal > 0) R.push({ m: IMT.run, t: 'Run ' + goal.toFixed(1) + ' km today', s: km >= goal - 0.001 ? 'Goal done. Go further for +2 extra' : km.toFixed(1) + ' of ' + goal.toFixed(1) + ' km. Go further for +2 extra', v: 5, lab: '+5', done: km >= goal - 0.001, p: Math.min(100, Math.round(km / goal * 100)) });
-    R.push({ m: IMT.session, t: 'Finish a 4 hour study session', s: Math.min(3, full) + ' of 3 sessions done. Study longer for +2 extra', v: 5 * Math.max(0, 3 - full), lab: '+5 each', done: full >= 3, p: Math.round(Math.min(3, full) / 3 * 100) });
-    R.push({ m: IMT.avg, t: tp > 0 ? 'Score ' + tp + '% or more in an exam' : 'Hit your exam score target', s: 'Added when the result comes in', v: 0, lab: '+5', ev: 1 });
-    R.push({ m: { ic: 'fa-trophy', c: '#fbbf24,#f59e0b' }, t: 'Be the exam topper', s: 'Highest score in the class', v: 0, lab: '+5', ev: 1 });
-    return { rows: R, pot: R.reduce((a, r) => a + r.v, 0) };
-}
-window.wltLoans = async function () {
-    ov(head('window.wltOvBack()', 'ASK COIN', ) + '<div id="wlt-ln" class="wl-pane ln-wrap"><p style="text-align:center;padding:30px;font-size:12px;font-weight:700;color:rgba(255,255,255,.5)">Loading...</p></div>');
-    let L = []; try { (await getDocs(query(collection(db, COL('wallets'), me(), 'tx'), where('kind', 'in', ['ask', 'loan'])))).forEach(d => { const x = d.data(); LNC[x.key] = x; L.push(x); }); } catch (e) { }
-    const box = $('wlt-ln'); if (!box) return;
-    const asks = L.filter(x => x.kind === 'ask' && x.status === 'pending'), owe = L.filter(x => x.kind === 'loan' && x.role === 'borrower' && x.status === 'open'), lent = L.filter(x => x.kind === 'loan' && x.role === 'lender' && x.status === 'open');
-    const cb = L.filter(x => x.kind === 'loan' && x.role === 'borrower' && x.status !== 'open'), cl = L.filter(x => x.kind === 'loan' && x.role === 'lender' && x.status !== 'open').sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0));
-    const onT = x => { const d = pd(x.deadline); return d && x.closedAt && x.closedAt <= d.getTime() + 864e5 ? 1 : 0; }, who = {}; cl.forEach(x => { who[x.borrower] = 1; });
-    const owedTot = owe.reduce((a, x) => a + lnDue(x).total, 0), lentTot = lent.reduce((a, x) => a + lnDue(x).total, 0), rate = cb.length ? Math.round(cb.filter(onT).length / cb.length * 100) + '%' : '-';
-    const E = lnEarn(), cover = owedTot ? Math.min(100, Math.round(E.pot / owedTot * 100)) : 0;
-    const chip = x => { const d = lnDue(x); if (d.late > 0) return `<span class="ln-chip" style="color:#fda4af;background:rgba(251,113,133,.16)">OVERDUE ${d.late}d</span>`; const dl = pd(x.deadline), left = dl ? Math.max(0, Math.round((dl.getTime() - imToday().getTime()) / 864e5)) : 0; return `<span class="ln-chip" style="color:${left <= 1 ? '#fcd34d' : '#6ee7b7'};background:${left <= 1 ? 'rgba(251,191,36,.16)' : 'rgba(52,211,153,.16)'}">${left === 0 ? 'DUE TODAY' : 'DUE IN ' + left + 'd'}</span>`; };
-    const bar = x => { const d = lnDue(x), tot = Math.max(1, (x.principal || 0) + d.extra + d.fine), p = Math.min(100, Math.round((x.paid || 0) / tot * 100)); return `<div class="ln-bar"><i style="width:${p}%"></i></div><div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:rgba(255,255,255,.5);margin-top:4px"><span>${x.paid || 0} paid</span><span>${x.principal} lent${d.late > 0 ? ' + ' + d.extra + ' extra + ' + d.fine + ' fine' : ''}</span></div>`; };
-    let h = '';
-    if (asks.length) h += stSec('REQUESTS TO YOU') + asks.map(x => `<div class="ln-card" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${av(x.from, x.fromName, 40)}<div style="flex:1;min-width:120px;font-size:12px;font-weight:700"><b>${esc(x.fromName)}</b> asks <b style="color:#fcd34d">${x.coins}</b> coins</div><button type="button" class="wl-btn g sm" onclick="window.wltAskOpen('${x.key}')">Respond</button></div>`).join('');
-    if (owe.length) h += stSec('YOU OWE') + owe.map(x => { const d = lnDue(x); return `<div class="ln-card"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${av(x.lender, x.lenderName, 40)}<div style="flex:1;min-width:110px"><div style="font-size:13px;font-weight:900">${esc(x.lenderName)}</div><div style="margin-top:3px">${chip(x)}</div></div><div style="text-align:right"><div style="font-size:9px;font-weight:900;letter-spacing:.14em;color:rgba(255,255,255,.5)">RETURN</div><div style="font-size:20px;font-weight:900;color:#fcd34d">${d.total}</div></div></div>${bar(x)}<button type="button" class="wl-btn y" style="width:100%;margin-top:10px" onclick="window.wltRepay('${x.key}')"><i class="fa-solid fa-rotate-left"></i>Return coins</button></div>`; }).join('');
-    if (lent.length) h += stSec('OWED TO YOU') + lent.map(x => { const d = lnDue(x); return `<div class="ln-card"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${av(x.borrower, x.borrowerName, 40)}<div style="flex:1;min-width:110px"><div style="font-size:13px;font-weight:900">${esc(x.borrowerName)}</div><div style="margin-top:3px">${chip(x)}</div></div><div style="text-align:right"><div style="font-size:9px;font-weight:900;letter-spacing:.14em;color:rgba(255,255,255,.5)">DUE</div><div style="font-size:20px;font-weight:900;color:#6ee7b7">${d.total}</div></div></div>${bar(x)}</div>`; }).join('');
-    if (cl.length || cb.length) h += stSec('CLOSED') + cl.concat(cb).sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0)).slice(0, 6).map(x => `<div class="ln-card" style="display:flex;align-items:center;gap:10px;opacity:.7">${av(x.role === 'lender' ? x.borrower : x.lender, x.role === 'lender' ? x.borrowerName : x.lenderName, 34)}<div style="flex:1;min-width:0;font-size:12px;font-weight:700"><b>${esc(x.role === 'lender' ? x.borrowerName : x.lenderName)}</b><div style="font-size:11px;color:rgba(255,255,255,.5)">${x.principal} coins \u2022 ${x.role === 'lender' ? 'repaid you' : 'you repaid'}</div></div><i class="fa-solid fa-circle-check" style="color:#34d399"></i></div>`).join('');
-    if (!h) h = '<div class="ln-card" style="text-align:center;padding:24px 12px;font-size:12px;font-weight:800;color:rgba(255,255,255,.5)"><i class="fa-solid fa-handshake" style="font-size:26px;color:#fcd34d;display:block;margin-bottom:8px"></i>No requests or loans right now.<br>Tap Ask Coin to ask a friend.</div>';
-    const earn = `<div class="ln-card ln-earn"><div style="font-size:10px;font-weight:900;letter-spacing:.24em;color:#fcd34d"><i class="fa-solid fa-sack-dollar"></i> EARN COINS TO REPAY</div><div style="font-size:15px;font-weight:900;margin-top:6px">${E.pot ? 'Study and run today: earn up to <span style="color:#fcd34d">+' + E.pot + '</span> coins' : 'Today\'s goals are done. Nice work!'}</div>${owedTot ? `<div class="ln-bar" style="height:8px"><i style="width:${cover}%"></i></div><div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.6);margin-top:4px">${E.pot ? 'Covers ' + cover + '% of the ' + owedTot + ' coins you owe' : 'You owe ' + owedTot + ' coins. Keep earning each day.'}</div>` : ''}<div style="margin-top:10px">${E.rows.map(r => `<div class="ln-er">${stIc(r.m)}<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:800">${esc(r.t)}</div><div style="font-size:10.5px;font-weight:600;color:rgba(255,255,255,.5)">${esc(r.s)}</div>${r.p != null ? `<div class="ln-bar" style="height:4px;margin-top:5px"><i style="width:${r.p}%"></i></div>` : ''}</div>${r.done ? '<i class="fa-solid fa-circle-check" style="color:#34d399;font-size:18px"></i>' : `<span class="ln-chip" style="color:#fcd34d;background:rgba(251,191,36,.16)">${r.lab}</span>`}</div>`).join('')}</div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.4);margin-top:6px"><i class="fa-regular fa-clock"></i> Coins are added after the day is checked.</div></div>`;
-    box.innerHTML = `<div class="ln-hero"><i class="fa-solid fa-hand-holding-dollar" style="position:absolute;right:10px;bottom:-10px;font-size:86px;opacity:.14;pointer-events:none"></i><div style="font-size:10px;font-weight:900;letter-spacing:.3em;opacity:.85">EXAMA COIN BORROW</div><div style="font-size:21px;font-weight:900;margin-top:4px;line-height:1.1">BORROW & REPAY</div><div style="font-size:11px;font-weight:700;opacity:.92;margin-top:6px;max-width:420px">Ask a friend for coins and return them by Sunday. Earn coins by studying and running to pay it back on time.</div><div class="ln-k"><div><small>YOU OWE</small><b style="color:#fde68a">${owedTot}</b></div><div><small>OWED TO YOU</small><b style="color:#a7f3d0">${lentTot}</b></div><div><small>STUDENTS WHO REPAID YOU</small><b>${Object.keys(who).length}</b></div><div><small>LOANS YOU REPAID \u2022 ON TIME</small><b>${cb.length} <span style="font-size:13px;opacity:.85">\u2022 ${rate}</span></b></div></div><button type="button" class="wl-btn y" style="width:100%;margin-top:12px;position:relative" onclick="window.wltAsk()"><i class="fa-solid fa-hand-holding-dollar"></i>ASK COIN</button></div><div class="ln-grid"><div class="ln-col">${earn}</div><div class="ln-col">${h}<div style="margin:6px 0 16px">${lnRules()}</div></div></div>`;
-};
-window.wltRepay = function (key) {
-    const x = LNC[key]; if (!x) return; const d = lnDue(x);
-    const o = ov(head('window.wltLoans()', 'RETURN') + `<div class="wl-mid wl-pinbox">${coin(56)}<div style="font-size:12px;font-weight:900;letter-spacing:.3em;margin-top:6px">ENTER PIN</div><div id="wlt-msg" style="font-size:12px;color:rgba(255,255,255,.55);font-weight:700;height:16px">Return ${d.total} coins to ${esc(x.lenderName)}</div>${dotsH}${padH('sm')}</div>`);
-    if (o) pinCheck(o, async () => { try { const p = await lnSettle(x, false); if (p > 0) { const el = $('wlt-bal'); if (el) el.textContent = window.__wltBalance; wPush('Coins returned', (stu().name || 'A friend') + ' returned ' + p + ' coins', [String(x.lender)], { loan: 1 }); lnDone('Returned', p + ' coins sent to ' + x.lenderName); } else lnDone('Already settled', 'Nothing to pay.'); } catch (e) { lnDone(e.message === 'low' ? 'Not enough coins' : 'Could not return', e.message === 'low' ? 'You need ' + d.total + ' coins. If you are overdue, it is cut automatically when you have coins.' : 'Check your connection.', true); } });
-};
-let lnT = 0; const lnIv = setInterval(() => { if (++lnT > 40) return clearInterval(lnIv); if (window.currentRole === 'student' && me()) { clearInterval(lnIv); setTimeout(lnCheck, 4000); setInterval(lnCheck, 60000); } }, 3000);
+window.addEventListener('hashchange', () => setTimeout(gfFab, 60));
+let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(gIv); if (window.currentRole === 'student' && me() && isFirebaseConfigured) { clearInterval(gIv);
+    try { onSnapshot(query(collection(db, COL('wallets'), me(), 'tx'), where('kind', '==', 'imm')), sn => { const A = []; sn.forEach(d => A.push(d.data())); gfRender(A); }, () => { }); } catch (e) { console.warn('gift inbox', e); } } }, 2500);
+
 })();
 // ===== RUN TRACKER END =====
             // Auto-Penalty for missed fitness days
