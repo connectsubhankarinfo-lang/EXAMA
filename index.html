@@ -20958,6 +20958,10 @@ let tries = 0; const iv = setInterval(() => { if (++tries > 40) return clearInte
 
 // ---------- screens (built only when the wallet button is tapped) ----------
 let tries2 = 0, lockUntil = 0, lastDoc = null;
+// custom wallet PIN (set by the student via Wallet Rules > Change Wallet PIN). Stored as a hash on the student's own wallet doc; until set, the PIN is the first 4 digits of the mobile number.
+let ph = '', phOk = false, cpTries = 0, cpLock = 0;
+const hp = p => { const t = me() + ':' + p + ':exama-wlt'; let h1 = 0xdeadbeef, h2 = 0x41c6ce57; for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36); };
+async function phLoad() { try { const w = await getDoc(wRef()); ph = (w.exists() && w.data().pinHash) || ''; phOk = true; } catch (e) { phOk = false; } return phOk; }
 const SH = 'box-sizing:border-box;position:fixed;inset:0;z-index:150;display:flex;flex-direction:column;align-items:center;color:#fff;background:linear-gradient(160deg,#0b0f1a,#1b1033 60%,#2a0f1c);padding:var(--wl-top,max(3rem,env(safe-area-inset-top,0px))) max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));overflow:hidden';
 const coin = px => '<span style="display:inline-flex;width:' + px + 'px;height:' + px + 'px;border-radius:50%;align-items:center;justify-content:center;background:linear-gradient(145deg,#fde68a,#f59e0b);color:#78350f;font-weight:900;font-size:' + px * .6 + 'px;line-height:1;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18),0 4px 14px rgba(245,158,11,.4)">☘︎</span>';
 const rng=n=>Array.from({length:n},(_,i)=>i);
@@ -21006,7 +21010,7 @@ let io = null; const PAGE = 6; let mb = false, hDone = false, rankHtml = '', las
 function stopScan() { clearInterval(sc.t); if (sc.s) { sc.s.getTracks().forEach(t => t.stop()); sc.s = null; } }
 window.closeWallet = function () { stopScan(); const p = $('wlt'); if (p) p.remove(); lastDoc = null; if (io) { io.disconnect(); io = null; } };
 if (!window.__wltEsc) { window.__wltEsc = 1; document.addEventListener('keydown', e => { if (e.key !== 'Escape' || !$('wlt')) return; if ($('wlt-ov')) ovClose(); else window.closeWallet(); }); }
-window.openWallet = function () { window.closeWallet(); ensureCss(); tries2 = 0; const p = document.createElement('div'); p.id = 'wlt'; p.style.cssText = SH; document.body.appendChild(p); pinScreen(); };
+window.openWallet = function () { window.closeWallet(); ensureCss(); tries2 = 0; const p = document.createElement('div'); p.id = 'wlt'; p.style.cssText = SH; document.body.appendChild(p); pinScreen(); phLoad(); };
 const back = (fn, l) => `<button type="button" class="wl-ib" onclick="${fn}" aria-label="${l}"><i class="fa-solid fa-chevron-left"></i></button>`;
 const head = (fn, t, r) => `<div class="wl-head">${back(fn, 'Back')}<span class="wl-ttl">${t}</span>${r || '<span style="width:36px"></span>'}</div>`;
 const dotsH = '<div id="wlt-dots" style="display:flex;gap:16px;margin:14px 0 22px">' + [0, 1, 2, 3].map(() => '<i style="width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.5)"></i>').join('') + '</div>';
@@ -21016,14 +21020,18 @@ const ovClose = () => { stopScan(); const o = $('wlt-ov'); if (o) o.remove(); };
 window.wltOvBack = ovClose;
 // shared 4-digit PIN pad (PIN = first 4 digits of the mobile number, same as before)
 function pinCheck(root, onOk) {
-    let v = ''; const pin = me().replace(/\D/g, '').slice(0, 4);
+    let v = '', busy = false; const def = me().replace(/\D/g, '').slice(0, 4);
     const paint = () => root.querySelectorAll('#wlt-dots i').forEach((d, i) => { d.style.background = i < v.length ? '#fff' : 'transparent'; });
-    const h = e => {
-        const b = e.target.closest('[data-k]'); if (!b) return; const k = b.getAttribute('data-k'), msg = $('wlt-msg');
+    const h = async e => {
+        const b = e.target.closest('[data-k]'); if (!b || busy) return; const k = b.getAttribute('data-k'), msg = $('wlt-msg');
         if (Date.now() < lockUntil) { if (msg) msg.textContent = 'Too many tries. Wait ' + Math.ceil((lockUntil - Date.now()) / 1000) + 's'; return; }
         if (k === 'x') v = v.slice(0, -1); else if (v.length < 4) v += k; paint();
         if (v.length === 4) {
-            if (pin.length === 4 && v === pin) { root.removeEventListener('click', h); tries2 = 0; return onOk(); }
+            busy = true; let ok = false, bad = false;
+            try { if (!phOk) await phLoad(); if (!phOk) bad = true; else ok = ph ? hp(v) === ph : (def.length === 4 && v === def); } catch (x) { bad = true; }
+            busy = false;
+            if (bad) { v = ''; paint(); if (msg) msg.textContent = 'Could not check PIN. Check your connection.'; return; }
+            if (ok) { root.removeEventListener('click', h); tries2 = 0; return onOk(); }
             tries2++; v = ''; try { navigator.vibrate && navigator.vibrate(120); } catch (x) { }
             const d = $('wlt-dots'); if (d && d.animate) d.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-12px)' }, { transform: 'translateX(12px)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(0)' }], { duration: 320 });
             if (tries2 >= 5) { lockUntil = Date.now() + 30000; tries2 = 0; if (msg) msg.textContent = 'Too many tries. Wait 30s'; } else if (msg) msg.textContent = 'Wrong PIN, try again';
@@ -21031,6 +21039,45 @@ function pinCheck(root, onOk) {
         }
     };
     root.addEventListener('click', h);
+}
+// ---------- Change wallet PIN: verify with the student's LOGIN PASSWORD (no OTP), then set + confirm a new 4-digit PIN ----------
+const cpCss = () => { if ($('wlt-cp-css')) return; const st = document.createElement('style'); st.id = 'wlt-cp-css'; st.textContent = `
+.wl-cpm{font-size:12px;color:rgba(255,255,255,.55);font-weight:700;min-height:16px}
+.wl-cpf{display:flex;align-items:center;gap:10px;width:100%;max-width:320px;padding:0 10px 0 14px;border-radius:16px;background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.18);transition:border-color .2s,background .2s}
+.wl-cpf:focus-within{border-color:#fcd34d;background:rgba(255,255,255,.14)}
+.wl-cpf>i{color:#fcd34d;font-size:14px}.wl-cpf input{flex:1;min-width:0;height:48px;background:transparent;border:0;outline:0;color:#fff;font-size:16px;font-weight:700}
+.wl-cpf input::placeholder{color:rgba(255,255,255,.4);font-weight:600}.wl-cpf button{width:34px;height:34px;color:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:center}
+.wl-cpb{width:100%;max-width:320px;height:48px;border-radius:16px;font-size:13px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#1b1033;background:linear-gradient(135deg,#fde68a,#f59e0b);touch-action:manipulation}.wl-cpb:active{transform:scale(.98)}.wl-cpb:disabled{opacity:.6}`; document.head.appendChild(st); };
+const pwOk = x => { const c = [stu().password, localStorage.getItem('exama_mob') === me() ? localStorage.getItem('exama_pass') : null].filter(Boolean); return !!x && c.indexOf(x) >= 0; };
+const ttl = t => `<div style="font-size:12px;font-weight:900;letter-spacing:.3em;margin-top:6px">${t}</div>`;
+window.wltChangePin = function () {
+    window.wltRules(0); cpCss();
+    const o = ov(head('window.wltOvBack()', 'CHANGE PIN') + `<div class="wl-mid">${coin(56)}${ttl('VERIFY PASSWORD')}<div class="wl-cpm" id="wlt-cpm">Enter your login password to continue</div><div class="wl-cpf"><i class="fa-solid fa-lock"></i><input id="wlt-cpp" type="password" autocomplete="current-password" placeholder="Login password"><button type="button" id="wlt-cpe" aria-label="Show password"><i class="fa-solid fa-eye"></i></button></div><button type="button" class="wl-cpb" id="wlt-cpg">Continue</button></div>`);
+    if (!o) return; const inp = $('wlt-cpp'), msg = t => { const m = $('wlt-cpm'); if (m) m.textContent = t; };
+    $('wlt-cpe').onclick = () => { const on = inp.type === 'password'; inp.type = on ? 'text' : 'password'; $('wlt-cpe').firstChild.className = 'fa-solid ' + (on ? 'fa-eye-slash' : 'fa-eye'); };
+    const go = () => {
+        if (Date.now() < cpLock) return msg('Too many tries. Wait ' + Math.ceil((cpLock - Date.now()) / 1000) + 's');
+        if (pwOk(inp.value)) { cpTries = 0; return cpPin(1, ''); }
+        cpTries++; inp.value = ''; try { navigator.vibrate && navigator.vibrate(120); } catch (x) { }
+        if (cpTries >= 5) { cpLock = Date.now() + 30000; cpTries = 0; msg('Too many tries. Wait 30s'); } else msg('Wrong password, try again');
+    };
+    $('wlt-cpg').onclick = go; inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    setTimeout(() => { try { inp.focus(); } catch (x) { } }, 350);
+};
+function cpPin(stage, first) {
+    const o = ov(head('window.wltOvBack()', 'CHANGE PIN') + `<div class="wl-mid wl-pinbox">${coin(56)}${ttl(stage === 1 ? 'NEW PIN' : 'CONFIRM PIN')}<div id="wlt-msg" style="font-size:12px;color:rgba(255,255,255,.55);font-weight:700;min-height:16px">${stage === 1 ? 'Choose a new 4-digit PIN' : 'Enter the new PIN again'}</div>${dotsH}${padH()}</div>`);
+    if (!o) return; let v = '', busy = false;
+    const paint = () => o.querySelectorAll('#wlt-dots i').forEach((d, i) => { d.style.background = i < v.length ? '#fff' : 'transparent'; });
+    o.addEventListener('click', async e => {
+        const b = e.target.closest('[data-k]'); if (!b || busy) return; const k = b.getAttribute('data-k'), msg = $('wlt-msg');
+        if (k === 'x') v = v.slice(0, -1); else if (v.length < 4) v += k; paint();
+        if (v.length < 4) return;
+        if (stage === 1) { setTimeout(() => cpPin(2, v), 160); busy = true; return; }
+        if (v !== first) { v = ''; paint(); try { navigator.vibrate && navigator.vibrate(120); } catch (x) { } if (msg) msg.textContent = 'PINs did not match. Start again.'; busy = true; setTimeout(() => cpPin(1, ''), 900); return; }
+        busy = true; if (msg) msg.textContent = 'Saving...';
+        try { const hh = hp(v); await setDoc(wRef(), { pinHash: hh, pinAt: Date.now(), updatedAt: Date.now() }, { merge: true }); ph = hh; phOk = true; ovClose(); if (window.showToast) window.showToast('PIN changed', 'Your wallet PIN has been updated.', 'success'); }
+        catch (x) { console.error('Wallet PIN save', x); busy = false; v = ''; paint(); if (msg) msg.textContent = 'Could not save. Check your connection.'; }
+    });
 }
 function pinScreen() {
     const p = $('wlt'); if (!p) return;
@@ -21091,6 +21138,7 @@ const CSS = `:root{--wl-top:max(3rem,env(safe-area-inset-top,0px))}html.is-table
 .wl-ics{display:flex;flex-wrap:wrap;justify-content:center;gap:3px}.wl-ics i{width:var(--s);height:var(--s);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:calc(var(--s)*.46);flex:none}
 .wl-cell.up b{color:#6ee7b7}.wl-cell.up i{background:rgba(52,211,153,.2);color:#6ee7b7}.wl-cell.bn b{color:#fcd34d}.wl-cell.bn i{background:rgba(251,191,36,.22);color:#fcd34d}.wl-cell.dn b{color:#fda4af}.wl-cell.dn i{background:rgba(251,113,133,.2);color:#fda4af}
 .wl-sun{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:7px;padding:7px 8px;font-size:10px;font-weight:800;color:#fde68a;background:rgba(251,191,36,.09);border-top:1px dashed rgba(255,255,255,.16)}
+.wl-chpin{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px 8px;font-size:11px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:#fff;background:rgba(255,255,255,.07);border:0;border-top:1px solid rgba(255,255,255,.14);cursor:pointer;touch-action:manipulation;transition:background .2s}.wl-chpin:active{background:rgba(255,255,255,.16)}.wl-chpin i:first-child{color:#fcd34d}.wl-chpin i:last-child{opacity:.55;font-size:10px}
 .wl-dp{position:relative;border-radius:50%!important;background:linear-gradient(135deg,#6366f1,#a855f7);font-weight:900;font-size:15px}.wl-dp img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}.wl-dir{position:absolute;right:-4px;bottom:-4px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;border:2px solid #1a1230}
 .wl-rk{transition:transform .15s,filter .15s}.wl-rk:hover{filter:brightness(1.15)}.wl-rk:active{transform:scale(.98)}
 @media (orientation:landscape) and (max-height:540px){.wl-hold{display:none}.wl-face{padding-top:10px}.wl-brand{height:28px}.wl-mainbal{padding:4px 0}.wl-bal{font-size:40px}.wl-qr{width:104px}.wl-cell{padding:8px 2px 6px;gap:4px}.wl-sun{padding:5px}}
@@ -21256,7 +21304,7 @@ async function showWallet() {
 <div class="wl-brand">${coin(16)}EXAMA WALLET</div>
 <div class="wl-mainbal"><span class="wl-lbl">AVAILABLE COINS</span><div class="wl-balrow">${coin(46)}<span id="wlt-bal" class="wl-bal">--</span></div></div>
 <div class="wl-hold"><div><small>CARD HOLDER</small><b class="truncate">${esc(stu().name || 'Student')}</b></div><div><small>MOBILE</small><b>•••• ${esc(me().slice(-4))}</b></div></div>
-<div class="wl-strap"><div class="wl-rules" id="wlt-rules" aria-hidden="true" onclick="window.wltRules(0)"><div class="wl-cell up"><b>+5</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Daily run goal" aria-label="Daily run goal"></i><i class="fa-solid fa-book-open" role="img" title="4h study done" aria-label="4h study done"></i><i class="fa-solid fa-bullseye" role="img" title="Exam score goal" aria-label="Exam score goal"></i><i class="fa-solid fa-trophy" role="img" title="Exam topper" aria-label="Exam topper"></i></span><em>Goals</em></div><div class="wl-cell bn"><b>+2</b><span class="wl-ics"><i class="fa-solid fa-star" role="img" title="Bonus for going past the run or study goal" aria-label="Bonus for going past the run or study goal"></i></span><em>Extra bonus</em></div><div class="wl-cell dn"><b>−10</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Absent on run goal" aria-label="Absent on run goal"></i><i class="fa-solid fa-book-open" role="img" title="Absent on study goal" aria-label="Absent on study goal"></i><i class="fa-solid fa-file-circle-xmark" role="img" title="Failed exam" aria-label="Failed exam"></i></span><em>Absent/Fail</em></div><div class="wl-sun"><i class="fa-solid fa-sun"></i>No penalty on Sundays</div></div><button type="button" class="wl-rulebtn" id="wlt-rbtn" aria-expanded="false" aria-controls="wlt-rules" onclick="window.wltRules()"><i class="fa-solid fa-circle-info"></i>Card Rule<i class="fa-solid fa-chevron-up wl-rc"></i></button></div></div>
+<div class="wl-strap"><div class="wl-rules" id="wlt-rules" aria-hidden="true" onclick="window.wltRules(0)"><div class="wl-cell up"><b>+5</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Daily run goal" aria-label="Daily run goal"></i><i class="fa-solid fa-book-open" role="img" title="4h study done" aria-label="4h study done"></i><i class="fa-solid fa-bullseye" role="img" title="Exam score goal" aria-label="Exam score goal"></i><i class="fa-solid fa-trophy" role="img" title="Exam topper" aria-label="Exam topper"></i></span><em>Goals</em></div><div class="wl-cell bn"><b>+2</b><span class="wl-ics"><i class="fa-solid fa-star" role="img" title="Bonus for going past the run or study goal" aria-label="Bonus for going past the run or study goal"></i></span><em>Extra bonus</em></div><div class="wl-cell dn"><b>−10</b><span class="wl-ics"><i class="fa-solid fa-person-running" role="img" title="Absent on run goal" aria-label="Absent on run goal"></i><i class="fa-solid fa-book-open" role="img" title="Absent on study goal" aria-label="Absent on study goal"></i><i class="fa-solid fa-file-circle-xmark" role="img" title="Failed exam" aria-label="Failed exam"></i></span><em>Absent/Fail</em></div><div class="wl-sun"><i class="fa-solid fa-sun"></i>No penalty on Sundays</div><button type="button" class="wl-chpin" onclick="event.stopPropagation();window.wltChangePin()"><i class="fa-solid fa-key"></i>Change Wallet PIN<i class="fa-solid fa-chevron-right"></i></button></div><button type="button" class="wl-rulebtn" id="wlt-rbtn" aria-expanded="false" aria-controls="wlt-rules" onclick="window.wltRules()"><i class="fa-solid fa-circle-info"></i>Wallet Rules<i class="fa-solid fa-chevron-up wl-rc"></i></button></div></div>
 <div class="wl-face wl-back" id="wlt-back" style="pointer-events:none"><button type="button" class="wl-qrb" onclick="window.wltFlip(0)" aria-label="Back to card"><i class="fa-solid fa-rotate-left"></i></button>
 <div class="wl-qr">${qr}</div><div class="truncate" style="font-size:14px;font-weight:900;max-width:80%">${esc(stu().name || 'My QR')}</div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.5)">Show this QR to receive coins</div>
 <button type="button" class="wl-send" style="margin-top:6px" onclick="window.wltScan()"><i class="fa-solid fa-paper-plane"></i>Send Coin</button></div></div></div></div>
