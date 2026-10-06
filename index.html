@@ -7105,16 +7105,23 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                     <div class="apb-hero">
                         <div class="apb-top">
                             <div class="apb-k">Net balance</div>
-                            <div class="apb-wk" title="Spent this week (Mon&ndash;Sun)"><small>This week spend</small><b id="ap-b-weekspend">&#8377;0</b></div>
                         </div>
                         <div class="apb-bal" id="ap-budget-balance"><i class="fa-solid fa-spinner fa-spin text-sm"></i></div>
                         <div class="apb-save" id="ap-b-save">&nbsp;</div>
                     </div>
-                    <div class="apb-flow">
+                    <div class="apb-flow"><div class="apb-fcap">All time</div>
                         <div class="apb-fbar"><i id="ap-b-inbar" style="width:50%"></i><b id="ap-b-outbar" style="width:50%"></b></div>
                         <div class="apb-fleg">
                             <div><span class="apb-dot in"></span><small>Income</small><b id="ap-budget-income">&#8377;0</b></div>
                             <div><span class="apb-dot out"></span><small>Expense</small><b id="ap-budget-expense">&#8377;0</b></div>
+                        </div>
+                    </div>
+                    <div class="apb-flow apb-flow-w">
+                        <div class="apb-fcap">This week &middot; Mon&ndash;Sun</div>
+                        <div class="apb-fbar"><i id="ap-b-winbar" style="width:50%"></i><b id="ap-b-woutbar" style="width:50%"></b></div>
+                        <div class="apb-fleg">
+                            <div><span class="apb-dot in"></span><small>Income</small><b id="ap-b-w-income">&#8377;0</b></div>
+                            <div><span class="apb-dot out"></span><small>Expense</small><b id="ap-b-w-expense">&#8377;0</b></div>
                         </div>
                     </div>
                     <div class="apb-sec"><span>Top spending categories</span></div>
@@ -33218,6 +33225,7 @@ var t=setInterval(function(){var o=W.renderAdminProfile;if(typeof o!=='function'
 .apb-fleg{display:flex;justify-content:space-between;gap:10px;margin-top:8px}.apb-fleg>div{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
 .apb-fleg small{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#64748b}.apb-fleg b{font-size:13px;font-weight:900;color:#0f172a}
 .apb-dot{width:9px;height:9px;border-radius:50%}.apb-dot.in{background:#10b981}.apb-dot.out{background:#ef4444}
+.apb-fcap{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#94a3b8;margin:0 0 6px 2px}.apb-flow-w{margin-top:12px}
 .apb-sec{display:flex;justify-content:space-between;align-items:center;margin:16px 2px 8px;font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;color:#047857}
 .apb-cats{display:grid;gap:10px}.apb-cat .r{display:flex;justify-content:space-between;gap:8px;font-size:12px;font-weight:800;color:#0f172a;margin-bottom:4px}.apb-cat .r span{min-width:0;overflow-wrap:anywhere}.apb-cat .r b{flex:none;font-size:11px;color:#475569}
 .apb-cat .t{height:7px;border-radius:99px;background:#e2e8f0;overflow:hidden}.apb-cat .t i{display:block;height:100%;border-radius:99px}
@@ -33285,11 +33293,12 @@ ringSync();
 var CC=['#10b981','#6366f1','#f59e0b','#ef4444','#0ea5e9'];
 W.__apBudgetPaint=function(list){
  list=list||[];
- var inc=0,exp=0,wk=0,cats={},t0=new Date();t0.setHours(0,0,0,0);
+ var inc=0,exp=0,wk=0,winc=0,cats={},t0=new Date();t0.setHours(0,0,0,0);
  var w0=new Date(t0);w0.setDate(w0.getDate()-((w0.getDay()+6)%7));   /* this week = Monday 00:00 onwards */
  list.forEach(function(t){
   var a=N(t.amount),ts=N(t.timestamp),isIn=t.type==='income',isOut=t.type==='expense'||t.type==='transfer';
   if(isIn)inc+=a;else if(isOut)exp+=a;
+  if(isIn&&ts>=w0.getTime())winc+=a;
   if(isOut){
    if(ts>=w0.getTime())wk+=a;
    var c=t.category||'Other';cats[c]=(cats[c]||0)+a;
@@ -33298,7 +33307,9 @@ W.__apBudgetPaint=function(list){
  var bal=inc-exp,B=$('ap-budget-balance');
  if(B){B.textContent=inr(bal);B.classList.toggle('neg',bal<0)}
  setT('ap-budget-income',inr(inc));setT('ap-budget-expense',inr(exp));
- setT('ap-b-weekspend',inr(wk));
+ setT('ap-b-w-income',inr(winc));setT('ap-b-w-expense',inr(wk));
+ var wt=winc+wk,wi=$('ap-b-winbar'),wo=$('ap-b-woutbar');
+ if(wi&&wo){wi.style.width=(wt?winc/wt*100:50)+'%';wo.style.width=(wt?wk/wt*100:50)+'%'}
  setT('ap-b-count',list.length+(list.length===1?' transaction':' transactions'));
  var tot=inc+exp,ib=$('ap-b-inbar'),ob=$('ap-b-outbar');
  if(ib&&ob){ib.style.width=(tot?inc/tot*100:50)+'%';ob.style.width=(tot?exp/tot*100:50)+'%'}
@@ -33653,54 +33664,48 @@ html body #action-sheet .as-ht h3{display:-webkit-box;-webkit-box-orient:vertica
 @media(max-width:380px){#form-log-result .lm-of{padding:0 12px;font-size:17px}#form-log-result .lm-abs{padding:0 12px}}
 </style>
 <style id="tl-forms-compact">
-/* ===== Tablet LANDSCAPE only: admin New Exam / Edit Exam / New Student / Log Marks forms made a little smaller so nothing is cut ===== */
+/* ===== Tablet LANDSCAPE only: admin New Exam / Edit Exam / New Student / Log Marks forms, medium size so they fit the screen ===== */
 html.is-tablet.is-landscape body #action-sheet{height:97dvh!important;max-height:97dvh!important}
-html.is-tablet.is-landscape body #action-sheet>.shrink-0{padding-top:6px!important;padding-bottom:2px!important}
-html.is-tablet.is-landscape body #action-sheet #action-sheet-scroll{padding-left:1.25rem!important;padding-right:1.25rem!important;padding-top:2px!important;padding-bottom:calc(3rem + env(safe-area-inset-bottom,0px))!important}
-html.is-tablet.is-landscape body #action-sheet .as-hero,html.is-tablet.is-landscape body #action-sheet[data-mode] .as-hero{max-width:560px;padding:8px 12px!important;margin:0 auto 10px!important;border-radius:18px!important}
-html.is-tablet.is-landscape body #action-sheet .as-ico{width:34px!important;height:34px!important;font-size:14px!important;border-radius:11px!important}
-html.is-tablet.is-landscape body #action-sheet .as-ht h3{font-size:15px!important}
-html.is-tablet.is-landscape body #action-sheet .as-ht p{font-size:11px!important}
-html.is-tablet.is-landscape body #action-sheet .as-x{transform:scale(.88)}
-html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam,#form-create-student,#form-log-result):not(.hidden){max-width:560px!important;gap:10px!important}
-/* section cards */
+html.is-tablet.is-landscape body #action-sheet>.shrink-0{padding-top:8px!important;padding-bottom:4px!important}
+html.is-tablet.is-landscape body #action-sheet #action-sheet-scroll{padding-left:1.5rem!important;padding-right:1.5rem!important;padding-top:4px!important;padding-bottom:calc(3rem + env(safe-area-inset-bottom,0px))!important}
+html.is-tablet.is-landscape body #action-sheet .as-hero,html.is-tablet.is-landscape body #action-sheet[data-mode] .as-hero{max-width:600px;padding:11px 14px!important;margin:0 auto 12px!important;border-radius:20px!important}
+html.is-tablet.is-landscape body #action-sheet .as-ico{width:38px!important;height:38px!important;font-size:15px!important;border-radius:12px!important}
+html.is-tablet.is-landscape body #action-sheet .as-ht h3{font-size:16px!important}
+html.is-tablet.is-landscape body #action-sheet .as-ht p{font-size:11.5px!important}
+html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam,#form-create-student,#form-log-result):not(.hidden){max-width:600px!important;gap:12px!important}
 html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam)>div:not(.wz-bar):not(.wz-nav):not(.wz-cur),
 html.is-tablet.is-landscape body #action-sheet #form-create-student>.ns-card,
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-card{padding:12px 14px!important;border-radius:18px!important}
-html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam)>div.space-y-4>*+*{margin-top:10px!important}
-/* titles + labels */
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-card{padding:15px 16px!important;border-radius:20px!important}
+html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam)>div.space-y-4>*+*{margin-top:12px!important}
 html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam,#form-create-student) h5[class],
-html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-card>h5{font-size:13px!important;gap:8px!important}
-html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam,#form-create-student) h5 i{width:26px!important;height:26px!important;font-size:11px!important;border-radius:8px!important}
+html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-card>h5{font-size:14px!important;gap:9px!important}
+html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam,#form-create-student) h5 i{width:29px!important;height:29px!important;font-size:12px!important;border-radius:9px!important}
 html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam) label.block,
-html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-field label{font-size:11px!important;margin-bottom:4px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-lab{font-size:12px!important;margin-bottom:7px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-lab i{width:24px!important;height:24px!important;font-size:11px!important}
-/* inputs */
+html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-field label{font-size:11.5px!important;margin-bottom:5px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-lab{font-size:12.5px!important;margin-bottom:8px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-lab i{width:26px!important;height:26px!important;font-size:11px!important}
 html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam) :is(input:not([type=checkbox]):not([type=file]):not([type=hidden]),select,textarea),
-html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam) button[id$="-exam-time-btn"]{padding-top:8px!important;padding-bottom:8px!important;font-size:13px!important;border-radius:12px!important;min-height:0!important}
-html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam) div.flex.items-center.bg-gray-50{border-radius:12px!important}
-html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam) textarea{min-height:0!important}
-html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-field{margin-top:9px!important}
-html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-in{border-radius:12px!important}
-html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-in input{padding:9px 0!important;font-size:13px!important}
-html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-note{margin-top:9px!important;padding:8px 11px!important;font-size:11px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-sel{padding:9px 38px 9px 12px!important;font-size:13px!important;border-radius:12px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-num{padding:6px 14px!important;font-size:30px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-of{padding:0 14px!important;font-size:17px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-bar{margin-top:12px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result #lm-pct{font-size:20px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-chip{padding:4px 11px!important;font-size:10px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-eico{width:34px!important;height:34px!important;font-size:14px!important}
-html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-en{font-size:14px!important}
-/* wizard + buttons */
-html.is-tablet.is-landscape body #action-sheet .wz-dot{width:26px!important;height:26px!important;font-size:11px!important}
-html.is-tablet.is-landscape body #action-sheet .wz-st:not(:last-child)::after{top:12px!important}
-html.is-tablet.is-landscape body #action-sheet .wz-lb{font-size:10.5px!important}
+html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam) button[id$="-exam-time-btn"]{padding-top:10px!important;padding-bottom:10px!important;font-size:14px!important;border-radius:13px!important;min-height:0!important}
+html.is-tablet.is-landscape body #action-sheet :is(#form-create-exam,#form-edit-exam) div.flex.items-center.bg-gray-50{border-radius:13px!important}
+html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-field{margin-top:11px!important}
+html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-in{border-radius:13px!important}
+html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-in input{padding:11px 0!important;font-size:14px!important}
+html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-note{margin-top:11px!important;padding:10px 12px!important;font-size:11.5px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-sel{padding:11px 40px 11px 13px!important;font-size:14px!important;border-radius:13px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-num{padding:8px 15px!important;font-size:34px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-of{padding:0 16px!important;font-size:18px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-bar{margin-top:14px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result #lm-pct{font-size:22px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-chip{padding:5px 12px!important;font-size:10.5px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-eico{width:38px!important;height:38px!important;font-size:15px!important}
+html.is-tablet.is-landscape body #action-sheet #form-log-result .lm-en{font-size:15px!important}
+html.is-tablet.is-landscape body #action-sheet .wz-dot{width:28px!important;height:28px!important;font-size:12px!important}
+html.is-tablet.is-landscape body #action-sheet .wz-st:not(:last-child)::after{top:13px!important}
+html.is-tablet.is-landscape body #action-sheet .wz-lb{font-size:11px!important}
 html.is-tablet.is-landscape body #action-sheet .wz-btn,
 html.is-tablet.is-landscape body #action-sheet .wz-nav>button[type=submit],
 html.is-tablet.is-landscape body #action-sheet #form-log-result :is(.lm-submit,.lm-abs),
-html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-submit{height:42px!important;padding-top:0!important;padding-bottom:0!important;font-size:13px!important;border-radius:13px!important}
+html.is-tablet.is-landscape body #action-sheet #form-create-student .ns-submit{height:46px!important;padding-top:0!important;padding-bottom:0!important;font-size:14px!important;border-radius:14px!important}
 </style>
 <style id="ap-gp-css">
 /* ===== Admin student view: Goal Planner data card ===== */
@@ -33772,9 +33777,9 @@ function build(m){
  return h+'</div>';
 }
 function place(){
- var a=host('ap-gp-a','apg-a'),b=host('ap-gp-b','apg-b'),crs=$('ap-course'),bud=$('ap-budget');
- if(crs){if(crs.previousElementSibling!==a)crs.parentNode.insertBefore(a,crs)}
- else{var sy=$('ap-syl-breakdown'),t=sy&&sy.closest('.glass-card');if(t&&t.previousElementSibling!==a)t.parentNode.insertBefore(a,t)}
+ var a=host('ap-gp-a','apg-a'),b=host('ap-gp-b','apg-b'),f=$('ap-fit-dist'),fit=f&&f.closest('.glass-card'),bud=$('ap-budget');
+ if(fit){if(fit.nextElementSibling!==a)fit.insertAdjacentElement('afterend',a)}
+ else{var crs=$('ap-course');if(crs&&crs.previousElementSibling!==a)crs.parentNode.insertBefore(a,crs)}
  if(bud&&bud.nextElementSibling!==b)bud.insertAdjacentElement('afterend',b);
 }
 function paint(m){
