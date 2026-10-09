@@ -6283,21 +6283,24 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         var p = 0, D = 0, padTop = 18, barMt = 16, animRaf = 0, animating = false, pendingReveal = false;
                         var tTracking = false, tOwn = false, tX = 0, tY = 0, tLastY = 0, tLastT = 0, tVel = 0, tP0 = 0;
                         var wState = 0, wStart = 0, lastW = 0;
+                        var cD = 0, cCh = 0, dDirty = true, cNat = 0, natDirty = true, cCanFold = false, needMeasure = false, satDone = false, mvT = 0, mvOn = false;
                         var clamp = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; }, smooth = function (t) { return t * t * (3 - 2 * t); };
                         if (card) { card.style.willChange = 'opacity, transform'; card.style.transformOrigin = '50% 100%'; }
                         /* used by the app-level pull-to-refresh: while the card is tucked away, a downward pull brings the card back - it must not also refresh the page */
                         window.__sdCardHidden = function () { return p > 0.0005; };
-                        function clearFold() {
+                        function clearFold() { natDirty = true;
                             if (!folded) return; folded = false;
                             fold.style.height = ''; fold.style.overflow = ''; fold.style.opacity = ''; if (quote) quote.style.transform = ''; if (grid) grid.style.marginBottom = '';
                         }
-                        function measure() {
+                        function measure() { dDirty = true; natDirty = true; satDone = false; if (!sc.clientHeight) needMeasure = true; try { cCanFold = !!(fold && foldIn && hdr.clientWidth < 900 && !mqLand.matches); } catch (e) {}
                             try { rowGap = parseFloat(getComputedStyle(grid).rowGap) || 12; } catch (e) {}
                             try { padTop = parseFloat(getComputedStyle(sc).paddingTop) || 0; if (bar) { barMt = parseFloat(getComputedStyle(bar).marginTop) || 0; bar.style.setProperty('--sd-pad', padTop + 'px'); } } catch (e) {}
                             try { if (tiles) baseR = parseFloat(getComputedStyle(tiles).borderBottomLeftRadius) || 30; } catch (e) {}
                         }
                         /* distance the content must travel until the button grid sits flush under the header (no gap) */
-                        function calcD() { return card ? Math.max(0, padTop + card.offsetHeight + barMt + 1) : 0; }   // +1px overshoot: the grid tucks 1px under the header edge, never a hairline gap
+                        function calcD() { if (!card) return 0; if (!dDirty) return cD; var h = card.offsetHeight, d = Math.max(0, padTop + h + barMt + 1); if (sc.clientHeight) { cD = d; cCh = h; dDirty = false; } return d; }   // cached: no layout read per call
+                        function flush() { if (raf) { cancelAnimationFrame(raf); raf = 0; } frame(); }   // paint the same frame the spring/fling stepped (1 frame less lag)
+                        function moving() { if (!mvOn) { mvOn = true; sv.classList.add('sd-moving'); } clearTimeout(mvT); mvT = setTimeout(function () { mvOn = false; sv.classList.remove('sd-moving'); }, 260); }   // +1px overshoot: the grid tucks 1px under the header edge, never a hairline gap
                         /* collapse = pull the card (and everything after it) up by p*D, exactly like scrolling would */
                         function applyP() {
                             if (!card || !sc.clientHeight) return;
@@ -6306,7 +6309,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                             if (card.style.marginTop !== mt) card.style.marginTop = mt;
                         }
                         function getV() { return p * D + sc.scrollTop; }
-                        function setV(v) {
+                        function setV(v) { moving();
                             D = calcD(); if (D <= 0) return; if (v < 0) v = 0;
                             if (v <= D) { p = v / D; if (sc.scrollTop) { applyP(); sc.scrollTop = 0; } }   // margin itself is written once per frame, in frame()
                             else { p = 1; applyP(); sc.scrollTop = v - D; }
@@ -6315,7 +6318,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         function cancelAnim() { if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; } animating = false; }
                         /* Spring (critically damped, iOS-like). Animates the VIRTUAL scroll V, so card, header fold, grid and capsule all move on ONE clock.
                            v0 = release velocity in px/s, so the motion continues the finger's momentum instead of restarting. */
-                        var SP_K = 1300, SP_C = 2 * Math.sqrt(1300);
+                        var SP_K = 1700, SP_C = 2 * Math.sqrt(1700);
                         function springTo(target, v0) {
                             cancelAnim(); D = calcD(); if (!D) return;
                             if (reduce) { setV(target); return; }
@@ -6328,7 +6331,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                                 for (var i = 0; i < n; i++) { v += (-SP_K * (x - target) - SP_C * v) * h; x += v * h; }
                                 if ((x - target) * dir > 0) { x = target; v = 0; }          // never overshoots the pin / the top
                                 var done = Math.abs(x - target) < 0.25 && Math.abs(v) < 8;
-                                setV(done ? target : x);
+                                setV(done ? target : x); flush();
                                 if (done) { animRaf = 0; animating = false; } else animRaf = requestAnimationFrame(step);
                             }
                             animRaf = requestAnimationFrame(step);
@@ -6343,7 +6346,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                                 v *= Math.pow(0.962, dt / 16.7);
                                 var nv = getV() + v * dt;
                                 if (v < 0) nv = Math.max(nv, D);                    // coasting up stops at the pin - it never re-opens the card
-                                setV(nv);
+                                setV(nv); flush();
                                 var atEnd = v > 0 && sc.scrollTop >= sc.scrollHeight - sc.clientHeight - 0.5;
                                 var atPin = v < 0 && nv <= D + 0.5;
                                 if (Math.abs(v) > 0.03 && !atEnd && !atPin) animRaf = requestAnimationFrame(step); else animRaf = 0;
@@ -6352,16 +6355,18 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         }
                         function frame() {
                             raf = 0;
-                            if (!sc.clientHeight) return;                            // view hidden
-                            applyP();                                                // grid position first, so every read below matches this frame (no 1-frame lag)
+                            if (!sc.clientHeight) return; if (needMeasure) { needMeasure = false; measure(); }
+                            var y = sc.scrollTop; if (natDirty && cCanFold) { cNat = foldIn.scrollHeight; natDirty = false; } applyP();   // reads first, then writes: one layout per frame
                             /* ---- reads ---- */
-                            var y = sc.scrollTop, scTop = sc.getBoundingClientRect().top;
-                            var bt = bar ? bar.getBoundingClientRect().top - scTop : 999;
-                            var canFold = fold && foldIn && hdr.clientWidth < 900 && !mqLand.matches;
-                            var nat = canFold ? foldIn.scrollHeight : 0;
-                            var ch = card ? card.offsetHeight : 0;
-                            var tilesTop = tiles ? tiles.getBoundingClientRect().top - scTop : 0;
-                            var Dn = calcD(), vy = p * Dn + y;                       // virtual scroll position
+                            var scTop = 0;
+                            var bt = 999;
+                            var canFold = cCanFold;
+                            var nat = canFold ? cNat : 0;
+                            var ch = 0; if (card) { calcD(); ch = cCh; }
+                            var tilesTop = 0;
+                            var Dn = calcD(), vy = p * Dn + y;
+                            if (p >= 0.9995 && y >= 30) { if (satDone) return; satDone = true; } else satDone = false;   // fully pinned + scrolling: nothing left to animate, zero JS work
+                            var nt = Dn - 1 - vy; tilesTop = nt; bt = nt > PIN ? nt : PIN;   // capsule / panel position computed, not measured                       // virtual scroll position
                             /* ---- ONE shared progress: 0 = card open, 1 = card tucked + grid pinned. Card, header fold, grid and capsule are all read from it, so they can never drift apart ---- */
                             var tn = Dn > 0 ? clamp(vy / Dn) : 0;
                             var qT = card && !reduce ? smooth(clamp(tn / 0.9)) : 0;
@@ -6393,7 +6398,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                                 if (Math.abs(fT - fadeSet) > 0.004) { fadeSet = fT; bar.style.setProperty('--sd-fade', fT.toFixed(3)); }
                             }
                             if (tiles) {                                             // panel's top corners flatten as it reaches the header
-                                var tt = tilesTop, rr = Math.round(baseR * clamp(tt / baseR) * 2) / 2;
+                                var tt = tilesTop, rr = Math.round(baseR * clamp(tt / baseR) / 2) * 2;
                                 if (rr !== trSet) { trSet = rr; tiles.style.setProperty('border-top-left-radius', rr + 'px', 'important'); tiles.style.setProperty('border-top-right-radius', rr + 'px', 'important'); }
                             }
                             if (more) kick();
@@ -6411,7 +6416,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
 
                         if (card && bar) {
                             /* ---------- touch: the first swipe collapses the card, then the grid scrolls natively ---------- */
-                            sc.addEventListener('touchstart', function (e) {
+                            sc.addEventListener('touchstart', function (e) { moving();
                                 pendingReveal = false; cancelAnim();
                                 if (e.touches.length !== 1) { tTracking = false; tOwn = false; return; }
                                 tTracking = true; tOwn = false; tVel = 0;
@@ -6470,7 +6475,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                                 if (sc.scrollTop > 1) springTo(0);                   // grid scrolls back AND the card returns in one motion
                                 else animateTo(p > 0.5 ? 0 : 1);
                             });
-                            if (window.ResizeObserver) { try { new ResizeObserver(function () { kick(); }).observe(card); } catch (e) {} }
+                            if (window.ResizeObserver) { try { var ro = new ResizeObserver(function () { dDirty = true; natDirty = true; satDone = false; kick(); }); ro.observe(card); if (quote) ro.observe(quote); } catch (e) {} }
                         } else if (bar) {
                             bar.addEventListener('click', function () { try { sc.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { sc.scrollTop = 0; } });
                         }
@@ -6481,6 +6486,14 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
                 })();
                 </script>
+                <style id="sd-motion-perf">
+/* motion perf: no live blur over scrolling content, layers only while moving, logo sweep paused while moving */
+#student-view .sd-ibtn{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+#student-view .sd-grab:not(#_)::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important;-webkit-mask-image:none!important;mask-image:none!important}
+#student-view .sd-hdr .sd-fold{contain:layout style;will-change:opacity}
+#student-view.sd-moving .sd-tiles,#student-view.sd-moving .sd-grab{will-change:transform}
+#student-view.sd-moving .animate-logo-sweep,#student-view.sd-moving .sd-pd.on i{animation-play-state:paused}
+</style>
                 <style id="sd-tiles-edge-to-edge">
                     /* Button grid panel: cancel the page's side gap so it reaches the screen edges (mobile + tablet). Panel's own inner padding is untouched. */
                     @media (max-width:1099px) {
@@ -17400,11 +17413,23 @@ window.__tpPaint = function () {
             try {
                 const lowEnd = (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || (navigator.connection && navigator.connection.saveData);
                 const gl0 = document.getElementById('global-loader');
-                if (lowEnd && gl0) gl0.classList.add('gl-lite');
+                window.__glHW = !!lowEnd; if (lowEnd && gl0) gl0.classList.add('gl-lite');
+                window.__glAdapt = function () {
+                    const gl = document.getElementById('global-loader'); if (!gl || window.__glAdapting) return; window.__glAdapting = true;
+                    let last = 0, n = 0, sum = 0, bad = 0;
+                    const step = function (now) {
+                        if (last) { const d = now - last; if (d < 250) { n++; sum += d; if (d > 34) bad++; } } last = now;
+                        if (n < 24) return requestAnimationFrame(step);
+                        window.__glAdapting = false; const avg = sum / n;
+                        if (avg > 24 || bad >= 5) gl.classList.add('gl-lite'); else if (!window.__glHW && avg < 19 && bad <= 1) gl.classList.remove('gl-lite');
+                    };
+                    requestAnimationFrame(step);
+                };
+                setTimeout(function () { window.__glAdapt(); }, 250);
             } catch (e) { }
 
             // Exit: send each orbiting dot to the nearest screen corner (one dot per corner, colours keep their clockwise order)
-            window.__glT = { n: { f: 1050, b: 950, t: 60 }, q: { f: 540, b: 580, t: 60 } };   // flight / colour wave / safety margin (ms)
+            window.__glT = { n: { f: 1050, b: 950, t: 60 }, q: { f: 440, b: 480, t: 60 } };   // flight / colour wave / safety margin (ms)
             window.__glClean = function (loader) {
                 ['--zt', '--bgd', '--bgt'].forEach(function (v) { loader.style.removeProperty(v); });
                 loader.querySelectorAll('.gl-bq').forEach(function (e) { e.remove(); });
@@ -17418,7 +17443,7 @@ window.__tpPaint = function () {
                 const step = function (now) {
                     if (last) calm = (now - last) < 22 ? calm + 1 : 0;
                     last = now;
-                    if (calm >= 5 || performance.now() - t0 > 1500) return cb();
+                    if (calm >= 5 || performance.now() - t0 > ((document.getElementById('global-loader') || document.body).classList.contains('gl-quick') ? 600 : 1500)) return cb();
                     G.raf = requestAnimationFrame(step);
                 };
                 const start = function () { if (started) return; started = true; G.raf = requestAnimationFrame(step); };
@@ -17512,7 +17537,7 @@ window.__tpPaint = function () {
                     loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly', 'gl-veil', 'hidden-view');
                     try { window.__glClean(loader); window.__glBwClean(); } catch (e) { }
                     loader.classList.add('gl-quick');
-                    G.t0 = performance.now();
+                    G.t0 = performance.now(); setTimeout(function () { if (window.__glAdapt) window.__glAdapt(); }, 120);
                 }
 
                 // Crossfade the status line only when the text really changes
@@ -17542,7 +17567,7 @@ window.__tpPaint = function () {
                 let i = 0; const words = msg.split(' ').filter(Boolean);
                 words.forEach(function (w, wi) {
                     const ws = document.createElement('span'); ws.className = 'gl-w'; ws.setAttribute('aria-hidden', 'true');
-                    Array.from(w).forEach(function (ch) { const c = document.createElement('span'); c.className = 'gl-c'; c.style.setProperty('--i', Math.min(i++, 40)); c.textContent = ch; ws.appendChild(c); });
+                    Array.from(w).forEach(function (ch) { const c = document.createElement('span'); c.className = 'gl-c'; c.style.setProperty('--i', Math.min(i++, 40)); c.textContent = ch; c.setAttribute('data-c', ch); ws.appendChild(c); });
                     el.appendChild(ws); if (wi < words.length - 1) el.appendChild(document.createTextNode(' '));
                 });
                 el.style.setProperty('--d0', window.__glD0()); el.classList.add('gl-chars');
@@ -17562,7 +17587,7 @@ window.__tpPaint = function () {
                 const quick = loader.classList.contains('gl-quick');
                 const reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
                 // keep it up long enough for the title to finish (app start) / to avoid a flash (quick actions)
-                const minShow = reduced ? 0 : (quick ? 380 : 1650 + 3 * 1500 + 100);   // only used for quick / reduced-motion / old browsers
+                const minShow = reduced ? 0 : (quick ? 300 : 1650 + 3 * 1500 + 100);   // only used for quick / reduced-motion / old browsers
 
                 const run = () => {
                     const begin = () => {
@@ -31625,6 +31650,17 @@ YOUR DIRECTIVES:
 @keyframes glChWave{0%,32%,100%{color:#475569}14%{color:#6366f1}}
 #global-loader.gl-out #loader-text .gl-c{animation-play-state:paused}
 @media (prefers-reduced-motion:reduce){#loader-text .gl-c{animation:none}}
+</style>
+<style id="gl-motion-v2">
+/* loader v2: letter wave = opacity glow on a duplicate letter (compositor only, no repaint), faster quick re-show, richer lite mode */
+#loader-text .gl-c{position:relative;animation:glChIn .5s cubic-bezier(.16,1,.3,1) calc(var(--d0,0s) + var(--i,0) * 24ms) backwards}
+#loader-text .gl-c::after{content:attr(data-c);position:absolute;left:0;top:0;color:#6366f1;opacity:0;pointer-events:none;animation:glChGlow 2.6s ease-in-out calc(var(--d0,0s) + .6s + var(--i,0) * 85ms) infinite}
+@keyframes glChGlow{0%,32%,100%{opacity:0}14%{opacity:1}}
+#global-loader.gl-out #loader-text .gl-c::after{animation-play-state:paused}
+#global-loader.gl-lite #loader-text .gl-c::after{animation:none;display:none}
+#global-loader.gl-lite .gl-float,#global-loader.gl-lite .gl-sweep{animation:none}
+#global-loader.gl-quick{animation-duration:.12s}
+@media (prefers-reduced-motion:reduce){#loader-text .gl-c::after{animation:none}}
 </style>
 
 <!-- SOS: countdown confirm -->
