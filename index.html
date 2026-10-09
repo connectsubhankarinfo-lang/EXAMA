@@ -3681,7 +3681,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                 #budget-room-view>div:first-child,
                 #alarms-view>div:first-child,
                 #quotes-view>div:first-child,
-                #auto-quotes-view>div:first-child,
+                #auto-quotes-view>div:first-child,#motivation-view>div:first-child,
                 #budget-room-detail-view>div:first-child,
         #pdf-modal-header,
         #login-view>div:first-child,
@@ -3743,7 +3743,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                 html.is-tablet.is-landscape #budget-room-view>div:first-child,
                 html.is-tablet.is-landscape #alarms-view>div:first-child,
                 html.is-tablet.is-landscape #quotes-view>div:first-child,
-                html.is-tablet.is-landscape #auto-quotes-view>div:first-child,
+                html.is-tablet.is-landscape #auto-quotes-view>div:first-child,#motivation-view>div:first-child,
                 html.is-tablet.is-landscape #budget-room-detail-view>div:first-child,
                 html.is-tablet.is-landscape #pdf-modal-header,
                 html.is-tablet.is-landscape #evaluation-modal>div:first-child,
@@ -3788,7 +3788,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                 html.is-tablet.is-portrait #budget-room-view>div:first-child,
                 html.is-tablet.is-portrait #alarms-view>div:first-child,
                 html.is-tablet.is-portrait #quotes-view>div:first-child,
-                html.is-tablet.is-portrait #auto-quotes-view>div:first-child,
+                html.is-tablet.is-portrait #auto-quotes-view>div:first-child,#motivation-view>div:first-child,
                 html.is-tablet.is-portrait #budget-room-detail-view>div:first-child,
                 html.is-tablet.is-portrait #pdf-modal-header,
                 html.is-tablet.is-portrait #evaluation-modal>div:first-child,
@@ -17025,7 +17025,7 @@ window.__tpPaint = function () {
                     'video-watch-view', 'syllabus-view', 'math-workout-view',
                     'student-directory-view', 'budget-manager-view', 'budget-track-view',
                     'budget-room-view', 'budget-room-detail-view', 'my-profile-view', 'exam-calendar-view',
-                    'alarms-view', 'quotes-view', 'auto-quotes-view'
+                    'alarms-view', 'quotes-view', 'auto-quotes-view', 'motivation-view'
                 ];
 
                 // 1. Hide all views and reset the Apple animation class
@@ -17172,6 +17172,10 @@ window.__tpPaint = function () {
                     case 'alarms':
                         if (window.currentRole !== 'admin') { history.replaceState(null, '', '#student'); window.handleHashChange(); return; }
                         if (typeof window.__alarmScreenInit === 'function') window.__alarmScreenInit();
+                        break;
+                    case 'motivation':
+                        if (window.currentRole !== 'admin') { history.replaceState(null, '', '#student'); window.handleHashChange(); return; }
+                        if (typeof window.__motivationScreenInit === 'function') window.__motivationScreenInit();
                         break;
                     case 'auto-quotes':
                         if (window.currentRole !== 'admin') { history.replaceState(null, '', '#student'); window.handleHashChange(); return; }
@@ -23877,7 +23881,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     setTimeout(() => window.enforceFitnessAbsence(), 2500);
                 }
 
-                if (window.location.hash.replace('#', '') !== role && !['chat', 'notices', 'leaderboard', 'target-calc', 'exam-calendar', 'exam-analysis', 'materials', 'fitness', 'active-exam', 'budget-manager', 'budget-track', 'budget-room', 'budget-room-detail', 'alarms', 'quotes', 'auto-quotes'].includes(window.location.hash.replace('#', ''))) { window.location.hash = role; } else { handleHashChange(); }
+                if (window.location.hash.replace('#', '') !== role && !['chat', 'notices', 'leaderboard', 'target-calc', 'exam-calendar', 'exam-analysis', 'materials', 'fitness', 'active-exam', 'budget-manager', 'budget-track', 'budget-room', 'budget-room-detail', 'alarms', 'quotes', 'auto-quotes', 'motivation'].includes(window.location.hash.replace('#', ''))) { window.location.hash = role; } else { handleHashChange(); }
 
                 if (role === 'student') {
                     const curStu = window.studentsDB.find(s => s.mobile === mob);
@@ -30360,6 +30364,149 @@ YOUR DIRECTIVES:
             })();
 
             // ==============================================
+            // DAILY MOTIVATION: admin saves a YouTube link + play time; students hear it as hidden background audio after login.
+            // Firestore: daily_quotes/motivation-audio -> { url, kind, id, durationSec, enabled, updatedAt }  (re-uses the daily_quotes rules)
+            // ==============================================
+            (function () {
+                const COL = 'daily_quotes', DOC = 'motivation-audio';
+                const $ = id => document.getElementById(id);
+                const toast = (t, m, k) => window.showToast && window.showToast(t, m || '', k || 'info');
+                const ready = () => typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && typeof db !== 'undefined' && db;
+                const parse = u => {
+                    u = String(u || '').trim();
+                    const m = u.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#\s]*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/i);
+                    if (m) return { kind: 'youtube', id: m[1] };
+                    if (/instagram\.com\/(?:reels?|p|tv)\//i.test(u)) return { kind: 'instagram' };
+                    return null;
+                };
+
+                // ---------- PLAYER (hidden, audio only, no UI at all) ----------
+                let P = null, T = null, W = null, armed = null, seq = 0, on = false;
+                const disarm = () => { if (armed) { ['touchstart', 'click', 'keydown'].forEach(e => document.removeEventListener(e, armed, true)); armed = null; } };
+                const stop = () => {
+                    seq++; on = false; clearTimeout(T); clearTimeout(W); disarm();
+                    try { if (P && P.destroy) P.destroy(); } catch (e) { }
+                    P = null; const h = $('dm-host'); if (h) h.remove();
+                    const b = $('dm-prev'); if (b) b.textContent = 'Preview';
+                };
+                const loadAPI = cb => {
+                    if (window.YT && window.YT.Player) return cb();
+                    const prev = window.onYouTubeIframeAPIReady;
+                    window.onYouTubeIframeAPIReady = () => { try { if (prev) prev(); } catch (e) { } cb(); };
+                    if (!$('dm-yt-api') && !$('rt-yt-api')) { const s = document.createElement('script'); s.id = 'dm-yt-api'; s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s); }
+                };
+                const play = (cfg, onFail) => {
+                    stop(); on = true; const tok = seq;
+                    const h = document.createElement('div'); h.id = 'dm-host';
+                    h.style.cssText = 'position:fixed;left:0;bottom:0;width:200px;height:200px;opacity:.01;pointer-events:none;z-index:-1;overflow:hidden';
+                    h.innerHTML = '<div id="dm-yt"></div>'; document.body.appendChild(h);
+                    let started = false;
+                    const begin = () => { if (started) return; started = true; clearTimeout(W); disarm(); T = setTimeout(stop, Math.max(5, cfg.durationSec) * 1000); };   // the clock starts when sound really starts
+                    loadAPI(() => {
+                        if (tok !== seq) return;
+                        try {
+                            P = new YT.Player('dm-yt', {
+                                width: '200', height: '200', videoId: cfg.id,
+                                playerVars: { autoplay: 1, controls: 0, playsinline: 1, rel: 0, modestbranding: 1, disablekb: 1, fs: 0, iv_load_policy: 3, loop: 1, playlist: cfg.id },
+                                events: {
+                                    onReady: e => { try { e.target.unMute(); e.target.setVolume(100); e.target.playVideo(); } catch (x) { } },
+                                    onStateChange: e => {
+                                        if (e.data === 1) begin();
+                                        if (e.data === 0) { try { e.target.seekTo(0); e.target.playVideo(); } catch (x) { } }   // repeat until the play time is over
+                                    },
+                                    onError: () => { stop(); if (onFail) onFail(); }
+                                }
+                            });
+                        } catch (x) { stop(); if (onFail) onFail(); return; }
+                        // If the WebView blocks autoplay, start silently on the student's first tap anywhere (still no visible UI).
+                        W = setTimeout(() => {
+                            if (started || tok !== seq) return;
+                            armed = () => { try { P.unMute(); P.playVideo(); } catch (x) { } };
+                            ['touchstart', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, armed, true));
+                        }, 3500);
+                    });
+                };
+
+                // ---------- STUDENT SIDE: starts once after every login ----------
+                let cfg = null, unsub = null, played = false, stu = false, retry = 0;
+                const tick = () => {
+                    const role = window.currentRole;
+                    if (role !== 'student') {
+                        if (unsub) { unsub(); unsub = null; }
+                        cfg = null; played = false;
+                        if (stu) { stu = false; stop(); }
+                        return;
+                    }
+                    if (!unsub && ready() && Date.now() >= retry) {
+                        try {
+                            unsub = onSnapshot(doc(db, COL, DOC), s => {
+                                const d = s.exists() ? s.data() : null;
+                                cfg = d && d.enabled !== false && d.kind === 'youtube' && /^[\w-]{11}$/.test(d.id || '') && d.durationSec > 0 ? d : null;
+                                if (!cfg && stu) { stu = false; stop(); }       // admin switched it off or removed it
+                            }, () => { unsub = null; cfg = null; retry = Date.now() + 300000; });
+                        } catch (e) { retry = Date.now() + 300000; }
+                    }
+                    if (cfg && !played && document.visibilityState === 'visible') {
+                        played = true; stu = true;
+                        setTimeout(() => { if (window.currentRole === 'student' && stu) play(cfg); }, 1500);
+                    }
+                };
+                setInterval(tick, 2000);
+
+                // ---------- ADMIN SIDE ----------
+                const status = d => {
+                    const s = $('dm-status'); if (!s) return;
+                    const live = !!d && d.enabled !== false;
+                    s.textContent = d ? (live ? '● Active – students hear it after login (' + Math.round(d.durationSec / 60 * 100) / 100 + ' min)' : '○ Saved but switched off') : '○ Nothing set – students hear no music';
+                    s.className = 'text-[11px] font-bold ' + (live ? 'text-emerald-600' : 'text-slate-400');
+                };
+                window.dmChip = m => { $('dm-min').value = m; };
+                window.dmDetect = () => {
+                    const v = $('dm-url').value.trim(), p = parse(v), h = $('dm-hint');
+                    if (!v) { h.textContent = ''; return; }
+                    if (p && p.kind === 'youtube') { h.textContent = '✓ YouTube link – plays automatically for students'; h.className = 'text-[11px] font-bold text-emerald-600'; }
+                    else if (p) { h.textContent = 'Instagram has no autoplay support, so it cannot play in the background. Paste the YouTube / YouTube Shorts link of the same clip instead.'; h.className = 'text-[11px] font-bold text-amber-600'; }
+                    else { h.textContent = 'This is not a YouTube link'; h.className = 'text-[11px] font-bold text-rose-500'; }
+                };
+                const form = () => {
+                    const url = $('dm-url').value.trim(), p = parse(url), mins = parseFloat($('dm-min').value);
+                    if (!p) { toast('Daily Motivation', 'Paste a YouTube link.', 'error'); return null; }
+                    if (p.kind !== 'youtube') { toast('Daily Motivation', 'Instagram cannot play in the background. Use the YouTube link of the same clip.', 'error'); return null; }
+                    if (!(mins >= 0.25 && mins <= 60)) { toast('Daily Motivation', 'Play time must be between 0.25 and 60 minutes.', 'error'); return null; }
+                    return { url, kind: p.kind, id: p.id, durationSec: Math.round(mins * 60), enabled: $('dm-on').checked };
+                };
+                const fail = e => toast('Daily Motivation', e && e.code === 'permission-denied' ? 'Firestore rules block the "daily_quotes" collection (write for admin only).' : String((e && e.message) || e), 'error');
+                window.dmSave = async () => {
+                    const c = form(); if (!c) return;
+                    if (!ready()) return toast('Daily Motivation', 'Firebase is not connected.', 'error');
+                    try { await setDoc(doc(db, COL, DOC), { ...c, updatedAt: Date.now() }); status(c); toast('Saved', c.enabled ? 'Students hear it after they log in.' : 'Saved, but switched off.', 'success'); }
+                    catch (e) { fail(e); }
+                };
+                window.dmPreview = () => {
+                    if (on) return stop();
+                    const c = form(); if (!c) return;
+                    play(c, () => toast('Preview', 'This video cannot be played (private, or embedding is disabled).', 'error'));
+                    $('dm-prev').textContent = 'Stop preview';
+                };
+                window.dmRemove = async () => {
+                    if (!ready()) return;
+                    if (!(await window.showCustomConfirm('Remove Music', 'Students will no longer hear music after login.', 'Remove', 'Cancel', 'info'))) return;
+                    try { await deleteDoc(doc(db, COL, DOC)); $('dm-url').value = ''; dmDetect(); status(null); toast('Removed', '', 'success'); }
+                    catch (e) { fail(e); }
+                };
+                window.__motivationScreenInit = async function () {
+                    if (window.currentRole !== 'admin') return;
+                    stop(); status(null); $('dm-hint').textContent = '';
+                    if (!ready()) return;
+                    try {
+                        const s = await getDoc(doc(db, COL, DOC)), d = s.exists() ? s.data() : null;
+                        $('dm-url').value = d && d.url || ''; $('dm-min').value = d ? Math.round(d.durationSec / 60 * 100) / 100 : 1; $('dm-on').checked = d ? d.enabled !== false : true;
+                        dmDetect(); status(d);
+                    } catch (e) { fail(e); }
+                };
+            })();
+
+            // ==============================================
             // ADMIN: approve a pending material straight from the push notification
             // ==============================================
             window.approveMaterialFromPush = async function (id) {
@@ -31133,6 +31280,7 @@ YOUR DIRECTIVES:
       <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 truncate"><i class="fa-solid fa-quote-left"></i> Daily Quote</h2>
       <p class="text-[11px] sm:text-xs font-bold text-violet-100 mt-0.5">Shown on the student dashboard</p>
     </div>
+    <button onclick="window.location.hash='motivation'" aria-label="Daily motivation music" title="Daily motivation music" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/25 rounded-full active:scale-90 transition-all"><i class="fa-solid fa-music text-sm sm:text-base"></i></button>
     <button onclick="window.location.hash='auto-quotes'" aria-label="Auto quote list" title="Auto quote list" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/25 rounded-full active:scale-90 transition-all"><i class="fa-solid fa-list-ul text-sm sm:text-base"></i></button>
   </div>
   <div class="flex-1 overflow-y-auto p-4 sm:p-5 pb-24 relative z-0">
@@ -31182,6 +31330,42 @@ YOUR DIRECTIVES:
       <textarea id="aq-text" rows="4" maxlength="200" oninput="aqCount()" placeholder="Type a quote… e.g. Strive for progress, not perfection. – Unknown" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold resize-none"></textarea>
       <div class="text-right text-[11px] text-slate-400"><span id="aq-count">0/200</span></div>
       <button id="aq-save" onclick="aqSave()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-black active:scale-95">Add quote</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DAILY MOTIVATION (music): admin screen ===== -->
+<div id="motivation-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[89] flex flex-col slide-left">
+  <div class="hdr-r bg-gradient-to-r from-fuchsia-500 to-violet-600 text-white pt-10 sm:pt-12 pb-4 px-4 sm:px-5 flex items-center gap-3 sm:gap-4 shadow-lg relative z-10">
+    <button onclick="window.safeBack()" aria-label="Back" class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center bg-white/20 rounded-full active:scale-90 transition-all"><i class="fa-solid fa-arrow-left text-sm sm:text-base"></i></button>
+    <div class="flex-1 min-w-0">
+      <h2 class="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 truncate"><i class="fa-solid fa-music"></i> Daily Motivation</h2>
+      <p class="text-[11px] sm:text-xs font-bold text-fuchsia-100 mt-0.5">Plays in the background after student login</p>
+    </div>
+  </div>
+  <div class="flex-1 overflow-y-auto p-4 sm:p-5 pb-24 relative z-0">
+    <div class="max-w-xl mx-auto space-y-4">
+      <p class="text-[12px] text-slate-500 leading-snug px-1">Paste a link and students hear <b>only the audio</b>, automatically, right after they log in. They get no player and no controls.</p>
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-2.5 text-sm">
+        <label class="flex items-center justify-between gap-3 font-black text-[15px] text-slate-900">Play for students <input id="dm-on" type="checkbox" checked class="w-5 h-5 accent-indigo-600"></label>
+        <label class="block text-[11px] font-bold text-slate-500 pt-1">YouTube or Instagram Reel link</label>
+        <input id="dm-url" type="url" inputmode="url" oninput="dmDetect()" placeholder="https://youtu.be/…  or  https://www.instagram.com/reel/…" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+        <p id="dm-hint" class="text-[11px] font-bold text-slate-400"></p>
+        <label class="block text-[11px] font-bold text-slate-500 pt-1">Play time (minutes)</label>
+        <div class="flex items-center gap-2 flex-wrap">
+          <input id="dm-min" type="number" min="0.25" max="60" step="0.25" value="1" class="w-24 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+          <button type="button" onclick="dmChip(0.5)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold active:scale-95">30 sec</button>
+          <button type="button" onclick="dmChip(1)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold active:scale-95">1 min</button>
+          <button type="button" onclick="dmChip(2)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold active:scale-95">2 min</button>
+          <button type="button" onclick="dmChip(5)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold active:scale-95">5 min</button>
+          <button type="button" onclick="dmChip(10)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold active:scale-95">10 min</button>
+        </div>
+        <p class="text-[11px] text-slate-400">If the clip is shorter than the play time, it repeats until the time is up.</p>
+        <p id="dm-status" class="text-[11px] font-bold text-slate-400"></p>
+        <button onclick="dmSave()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-black active:scale-95">Save</button>
+        <button id="dm-prev" onclick="dmPreview()" class="w-full py-2.5 rounded-xl bg-violet-100 text-violet-700 font-bold text-[13px] active:scale-95">Preview</button>
+        <button onclick="dmRemove()" class="w-full py-2.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-[13px] active:scale-95">Remove music</button>
+      </div>
     </div>
   </div>
 </div>
