@@ -30441,12 +30441,18 @@ YOUR DIRECTIVES:
                         try {
                             unsub = onSnapshot(doc(db, COL, DOC), s => {
                                 const d = s.exists() ? s.data() : null;
-                                cfg = d && d.enabled !== false && d.kind === 'youtube' && /^[\w-]{11}$/.test(d.id || '') && d.durationSec > 0 ? d : null;
+                                cfg = d && d.enabled !== false && d.kind === 'youtube' && /^[\w-]{11}$/.test(d.id || '') && d.durationSec > 0 && (d.expiresAt || 0) > Date.now() ? d : null;
                                 if (!cfg && stu) { stu = false; stop(); }       // admin switched it off or removed it
                             }, () => { unsub = null; cfg = null; retry = Date.now() + 300000; });
                         } catch (e) { retry = Date.now() + 300000; }
                     }
                     if (cfg && !played && document.visibilityState === 'visible') {
+                        if (cfg.expiresAt <= Date.now()) return;
+                        played = true;
+                        let n = 0; const k = 'dm_n_' + cfg.updatedAt;
+                        try { n = parseInt(localStorage.getItem(k) || '0', 10) || 0; } catch (e) { }
+                        if (n >= (cfg.plays || 1)) return;
+                        try { localStorage.setItem(k, String(n + 1)); } catch (e) { }
                         played = true; stu = true;
                         setTimeout(() => { if (window.currentRole === 'student' && stu) play(cfg); }, 1500);
                     }
@@ -30457,7 +30463,7 @@ YOUR DIRECTIVES:
                 const status = d => {
                     const s = $('dm-status'); if (!s) return;
                     const live = !!d && d.enabled !== false;
-                    s.textContent = d ? (live ? '● Active – students hear it after login (' + Math.round(d.durationSec / 60 * 100) / 100 + ' min)' : '○ Saved but switched off') : '○ Nothing set – students hear no music';
+                    const hrs = d && d.expiresAt ? Math.max(1, Math.ceil((d.expiresAt - Date.now()) / 36e5)) : 0; s.textContent = d ? (live ? '● Active – ' + (d.plays || 1) + '× per student, ' + Math.round(d.durationSec / 60 * 100) / 100 + ' min each · ends in about ' + hrs + ' h' : '○ Saved but switched off') : '○ Nothing set – students hear no music';
                     s.className = 'text-[11px] font-bold ' + (live ? 'text-emerald-600' : 'text-slate-400');
                 };
                 window.dmChip = m => { $('dm-min').value = m; };
@@ -30473,13 +30479,15 @@ YOUR DIRECTIVES:
                     if (!p) { toast('Daily Motivation', 'Paste a YouTube link.', 'error'); return null; }
                     if (p.kind !== 'youtube') { toast('Daily Motivation', 'Instagram cannot play in the background. Use the YouTube link of the same clip.', 'error'); return null; }
                     if (!(mins >= 0.25 && mins <= 60)) { toast('Daily Motivation', 'Play time must be between 0.25 and 60 minutes.', 'error'); return null; }
-                    return { url, kind: p.kind, id: p.id, durationSec: Math.round(mins * 60), enabled: $('dm-on').checked };
+                    const times = parseInt($('dm-times').value, 10);
+                    if (!(times >= 1 && times <= 20)) { toast('Daily Motivation', 'Times to play must be between 1 and 20.', 'error'); return null; }
+                    return { url, kind: p.kind, id: p.id, durationSec: Math.round(mins * 60), plays: times, enabled: $('dm-on').checked };
                 };
                 const fail = e => toast('Daily Motivation', e && e.code === 'permission-denied' ? 'Firestore rules block the "daily_quotes" collection (write for admin only).' : String((e && e.message) || e), 'error');
                 window.dmSave = async () => {
                     const c = form(); if (!c) return;
                     if (!ready()) return toast('Daily Motivation', 'Firebase is not connected.', 'error');
-                    try { await setDoc(doc(db, COL, DOC), { ...c, updatedAt: Date.now() }); status(c); toast('Saved', c.enabled ? 'Students hear it after they log in.' : 'Saved, but switched off.', 'success'); }
+                    try { const now = Date.now(), rec = { ...c, updatedAt: now, expiresAt: now + 864e5, expireAt: new Date(now + 864e5) }; await setDoc(doc(db, COL, DOC), rec); status(rec); toast('Saved', c.enabled ? 'Students hear it after they log in.' : 'Saved, but switched off.', 'success'); }
                     catch (e) { fail(e); }
                 };
                 window.dmPreview = () => {
@@ -30499,8 +30507,9 @@ YOUR DIRECTIVES:
                     stop(); status(null); $('dm-hint').textContent = '';
                     if (!ready()) return;
                     try {
-                        const s = await getDoc(doc(db, COL, DOC)), d = s.exists() ? s.data() : null;
-                        $('dm-url').value = d && d.url || ''; $('dm-min').value = d ? Math.round(d.durationSec / 60 * 100) / 100 : 1; $('dm-on').checked = d ? d.enabled !== false : true;
+                        const s = await getDoc(doc(db, COL, DOC)); let d = s.exists() ? s.data() : null;
+                        if (d && !((d.expiresAt || 0) > Date.now())) { try { await deleteDoc(doc(db, COL, DOC)); } catch (e) { } d = null; }   // 24 h are over: delete it
+                        $('dm-url').value = d && d.url || ''; $('dm-min').value = d ? Math.round(d.durationSec / 60 * 100) / 100 : 1; $('dm-on').checked = d ? d.enabled !== false : true; $('dm-times').value = d ? (d.plays || 1) : 1;
                         dmDetect(); status(d);
                     } catch (e) { fail(e); }
                 };
@@ -31361,6 +31370,12 @@ YOUR DIRECTIVES:
           <button type="button" onclick="dmChip(10)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[12px] font-bold active:scale-95">10 min</button>
         </div>
         <p class="text-[11px] text-slate-400">If the clip is shorter than the play time, it repeats until the time is up.</p>
+        <label class="block text-[11px] font-bold text-slate-500 pt-1">Times it plays for each student</label>
+        <div class="flex items-center gap-2 flex-wrap">
+          <input id="dm-times" type="number" min="1" max="20" step="1" value="1" class="w-24 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-semibold">
+          <span class="text-[11px] text-slate-400">Each login counts as one play.</span>
+        </div>
+        <p class="text-[11px] text-slate-400">The music switches off and is deleted 24 hours after you save.</p>
         <p id="dm-status" class="text-[11px] font-bold text-slate-400"></p>
         <button onclick="dmSave()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-black active:scale-95">Save</button>
         <button id="dm-prev" onclick="dmPreview()" class="w-full py-2.5 rounded-xl bg-violet-100 text-violet-700 font-bold text-[13px] active:scale-95">Preview</button>
