@@ -30175,6 +30175,7 @@ YOUR DIRECTIVES:
                 function repaint() {
                     const el = $('daily-quote-text');
                     if (el && window.__autoQuote) el.innerText = window.pickDailyQuote(window.__autoQuote);
+                    try { qtHeader(); } catch (e) { }
                 }
                 function watch() {
                     if (!ready()) return;
@@ -30217,18 +30218,24 @@ YOUR DIRECTIVES:
                 const keyDate = k => { const [y, m, d] = String(k || dayKey()).split('-').map(Number); return new Date(y, m - 1, d); };
                 const dayOfYearOf = k => { const n = keyDate(k); return Math.floor((n - new Date(n.getFullYear(), 0, 0)) / 86400000); };
                 const relDay = k => { const diff = Math.round((keyDate(k) - keyDate(dayKey())) / 864e5); return diff === 0 ? 'Today' : diff === 1 ? 'Tomorrow' : keyDate(k).toLocaleDateString('en', { weekday: 'long' }); };
-                // live preview of what students will see on the selected day
+                // highlight Today / Tomorrow / In 2 days for the chosen date in the popup
                 const qtPreview = () => {
-                    const q = $('qt-prev-q'); if (!q) return;
-                    const key = ($('qt-date') && $('qt-date').value) || dayKey(), txt = ($('qt-text').value || '').trim();
-                    const list = autoList && autoList.length ? autoList : (typeof DEFAULT_AUTO !== 'undefined' ? DEFAULT_AUTO : []);
-                    const auto = list.length ? list[dayOfYearOf(key) % list.length] : '';
-                    q.textContent = txt || auto || 'Type a quote to preview it here.';
-                    $('qt-prev-tag').textContent = txt ? 'Custom' : 'Auto';
-                    $('qt-prev-d').textContent = relDay(key) + ' \u2022 ' + pretty(key);
+                    const key = ($('qt-date') && $('qt-date').value) || dayKey();
                     const diff = Math.round((keyDate(key) - keyDate(dayKey())) / 864e5);
                     document.querySelectorAll('#qt-chips .qm-chip').forEach(b => b.classList.toggle('on', +b.dataset.off === diff));
                 };
+                const autoFor = k => { const list = autoList && autoList.length ? autoList : DEFAULT_AUTO; return list[dayOfYearOf(k) % list.length]; };
+                // header: the quote students see TODAY (custom one if set, otherwise the automatic one)
+                function qtHeader() {
+                    const q = $('qt-prev-q'); if (!q) return;
+                    const key = dayKey(), has = !!(custom && custom.date === key && custom.text);
+                    q.textContent = has ? custom.text : autoFor(key);
+                    $('qt-prev-tag').textContent = has ? 'Custom' : 'Auto';
+                    $('qt-prev-d').textContent = 'Today \u2022 ' + pretty(key);
+                }
+                let qtDates = new Set();
+                // first day (from today) that has no custom quote yet, so "Add" never overwrites by accident
+                const freeDay = set => { for (let i = 0; i < 90; i++) { const d = new Date(); d.setDate(d.getDate() + i); const k = dayKey(d); if (!set.has(k)) return k; } return dayKey(); };
                 const setStatus = has => {
                     const st = $('qt-status'), rs = $('qt-reset');
                     if (st) { st.textContent = has ? '● Custom quote is set for this day' : '○ Auto quote will be shown'; st.className = 'font-bold ' + (has ? 'text-emerald-600' : 'text-slate-400'); }
@@ -30238,14 +30245,15 @@ YOUR DIRECTIVES:
                 const qtCount = () => { const t = $('qt-text'); if (t) $('qt-count').textContent = t.value.length + '/200'; qtPreview(); };
                 window.qtCount = qtCount;
 
-                async function loadForDate(key) {
+                async function loadForDate(key, prefill) {
                     const ta = $('qt-text'); ta.value = ''; qtCount(); setStatus(false);
                     if (!key || !ready()) return;
                     try {
                         const s = await getDoc(doc(db, COL, key));
                         if ($('qt-date').value !== key) return;      // date changed while loading
                         const t = s.exists() ? String(s.data().text || '') : '';
-                        ta.value = t; qtCount(); setStatus(!!t.trim());
+                        ta.value = t || prefill || ''; qtCount(); setStatus(!!t.trim());
+                        if (!t.trim() && prefill) { const st = $('qt-status'); if (st) st.textContent = 'Editing the automatic quote. Saving makes it your custom quote.'; }
                     } catch (e) { fail(e, 'Could not load quote'); }
                 }
                 async function loadUpcoming() {
@@ -30253,17 +30261,21 @@ YOUR DIRECTIVES:
                     box.innerHTML = '<div class="qm-empty">Loading\u2026</div>';
                     try {
                         const snap = await getDocs(query(collection(db, COL), where('date', '>=', dayKey()), orderBy('date', 'asc'), limit(30)));
-                        const rows = snap.docs.map(d => d.data()).filter(r => r && r.text);
+                        const all = snap.docs.map(d => d.data()).filter(r => r && r.text && /^\d{4}-\d{2}-\d{2}$/.test(r.date || ''));
+                        qtDates = new Set(all.map(r => r.date));
+                        const t = all.find(r => r.date === dayKey());
+                        custom = t ? { date: t.date, text: String(t.text).trim() } : null; qtHeader();      // header = today's quote
+                        const rows = all.filter(r => r.date > dayKey());                                     // list = upcoming days only
                         box.innerHTML = rows.length ? rows.map(r => {
                             const dt = keyDate(r.date);
-                            return `<div class="qm-item${r.date === dayKey() ? ' qm-now' : ''}">
+                            return `<div class="qm-item">
                               <div class="qm-date"><b>${dt.getDate()}</b><span>${esc(dt.toLocaleDateString('en', { month: 'short' }))}</span></div>
                               <div class="qm-body"><div class="qm-when">${esc(relDay(r.date))}</div><p>${esc(r.text)}</p></div>
                               <div class="qm-acts">
                                 <button onclick="qtEdit('${esc(r.date)}')" class="qm-ico" aria-label="Edit"><i class="fa-solid fa-pen"></i></button>
                                 <button onclick="qtDelete('${esc(r.date)}')" class="qm-ico qm-del" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>
                               </div></div>`;
-                        }).join('') : '<div class="qm-empty">No custom quotes scheduled. The automatic quote is running.</div>';
+                        }).join('') : '<div class="qm-empty">No upcoming custom quotes. Tap \u201cAdd custom quote\u201d to schedule one.</div>';
                     } catch (e) { box.innerHTML = '<div class="qm-empty">Could not load the list</div>'; fail(e, 'Could not load list'); }
                 }
 
@@ -30277,22 +30289,27 @@ YOUR DIRECTIVES:
                     if (window.currentRole !== 'admin') return;
                     const qm = $('qt-modal'); if (qm) qm.classList.add('hidden');
                     const dt = $('qt-date'); dt.min = dayKey(); dt.value = dayKey();
-                    loadForDate(dt.value); loadUpcoming();
+                    $('qt-text').value = ''; qtCount(); setStatus(false);
+                    qtHeader(); loadUpcoming();
                 };
                 window.closeQuoteManager = () => window.safeBack();
                 window.qtDateChanged = () => loadForDate($('qt-date').value);
                 window.qtPick = off => { const d = new Date(); d.setDate(d.getDate() + off); $('qt-date').value = dayKey(d); loadForDate($('qt-date').value); };
-                // "Add custom quote" / edit: the adder opens as a popup
-                window.qtOpen = function (key) {
+                // "Add custom quote" / edit: the adder opens as a popup (a new quote always starts empty)
+                window.qtOpen = function (key, fromAuto) {
                     if (window.currentRole !== 'admin') return;
-                    const dt = $('qt-date'); dt.min = dayKey(); dt.value = key || dayKey();
-                    $('qt-modal-title').textContent = key ? 'Edit custom quote' : 'Add custom quote';
+                    const dt = $('qt-date'); dt.min = dayKey();
+                    const k = key || freeDay(qtDates); dt.value = k;
+                    $('qt-modal-title').textContent = key ? 'Edit quote' : 'Add custom quote';
                     $('qt-modal').classList.remove('hidden');
-                    loadForDate(dt.value);
+                    if (key) loadForDate(k, fromAuto ? autoFor(k) : '');
+                    else { $('qt-text').value = ''; qtCount(); setStatus(false); }
                 };
+                window.qtEditToday = () => window.qtOpen(dayKey(), true);      // header "Edit" button
                 window.qtClose = function () {
                     const m = $('qt-modal'); if (m) m.classList.add('hidden');
-                    const dt = $('qt-date'); dt.value = dayKey(); loadForDate(dt.value);   // header preview goes back to today
+                    const dt = $('qt-date'); dt.value = dayKey();
+                    $('qt-text').value = ''; qtCount(); setStatus(false);      // the adder is empty the next time it opens
                 };
                 window.qtEdit = key => window.qtOpen(key);
 
@@ -30372,7 +30389,8 @@ YOUR DIRECTIVES:
                     const btn = $('qt-save'), old = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
                     try {
                         await setDoc(doc(db, COL, key), { date: key, text, updatedAt: Date.now() });
-                        setStatus(true); loadUpcoming(); window.qtClose();
+                        if (key === dayKey()) { custom = { date: key, text }; qtHeader(); }
+                        loadUpcoming(); window.qtClose();
                         toast('Quote saved', key === dayKey() ? 'Students see it today.' : 'It will show on ' + pretty(key) + ' only.', 'success');
                     } catch (e) { fail(e, 'Could not save quote'); }
                     finally { btn.disabled = false; btn.textContent = old; }
@@ -30382,7 +30400,9 @@ YOUR DIRECTIVES:
                     if (!(await window.showCustomConfirm('Remove Custom Quote', 'Use the automatic quote on ' + pretty(key) + '?', 'Remove', 'Cancel', 'info'))) return;
                     try {
                         await deleteDoc(doc(db, COL, key));
+                        if (key === dayKey()) { custom = null; qtHeader(); }
                         if ($('qt-date').value === key) { $('qt-text').value = ''; qtCount(); setStatus(false); }
+                        const qm = $('qt-modal'); if (qm && !qm.classList.contains('hidden')) window.qtClose();
                         loadUpcoming(); toast('Removed', 'Auto quote restored for ' + pretty(key) + '.', 'success');
                     } catch (e) { fail(e, 'Could not remove quote'); }
                 }
@@ -30411,8 +30431,10 @@ YOUR DIRECTIVES:
                 const docFor = k => doc(db, COL, PRE + k);
                 const fail = e => toast('Daily Motivation', e && e.code === 'permission-denied' ? 'Firestore rules block the "daily_quotes" collection (write for admin only).' : String((e && e.message) || e), 'error');
 
+                const isShare = u => /instagram\.com\/share\//i.test(String(u || ''));
                 const parse = u => {
                     u = String(u || '').trim();
+                    if (isShare(u)) return null;          // a share link only redirects; its code is not the reel's real code
                     const m = u.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#\s]*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/i);
                     if (m) return { kind: 'youtube', id: m[1] };
                     const ig = u.match(/instagram\.com\/(?:[\w.]+\/)?(reels?|p|tv)\/([\w-]{5,40})/i);
@@ -30436,7 +30458,7 @@ YOUR DIRECTIVES:
                     o.innerHTML = '<div class="ig-card">' +
                         '<div class="ig-top"><i class="fa-brands fa-instagram" style="font-size:22px"></i><div class="ig-t"><b>' + esc(c.title || 'Daily motivation') + '</b><small>Tap play to watch</small></div>' +
                         '<button type="button" class="ig-x" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>' +
-                        '<div class="ig-body"><iframe src="' + url + 'embed/" title="Instagram reel" allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write" allowfullscreen scrolling="no"></iframe></div>' +
+                        '<div class="ig-body"><iframe src="' + url + 'embed/" title="Instagram reel" allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write" allowfullscreen scrolling="no"></iframe><p class="ig-hint">Reel not showing? Tap \u201cOpen in Instagram\u201d below.</p></div>' +
                         '<div class="ig-foot"><a href="' + url + '" target="_blank" rel="noopener"><i class="fa-brands fa-instagram"></i> Open in Instagram</a><button type="button" class="ig-done">Done</button></div></div>';
                     o.addEventListener('click', e => { if (e.target === o) closeReel(); });
                     o.querySelector('.ig-x').onclick = closeReel; o.querySelector('.ig-done').onclick = closeReel;
@@ -30506,7 +30528,7 @@ YOUR DIRECTIVES:
                 // ---------- STUDENT SIDE: listens to today's schedule, starts once after every login ----------
                 let cfg = null, unsub = null, subDay = null, played = false, stu = false, retry = 0;
                 const valid = d => !!d && d.enabled !== false && d.durationSec > 0 && (d.expiresAt || 0) > Date.now() &&
-                    ((d.kind === 'youtube' && /^[\w-]{11}$/.test(d.id || '')) || (d.kind === 'instagram' && /^[\w-]{5,40}$/.test(d.id || '')) || (d.kind === 'audio' && /^https:\/\//i.test(d.src || '')));
+                    ((d.kind === 'youtube' && /^[\w-]{11}$/.test(d.id || '')) || (d.kind === 'instagram' && /^[\w-]{5,40}$/.test(d.id || '') && !/instagram\.com\/share\//i.test(d.url || '')) || (d.kind === 'audio' && /^https:\/\//i.test(d.src || '')));
                 const tick = () => {
                     const role = window.currentRole;
                     if (role !== 'student') {
@@ -30541,16 +30563,27 @@ YOUR DIRECTIVES:
                 setInterval(tick, 2000);
 
                 // ---------- ADMIN SIDE ----------
+let dmDates = new Set();
+                // first day (from today) with nothing scheduled yet, so "Add" never overwrites by accident
+                const freeDay = set => { for (let i = 0; i < 90; i++) { const d = new Date(); d.setDate(d.getDate() + i); const k = dayKey(d); if (!set.has(k)) return k; } return dayKey(); };
+                // the header always shows TODAY's motivation (thumbnail + title) with an edit / add button
                 const status = (d, key) => {
-                    const st = $('dm-st'), s = $('dm-status'), t = $('dm-st-day'); if (!s) return;
-                    const k = key || ($('dm-date') && $('dm-date').value) || dayKey();
-                    if (t) t.textContent = relDay(k) + ' \u2022 ' + pretty(k);
+                    if (key && key !== dayKey()) return;
+                    const st = $('dm-st'); if (!st) return;
+                    $('dm-st-day').textContent = 'Today \u2022 ' + pretty(dayKey());
                     const live = !!d && d.enabled !== false;
-                    if (st) st.dataset.live = live ? '1' : '0';
+                    st.dataset.live = live ? '1' : '0';
+                    const kind = d && ICON[d.kind] ? d.kind : '';
+                    const th = d ? (d.thumb || (d.kind === 'youtube' && d.id ? ytThumb(d.id) : '')) : '';
+                    const box = $('dm-st-th');
+                    box.className = 'qm-thumb ' + (kind ? 't-' + kind : 't-empty');
+                    box.innerHTML = '<i class="' + (kind ? ICON[kind] : 'fa-solid fa-music') + '"></i>' + (th ? '<img alt="" referrerpolicy="no-referrer" src="' + esc(th) + '" onerror="this.remove()">' : '');
+                    $('dm-st-title').textContent = d ? (d.title || d.url) : 'Nothing scheduled for today';
                     const mins = d ? Math.round(d.durationSec / 60 * 100) / 100 : 0;
-                    s.innerHTML = '<i class="qm-dot"></i>' + (d ? (live ? 'Scheduled: ' + (d.plays || 1) + '\u00d7 per student, ' + (d.kind === 'instagram' ? 'reel popup' : mins + ' min each') : 'Saved, but switched off') : 'Nothing scheduled for this day');
+                    $('dm-status').innerHTML = '<i class="qm-dot"></i>' + (d ? (live ? (d.plays || 1) + '\u00d7 per student \u2022 ' + (d.kind === 'instagram' ? 'reel popup' : mins + ' min each') : 'Saved, but switched off') : 'Tap + to add one');
+                    const b = $('dm-st-btn'); if (b) b.innerHTML = '<i class="fa-solid ' + (d ? 'fa-pen' : 'fa-plus') + '"></i>';
                 };
-                const chips = () => {
+                                const chips = () => {
                     const dv = $('dm-date').value; if (!dv) return;
                     const diff = Math.round((keyDate(dv) - keyDate(dayKey())) / 864e5);
                     document.querySelectorAll('#dm-chips .qm-chip').forEach(b => b.classList.toggle('on', +b.dataset.off === diff));
@@ -30558,8 +30591,7 @@ YOUR DIRECTIVES:
                 window.dmChip = m => { $('dm-min').value = m; };
                 const ICON = { youtube: 'fa-brands fa-youtube', instagram: 'fa-brands fa-instagram', audio: 'fa-solid fa-file-audio' };
                 const LABEL = { youtube: 'YouTube', instagram: 'Instagram reel', audio: 'Audio file' };
-                const HOLD = { youtube: 'https://youtu.be/\u2026', audio: 'https://\u2026/clip.mp3', instagram: 'https://www.instagram.com/reel/\u2026' };
-                let chosen = 'youtube', meta = { title: '', thumb: '' }, metaSeq = 0, metaT = null, metaKey = '', loading = false, titleTouched = false;
+                let meta = { title: '', thumb: '' }, metaSeq = 0, metaT = null, metaKey = '', loading = false, titleTouched = false;
                 const linkKey = p => p ? p.kind + ':' + (p.id || p.src) : '';
                 const ytThumb = id => 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg';
                 const getJSON = async (u, ms) => {
@@ -30570,23 +30602,23 @@ YOUR DIRECTIVES:
                 const fileTitle = src => {
                     try { const n = decodeURIComponent(new URL(src).pathname.split('/').filter(Boolean).pop() || ''); return n.replace(/\.[a-z0-9]{2,4}$/i, '').replace(/[_+-]+/g, ' ').trim(); } catch (e) { return ''; }
                 };
-                // preview card under the link: thumbnail + title
+                // preview card under the link: thumbnail + title + detected type
                 const paint = () => {
                     const card = $('dm-card'); if (!card) return;
-                    const p = parse($('dm-url').value);
-                    if (!p) { card.classList.add('hidden'); return; }
-                    card.classList.remove('hidden');
+                    const raw = $('dm-url').value.trim(), p = parse(raw);
+                    const emp = $('dm-empty'), tb = $('dm-titlebox');
+                    if (emp) emp.classList.toggle('hidden', !!raw);
+                    if (!p) { card.classList.add('hidden'); if (tb) tb.classList.add('hidden'); return; }
+                    card.classList.remove('hidden'); if (tb) tb.classList.remove('hidden');
                     const th = $('dm-thumb');
                     th.className = 'qm-thumb t-' + p.kind;
                     th.innerHTML = '<i class="' + ICON[p.kind] + '"></i>' + (meta.thumb ? '<img alt="" referrerpolicy="no-referrer" src="' + esc(meta.thumb) + '" onerror="this.remove()">' : '');
                     const t = ($('dm-title').value || '').trim() || meta.title;
                     $('dm-ctitle').textContent = t || (loading ? 'Fetching title\u2026' : 'No title found. Type one below.');
-                    $('dm-csub').textContent = LABEL[p.kind] + (p.via ? ' \u2022 ' + p.via : '') + (loading ? ' \u2022 loading\u2026' : '');
+                    $('dm-csub').innerHTML = '<span class="qm-badge b-' + p.kind + '"><i class="' + ICON[p.kind] + '"></i>' + esc(LABEL[p.kind]) + '</span>' + (p.via ? ' <small style="color:#94a3b8;font-weight:700">' + esc(p.via) + '</small>' : '') + (loading ? ' <small style="color:#94a3b8;font-weight:700">loading\u2026</small>' : '');
                 };
                 const kindUI = k => {
-                    const m = $('dm-modal'); if (m) m.dataset.kind = k;
-                    document.querySelectorAll('#dm-types .qm-chip').forEach(b => b.classList.toggle('on', b.dataset.type === k));
-                    $('dm-url').placeholder = HOLD[k] || HOLD.youtube;
+                    const m = $('dm-modal'); if (m) m.dataset.kind = k || '';
                     const n = $('dm-play-note');
                     if (n) n.textContent = k === 'instagram'
                         ? 'Each login counts as one play: the reel opens in a popup and the student taps play. The entry is removed automatically after its day.'
@@ -30621,23 +30653,23 @@ YOUR DIRECTIVES:
                     if (!titleTouched && meta.title) $('dm-title').value = meta.title;
                     paint();
                 }
-                window.dmType = k => {
-                    chosen = k; kindUI(k);
-                    if (!$('dm-url').value.trim()) { const h = $('dm-hint'); h.className = 'qm-src'; h.textContent = k === 'youtube' ? 'Paste a YouTube link.' : k === 'audio' ? 'Paste an https link to an .mp3, .m4a or .mp4 file (Google Drive and Dropbox links work too).' : 'Paste an Instagram reel link.'; }
-                    $('dm-url').focus();
+window.dmTitleEdit = () => { titleTouched = true; paint(); };
+                window.dmPaste = async () => {
+                    try { const t = await navigator.clipboard.readText(); if (t && t.trim()) { $('dm-url').value = t.trim(); dmDetect(); return; } } catch (e) { }
+                    $('dm-url').focus(); toast('Paste', 'Long-press the field and choose Paste.', 'info');
                 };
-                window.dmTitleEdit = () => { titleTouched = true; paint(); };
+                // the link type is detected automatically
                 window.dmDetect = () => {
                     const v = $('dm-url').value.trim(), p = parse(v), h = $('dm-hint');
                     h.className = 'qm-src';
-                    if (p) chosen = p.kind;
-                    kindUI(chosen);
+                    kindUI(p ? p.kind : '');
                     if (!v) {
                         h.textContent = ''; clearTimeout(metaT); metaSeq++; metaKey = ''; loading = false; meta = { title: '', thumb: '' }; titleTouched = false; $('dm-title').value = ''; paint(); return;
                     }
-                    if (p && p.kind === 'youtube') { h.textContent = 'YouTube link: plays as hidden background audio.'; h.classList.add('ok'); }
-                    else if (p && p.kind === 'audio') { h.textContent = 'Audio file' + (p.via ? ' (' + p.via + ')' : '') + ': plays as hidden background audio.'; h.classList.add('ok'); }
-                    else if (p) { h.textContent = 'Instagram reel: students get a popup and tap play to watch it.'; h.classList.add('ok'); }
+                    if (p && p.kind === 'youtube') { h.textContent = 'Plays as hidden background audio.'; h.classList.add('ok'); }
+                    else if (p && p.kind === 'audio') { h.textContent = 'Plays as hidden background audio' + (p.via ? ' (' + p.via + ')' : '') + '.'; h.classList.add('ok'); }
+                    else if (p) { h.textContent = 'Students get a popup and tap play to watch the reel.'; h.classList.add('ok'); }
+                    else if (isShare(v)) { h.textContent = 'This is an Instagram share link and it will not open for students. Open it in your browser, then copy the link from the address bar (instagram.com/reel/\u2026).'; h.classList.add('bad'); }
                     else if (/^http:\/\//i.test(v)) { h.textContent = 'Use an https link.'; h.classList.add('bad'); }
                     else { h.textContent = 'Paste a YouTube link, an Instagram reel link, or an https link to an .mp3, .m4a or .mp4 file.'; h.classList.add('bad'); }
                     if (p) {
@@ -30650,7 +30682,7 @@ YOUR DIRECTIVES:
                     } else { clearTimeout(metaT); metaSeq++; metaKey = ''; loading = false; meta = { title: '', thumb: '' }; }
                     paint();
                 };
-                const fill = d => {
+                                const fill = d => {
                     $('dm-url').value = d && d.url || '';
                     $('dm-min').value = d ? Math.round(d.durationSec / 60 * 100) / 100 : 1;
                     $('dm-times').value = d ? (d.plays || 1) : 1;
@@ -30667,7 +30699,7 @@ YOUR DIRECTIVES:
                     const mins = parseFloat($('dm-min').value), times = parseInt($('dm-times').value, 10);
                     if (!day) { toast('Daily Motivation', 'Pick a day.', 'error'); return null; }
                     if (day < dayKey()) { toast('Daily Motivation', 'Pick today or a future day.', 'error'); return null; }
-                    if (!p) { toast('Daily Motivation', 'Paste a YouTube link, an Instagram reel link or a direct audio file link.', 'error'); return null; }
+                    if (!p) { toast('Daily Motivation', isShare(url) ? 'This Instagram share link cannot be used. Open it in your browser and copy the link from the address bar.' : 'Paste a YouTube link, an Instagram reel link or a direct audio file link.', 'error'); return null; }
                     if (p.kind !== 'instagram' && !(mins >= 0.25 && mins <= 60)) { toast('Daily Motivation', 'Play time must be between 0.25 and 60 minutes.', 'error'); return null; }
                     if (!(times >= 1 && times <= 20)) { toast('Daily Motivation', 'Times to play must be between 1 and 20.', 'error'); return null; }
                     const title = (($('dm-title').value || '').trim() || meta.title || '').slice(0, 150);
@@ -30675,14 +30707,16 @@ YOUR DIRECTIVES:
                     if (p.kind === 'audio') c.src = p.src; else { c.id = p.id; if (p.kind === 'instagram') c.igType = p.igType; }
                     return c;
                 };
-                async function loadDay(key) {
-                    chips(); status(null, key);
+async function loadDay(key) {
+                    chips();
+                    const rm = $('dm-rm'); if (rm) rm.classList.add('hidden');
                     if (!key || !ready()) return;
                     try {
                         const s = await getDoc(docFor(key));
                         if ($('dm-date').value !== key) return;      // day changed while loading
                         const d = s.exists() ? s.data() : null;
                         if (d) fill(d);                              // nothing saved for the day: keep what is typed, so one clip can be copied to several days
+                        if (rm) rm.classList.toggle('hidden', !d);   // "Remove" only when this day has something saved
                         status(d, key);
                     } catch (e) { fail(e); }
                 }
@@ -30691,14 +30725,17 @@ YOUR DIRECTIVES:
                     box.innerHTML = '<div class="qm-empty">Loading\u2026</div>';
                     try {
                         const snap = await getDocs(query(collection(db, COL), where('day', '>=', dayKey()), orderBy('day', 'asc'), limit(30)));
-                        const rows = snap.docs.map(d => d.data()).filter(r => r && r.day && r.kind);
+                        const all = snap.docs.map(d => d.data()).filter(r => r && r.day && r.kind);
+                        dmDates = new Set(all.map(r => r.day));
+                        status(all.find(r => r.day === dayKey()) || null, dayKey());       // header = today
+                        const rows = all.filter(r => r.day > dayKey());                      // list = upcoming days only
                         $('dm-count').textContent = rows.length ? rows.length + ' upcoming' : '';
                         box.innerHTML = rows.length ? rows.map(r => {
                             const dt = keyDate(r.day), mins = Math.round(r.durationSec / 60 * 100) / 100;
                             const k = ICON[r.kind] ? r.kind : 'audio';
                             const th = r.thumb || (k === 'youtube' && r.id ? ytThumb(r.id) : '');
                             const sub = (k === 'instagram' ? 'Reel popup' : mins + ' min') + ' \u2022 ' + (r.plays || 1) + '\u00d7 per student';
-                            return `<div class="qm-item${r.day === dayKey() ? ' qm-now' : ''}">
+                            return `<div class="qm-item">
                               <div class="qm-thumb t-${k}"><i class="${ICON[k]}"></i>${th ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${esc(th)}" onerror="this.remove()">` : ''}</div>
                               <div class="qm-body"><div class="qm-when">${esc(relDay(r.day))} \u2022 ${esc(dt.getDate() + ' ' + dt.toLocaleDateString('en', { month: 'short' }))}${r.enabled === false ? ' \u2022 switched off' : ''}</div>
                                 <p class="qm-two">${esc(r.title || r.url)}</p>
@@ -30707,10 +30744,10 @@ YOUR DIRECTIVES:
                                 <button onclick="dmEdit('${esc(r.day)}')" class="qm-ico" aria-label="Edit"><i class="fa-solid fa-pen"></i></button>
                                 <button onclick="dmDelete('${esc(r.day)}')" class="qm-ico qm-del" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>
                               </div></div>`;
-                        }).join('') : '<div class="qm-empty">Nothing scheduled yet. Tap \u201cAdd motivation\u201d to add a link.</div>';
+                        }).join('') : '<div class="qm-empty">No upcoming motivation. Tap \u201cAdd motivation\u201d to schedule one.</div>';
                     } catch (e) { box.innerHTML = '<div class="qm-empty">Could not load the list</div>'; fail(e); }
                 }
-                async function removeDay(key) {
+                                async function removeDay(key) {
                     if (!ready() || !key) return;
                     if (!(await window.showCustomConfirm('Remove Music', 'Students will no longer hear music on ' + pretty(key) + '.', 'Remove', 'Cancel', 'info'))) return;
                     try {
@@ -30722,21 +30759,26 @@ YOUR DIRECTIVES:
                 }
                 window.dmPick = off => { const d = new Date(); d.setDate(d.getDate() + off); $('dm-date').value = dayKey(d); loadDay($('dm-date').value); };
                 window.dmDateChanged = () => loadDay($('dm-date').value);
-                // "Add motivation" / edit: the adder opens as a popup
+// "Add motivation" / edit: the adder opens as a popup (a new one always starts empty)
                 window.dmOpen = key => {
                     if (window.currentRole !== 'admin') return;
                     stop(); fill(null);
-                    const dt = $('dm-date'); dt.min = dayKey(); dt.value = key || dayKey();
-                    $('dm-modal-title').textContent = key ? 'Edit motivation' : 'Add motivation';
+                    const dt = $('dm-date'); dt.min = dayKey();
+                    const k = key || freeDay(dmDates); dt.value = k;
+                    const edit = !!key && dmDates.has(key);
+                    $('dm-modal-title').textContent = edit ? 'Edit motivation' : 'Add motivation';
+                    $('dm-save-t').textContent = edit ? 'Save changes' : 'Schedule';
                     $('dm-modal').classList.remove('hidden');
-                    loadDay(dt.value);
+                    const sc = document.querySelector('#dm-modal .dm-body'); if (sc) sc.scrollTop = 0;
+                    loadDay(k);
                 };
                 window.dmClose = () => {
                     stop(); const m = $('dm-modal'); if (m) m.classList.add('hidden');
-                    fill(null); const dt = $('dm-date'); dt.value = dayKey(); loadDay(dt.value);   // header status goes back to today
+                    fill(null); $('dm-date').value = dayKey();          // empty again for the next time
                 };
                 window.dmEdit = key => window.dmOpen(key);
-                window.dmDelete = key => removeDay(key);
+                window.dmEditToday = () => window.dmOpen(dayKey());     // header button
+                                window.dmDelete = key => removeDay(key);
                 window.dmRemove = () => removeDay($('dm-date').value);
                 window.dmSave = async () => {
                     const c = form(); if (!c) return;
@@ -30744,7 +30786,7 @@ YOUR DIRECTIVES:
                     try {
                         const end = endOfDay(c.day), rec = { ...c, updatedAt: Date.now(), expiresAt: end, expireAt: new Date(end + 864e5) };
                         await setDoc(docFor(c.day), rec);
-                        loadList(); window.dmClose();
+                        status(rec, c.day); loadList(); window.dmClose();
                         toast('Scheduled', c.enabled ? (c.day === dayKey() ? 'Students hear it when they log in today.' : 'It plays on ' + pretty(c.day) + '.') : 'Saved, but switched off.', 'success');
                     } catch (e) { fail(e); }
                 };
@@ -30777,10 +30819,10 @@ YOUR DIRECTIVES:
                     stop();
                     const dt = $('dm-date'); dt.min = dayKey(); dt.value = dayKey();
                     const mo = $('dm-modal'); if (mo) mo.classList.add('hidden');
-                    fill(null); chips(); status(null, dt.value);
-                    if (!ready()) return;
+                    fill(null); chips();
+                    if (!ready()) { status(null, dt.value); return; }
                     await migrate();
-                    loadDay(dt.value); loadList(); cleanup();
+                    loadList(); cleanup();
                 };
             })();
 
@@ -31649,6 +31691,46 @@ YOUR DIRECTIVES:
 .qm-body p.qm-two{-webkit-line-clamp:2}
 #dm-modal[data-kind="instagram"] #dm-min-wrap,#dm-modal[data-kind="instagram"] #dm-dur-chips{display:none}
 #dm-modal[data-kind="instagram"] .qm-grid2{grid-template-columns:1fr}
+/* ----- today cards in the headers + motivation popup layout ----- */
+.qm-prev-r{display:flex;align-items:center;gap:8px}
+.qm-edit{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;background:rgba(255,255,255,.95);color:var(--qa);font-size:11px;font-weight:900;line-height:1;transition:transform .15s}
+.qm-edit:active{transform:scale(.94)}
+.qm-st .qm-thumb{width:58px;height:58px;border-radius:16px;font-size:20px}
+.qm-thumb.t-empty{background:rgba(255,255,255,.18)}
+#dm-st-day{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+#dm-st-title{margin-top:3px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;font-size:14px}
+.dm-sheet{background:#fff;width:100%;max-width:460px;max-height:92vh;max-height:92dvh;display:flex;flex-direction:column;border-radius:26px 26px 0 0;overflow:hidden}
+@media (min-width:640px){.dm-sheet{border-radius:26px}}
+.dm-top{flex:none;display:flex;align-items:center;gap:12px;padding:16px;color:#fff;background:linear-gradient(135deg,#d946ef 0,#7c3aed 100%)}
+.dm-top-ic{width:40px;height:40px;flex:none;border-radius:13px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:16px}
+.dm-top-t{flex:1;min-width:0}
+.dm-top-t h3{font-size:17px;font-weight:900;line-height:1.2}
+.dm-top-t p{font-size:11px;font-weight:700;opacity:.86;margin-top:2px}
+.dm-top .qm-ico{background:rgba(255,255,255,.2);color:#fff}
+.dm-body{flex:1;min-height:0;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:18px;-webkit-overflow-scrolling:touch}
+.dm-sec{display:flex;flex-direction:column}
+.dm-lab{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:900;color:#0f172a;margin-bottom:8px}
+.dm-n{width:20px;height:20px;flex:none;border-radius:50%;background:var(--qa);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}
+.dm-linkrow{display:flex;gap:8px}
+.dm-linkrow .qm-in{flex:1;min-width:0}
+.dm-paste{flex:none;width:46px;border-radius:14px;background:color-mix(in srgb,var(--qa) 10%,#fff);color:var(--qa);font-size:16px;display:flex;align-items:center;justify-content:center}
+.dm-paste:active{transform:scale(.92)}
+.dm-empty{margin-top:10px;padding:16px 14px;border-radius:16px;border:1.5px dashed #e2e8f0;text-align:center;font-size:12px;font-weight:600;color:#94a3b8;line-height:1.5}
+.dm-empty.hidden{display:none}
+.dm-types{display:flex;justify-content:center;gap:14px;margin-bottom:8px;font-size:22px}
+.dm-types .a{color:#ef4444}.dm-types .b{color:#d62976}.dm-types .c{color:#6366f1}
+.dm-switch{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;font-size:12px;font-weight:800;color:#334155;cursor:pointer}
+.dm-switch .qm-sw{margin-left:0}
+.dm-foot{flex:none;padding:12px 16px calc(14px + env(safe-area-inset-bottom,0px));background:#fff;border-top:1px solid #f1f5f9;display:flex;flex-direction:column;gap:8px}
+.dm-foot .qm-btn{margin-top:0}
+.dm-foot2{display:flex;gap:8px}
+.dm-foot2 .qm-btn{font-size:13px;padding:11px}
+.qm-lt .qm-badge{display:inline-flex;margin-top:0}
+.qm-badge{align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:10px;font-weight:900;line-height:1.2}
+.qm-badge.b-youtube{background:#fee2e2;color:#b91c1c}
+.qm-badge.b-instagram{background:#fce7f3;color:#be185d}
+.qm-badge.b-audio{background:#ede9fe;color:#5b21b6}
+#ig-pop .ig-hint{margin:0;padding:8px 14px 10px;font-size:11px;font-weight:700;color:#94a3b8;text-align:center}
 /* student: Instagram reel popup */
 #ig-pop{position:fixed;inset:0;z-index:2147483000;background:rgba(2,6,23,.74);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom));animation:igIn .25s ease}
 @keyframes igIn{from{opacity:0}to{opacity:1}}
@@ -31676,16 +31758,16 @@ YOUR DIRECTIVES:
       <button class="qm-ib" onclick="window.location.hash='auto-quotes'" aria-label="Auto quote list" title="Auto quote list"><i class="fa-solid fa-list-ul"></i></button>
     </div>
     <div class="qm-glass">
-      <div class="qm-prev-top"><span><i class="fa-solid fa-wand-magic-sparkles"></i> Daily Inspiration</span><span id="qt-prev-tag" class="qm-tag">Auto</span></div>
+      <div class="qm-prev-top"><span><i class="fa-solid fa-wand-magic-sparkles"></i> Today's quote</span><span class="qm-prev-r"><span id="qt-prev-tag" class="qm-tag">Auto</span><button type="button" class="qm-edit" onclick="qtEditToday()" aria-label="Edit today's quote"><i class="fa-solid fa-pen"></i> Edit</button></span></div>
       <p id="qt-prev-q" class="qm-prev-q"></p>
       <div id="qt-prev-d" class="qm-prev-d"></div>
     </div>
   </div>
   <div class="qm-sheet">
     <div class="qm-wrap">
-      <p class="qm-note">Students see an automatic quote every day. A custom quote shows <b>only on the day you pick</b>. The preview above shows exactly what students will see on that day.</p>
+      <p class="qm-note">Students see an automatic quote every day. A custom quote shows <b>only on the day you pick</b>. The header shows the quote students see today.</p>
       <button type="button" onclick="qtOpen()" class="qm-btn qm-pri" style="margin-top:0"><i class="fa-solid fa-plus"></i> Add custom quote</button>
-      <div class="qm-sub">Scheduled quotes</div>
+      <div class="qm-sub">Upcoming quotes</div>
       <div id="qt-list" class="qm-list"></div>
     </div>
   </div>
@@ -31745,66 +31827,82 @@ YOUR DIRECTIVES:
       <div class="qm-ttl"><h2><i class="fa-solid fa-music"></i> Daily Motivation</h2><p>Audio or reel for students after login</p></div>
     </div>
     <div id="dm-st" class="qm-glass qm-st" data-live="0">
-      <div class="qm-st-ic"><i class="fa-solid fa-headphones"></i></div>
-      <div style="min-width:0"><b id="dm-st-day">Today</b><span id="dm-status"><i class="qm-dot"></i>Nothing scheduled for this day</span></div>
+      <div id="dm-st-th" class="qm-thumb t-empty"><i class="fa-solid fa-music"></i></div>
+      <div style="min-width:0;flex:1"><span id="dm-st-day">Today</span><b id="dm-st-title">Loading…</b><span id="dm-status"><i class="qm-dot"></i>Today's motivation</span></div>
+      <button type="button" id="dm-st-btn" class="qm-ib" onclick="dmEditToday()" aria-label="Edit today's motivation" title="Edit today's motivation"><i class="fa-solid fa-plus"></i></button>
     </div>
   </div>
   <div class="qm-sheet">
     <div class="qm-wrap">
       <p class="qm-note">Add a link for a day. <b>YouTube</b> and <b>audio files</b> play quietly after the student logs in. An <b>Instagram reel</b> opens as a popup, and the student taps play to watch it.</p>
       <button type="button" onclick="dmOpen()" class="qm-btn qm-pri" style="margin-top:0"><i class="fa-solid fa-plus"></i> Add motivation</button>
-      <div class="qm-sub">Scheduled motivation <small id="dm-count"></small></div>
+      <div class="qm-sub">Upcoming motivation <small id="dm-count"></small></div>
       <div id="dm-list" class="qm-list"></div>
     </div>
   </div>
-  <div id="dm-modal" data-kind="youtube" class="hidden absolute inset-0 z-30 bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onclick="if(event.target===this)dmClose()">
-    <div class="qm-modal">
-      <div class="qm-pophd"><h3 id="dm-modal-title">Add motivation</h3><button type="button" onclick="dmClose()" aria-label="Close" class="qm-ico"><i class="fa-solid fa-xmark"></i></button></div>
+  <div id="dm-modal" data-kind="" class="hidden absolute inset-0 z-30 bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onclick="if(event.target===this)dmClose()">
+    <div class="dm-sheet">
+      <div class="dm-top">
+        <div class="dm-top-ic"><i class="fa-solid fa-music"></i></div>
+        <div class="dm-top-t"><h3 id="dm-modal-title">Add motivation</h3><p>Paste a link. The type is detected automatically.</p></div>
+        <button type="button" onclick="dmClose()" aria-label="Close" class="qm-ico"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="dm-body">
+        <div class="dm-sec">
+          <label class="dm-lab" for="dm-url"><span class="dm-n">1</span>Link</label>
+          <div class="dm-linkrow">
+            <input id="dm-url" type="url" inputmode="url" autocomplete="off" oninput="dmDetect()" placeholder="YouTube, Instagram reel or audio link" class="qm-in" aria-label="Link">
+            <button type="button" class="dm-paste" onclick="dmPaste()" aria-label="Paste from clipboard"><i class="fa-regular fa-paste"></i></button>
+          </div>
+          <p id="dm-hint" class="qm-src"></p>
+          <div id="dm-empty" class="dm-empty">
+            <div class="dm-types"><i class="fa-brands fa-youtube a"></i><i class="fa-brands fa-instagram b"></i><i class="fa-solid fa-file-audio c"></i></div>
+            Title and thumbnail are fetched for you.
+          </div>
+          <div id="dm-card" class="qm-lcard hidden">
+            <div id="dm-thumb" class="qm-thumb"></div>
+            <div class="qm-lt"><b id="dm-ctitle"></b><div id="dm-csub" style="margin-top:6px"></div></div>
+          </div>
+          <div id="dm-titlebox" class="hidden">
+            <label class="qm-lab" for="dm-title">Title <span style="font-weight:600;color:#94a3b8">(you can edit it)</span></label>
+            <input id="dm-title" type="text" maxlength="120" oninput="dmTitleEdit()" placeholder="Title" class="qm-in" aria-label="Title">
+          </div>
+        </div>
 
-      <label class="qm-lab" style="margin-top:2px">Link type</label>
-      <div id="dm-types" class="qm-types">
-        <button type="button" class="qm-chip on" data-type="youtube" onclick="dmType('youtube')"><i class="fa-brands fa-youtube"></i>YouTube</button>
-        <button type="button" class="qm-chip" data-type="audio" onclick="dmType('audio')"><i class="fa-solid fa-file-audio"></i>Audio file</button>
-        <button type="button" class="qm-chip" data-type="instagram" onclick="dmType('instagram')"><i class="fa-brands fa-instagram"></i>Instagram reel</button>
-      </div>
-      <input id="dm-url" type="url" inputmode="url" oninput="dmDetect()" placeholder="https://youtu.be/…" class="qm-in" aria-label="Link">
-      <p id="dm-hint" class="qm-src"></p>
-      <div id="dm-card" class="qm-lcard hidden">
-        <div id="dm-thumb" class="qm-thumb"></div>
-        <div class="qm-lt"><b id="dm-ctitle"></b><span id="dm-csub"></span></div>
-      </div>
-      <label class="qm-lab" for="dm-title">Title <span style="font-weight:600;color:#94a3b8">(fetched automatically, you can edit)</span></label>
-      <input id="dm-title" type="text" maxlength="120" oninput="dmTitleEdit()" placeholder="Title" class="qm-in" aria-label="Title">
+        <div class="dm-sec">
+          <label class="dm-lab" for="dm-date"><span class="dm-n">2</span>Day</label>
+          <div id="dm-chips" class="qm-chips" style="margin-bottom:8px">
+            <button type="button" class="qm-chip" data-off="0" onclick="dmPick(0)">Today</button>
+            <button type="button" class="qm-chip" data-off="1" onclick="dmPick(1)">Tomorrow</button>
+            <button type="button" class="qm-chip" data-off="2" onclick="dmPick(2)">In 2 days</button>
+          </div>
+          <input id="dm-date" type="date" onchange="dmDateChanged()" class="qm-in" aria-label="Day">
+          <label class="dm-switch"><span style="flex:1">Show to students</span><span class="qm-sw"><input id="dm-on" type="checkbox" checked aria-label="Show to students"><i></i></span></label>
+        </div>
 
-      <div class="qm-sep"></div>
-      <div class="qm-h" style="margin-bottom:10px"><span class="qm-hi"><i class="fa-regular fa-calendar"></i></span><div><h3>Day</h3><p>Today or any day ahead</p></div>
-        <label class="qm-sw" title="Show to students"><input id="dm-on" type="checkbox" checked aria-label="Show to students"><i></i></label>
+        <div class="dm-sec">
+          <label class="dm-lab"><span class="dm-n">3</span>Playback</label>
+          <div class="qm-grid2">
+            <div id="dm-min-wrap"><label class="qm-lab" style="margin-top:0" for="dm-min">Play time (min)</label><input id="dm-min" type="number" min="0.25" max="60" step="0.25" value="1" class="qm-in"></div>
+            <div><label class="qm-lab" style="margin-top:0" for="dm-times">Plays per student</label><input id="dm-times" type="number" min="1" max="20" step="1" value="1" class="qm-in"></div>
+          </div>
+          <div id="dm-dur-chips" class="qm-chips" style="margin:10px 0 0">
+            <button type="button" class="qm-chip" onclick="dmChip(0.5)">30 sec</button>
+            <button type="button" class="qm-chip" onclick="dmChip(1)">1 min</button>
+            <button type="button" class="qm-chip" onclick="dmChip(2)">2 min</button>
+            <button type="button" class="qm-chip" onclick="dmChip(5)">5 min</button>
+            <button type="button" class="qm-chip" onclick="dmChip(10)">10 min</button>
+          </div>
+          <p id="dm-play-note" class="qm-src">Each login counts as one play. The entry is removed automatically after its day.</p>
+        </div>
       </div>
-      <div id="dm-chips" class="qm-chips">
-        <button type="button" class="qm-chip" data-off="0" onclick="dmPick(0)">Today</button>
-        <button type="button" class="qm-chip" data-off="1" onclick="dmPick(1)">Tomorrow</button>
-        <button type="button" class="qm-chip" data-off="2" onclick="dmPick(2)">In 2 days</button>
+      <div class="dm-foot">
+        <button type="button" onclick="dmSave()" class="qm-btn qm-pri"><i class="fa-solid fa-calendar-check"></i><span id="dm-save-t">Schedule</span></button>
+        <div class="dm-foot2">
+          <button type="button" id="dm-prev" onclick="dmPreview()" class="qm-btn qm-sec"><i class="fa-solid fa-play"></i><span id="dm-prev-t">Preview</span></button>
+          <button type="button" id="dm-rm" onclick="dmRemove()" class="hidden qm-btn qm-ghost"><i class="fa-solid fa-trash"></i> Remove</button>
+        </div>
       </div>
-      <input id="dm-date" type="date" onchange="dmDateChanged()" class="qm-in" aria-label="Day">
-
-      <div class="qm-sep"></div>
-      <div class="qm-h" style="margin-bottom:6px"><span class="qm-hi"><i class="fa-solid fa-sliders"></i></span><div><h3>Playback</h3><p>A short clip repeats until the time is up</p></div></div>
-      <div class="qm-grid2">
-        <div id="dm-min-wrap"><label class="qm-lab" style="margin-top:0" for="dm-min">Play time (min)</label><input id="dm-min" type="number" min="0.25" max="60" step="0.25" value="1" class="qm-in"></div>
-        <div><label class="qm-lab" style="margin-top:0" for="dm-times">Plays per student</label><input id="dm-times" type="number" min="1" max="20" step="1" value="1" class="qm-in"></div>
-      </div>
-      <div id="dm-dur-chips" class="qm-chips" style="margin:10px 0 0">
-        <button type="button" class="qm-chip" onclick="dmChip(0.5)">30 sec</button>
-        <button type="button" class="qm-chip" onclick="dmChip(1)">1 min</button>
-        <button type="button" class="qm-chip" onclick="dmChip(2)">2 min</button>
-        <button type="button" class="qm-chip" onclick="dmChip(5)">5 min</button>
-        <button type="button" class="qm-chip" onclick="dmChip(10)">10 min</button>
-      </div>
-      <p id="dm-play-note" class="qm-src">Each login counts as one play. The entry is removed automatically after its day.</p>
-
-      <button type="button" onclick="dmSave()" class="qm-btn qm-pri"><i class="fa-solid fa-calendar-check"></i> Schedule</button>
-      <button type="button" id="dm-prev" onclick="dmPreview()" class="qm-btn qm-sec"><i class="fa-solid fa-play"></i><span id="dm-prev-t">Preview</span></button>
-      <button type="button" onclick="dmRemove()" class="qm-btn qm-ghost">Remove for this day</button>
     </div>
   </div>
 </div>
