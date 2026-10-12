@@ -10472,7 +10472,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             // ==========================================
             window.isGlobalTestMode = false;
             window.getCollectionName = function (name) {
-                const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices'];
+                const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments'];
                 if (window.isGlobalTestMode && sandboxed.includes(name)) {
                     return 'test_' + name;
                 }
@@ -10939,7 +10939,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             // ==========================================
             window.isGlobalTestMode = false;
             window.getCollectionName = function (name) {
-                const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices'];
+                const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments'];
                 if (window.isGlobalTestMode && sandboxed.includes(name)) {
                     return 'test_' + name;
                 }
@@ -17836,7 +17836,7 @@ window.__tpPaint = function () {
                     window.showLoader("Cleaning up");
                     try {
                         // Cleanup logic
-                        const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices'];
+                        const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments'];
                         for (let col of sandboxed) {
                             const testCol = collection(db, 'test_' + col);
                             const snap = await getDocs(testCol);
@@ -22141,10 +22141,11 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     ${extra ? `<div class="mt-4">${extra}</div>` : ''}</section>`;
             };
 
-            window.renderMyProfile = function () {
+            window.renderMyProfile = function (startTab) {
                 const box = document.getElementById('my-profile-container');
                 if (!box) return;
                 try {
+                    mpfCss();
                     if (!document.getElementById('mp-style')) {
                         const st = document.createElement('style'); st.id = 'mp-style';
                         st.textContent = '@keyframes mpIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.mp-in{animation:mpIn .28s ease-out}@media(prefers-reduced-motion:reduce){.mp-in{animation:none}}#mp-tabs{padding-top:env(safe-area-inset-top,0px)}';
@@ -22171,7 +22172,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     const took = x => !x.r.isVirtual && x.r.status !== 'ABSENT' && x.r.immune !== 'skip';
                     const sessions = (window.sessionsDB || []).filter(s => String(s.mobile) === String(me) && s.status !== 'ABSENT').sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                     const runs = (window.fitnessDB || []).filter(l => String(l.mobile) === String(me)).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                    window.__mp = { esc, rank, exams, sessions, runs, score, study: pick(getStudyLeaderboard()), target: pick(getTargetLeaderboard()), fit: pick(getFitnessLeaderboard()), took, inWeek, mondayMs, wkExams: exams.filter(x => inWeek(x.t)), tab: 'overall', cat: 'exams', shown: 6 };
+                    window.__mp = { esc, rank, exams, sessions, runs, score, study: pick(getStudyLeaderboard()), target: pick(getTargetLeaderboard()), fit: pick(getFitnessLeaderboard()), took, inWeek, mondayMs, wkExams: exams.filter(x => inWeek(x.t)), tab: 'feed', mode: 'duo', cat: 'exams', shown: 6, feedShown: 8 };
 
                     const avg = Math.min(100, score.avg || 0);
                     const todayStr = window.formatDateDDMMYYYY();
@@ -22225,25 +22226,429 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                             </div>
                         </div>
                         <div id="mp-tabs" class="sticky top-0 z-10 mt-0 sm:mt-3 px-4 sm:px-8 pt-0.5 pb-2 sm:py-2">
-                            <div class="flex p-1 bg-white/55 backdrop-blur rounded-2xl border border-white/70 shadow-sm max-w-md mx-auto">
-                                ${[['overall', 'Overall'], ['activity', 'This week'], ['history', 'History']].map(([k, l]) => `<button data-tab="${k}" onclick="mpSetTab('${k}')">${l}</button>`).join('')}
+                            <div id="mp-tabbar" class="mpt-noanim" role="tablist" data-mode="duo">
+                                <span id="mp-pill" aria-hidden="true"></span>
+                                <button type="button" class="mpt" data-tab="feed" role="tab" aria-label="Feed" onclick="mpSetTab('feed')"><i class="fa-solid fa-newspaper"></i><span class="mpt-ft">Feed</span></button>
+                                <button type="button" class="mpt" data-tab="overall" role="tab" onclick="mpSetTab('overall')"><i class="fa-solid fa-user mpt-ic"></i><span class="mpt-lbl"><span class="la">Info</span><span class="lb">Overall</span></span></button>
+                                <button type="button" class="mpt" data-tab="activity" role="tab" onclick="mpSetTab('activity')">This week</button>
+                                <button type="button" class="mpt" data-tab="history" role="tab" onclick="mpSetTab('history')">History</button>
                             </div>
                         </div>
                         <div id="mp-body" class="px-4 sm:px-8 pt-1"></div>`;
-                    window.mpSetTab('overall');
+                    window.mpSetTab(startTab || 'feed');
                 } catch (e) {
                     console.warn('my profile', e);
                     box.innerHTML = '<p class="text-center text-sm text-rose-500 py-16">Could not load your profile. Go back and try again.</p>';
                 }
             };
 
+                        // ============================================================
+            //  PROFILE TABS  +  RUN FEED  (Facebook-style: like + comment, saved in Firestore)
+            //  Collections:  run_likes   -> doc id "<runId>_<mobile>"  {logId, mobile, name, timestamp}
+            //                run_comments -> auto id                    {logId, mobile, name, text, timestamp}
+            // ============================================================
+
+            function mpfCss() {
+                if (document.getElementById('mpf-style')) return;
+                const st = document.createElement('style'); st.id = 'mpf-style';
+                st.textContent = `
+#mp-tabs{background:linear-gradient(to bottom,#f4f5f9 78%,rgba(244,245,249,0))}
+#mp-tabbar{--mpe:cubic-bezier(.4,0,.2,1);--mpd:.42s;position:relative;display:flex;padding:4px;max-width:28rem;margin:0 auto;border-radius:1rem;overflow:hidden;background:rgba(255,255,255,.7);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.8);box-shadow:0 2px 10px -4px rgba(79,70,229,.25)}
+#mp-pill{position:absolute;left:4px;top:4px;bottom:4px;width:0;border-radius:.75rem;background:linear-gradient(135deg,#4f46e5,#7c3aed);box-shadow:0 8px 18px -8px rgba(79,70,229,.8);transition:transform var(--mpd) var(--mpe),width var(--mpd) var(--mpe)}
+.mpt{position:relative;z-index:1;flex:none;background:transparent;border:0;font-family:inherit;width:0;min-width:0;height:40px;padding:0;overflow:hidden;white-space:nowrap;display:flex;align-items:center;justify-content:center;border-radius:.75rem;font-size:13px;font-weight:700;color:#6b7280;opacity:0;pointer-events:none;-webkit-tap-highlight-color:transparent;transition:width var(--mpd) var(--mpe),opacity .3s ease,color .3s ease}
+.mpt.on{color:#fff}
+.mpt:active{transform:scale(.96)}
+#mp-tabbar[data-mode=duo] .mpt[data-tab=feed],#mp-tabbar[data-mode=duo] .mpt[data-tab=overall]{width:50%;opacity:1;pointer-events:auto}
+#mp-tabbar[data-mode=full] .mpt[data-tab=feed]{width:44px;opacity:1;pointer-events:auto}
+#mp-tabbar[data-mode=full] .mpt:not([data-tab=feed]){width:calc((100% - 44px)/3);opacity:1;pointer-events:auto}
+.mpt-ft{display:inline-block;overflow:hidden;max-width:60px;margin-left:6px;transition:max-width var(--mpd) var(--mpe),margin var(--mpd) var(--mpe),opacity .25s ease}
+#mp-tabbar[data-mode=full] .mpt-ft{max-width:0;margin-left:0;opacity:0}
+.mpt[data-tab=feed] i{font-size:15px}
+.mpt-ic{display:inline-block;overflow:hidden;max-width:18px;margin-right:6px;transition:max-width var(--mpd) var(--mpe),margin var(--mpd) var(--mpe),opacity .25s ease}
+#mp-tabbar[data-mode=full] .mpt-ic{max-width:0;margin-right:0;opacity:0}
+.mpt-lbl{display:grid}.mpt-lbl>span{grid-area:1/1;transition:opacity .28s ease,transform .38s var(--mpe)}
+.mpt-lbl .lb{opacity:0;transform:translateY(8px)}
+#mp-tabbar[data-mode=full] .mpt-lbl .la{opacity:0;transform:translateY(-8px)}
+#mp-tabbar[data-mode=full] .mpt-lbl .lb{opacity:1;transform:none}
+#mp-tabbar.mpt-noanim *{transition:none!important}
+#mp-body{transition:opacity .15s ease,transform .15s ease}
+#mp-body.mpf-exit-l{opacity:0;transform:translateX(-22px)}
+#mp-body.mpf-exit-r{opacity:0;transform:translateX(22px)}
+@keyframes mpfR{from{opacity:0;transform:translateX(38px)}to{opacity:1;transform:none}}
+@keyframes mpfL{from{opacity:0;transform:translateX(-38px)}to{opacity:1;transform:none}}
+.mpf-enter-r{animation:mpfR .4s cubic-bezier(.22,1,.36,1) both}
+.mpf-enter-l{animation:mpfL .4s cubic-bezier(.22,1,.36,1) both}
+@keyframes mpfUp{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
+.mpf-card{animation:mpfUp .5s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--i,0)*60ms)}
+.mpf-media{touch-action:manipulation;cursor:pointer}
+.mpf-route svg{display:block}
+.mpf-act{background:transparent;border:0;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 4px;border-radius:14px;font-size:13px;font-weight:700;color:#6b7280;transition:background .2s,color .2s,transform .15s;-webkit-tap-highlight-color:transparent}
+.mpf-act:active{transform:scale(.94);background:#f3f4f6}
+.mpf-like.on{color:#e11d48}
+@keyframes mpfPop{0%{transform:scale(1)}30%{transform:scale(1.45)}60%{transform:scale(.88)}100%{transform:scale(1)}}
+.mpf-like.pop i{animation:mpfPop .42s ease}
+@keyframes mpfBurst{0%{opacity:0;transform:translate(-50%,-50%) scale(.3)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.2)}60%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-70%) scale(1.1)}}
+.mpf-burst{position:absolute;left:50%;top:50%;font-size:84px;color:#fff;filter:drop-shadow(0 6px 18px rgba(225,29,72,.7));pointer-events:none;animation:mpfBurst .8s ease-out forwards}
+.mpf-cm{display:grid;grid-template-rows:0fr;transition:grid-template-rows .32s ease}
+.mpf-cm.open{grid-template-rows:1fr}
+@keyframes mpfRow{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.mpf-crow{animation:mpfRow .25s ease-out}
+.mpf-card{transition:box-shadow .3s ease,transform .3s ease}
+.mpf-av{padding:2px;border-radius:50%;background:conic-gradient(#6366f1,#d946ef,#f59e0b,#6366f1)}
+.mpf-av img{display:block;width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #fff;background:#f3f4f6}
+.mpf-dots{position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.2) 1.2px,transparent 1.5px);background-size:20px 20px;-webkit-mask-image:radial-gradient(circle at 50% 45%,#000 25%,transparent 78%);mask-image:radial-gradient(circle at 50% 45%,#000 25%,transparent 78%)}
+.mpf-glow svg{display:block;filter:drop-shadow(0 0 9px rgba(255,255,255,.55))}
+@keyframes mpfDraw{to{stroke-dashoffset:0}}
+.mpf-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 16px 0;padding:10px 0;border-radius:18px;background:rgba(99,102,241,.07)}
+.mpf-stat{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0}
+.mpf-stat+.mpf-stat{border-left:1px solid rgba(99,102,241,.14)}
+.mpf-stat i{font-size:13px;margin-bottom:2px}
+.mpf-stat b{font-size:15px;font-weight:900;color:#111827;font-variant-numeric:tabular-nums}
+.mpf-stat span{font-size:10px;font-weight:700;color:#9ca3af}
+.mpf-like,.mpf-like *{-webkit-touch-callout:none;user-select:none}
+.mpf-em{font-size:17px;line-height:1}
+.mpf-like.pop .mpf-em{animation:mpfPop .42s ease}
+.mpf-rxs{display:inline-flex;flex-shrink:0}
+.mpf-rxs span{display:flex;align-items:center;justify-content:center;width:21px;height:21px;margin-left:-6px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #fff,0 1px 4px rgba(0,0,0,.18);font-size:12px}
+.mpf-rxs span:first-child{margin-left:0}
+.mpf-pick{position:absolute;left:8px;bottom:calc(100% + 6px);z-index:6;display:flex;gap:2px;padding:6px 8px;border-radius:999px;background:#fff;box-shadow:0 14px 34px -8px rgba(0,0,0,.4);animation:mpfPickIn .24s cubic-bezier(.34,1.56,.64,1) both}
+.mpf-pick button{padding:4px 6px;border:0;background:none;font-size:26px;line-height:1;transition:transform .15s ease}
+.mpf-pick button:hover,.mpf-pick button:active{transform:scale(1.4) translateY(-5px)}
+@keyframes mpfPickIn{from{opacity:0;transform:translateY(10px) scale(.7)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.mpf-glow polyline{animation:none!important;stroke-dashoffset:0!important}.mpf-pick{animation:none!important}}
+@media(prefers-reduced-motion:reduce){#mp-pill,.mpt,.mpt-ft,.mpt-ic,.mpt-lbl>span,#mp-body,.mpf-cm{transition:none!important}.mpf-card,.mpf-enter-r,.mpf-enter-l,.mpf-crow,.mpf-burst,.mpf-like.pop i{animation:none!important}}`;
+                document.head.appendChild(st);
+            }
+            const MP_ORDER = ['feed', 'overall', 'activity', 'history'];
+
+            // moves the sliding pill under the active tab (same easing/duration as the tab widths, so they stay in sync)
+            function mpPill(instant) {
+                const bar = document.getElementById('mp-tabbar'), pill = document.getElementById('mp-pill'), d = window.__mp;
+                if (!bar || !pill || !d) return;
+                const inner = bar.clientWidth - 8, SM = 44;
+                let x = 0, w = 0;
+                if (d.mode !== 'full') { w = inner / 2; x = d.tab === 'feed' ? 0 : w; }
+                else { w = (inner - SM) / 3; x = SM + (MP_ORDER.indexOf(d.tab) - 1) * w; }
+                if (instant) bar.classList.add('mpt-noanim');
+                pill.style.width = w + 'px';
+                pill.style.transform = 'translateX(' + x + 'px)';
+                if (instant) { void bar.offsetWidth; requestAnimationFrame(() => requestAnimationFrame(() => bar.classList.remove('mpt-noanim'))); }
+            }
+
             window.mpSetTab = function (tab) {
                 const d = window.__mp; if (!d) return;
-                d.tab = tab; d.shown = 6;
-                document.querySelectorAll('#mp-tabs button').forEach(b => {
-                    b.className = 'flex-1 py-2 rounded-xl text-[13px] font-bold transition-all ' + (b.dataset.tab === tab ? 'bg-indigo-600 text-white shadow' : 'text-gray-500');
-                });
+                const first = !d.tabInit, prev = d.tab;
+                if (!first && tab === prev) return;
+                d.tabInit = true; d.tab = tab; d.shown = 6;
+                d.mode = tab === 'feed' ? 'duo' : 'full';          // Feed + Info only  ->  after "Info": small Feed icon + all tabs
                 const body = document.getElementById('mp-body'); if (!body) return;
+                const bar = document.getElementById('mp-tabbar');
+                if (bar) {
+                    bar.dataset.mode = d.mode;
+                    bar.querySelectorAll('.mpt').forEach(b => {
+                        const on = b.dataset.tab === tab;
+                        b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+                        b.tabIndex = (d.mode === 'full' || b.dataset.tab === 'feed' || b.dataset.tab === 'overall') ? 0 : -1;
+                    });
+                    mpPill(first);
+                }
+                if (!window.__mpResizeBound) { window.__mpResizeBound = true; window.addEventListener('resize', () => mpPill(true)); }
+                feedBindTap(body);
+                const dir = MP_ORDER.indexOf(tab) >= MP_ORDER.indexOf(prev) ? 1 : -1;
+                const tok = d.swapTok = (d.swapTok || 0) + 1;
+                const paint = () => {
+                    if (d.swapTok !== tok) return;
+                    if (tab !== 'feed') feedWatchStop();
+                    body.classList.remove('mpf-exit-l', 'mpf-exit-r', 'mpf-enter-l', 'mpf-enter-r');
+                    mpDrawTab(tab, body);
+                    if (!first) { void body.offsetWidth; body.classList.add(dir > 0 ? 'mpf-enter-r' : 'mpf-enter-l'); }
+                };
+                if (first || !body.firstChild) paint();
+                else { body.classList.add(dir > 0 ? 'mpf-exit-l' : 'mpf-exit-r'); setTimeout(paint, 150); }   // old content slides out, new slides in
+            };
+
+            // ---------------- RUN FEED ----------------
+            const FEED = { likes: [], comments: [], uL: null, uC: null, on: false, tm: 0, err: '' };
+            const FEED_PAL = ['linear-gradient(135deg,#312e81,#6d28d9 55%,#c026d3)', 'linear-gradient(135deg,#064e3b,#0d9488 55%,#34d399)', 'linear-gradient(135deg,#7c2d12,#ea580c 55%,#fbbf24)', 'linear-gradient(135deg,#0c4a6e,#0284c7 55%,#22d3ee)', 'linear-gradient(135deg,#831843,#e11d48 55%,#fb923c)'];
+            const feedCol = n => window.getCollectionName(n);
+            const feedMe = () => String(window.loggedInMobile || '');
+            const feedId = id => String(id == null ? '' : id).replace(/[^\w.-]/g, '');
+            const feedName = (mobile, fb) => { const s = (window.studentsDB || []).find(x => String(x.mobile) === String(mobile)); return s ? s.name : (fb || 'Student'); };
+            const feedMyName = () => { const s = (window.studentsDB || []).find(x => String(x.mobile) === feedMe()); return s ? s.name : (window.currentRole === 'admin' ? 'EXAMA' : 'Student'); };
+            const feedAvatar = (mobile, fb) => window.getStudentAvatar(mobile, feedName(mobile, fb));
+            const feedAgo = t => {
+                const s = Math.max(1, Math.round((Date.now() - (t || Date.now())) / 1000));
+                if (s < 60) return 'just now'; const m = Math.round(s / 60); if (m < 60) return m + 'm ago';
+                const h = Math.round(m / 60); if (h < 24) return h + 'h ago'; const dd = Math.round(h / 24); if (dd < 7) return dd + 'd ago';
+                return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            };
+            const feedFmtT = min => { const s = Math.max(0, Math.round((parseFloat(min) || 0) * 60)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(x).padStart(2, '0'); };
+            const feedRuns = () => (window.fitnessDB || []).filter(l => !l.isAbsent && l.pace !== 'ABSENT' && (parseFloat(l.distance) || 0) > 0).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            const feedSig = runs => runs.length + ':' + runs.slice(0, 25).map(l => l.id).join(',');
+
+            // draws the saved route (flat [x,y,...], -1,-1 = pen up) as a small SVG line
+            const REACT = { heart: ['❤️', 'Like', '#e11d48'], fire: ['🔥', 'Fire', '#ea580c'], strong: ['💪', 'Strong', '#2563eb'], clap: ['👏', 'Clap', '#d97706'], wow: ['😮', 'Wow', '#7c3aed'] };
+
+            // draws the saved route (flat [x,y,...], -1,-1 = pen up); the line "draws itself" when the card appears
+            function feedRouteSvg(l, thick) {
+                const f = Array.isArray(l.route) && l.route.length > 7 ? l.route : (Array.isArray(l.shape) ? l.shape : null);
+                if (!f) return '';
+                const segs = []; let g = [];
+                for (let i = 0; i + 1 < f.length; i += 2) {
+                    const x = +f[i], y = +f[i + 1];
+                    if (x < 0 && y < 0) { if (g.length > 1) segs.push(g); g = []; } else if (isFinite(x) && isFinite(y)) g.push([x, y]);
+                }
+                if (g.length > 1) segs.push(g);
+                if (!segs.length) return '';
+                let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+                segs.forEach(s => s.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }));
+                const w = x1 - x0, h = y1 - y0, m = Math.max(w, h, 1), pad = m * .12, r = m * (thick ? .06 : .032), sw = (m * (thick ? .045 : .022)).toFixed(1);
+                const st = segs[0][0], en = segs[segs.length - 1][segs[segs.length - 1].length - 1];
+                return `<svg viewBox="${(x0 - pad).toFixed(0)} ${(y0 - pad).toFixed(0)} ${(w + pad * 2).toFixed(0)} ${(h + pad * 2).toFixed(0)}" class="w-full h-full" aria-hidden="true">`
+                    + segs.map(s => `<polyline pathLength="1" points="${s.map(p => p[0].toFixed(0) + ',' + p[1].toFixed(0)).join(' ')}" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:1;stroke-dashoffset:1;animation:mpfDraw 1.6s .25s ease-out forwards"/>`).join('')
+                    + `<circle cx="${st[0]}" cy="${st[1]}" r="${r.toFixed(0)}" fill="#34d399" stroke="#fff" stroke-width="${sw}"/><circle cx="${en[0]}" cy="${en[1]}" r="${r.toFixed(0)}" fill="#fb7185" stroke="#fff" stroke-width="${sw}"/></svg>`;
+            }
+
+            function feedCard(l, i) {
+                const esc = window.escHtml, d = window.__mp || {}, id = feedId(l.id), km = parseFloat(l.distance) || 0, me = feedMe();
+                let hs = 0; for (const c of id) hs += c.charCodeAt(0);
+                const pal = FEED_PAL[hs % FEED_PAL.length];
+                const photo = l.photoUrl ? (window.imgCache ? window.imgCache.get('run:' + l.id, l.photoUrl) : l.photoUrl) : '';
+                const route = feedRouteSvg(l, !!photo), name = feedName(l.mobile), pace = esc(String(l.pace || '--:--'));
+                const when = new Date(l.timestamp || Date.now());
+                const sub = feedAgo(l.timestamp) + ' · ' + when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+                const viewing = String(window.__mpTarget || window.loggedInMobile);
+                const open = String(l.mobile) !== viewing ? ` onclick="window.showStudentStats('${esc(String(l.mobile).replace(/\W/g, ''))}')" style="cursor:pointer"` : '';
+                const cals = l.cals != null ? l.cals : Math.round(km * 60);
+                const pb = (d.pb || {})[l.mobile], chips = [];
+                if (km >= 10) chips.push(['🏅', '10K+', 'bg-amber-50 text-amber-700']); else if (km >= 5) chips.push(['⭐', '5K+', 'bg-emerald-50 text-emerald-700']);
+                if (pb && pb.n > 1 && km >= pb.max) chips.push(['🏆', 'Personal best', 'bg-indigo-50 text-indigo-700']);
+                const badge = (chips.length ? chips : [['🏃', 'Run', 'bg-rose-50 text-rose-600']]).map(c => `<span class="text-[10.5px] font-extrabold px-2.5 py-1 rounded-full whitespace-nowrap ${c[2]}">${c[0]} ${c[1]}</span>`).join('');
+                const first = esc(String(name).split(' ')[0]);
+                const media = `<div class="mpf-media relative overflow-hidden select-none" style="aspect-ratio:4/3;background:${pal}">
+                        ${photo ? `<img src="${esc(photo)}" alt="Run photo" loading="lazy" decoding="async" draggable="false" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display='none'">` : '<div class="mpf-dots"></div>'}
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/5 to-black/25"></div>
+                        ${route ? (photo ? `<div class="mpf-glow absolute top-3 right-3 w-20 h-20 text-white drop-shadow-[0_2px_6px_rgba(0,0,0,.6)]">${route}</div>`
+                            : `<div class="mpf-glow absolute inset-0 flex items-center justify-center p-10 pb-16 text-white">${route}</div>`)
+                            : (photo ? '' : `<div class="absolute inset-0 flex items-center justify-center text-white/25 text-7xl pb-8"><i class="fa-solid fa-person-running"></i></div>`)}
+                        <div class="absolute left-4 bottom-3 text-white leading-none drop-shadow">
+                            <span class="text-4xl font-black tabular-nums tracking-tight">${km.toFixed(2)}</span><span class="ml-1.5 text-sm font-extrabold tracking-widest opacity-90">KM</span>
+                        </div></div>`;
+                const stat = (ic, v, lb) => `<div class="mpf-stat"><i class="${ic}"></i><b>${v}</b><span>${lb}</span></div>`;
+                return `<article class="mpf-card bg-white/80 backdrop-blur-xl border border-white/80 rounded-3xl shadow-[0_18px_44px_-24px_rgba(79,70,229,.5)] overflow-hidden" data-run="${id}" style="--i:${Math.min(i, 6)}">
+                    <div class="flex items-center gap-3 px-4 pt-3.5 pb-2.5">
+                        <div class="mpf-av shrink-0"${open}><img src="${esc(feedAvatar(l.mobile))}" alt="" loading="lazy"></div>
+                        <div class="min-w-0 flex-1"${open}><div class="text-[14px] font-extrabold text-gray-900 truncate">${esc(name)}</div><div class="text-[11px] font-medium text-gray-400"><i class="fa-regular fa-clock mr-1"></i>${esc(sub)}</div></div>
+                        <div class="flex flex-col items-end gap-1 shrink-0">${badge}</div>
+                    </div>
+                    <p class="px-4 pb-3 text-[13px] leading-snug text-gray-600"><b class="text-gray-900">${first}</b> covered <b class="text-gray-900">${km.toFixed(2)} km</b> at a pace of <b class="text-gray-900">${pace} /km</b> ${km >= 10 ? '💥' : '🏃'}</p>
+                    ${media}
+                    <div class="mpf-stats">${stat('fa-regular fa-clock text-indigo-500', feedFmtT(l.time), 'Time')}${stat('fa-solid fa-gauge-high text-violet-500', pace, 'Pace /km')}${stat('fa-solid fa-fire text-orange-500', esc(String(cals)), 'Calories')}</div>
+                    <div class="px-4 pt-3 flex items-center justify-between gap-3 text-[12px] font-semibold text-gray-500 min-h-[26px]">
+                        <button type="button" class="mpf-lc flex items-center gap-1.5 min-w-0" aria-label="Reactions"></button>
+                        <button type="button" class="mpf-cc shrink-0 hover:text-indigo-600" onclick="mpfToggle('${id}')"></button>
+                    </div>
+                    <div class="mx-4 mt-2 border-t border-gray-200/70"></div>
+                    <div class="mpf-actions relative px-2 py-1.5 grid grid-cols-3 gap-1">
+                        <button type="button" class="mpf-act mpf-like" data-rx="" aria-pressed="false" onclick="mpfLike('${id}')"><i class="fa-regular fa-heart"></i>Like</button>
+                        <button type="button" class="mpf-act" onclick="mpfToggle('${id}')"><i class="fa-regular fa-comment"></i>Comment</button>
+                        <button type="button" class="mpf-act" onclick="window.rtOpenRun&&window.rtOpenRun('${id}')"><i class="fa-solid fa-id-card"></i>Run card</button>
+                    </div>
+                    <div class="mpf-cm"><div class="min-h-0 overflow-hidden"><div class="px-4 pb-4 pt-1">
+                        <div class="mpf-cl max-h-64 overflow-y-auto space-y-2.5 pr-1 mb-3"></div>
+                        <div class="flex items-center gap-2">
+                            <img src="${esc(feedAvatar(me, feedMyName()))}" alt="" class="w-8 h-8 rounded-full object-cover bg-gray-100 shrink-0">
+                            <input id="mpf-in-${id}" type="text" maxlength="300" autocomplete="off" placeholder="Write a comment…" style="font-size:16px" class="flex-1 min-w-0 bg-gray-100 rounded-full px-4 py-2 text-gray-900 outline-none focus:ring-2 focus:ring-indigo-300" onkeydown="if(event.key==='Enter'){event.preventDefault();mpfSend('${id}')}">
+                            <button type="button" id="mpf-send-${id}" aria-label="Send comment" onclick="mpfSend('${id}')" class="w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 active:scale-90 transition-transform"><i class="fa-solid fa-paper-plane text-xs"></i></button>
+                        </div></div></div></div>
+                </article>`;
+            }
+
+            function feedLikeText(likes, me) {
+                if (!likes.length) return '';
+                const cnt = {}; likes.forEach(x => { const t = REACT[x.type] ? x.type : 'heart'; cnt[t] = (cnt[t] || 0) + 1; });
+                const em = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]).slice(0, 3).map(t => `<span>${REACT[t][0]}</span>`).join('');
+                const names = likes.slice().sort((a, b) => (String(b.mobile) === me) - (String(a.mobile) === me)).map(x => String(x.mobile) === me ? 'You' : String(feedName(x.mobile, x.name)).split(' ')[0]);
+                const t = names.length === 1 ? names[0] : names.length === 2 ? names[0] + ' and ' + names[1] : names[0] + ', ' + names[1] + ' and ' + (names.length - 2) + ' other' + (names.length - 2 > 1 ? 's' : '');
+                return `<span class="mpf-rxs">${em}</span><span class="truncate">${window.escHtml(t)}</span>`;
+            }
+
+            function feedCommentRow(c, me) {
+                const esc = window.escHtml, canDel = String(c.mobile) === me || window.currentRole === 'admin', nm = feedName(c.mobile, c.name);
+                return `<div class="mpf-crow flex items-start gap-2"><img src="${esc(feedAvatar(c.mobile, nm))}" alt="" loading="lazy" class="w-8 h-8 rounded-full object-cover bg-gray-100 shrink-0">
+                    <div class="min-w-0 flex-1"><div class="inline-block max-w-full bg-gray-100 rounded-2xl px-3 py-2"><div class="text-[12px] font-extrabold text-gray-900 truncate">${esc(nm)}</div><div class="text-[13px] text-gray-800 break-words whitespace-pre-wrap">${esc(c.text)}</div></div>
+                    <div class="flex items-center gap-3 px-2 mt-0.5 text-[10.5px] font-semibold text-gray-400"><span>${feedAgo(c.timestamp)}</span>${canDel ? `<button type="button" onclick="mpfDel('${feedId(c.id)}')" class="hover:text-rose-500">Delete</button>` : ''}</div></div></div>`;
+            }
+
+            // updates only what changed (counts, heart, comment lists) so typed text and scroll position are never lost
+            function feedPatch() {
+                const d = window.__mp; if (!d || d.tab !== 'feed') return;
+                const L = {}, C = {}, me = feedMe();
+                FEED.likes.forEach(x => (L[x.logId] || (L[x.logId] = [])).push(x));
+                FEED.comments.forEach(x => (C[x.logId] || (C[x.logId] = [])).push(x));
+                Object.values(C).forEach(a => a.sort((p, q) => (p.timestamp || 0) - (q.timestamp || 0)));
+                Object.values(L).forEach(a => a.sort((p, q) => (q.timestamp || 0) - (p.timestamp || 0)));
+                document.querySelectorAll('#mp-body .mpf-card').forEach(card => {
+                    const id = card.dataset.run, likes = L[id] || [], cms = C[id] || [];
+                    const mineL = likes.find(x => String(x.mobile) === me), mt = mineL ? (REACT[mineL.type] ? mineL.type : 'heart') : '', btn = card.querySelector('.mpf-like');
+                    if (btn.dataset.rx !== mt) {
+                        btn.dataset.rx = mt; btn.classList.toggle('on', !!mt); btn.setAttribute('aria-pressed', mt ? 'true' : 'false'); btn.style.color = mt ? REACT[mt][2] : '';
+                        btn.innerHTML = mt ? `<span class="mpf-em">${REACT[mt][0]}</span>${REACT[mt][1]}` : '<i class="fa-regular fa-heart"></i>Like';
+                    }
+                    card.querySelector('.mpf-lc').innerHTML = feedLikeText(likes, me);
+                    card.querySelector('.mpf-cc').textContent = cms.length ? cms.length + (cms.length === 1 ? ' comment' : ' comments') : '';
+                    const sig = cms.map(c => c.id).join(',');
+                    if (card.dataset.cs !== sig) {
+                        const list = card.querySelector('.mpf-cl'), near = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+                        const newest = cms[cms.length - 1], mineNew = newest && String(newest.mobile) === me && card.dataset.cs !== undefined;
+                        list.innerHTML = cms.length ? cms.map(c => feedCommentRow(c, me)).join('') : '<p class="text-center text-[12px] text-gray-400 py-2">No comments yet. Be the first!</p>';
+                        card.dataset.cs = sig;
+                        if (near || mineNew) list.scrollTop = list.scrollHeight;
+                    }
+                });
+            }
+
+            function feedNotice() {
+                const w = document.getElementById('mpf-note'); if (!w) return;
+                w.innerHTML = FEED.err ? '<div class="mb-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-[12px] font-semibold px-4 py-2.5"><i class="fa-solid fa-triangle-exclamation mr-1.5"></i>Likes &amp; comments are unavailable right now.</div>' : '';
+            }
+
+            function feedStart() {
+                if (FEED.on || !isFirebaseConfigured) return;
+                FEED.on = true; FEED.err = '';
+                const fail = e => { console.warn('run feed', e); FEED.err = (e && e.code) || 'error'; feedNotice(); };
+                try {
+                    FEED.uL = onSnapshot(query(collection(db, feedCol('run_likes')), orderBy('timestamp', 'desc'), limit(1500)), snap => { FEED.likes = snap.docs.map(x => ({ id: x.id, ...x.data() })); FEED.err = ''; feedNotice(); feedPatch(); }, fail);
+                    FEED.uC = onSnapshot(query(collection(db, feedCol('run_comments')), orderBy('timestamp', 'desc'), limit(1500)), snap => { FEED.comments = snap.docs.map(x => ({ id: x.id, ...x.data() })); feedPatch(); }, fail);
+                } catch (e) { fail(e); }
+            }
+            function feedStop() {
+                try { FEED.uL && FEED.uL(); FEED.uC && FEED.uC(); } catch (e) { }
+                FEED.uL = FEED.uC = null; FEED.on = false; feedWatchStop();
+            }
+            function feedWatchStop() { clearInterval(FEED.tm); FEED.tm = 0; }
+            function feedWatch() {
+                feedWatchStop();
+                FEED.tm = setInterval(() => {
+                    const d = window.__mp;
+                    if (!d || d.tab !== 'feed' || !document.getElementById('mpf-list') || window.location.hash !== '#my-profile') return feedWatchStop();
+                    const pill = document.getElementById('mpf-new');
+                    if (pill && feedSig(feedRuns()) !== d.feedSig) pill.style.display = 'block';   // "New runs" pill, like a social feed
+                }, 5000);
+            }
+            window.addEventListener('hashchange', () => { if (window.location.hash !== '#my-profile') feedStop(); });
+
+            function feedMoreBtn() {
+                const d = window.__mp, more = document.getElementById('mpf-more'); if (!d || !more) return;
+                const left = (d.feedRuns || []).length - d.feedShown;
+                more.innerHTML = left > 0 ? `<button type="button" onclick="mpfMore()" class="block mx-auto mt-5 mb-6 px-6 py-3 rounded-full bg-white border border-gray-200 shadow-sm text-[13px] font-bold text-indigo-600 active:scale-95 transition-transform">Load ${Math.min(8, left)} more</button>` : '<div class="h-6"></div>';
+            }
+            function feedDraw() {
+                const d = window.__mp, list = document.getElementById('mpf-list'); if (!d || !list) return;
+                const runs = feedRuns(); d.feedRuns = runs; d.feedSig = feedSig(runs);
+                d.pb = {}; runs.forEach(l => { const p = d.pb[l.mobile] || (d.pb[l.mobile] = { max: 0, n: 0 }); p.n++; p.max = Math.max(p.max, parseFloat(l.distance) || 0); });
+                const pill = document.getElementById('mpf-new'); if (pill) pill.style.display = 'none';
+                list.innerHTML = runs.length ? runs.slice(0, d.feedShown).map(feedCard).join('')
+                    : '<div class="text-center py-16"><div class="w-14 h-14 mx-auto rounded-full bg-white border border-gray-100 shadow-sm flex items-center justify-center text-gray-300 text-xl mb-3"><i class="fa-solid fa-person-running"></i></div><p class="text-sm text-gray-400">No runs yet. When students log a run, it shows up here.</p></div>';
+                feedMoreBtn(); feedPatch();
+            }
+            function mpFeedShow(body) {
+                const d = window.__mp; d.feedShown = 8; feedStart();
+                body.innerHTML = '<div class="max-w-xl mx-auto pb-6 pt-1"><div id="mpf-note"></div>'
+                    + '<button type="button" id="mpf-new" onclick="mpfRefresh()" style="display:none" class="sticky top-[4.5rem] z-10 mx-auto mb-3 px-4 py-2 rounded-full bg-indigo-600 text-white text-[12px] font-bold shadow-lg"><i class="fa-solid fa-arrow-up mr-1.5"></i>New runs · tap to refresh</button>'
+                    + '<div id="mpf-list" class="space-y-4"></div><div id="mpf-more"></div></div>';
+                feedNotice(); feedDraw(); feedWatch();
+            }
+            window.mpfRefresh = function () { feedDraw(); const t = document.getElementById('mp-tabs'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+            window.mpfMore = function () {
+                const d = window.__mp, list = document.getElementById('mpf-list'); if (!d || !list) return;
+                const from = d.feedShown; d.feedShown += 8;
+                list.insertAdjacentHTML('beforeend', (d.feedRuns || []).slice(from, d.feedShown).map((l, i) => feedCard(l, i)).join(''));
+                feedMoreBtn(); feedPatch();
+            };
+
+            // ---- like / comment (saved in Firestore) ----
+            window.mpfLike = async function (id, fromDouble, type) {
+                const me = feedMe(); if (!me || !id) return;
+                const key = id + '_' + me, cur = FEED.likes.find(x => x.id === key), t = REACT[type] ? type : 'heart';
+                if (fromDouble && cur) return;                                   // double-tap only adds
+                const remove = !!cur && (!type || cur.type === t || (!cur.type && t === 'heart'));   // a plain tap on your reaction removes it
+                const btn = document.querySelector('.mpf-card[data-run="' + id + '"] .mpf-like');
+                if (!remove && btn) { btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop'); }
+                FEED.likes = FEED.likes.filter(x => x.id !== key);
+                if (!remove) FEED.likes.unshift({ id: key, logId: id, mobile: me, name: feedMyName(), type: t, timestamp: Date.now() });
+                feedPatch();
+                if (!isFirebaseConfigured) return;
+                try {
+                    if (remove) await deleteDoc(doc(db, feedCol('run_likes'), key));
+                    else await setDoc(doc(db, feedCol('run_likes'), key), { logId: id, mobile: me, name: feedMyName(), type: t, timestamp: Date.now() });
+                } catch (e) {
+                    console.error('feed like', e);
+                    if (window.showCustomAlert) window.showCustomAlert('Could not save', 'Your reaction was not saved. Check your connection and try again.', 'error');
+                }
+            };
+            window.mpfReact = function (id, type) { document.querySelectorAll('.mpf-pick').forEach(x => x.remove()); window.mpfLike(id, false, type); };
+            function mpfPicker(card) {
+                document.querySelectorAll('.mpf-pick').forEach(x => x.remove());
+                const id = card.dataset.run, p = document.createElement('div'); p.className = 'mpf-pick';
+                p.innerHTML = Object.keys(REACT).map(k => `<button type="button" aria-label="${REACT[k][1]}" onclick="mpfReact('${id}','${k}')">${REACT[k][0]}</button>`).join('');
+                card.querySelector('.mpf-actions').appendChild(p);
+                setTimeout(() => document.addEventListener('click', () => p.remove(), { once: true }), 60);
+            }
+            window.mpfToggle = function (id) {
+                const card = document.querySelector('.mpf-card[data-run="' + id + '"]'); if (!card) return;
+                const cm = card.querySelector('.mpf-cm'), on = cm.classList.toggle('open');
+                if (on) setTimeout(() => { const i = document.getElementById('mpf-in-' + id); if (i) i.focus(); }, 280);
+            };
+            window.mpfSend = async function (id) {
+                const inp = document.getElementById('mpf-in-' + id), btn = document.getElementById('mpf-send-' + id); if (!inp) return;
+                const text = inp.value.trim().slice(0, 300), me = feedMe(); if (!text || !me) return;
+                const obj = { logId: id, mobile: me, name: feedMyName(), text, timestamp: Date.now() };
+                inp.value = ''; if (btn) btn.disabled = true;
+                try {
+                    if (isFirebaseConfigured) await addDoc(collection(db, feedCol('run_comments')), obj);
+                    else { FEED.comments.push({ id: 'l' + Math.random().toString(36).slice(2), ...obj }); feedPatch(); }
+                } catch (e) {
+                    console.error('feed comment', e); inp.value = text;
+                    if (window.showCustomAlert) window.showCustomAlert('Could not comment', 'Your comment was not saved. Check your connection and try again.', 'error');
+                }
+                if (btn) btn.disabled = false;
+            };
+            window.mpfDel = async function (cid) {
+                const c = FEED.comments.find(x => x.id === cid); if (!c) return;
+                if (!(String(c.mobile) === feedMe() || window.currentRole === 'admin')) return;
+                const ok = window.showCustomConfirm ? await window.showCustomConfirm('Delete comment?', 'This comment will be removed for everyone.', 'Delete', 'Cancel', 'danger') : true;
+                if (!ok) return;
+                try {
+                    if (isFirebaseConfigured) await deleteDoc(doc(db, feedCol('run_comments'), cid));
+                    else { FEED.comments = FEED.comments.filter(x => x.id !== cid); feedPatch(); }
+                } catch (e) { console.error('feed delete', e); if (window.showCustomAlert) window.showCustomAlert('Could not delete', 'Please try again.', 'error'); }
+            };
+
+            // double-tap a run photo to like it
+            function feedBindTap(body) {
+                if (body.__tap) return; body.__tap = 1;
+                let lp = 0, fired = false;
+                body.addEventListener('pointerdown', e => { const b = e.target.closest && e.target.closest('.mpf-like'); fired = false; clearTimeout(lp); if (b) lp = setTimeout(() => { fired = true; mpfPicker(b.closest('.mpf-card')); }, 420); });
+                ['pointerup', 'pointercancel'].forEach(ev => body.addEventListener(ev, () => clearTimeout(lp)));
+                body.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('.mpf-like')) e.preventDefault(); });
+                body.addEventListener('click', e => { if (fired && e.target.closest && e.target.closest('.mpf-like')) { fired = false; e.stopPropagation(); e.preventDefault(); } }, true);
+                let t = 0, last = '';
+                body.addEventListener('click', e => {
+                    const m = e.target.closest && e.target.closest('.mpf-media'); if (!m) return;
+                    const card = m.closest('.mpf-card'); if (!card) return;
+                    const id = card.dataset.run, now = Date.now();
+                    if (last === id && now - t < 340) {
+                        last = '';
+                        const h = document.createElement('i'); h.className = 'fa-solid fa-heart mpf-burst'; m.appendChild(h); setTimeout(() => h.remove(), 800);
+                        window.mpfLike(id, true);
+                    } else { last = id; t = now; }
+                });
+            }
+
+function mpDrawTab(tab, body) {
+                const d = window.__mp; if (!d) return;
+                if (tab === 'feed') return mpFeedShow(body);
                 if (tab === 'history') { body.innerHTML = '<div class="mp-in"><div id="mp-chips" class="flex gap-2 mb-3 overflow-x-auto no-scrollbar"></div><div id="mp-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div><div id="mp-more"></div></div>'; return mpDrawHistory(); }
                 const life = tab === 'overall';
                 const { score, study, target, fit, exams, sessions, runs, wkExams, took, inWeek, mondayMs } = d;
@@ -22316,9 +22721,9 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 else window.location.hash = 'my-profile';
             };
 
-            window.mpUploadDp = async function (input) { await window.uploadStudentDP(input); window.renderMyProfile(); };
+            window.mpUploadDp = async function (input) { const keep = (window.__mp || {}).tab; await window.uploadStudentDP(input); window.renderMyProfile(keep); };
             window.mpUploadCover = async function (input) {
-                let f = input.files && input.files[0]; if (!f) return;
+                let f = input.files && input.files[0]; if (!f) return; const keep = (window.__mp || {}).tab;
                 try {
                     if (window.showLoader) window.showLoader('Updating cover photo');
                     let ready = false;
@@ -22329,7 +22734,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     const st = window.studentsDB.find(x => x.mobile === window.loggedInMobile); if (st) st.coverUrl = url;
                     if (window.imgCache && ready) window.imgCache.put('cover:' + window.loggedInMobile, url, f);
                     if (window.hideLoader) window.hideLoader();
-                    window.renderMyProfile();
+                    window.renderMyProfile(keep);
                 } catch (e) {
                     if (window.hideLoader) window.hideLoader();
                     console.error('Cover upload', e);
