@@ -36015,10 +36015,12 @@ var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 var $ = function (id) { return document.getElementById(id); };
 var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { } } };
 var wakeOn = store.get('nova_wake') !== '0';
-var WAKE = /\b(?:hey|hay|hai|hei|hi|hello|ok|okay)[\s,.!-]*(?:nova|novah|novaa|no\s?va|nowa|norva|novva|noba|nuva|nava)\b[\s,.!?:;-]*/i;
+var WAKE = /\b(?:hey|hay|hai|hei|hi|hello|ok|okay|ay)[\s,.!-]*(?:n[oau]\s?[vwb][aeiou]h?|novva|norva|nowa)\b[\s,.!?:;-]*/i;
+var WAKE2 = /^\s*(?:n[oau]\s?[vwb][aeiou]h?)\b[\s,.!?:;-]*/i;
+function wk(t) { return WAKE.exec(t) || WAKE2.exec(t); }
 
 var rec = null, recAt = 0, mode = 'off', phase = 'idle';            // phase: idle | cmd | think | speak | ask
-var hold = 0, gesture = false, denied = false, failStreak = 0, sheetOpen = false, speaking = false;
+var lastHeard = '', lastHeardAt = 0, hold = 0, gesture = false, denied = false, failStreak = 0, sheetOpen = false, speaking = false;
 var wakeIdx = -1, strip = true, cur = '', submitted = false, pending = null, timers = {}, convo = [];
 var sheet, card, stateEl, youEl, hintEl, ansEl, chipsEl, inEl, orb, sw, ac = null;
 
@@ -36069,7 +36071,7 @@ function updateOrb() {
     if (!SR) { txt = 'Not supported in this browser or app. Tap the mic button to type to Nova instead.'; cls = 'bad'; }
     else if (denied) { txt = 'Microphone is blocked. Allow it in your browser settings, then switch this on again.'; cls = 'bad'; }
     else if (!wakeOn) { txt = 'Off. Switch on to say \u201cHey Nova\u201d hands-free.'; }
-    else if (rec && mode === 'wake') { txt = 'On. Listening for \u201cHey Nova\u201d'; cls = 'ok'; }
+    else if (rec && mode === 'wake') { txt = 'On. Listening for \u201cHey Nova\u201d'; cls = 'ok'; if (lastHeard && Date.now() - lastHeardAt < 8000) txt += ' \u00b7 heard: \u201c' + lastHeard.trim().slice(-40) + '\u201d'; }
     else { txt = 'On. Starting to listen\u2026'; }
     if (t) t.setAttribute('aria-checked', wakeOn ? 'true' : 'false');
     if (d) { d.textContent = txt; d.className = 'block text-[10px] font-medium mt-0.5' + (cls ? ' ' + cls : ' text-slate-400'); }
@@ -36151,9 +36153,9 @@ function onEnd() {
     var lived = Date.now() - recAt;
     if (mode === 'cmd') { if (!submitted) { if (cur) submit(cur); else cmdTimeout(); } return; }
     failStreak = lived < 1500 ? failStreak + 1 : 0;
-    resumeWake(failStreak > 4 ? 6000 : 350);
+    resumeWake(failStreak > 4 ? 6000 : (lived > 1500 ? 80 : 350));
 }
-function tail(res) { for (var a = 0; a < res.length; a++) { var m = WAKE.exec(res[a].transcript); if (m) return res[a].transcript.slice(m.index + m[0].length); } return res[0].transcript; }
+function tail(res) { for (var a = 0; a < res.length; a++) { var m = wk(res[a].transcript); if (m) return res[a].transcript.slice(m.index + m[0].length); } return res[0].transcript; }
 function textFrom(e) {
     var p = [], i0 = Math.max(wakeIdx, 0);
     for (var i = i0; i < e.results.length; i++) { var t = (i === wakeIdx && strip) ? tail(e.results[i]) : e.results[i][0].transcript; p.push(t); }
@@ -36162,8 +36164,9 @@ function textFrom(e) {
 function onResult(e) {
     failStreak = 0;
     if (mode === 'wake') {
+        try { var lr = e.results[e.results.length - 1]; lastHeard = String(lr[0].transcript || ''); lastHeardAt = Date.now(); updateOrb(); } catch (x) { }
         if (!wantWake()) return;
-        for (var i = e.resultIndex; i < e.results.length; i++) { var res = e.results[i]; for (var a = 0; a < res.length; a++) { if (WAKE.test(res[a].transcript)) { return heard(e, i); } } }
+        for (var i = e.resultIndex; i < e.results.length; i++) { var res = e.results[i]; for (var a = 0; a < res.length; a++) { if (wk(res[a].transcript)) { return heard(e, i); } } }
         return;
     }
     if (mode === 'cmd') update(e);
@@ -36395,6 +36398,7 @@ function hookNovaChat() {
 document.addEventListener('visibilitychange', function () { if (document.hidden) { if (mode === 'wake') killRec(); } else { checkPerm(); resumeWake(300); } });
 setInterval(function () {
     hookNovaChat();
+    if (!SR && role() && !store.get('nova_nosr') && window.showToast) { store.set('nova_nosr', '1'); try { window.showToast('Hey Nova unavailable', 'This browser or app cannot listen for voice commands.', 'info'); } catch (e) { } }
     if (phase !== 'idle' && phase !== 'think' && !sheetOpen && !speaking && !rec && !pending) phase = 'idle';
     if (!rec && wantWake()) startRec('wake');
     else if (rec && mode === 'wake' && !wantWake()) killRec();
