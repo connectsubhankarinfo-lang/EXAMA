@@ -10286,7 +10286,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             <!-- Gemini-Style Voice Modal -->
             <div id="nova-voice-modal"
                 class="hidden-view absolute inset-0 bg-white/90 backdrop-blur-3xl z-[110] flex flex-col justify-center items-center transition-opacity duration-300 opacity-0 pointer-events-none">
-                <button onclick="window.stopNovaVoice()"
+                <button onclick="window.__novaHF=false;window.stopNovaVoice()"
                     class="absolute top-6 right-6 w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:text-black transition-all">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
@@ -18332,6 +18332,8 @@ window.__tpPaint = function () {
                     await new Promise(r => requestAnimationFrame(r));
                     onSnapshot(collection(db, window.getCollectionName("students")), (snapshot) => {
                         window.studentsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        // remember the logged-in student's name so the next start can say "Welcome Back, <name>"
+                        try { if (window.currentRole === 'student' && window.loggedInMobile) { const me = window.studentsDB.find(x => x.mobile === window.loggedInMobile); if (me && me.name && localStorage.getItem('exama_name') !== me.name) localStorage.setItem('exama_name', me.name); } } catch (e) { }
                         let needsUpdate = firstStudents;
                         snapshot.docChanges().forEach(change => { if (change.type === 'added' || change.type === 'removed') needsUpdate = true; });
 
@@ -23802,10 +23804,10 @@ function mpDrawTab(tab, body) {
                 if (savedRole === 'admin') {
                     // Styled Admin Text
                     window.showLoader(`Welcome Back, <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-blue-500 font-black">Admin</span>!`);
-                } else if (savedRole === 'student' && savedName) {
-                    const firstName = savedName.split(' ')[0];
+                } else if (savedRole === 'student' && savedMob) {
+                    const firstName = String(savedName || '').trim().split(/\s+/)[0].replace(/[<>&"']/g, '');
                     // Styled Student First Name with a bright Gradient
-                    window.showLoader(`Welcome Back, <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 font-black">${firstName}</span>!`);
+                    window.showLoader(firstName ? `Welcome Back, <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-500 font-black">${firstName}</span>!` : "Welcome Back!");
                 } else {
                     window.showLoader("Starting EXAMA");
                 }
@@ -23932,7 +23934,7 @@ function mpDrawTab(tab, body) {
                     }
 
                     // Student Login Successful
-                    localStorage.setItem('exama_name', stu.name);
+                    if (stu.name) localStorage.setItem('exama_name', stu.name);   // students list is often not loaded yet at login: never save an empty name
                     localStorage.setItem('exama_role', 'student');
                     localStorage.setItem('exama_mob', mob);
                     
@@ -24543,6 +24545,7 @@ function mpDrawTab(tab, body) {
             };
 
             function executeLoginUI(role, mob) {
+                try { if (window.__novaLoggedIn) setTimeout(window.__novaLoggedIn, 400); } catch (e) { }
                   window.setupPresence(); requestNotificationPermission();
                   
                 if (window.OneSignalDeferred) { window.OneSignalDeferred.push(async function (OneSignal) { try { if (OneSignal.User) { await OneSignal.login(mob); await OneSignal.Notifications.requestPermission(); } } catch (e) { console.warn("OneSignal login skipped (Local Testing)."); } }); }
@@ -29050,12 +29053,21 @@ YOUR DIRECTIVES:
                 }
             };
 
+            // hands-free: after Nova finishes speaking a voice answer, start listening again (silence or the X button ends it)
+            window.__novaAfterSpeak = function () {
+                setTimeout(function () {
+                    const box = document.getElementById('nova-chat-messages');
+                    if (!window.__novaHF || document.hidden || !box || box.closest('.hidden-view') || !box.getClientRects().length) return;
+                    if (typeof window.startNovaVoice === 'function') window.startNovaVoice();
+                }, 400);
+            };
             window.startNovaVoice = function () {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
                 if (!SpeechRecognition) return window.showToast("Error", "Speech recognition not supported in this browser.", "danger");
 
                 const recognition = new SpeechRecognition();
                 window.novaSpeechRecognition = recognition;
+                window.__novaHF = true;
                 recognition.lang = 'en-US';
                 recognition.interimResults = true;
 
@@ -29089,11 +29101,9 @@ YOUR DIRECTIVES:
                     setTimeout(() => window.stopNovaVoice(), 2000);
                 };
                 recognition.onend = () => {
-                    if (finalTranscript.trim()) {
-                        window.sendQuickNovaPrompt(finalTranscript.trim());
-                    } else if (transcriptEl.innerText !== "Listening..." && transcriptEl.innerText !== "Failed to hear. Try again.") {
-                        window.sendQuickNovaPrompt(transcriptEl.innerText.trim());
-                    }
+                    const ft = finalTranscript.trim(), shown = transcriptEl.innerText.trim();
+                    const msg = ft || ((shown && shown !== "Listening..." && shown !== "Failed to hear. Try again.") ? shown : '');
+                    if (msg) { window.__novaViaVoice = true; window.sendQuickNovaPrompt(msg); }   // spoken question: Nova answers aloud, then listens again
                     window.stopNovaVoice();
                 };
                 recognition.start();
@@ -29134,6 +29144,7 @@ YOUR DIRECTIVES:
                 const sendBtn = document.getElementById('nova-send-btn');
                 const text = input.value.trim();
                 if (!text) return;
+                const viaVoice = !!window.__novaViaVoice; window.__novaViaVoice = false;
 
                 // --- NOVA CBT EXAM INTEGRATION ---
                 const lowerText = text.toLowerCase();
@@ -29204,7 +29215,7 @@ YOUR DIRECTIVES:
                     window.dbSaveNovaChat();
 
                     // --- NOVA TTS (Voice) ---
-                    if (window.NovaSpeak) window.NovaSpeak(aiText);
+                    if (window.NovaSpeak) window.NovaSpeak(aiText, viaVoice ? window.__novaAfterSpeak : null);
                     else if (window.speechSynthesis) {
                         const utterance = new SpeechSynthesisUtterance(aiText.replace(/\*/g, ''));
                         window.speechSynthesis.speak(utterance);
@@ -35357,6 +35368,61 @@ html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div.absolute:first
   html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div:first-child:not(.absolute),html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div.absolute:first-child+div{animation:none!important;transition:none!important}
 }
 </style>
+<style id="sd-smooth">
+/* ===== Student dashboard grid v5: one clean entrance, motion on transform/opacity only, same feel on every device ===== */
+@keyframes sdPop{from{opacity:0;transform:translate3d(0,12px,0) scale(.97)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}
+@keyframes sdIconPop{from{transform:scale(.86)}to{transform:scale(1)}}
+@keyframes sdHeadIn{from{opacity:0}to{opacity:1}}
+/* sections no longer fade on their own: only the tiles animate, so opacity never multiplies (that was the flicker) */
+html body #student-view:not(#_) .sd-tiles>div:not(#_){animation:none!important}
+html body #student-view:not(#_) .sd-tiles>div>h3:not(#_){animation:sdHeadIn .3s ease backwards;animation-delay:var(--d,0s)}
+html body #student-view:not(#_) .sd-tiles .grid>*:not(#_){min-width:0}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_){
+  animation:sdPop .4s cubic-bezier(.22,1,.36,1) backwards!important;
+  animation-delay:calc(var(--d,0s) + var(--k,0)*28ms)!important;
+  transition:transform .4s cubic-bezier(.34,1.3,.64,1)!important;      /* transform only: nothing that repaints while you scroll or tap */
+  box-shadow:0 .5px 1px rgba(0,0,0,.04),0 8px 18px -12px rgba(28,35,60,.28)!important;   /* one static shadow */
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation;
+  backface-visibility:hidden;contain:layout style;
+}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div:first-child:not(.absolute),
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div.absolute:first-child+div{
+  animation:sdIconPop .42s cubic-bezier(.3,1.3,.55,1) backwards!important;
+  animation-delay:calc(var(--d,0s) + var(--k,0)*28ms + 50ms)!important;
+  transition:transform .35s cubic-bezier(.34,1.3,.64,1)!important;
+  box-shadow:0 4px 8px -4px rgba(15,23,42,.28),inset 0 1px 0 rgba(255,255,255,.36)!important;
+}
+/* decorative corner blob (blurred = glow): not needed */
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div.absolute:first-child{display:none!important}
+/* press: smooth grey overlay fades in/out instead of swapping the background */
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)::after{content:"";position:absolute;inset:0;border-radius:inherit;background:rgba(60,60,67,.09);opacity:0;transition:opacity .22s ease;pointer-events:none}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):active{
+  transform:scale(.965)!important;
+  background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(250,250,253,.84))!important;
+  box-shadow:0 .5px 1px rgba(0,0,0,.04),0 8px 18px -12px rgba(28,35,60,.28)!important;
+  transition-duration:.12s!important;
+}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):active::after{opacity:1;transition-duration:.06s}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):active>div:first-child:not(.absolute),
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):active>div.absolute:first-child+div{transform:scale(.93)}
+/* mouse only: gentle lift (touch screens never get a stuck hover) */
+@media (hover:hover) and (pointer:fine){
+  html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):hover{
+    transform:translate3d(0,-3px,0)!important;
+    box-shadow:0 .5px 1px rgba(0,0,0,.04),0 14px 26px -14px rgba(28,35,60,.32)!important;
+  }
+}
+/* low-memory / slow phones: same look, shorter and simpler entrance */
+html.mem-low body #student-view:not(#_) .sd-tiles .glass-card:not(#_){animation-duration:.22s!important;animation-delay:0s!important}
+html.mem-low body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div:first-child:not(.absolute),
+html.mem-low body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div.absolute:first-child+div{animation:none!important}
+@media (prefers-reduced-motion:reduce){
+  html body #student-view:not(#_) .sd-tiles .glass-card:not(#_),
+  html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div:first-child:not(.absolute),
+  html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div.absolute:first-child+div,
+  html body #student-view:not(#_) .sd-tiles>div>h3:not(#_){animation:none!important;transition:none!important}
+}
+</style>
 <style id="rm-week-v3">
 #fitness-view #rm-week-card .rm-wkhead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;text-align:left;background:none!important;color:#0f172a;padding:2px 2px 0;margin-bottom:6px;border-radius:0}
 #fitness-view #rm-week-card .rm-wkhead h3{color:#0f172a!important;font-size:17px;font-weight:800;letter-spacing:-.01em}
@@ -36272,6 +36338,7 @@ var rec = null, recAt = 0, mode = 'off', phase = 'idle';            // phase: id
 var lastHeard = '', lastHeardAt = 0, hold = 0, gesture = false, denied = false, failStreak = 0, sheetOpen = false, speaking = false;
 var wakeIdx = -1, strip = true, cur = '', submitted = false, pending = null, timers = {}, convo = [], keepOpen = false;   /* keepOpen: an answer is on screen and stays until you close it */
 var sheet, card, stateEl, youEl, hintEl, ansEl, chipsEl, inEl, orb, sw, ac = null, pill = null, pillTxt = null, fab = null, lastAct = Date.now();
+var followUp = false;   /* true while Nova is listening for a follow-up right after speaking an answer */
 
 var NOVA_IMGS = ['https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/NOVA%20Mentor.jpg', 'https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true'];
 var LABEL = { chat: 'Discuss', materials: 'Material Hub', 'video-hub': 'Lecture Hub', 'session-timer': 'Focus Sessions', 'math-workout': 'Math Workout', fitness: 'Run Monitor', notices: 'Announcements', 'exam-analysis': 'NOVA Mentor', 'budget-manager': 'Budget Manager', syllabus: 'Syllabus', 'target-calc': 'Goal Planner', 'weekly-targets': 'Weekly Targets', student: 'Home', admin: 'Home', leaderboard: 'Leaderboard', 'exam-calendar': 'Exam Calendar', 'my-profile': 'My Profile', wallet: 'Wallet', 'nova-chat': 'NOVA Chat', alarms: 'Alarms', quotes: 'Quotes', 'auto-quotes': 'Auto Quotes', motivation: 'Motivation', 'student-directory': 'Student Directory', 'budget-room': 'Budget Room' };
@@ -36353,12 +36420,12 @@ function showAns(t) { build(); touch(); ansEl.textContent = t || ''; ansEl.style
 function setChips(list) { build(); touch(); chipsEl.innerHTML = ''; (list || []).forEach(function (c) { var b = document.createElement('button'); b.type = 'button'; b.textContent = c[0]; b.addEventListener('click', c[1]); chipsEl.appendChild(b); }); }
 function openSheet() { build(); touch(); syncMic(); clearTimeout(timers.close); pillHide(); if (!sheetOpen) { sheetOpen = true; sheet.classList.add('on'); } updateOrb(); fabUpdate(); }
 function closeSheet() {
-    keepOpen = false; pillHide(); if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
+    keepOpen = false; followUp = false; pillHide(); if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
     if (phase === 'cmd' || phase === 'ask' || pending) { killRec(); }
     pending = null; stopSpeak(); phase = 'idle'; submitted = true; setChips([]); updateOrb(); fabUpdate(); resumeWake(250);
 }
 function autoClose(ms) { clearTimeout(timers.close); timers.close = setTimeout(closeSheet, ms); }
-function reset() { keepOpen = false; cur = ''; submitted = false; showYou(''); showAns(''); setChips([]); }
+function reset() { keepOpen = false; followUp = false; cur = ''; submitted = false; showYou(''); showAns(''); setChips([]); }
 
 /* ---------------- compact pill + floating button ---------------- */
 function touch() { lastAct = Date.now(); }
@@ -36661,12 +36728,13 @@ function update(e) {
 }
 function cmdTimeout() {
     killRec();
+    if (followUp) { followUp = false; phase = 'idle'; setState('idle', ''); resumeWake(400); return; }   /* hands-free follow-up: you stayed silent, the conversation just ends quietly (answer stays on screen) */
     if (pending) { pending = null; setChips([]); return say('Okay, never mind.'); }
     phase = 'idle'; setState('idle', ''); resumeWake(400);
     if (sheetOpen) { showAns((MOBILE && !onnxActive()) ? 'I didn\u2019t catch that. Tap the mic and try again.' : 'I didn\u2019t catch that. Tap the mic or say \u201cHey Nova\u201d again.'); autoClose(3000); }
     else pillFlash('Didn\u2019t catch that', 'idle', 1600);
 }
-function listen() { cmdRetry = 0; phase = 'cmd'; submitted = false; cur = ''; wakeIdx = 0; strip = false; showYou(''); if (!startRec('cmd')) { openSheet(); setState('idle', 'Type to Nova'); phase = 'idle'; if (inEl) inEl.focus(); } }
+function listen() { followUp = false; cmdRetry = 0; phase = 'cmd'; submitted = false; cur = ''; wakeIdx = 0; strip = false; showYou(''); if (!startRec('cmd')) { openSheet(); setState('idle', 'Type to Nova'); phase = 'idle'; if (inEl) inEl.focus(); } }
 function tapMic() {
     gesture = true; audio(); build(); openSheet(); stopSpeak(); killRec();
     if (pending) { phase = 'ask'; }
@@ -36689,6 +36757,18 @@ function setWake(on, fromUser) {
     if (fromUser && window.showToast) { try { window.showToast(on ? 'Hey Nova is on' : 'Hey Nova is off', on ? 'Say \u201cHey Nova\u201d anywhere in the app.' : 'Tap the mic button to talk to Nova.', 'info'); } catch (e) { } }
 }
 
+/* ---------------- hands-free conversation ---------------- */
+/* after Nova has SPOKEN an answer, it listens again by itself so you can keep talking; silence ends it. localStorage nova_follow=0 turns it off. */
+function canFollow() { return store.get('nova_follow') !== '0' && !!SR && !denied && gesture && !!role() && !document.hidden && sheetOpen && !blocked() && !pending; }
+function followListen() {
+    clearTimeout(timers.wake); clearTimeout(timers.close);
+    setTimeout(function () {
+        if (!canFollow() || phase !== 'idle' || rec || speaking) { resumeWake(300); return; }
+        followUp = true; cmdRetry = 0; phase = 'cmd'; submitted = false; cur = ''; wakeIdx = 0; strip = false; showYou('');
+        cue(); setState('listen', 'Listening\u2026');
+        if (!startRec('cmd')) { followUp = false; phase = 'idle'; setState('idle', ''); resumeWake(300); }
+    }, 350);   /* short gap so the microphone does not pick up the end of Nova's own voice */
+}
 /* ---------------- brain ---------------- */
 function say(text, o) {
     o = o || {}; phase = 'speak'; var shown = clean(text); setChips([]);
@@ -36698,13 +36778,14 @@ function say(text, o) {
     if (sheetOpen) showAns(shown); else pillShow(shown, 'speak');
     speak(text, function () {
         phase = 'idle'; if (o.then) o.then();
+        if (o.keep && !o.noFollow && canFollow()) return followListen();
         if (sheetOpen) { if (!o.keep) autoClose(1800); }
         else { clearTimeout(timers.pillHide); timers.pillHide = setTimeout(pillHide, 600); }
         resumeWake(300);
     });
 }
 function submit(t) {
-    if (submitted) return; submitted = true; killRec(); t = String(t || '').trim(); if (!t) return cmdTimeout();
+    if (submitted) return; submitted = true; followUp = false; killRec(); t = String(t || '').trim(); if (!t) return cmdTimeout();
     showYou(t);
     if (pending) { var p = pending; pending = null; return p(t); }
     phase = 'think'; setState('think', 'Thinking\u2026');
@@ -37108,7 +37189,7 @@ function ask(text) {
             if (a && TYPES.indexOf(a.type) > 0) { return exec({ type: a.type, text: cap(a.text), target: a.target, amount: numFrom(a.amount), title: cap(a.title || ''), cat: guessCat(a.category), method: methodFrom(a.method), period: String(a.period || '').toLowerCase() }); }
             say(spoken || 'Sorry, I didn\u2019t get that.', { keep: true });
         })
-        .catch(function () { clearTimeout(to); convo.pop(); say('I\u2019m having trouble reaching my servers. Please check your connection and try again.', { keep: true }); });
+        .catch(function () { clearTimeout(to); convo.pop(); say('I\u2019m having trouble reaching my servers. Please check your connection and try again.', { keep: true, noFollow: true }); });
 }
 
 /* ---------------- boot ---------------- */
@@ -37157,7 +37238,15 @@ setInterval(function () {
 window.addEventListener('hashchange', fabUpdate);
 fabUpdate();
 /* speak a text with Nova's real audio voice, without opening the Nova popup (used by the NOVA chat screen) */
-window.NovaSpeak = function (t) { var c = clean(t); if (c.length > 420) { var cut = c.slice(0, 420).replace(/[^.!?]*$/, ''); c = cut || c.slice(0, 420); } if (c) speak(c); };
+window.NovaSpeak = function (t, cb) { var c = clean(t); if (c.length > 420) { var cut = c.slice(0, 420).replace(/[^.!?]*$/, ''); c = cut || c.slice(0, 420); } if (c) speak(c, cb); };
+/* right after login: start hearing "Hey Nova" straight away (the login tap already counts as the user gesture) */
+window.__novaLoggedIn = function () {
+    try {
+        failStreak = 0; engErrs = 0; engRetryAt = 0; fabUpdate();
+        if ((!MOBILE || onnxActive()) && SR && wakeOn && !store.get('nova_hint') && window.showToast) { store.set('nova_hint', '1'); window.showToast('Hey Nova is on', 'Say \u201cHey Nova\u201d anywhere in the app. Allow the microphone when asked.', 'info'); }
+        if (gesture) { resumeWake(150); setTimeout(function () { resumeWake(100); }, 1200); }
+    } catch (e) { }
+};
 window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed, speak: function (t) { openSheet(); say(t || 'Hi, I am Nova. How can I help?', { keep: true }); } };
 })();
 </script>
