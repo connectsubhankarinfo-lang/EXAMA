@@ -36632,16 +36632,18 @@ function blocked() {
 }
 function wantWake() { return !MOBILE && !onnxActive() && wakeOn && !!SR && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && Date.now() > hold && !blocked(); }
 /* ---------------- hands-free wake word: on-device model ---------------- */
+/* the browser only lets the microphone/audio start after a REAL tap (touchend / pointerup / click / keydown - touchstart and scrolling do not count) */
+function activated() { try { return !navigator.userActivation || navigator.userActivation.hasBeenActive; } catch (e) { return true; } }
 function onnxText() {
+    if (!activated()) return 'Tap anywhere on the screen once to start listening\u2026';
     if (!ENG || !ENG.running) return 'On. Starting to listen\u2026';
-    var s = ENG.stats, t = 'On. Listening for \u201cHey Nova\u201d';
-    if (s && s.at && Date.now() - s.at < 3000 && s.peak > 0.05) t += ' \u00b7 match ' + Math.round(s.peak * 100) + '%';
-    return t;
+    var s = ENG.stats, fresh = !!(s && s.at && Date.now() - s.at < 4000);
+    return 'On. Listening for \u201cHey Nova\u201d \u00b7 match ' + Math.round((fresh ? (s.peak || 0) : 0) * 100) + '%';
 }
 function engStop() { if (ENG && ENG.running) { try { ENG.stop(); } catch (e) { } } }
 function wantOnnx() {
     var now = Date.now(); micBusy = micBusy.filter(function (b) { return b.s && b.s.active && now - b.at < 180000; });
-    return onnxActive() && wakeOn && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && !rec && now > hold && now > engRetryAt && !blocked() && !micBusy.length;
+    return onnxActive() && wakeOn && !denied && gesture && activated() && !!role() && !document.hidden && phase === 'idle' && !speaking && !rec && now > hold && now > engRetryAt && !blocked() && !micBusy.length;
 }
 function engSync() {
     if (!ENG || !onnxActive()) return;
@@ -37199,6 +37201,19 @@ function onGesture() {
     resumeWake(150);
 }
 ['pointerdown', 'touchstart', 'keydown'].forEach(function (ev) { document.addEventListener(ev, onGesture, { passive: true, once: true, capture: true }); });
+/* the audio engine can only start after a REAL tap, and touchstart is not one. Retry on every tap until it is really running,
+   so "Hey Nova" starts on the first tap anywhere - not only once the sidebar is opened. */
+var ACT_EV = ['touchend', 'pointerup', 'click', 'keydown'];
+function actDone() { ACT_EV.forEach(function (ev) { document.removeEventListener(ev, actEv, true); }); }
+function actEv() {
+    try {
+        gesture = true; var c = (ENG && ENG.supported) ? ENG.prime() : null; audio(); engRetryAt = 0; resumeWake(60);
+        if (c && c.state === 'running' && ENG && ENG.running) actDone();
+    } catch (e) { }
+}
+ACT_EV.forEach(function (ev) { document.addEventListener(ev, actEv, { passive: true, capture: true }); });
+/* live match % in the sidebar while it is on screen */
+setInterval(function () { var d = $('nv-wake-desc'); if (d && onnxActive() && wakeOn && !denied && d.getClientRects().length) updateOrb(); }, 250);
 function checkPerm() {
     try {
         if (!navigator.permissions || !navigator.permissions.query) return;
