@@ -35984,6 +35984,7 @@ scan(document);
 .nv-in:focus{box-shadow:0 0 0 2px rgba(99,102,241,.35)}
 .nv-mic{width:44px;height:44px;flex:none;border:0;border-radius:50%;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6 55%,#38bdf8);display:flex;align-items:center;justify-content:center;font-size:16px;-webkit-tap-highlight-color:transparent;transition:transform .15s cubic-bezier(.22,1,.36,1)}
 .nv-mic:active{transform:scale(.92)}
+.nv-mic.send{background:#4f46e5}
 @media (prefers-reduced-motion:reduce){#nova-sheet .nv-card,#nova-sheet .nv-scrim{transition:none}.nv-card .nv-viz i{animation:none!important}}
 .nv-viz{height:46px;display:flex;align-items:center;justify-content:center;gap:9px;margin:8px 0 2px}
 .nv-viz i{display:block;width:12px;height:12px;border-radius:50%;transform:translateZ(0)}
@@ -36259,7 +36260,7 @@ var fabOn = store.get('nova_fab') !== '0';
 /* hands-free wake word: on-device "hey nova" model (NovaWakeEngine) listens through the mic stream, so there is no recogniser beep and no floating button.
    Phones/tablets use it by default; on desktop the existing recogniser keeps working (set localStorage nova_onnx=1 to use the model there too). */
 var ENG = window.NovaWakeEngine || null, WAKE_UI = 'sheet';   /* WAKE_UI: 'sheet' = full Nova popup on wake, 'pill' = small bar at the top */
-var USE_ONNX = !!(ENG && ENG.supported && SR && (MOBILE || store.get('nova_onnx') === '1')), onnxFailed = false, micBusy = [], engRetryAt = 0, engErrs = 0, engStarting = false;
+var USE_ONNX = !!(ENG && ENG.supported && SR && (MOBILE || store.get('nova_onnx') === '1')), onnxFailed = false, micBusy = [], engRetryAt = 0, engErrs = 0, engStarting = false, cmdRetry = 0;
 function onnxActive() { return USE_ONNX && !onnxFailed; }
 var WAKE = /\b(?:hey|hay|hai|hei|hi|hello|ok|okay|ay)[\s,.!-]*(?:n[oau]\s?[vwb][aeiou]h?|novva|norva|nowa)\b[\s,.!?:;-]*/i;
 var WAKE2 = /^\s*(?:n[oau]\s?[vwb][aeiou]h?)\b[\s,.!?:;-]*/i;
@@ -36280,6 +36281,7 @@ function wait(fn, ms) { return new Promise(function (ok) { var t0 = Date.now(); 
 function go(h) { if (role() === 'admin' && h === 'student') h = 'admin'; if (window.__goTo) window.__goTo(h); else location.hash = h; }
 
 /* ---------------- UI ---------------- */
+var micBtn = null, micI = null;
 function build() {
     if (sheet) return;
     var d = document.createElement('div'); d.id = 'nova-sheet'; d.setAttribute('aria-live', 'polite');
@@ -36288,7 +36290,7 @@ function build() {
         + '<div class="nv-head"><span class="nv-badge"><img src="' + NOVA_IMGS[0] + '" alt="" decoding="async" referrerpolicy="no-referrer" draggable="false"></span><b>Nova</b><span class="nv-state"></span><button type="button" class="nv-x" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>'
         + '<div class="nv-viz"><i></i><i></i><i></i><i></i></div>'
         + '<p class="nv-you"></p>'
-        + '<p class="nv-hint">Try: \u201cstart session\u201d, \u201ctake a break\u201d, \u201csend a message on Discuss saying\u2026\u201d, \u201cstart run\u201d, \u201cstart math workout\u201d, or ask me anything.</p>'
+        + '<p class="nv-hint">Try: \u201cstart session\u201d, \u201ctake a break\u201d, \u201csend a message on Discuss saying\u2026\u201d, \u201cstart run\u201d, \u201cstart math workout\u201d, \u201csend a message\u201d, \u201cmake a quiz\u201d, \u201cvideo call\u201d, or ask me anything.</p>'
         + '<div class="nv-ans"></div><div class="nv-chips"></div>'
         + '<form class="nv-form" autocomplete="off"><input class="nv-in" type="text" maxlength="400" placeholder="Type to Nova\u2026" enterkeyhint="send"><button type="button" class="nv-mic" aria-label="Speak"><i class="fa-solid fa-microphone"></i></button></form>'
         + '</div>';
@@ -36297,10 +36299,23 @@ function build() {
     ansEl = d.querySelector('.nv-ans'); chipsEl = d.querySelector('.nv-chips'); inEl = d.querySelector('.nv-in');
     d.querySelector('.nv-scrim').addEventListener('click', closeSheet);
     d.querySelector('.nv-x').addEventListener('click', closeSheet);
-    d.querySelector('.nv-mic').addEventListener('click', tapMic);
-    d.querySelector('.nv-form').addEventListener('submit', function (e) { e.preventDefault(); var t = inEl.value.trim(); if (!t) return; inEl.value = ''; typed(t); });
+    micBtn = d.querySelector('.nv-mic'); micI = micBtn.querySelector('i'); micBtn.addEventListener('click', micClick);
+    d.querySelector('.nv-form').addEventListener('submit', function (e) { e.preventDefault(); var t = inEl.value.trim(); if (!t) return; inEl.value = ''; syncMic(); typed(t); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && sheetOpen) closeSheet(); });
-    inEl.addEventListener('input', touch); inEl.addEventListener('focus', touch); d.addEventListener('pointerdown', touch, { passive: true });
+    inEl.addEventListener('input', function () { touch(); syncMic(); typingStart(); }); inEl.addEventListener('focus', touch); d.addEventListener('pointerdown', touch, { passive: true });
+}
+/* mic button: microphone when the box is empty, send arrow when you have typed something */
+function syncMic() {
+    if (!micBtn) return; var has = !!(inEl && inEl.value.trim());
+    micBtn.classList.toggle('send', has); micBtn.setAttribute('aria-label', has ? 'Send' : 'Speak');
+    if (micI) micI.className = has ? 'fa-solid fa-paper-plane' : 'fa-solid fa-microphone';
+}
+function micClick() {
+    var t = inEl ? inEl.value.trim() : '';
+    if (t) { inEl.value = ''; syncMic(); typed(t); } else tapMic();
+}
+function typingStart() {   /* you started typing: stop listening so voice and keyboard do not fight */
+    if (rec && mode === 'cmd' && !submitted && inEl && inEl.value) { killRec(); if (!pending) phase = 'idle'; setState('idle', 'Type to Nova'); }
 }
 function wireImg(img) {
     if (!img || img.__nv) return; img.__nv = 1; var n = 0;
@@ -36334,7 +36349,7 @@ function setState(s, label) { build(); touch(); card.dataset.st = s; stateEl.tex
 function showYou(t) { build(); touch(); youEl.textContent = t || ''; hintEl.style.display = t || ansEl.textContent ? 'none' : ''; if (!sheetOpen && pillOn() && t) pillTxt.textContent = '\u201c' + t + '\u201d'; }
 function showAns(t) { build(); touch(); ansEl.textContent = t || ''; ansEl.style.display = t ? 'block' : 'none'; hintEl.style.display = t || youEl.textContent ? 'none' : ''; ansEl.scrollTop = 0; }
 function setChips(list) { build(); touch(); chipsEl.innerHTML = ''; (list || []).forEach(function (c) { var b = document.createElement('button'); b.type = 'button'; b.textContent = c[0]; b.addEventListener('click', c[1]); chipsEl.appendChild(b); }); }
-function openSheet() { build(); touch(); clearTimeout(timers.close); pillHide(); if (!sheetOpen) { sheetOpen = true; sheet.classList.add('on'); } updateOrb(); fabUpdate(); }
+function openSheet() { build(); touch(); syncMic(); clearTimeout(timers.close); pillHide(); if (!sheetOpen) { sheetOpen = true; sheet.classList.add('on'); } updateOrb(); fabUpdate(); }
 function closeSheet() {
     pillHide(); if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
     if (phase === 'cmd' || phase === 'ask' || pending) { killRec(); }
@@ -36395,7 +36410,7 @@ function fabUpdate() {
 }
 
 /* ---------------- sounds ---------------- */
-function audio() { try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) { } return ac; }
+function audio() { ttsUnlock(); try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) { } return ac; }
 function chime() { try { var c = audio(); if (!c) return; var o = c.createOscillator(), g = c.createGain(), t = c.currentTime; o.type = 'sine'; o.frequency.setValueAtTime(660, t); o.frequency.exponentialRampToValueAtTime(990, t + .09); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.12, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + .16); o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + .18); } catch (e) { } if (navigator.vibrate) try { navigator.vibrate(18); } catch (e) { } }
 
 /* ---------------- speech output (browser voice, picked for the most natural one on the device) ---------------- */
@@ -36415,16 +36430,54 @@ function pickVoice() {
 if ('speechSynthesis' in window) { try { speechSynthesis.onvoiceschanged = function () { voice = null; pickVoice(); }; } catch (e) { } }
 function clean(t) { return String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[*_`#>~|]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim(); }
 function chunks(t) { var out = [], s = t.match(/[^.!?]+[.!?]*/g) || [t], buf = ''; s.forEach(function (x) { if ((buf + x).length > 180 && buf) { out.push(buf.trim()); buf = x; } else buf += x; }); if (buf.trim()) out.push(buf.trim()); return out.slice(0, 8); }
+/* Many app WebViews (Median, etc.) have no speechSynthesis. Then Nova's voice is a free online text-to-speech service played as ordinary audio.
+   Tries, in order: your own endpoint (window.NOVA_TTS_URL, e.g. 'https://yourworker/tts?text={text}'), StreamElements voices (Amazon Polly), Google Translate voice.
+   window.NOVA_TTS_VOICES = ['Raveena','Joanna'] picks the Polly voices; localStorage nova_tts=0 turns spoken answers off. */
+var TTS_ON = store.get('nova_tts') !== '0', nativeBad = false, ttsAudio = null, ttsTimer = null;
+var SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+function nativeOk() {
+    try {
+        if (nativeBad || !('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return false;
+        return !MOBILE || (speechSynthesis.getVoices() || []).length > 0;
+    } catch (e) { return false; }
+}
+function ttsOk() { return TTS_ON && navigator.onLine !== false && typeof Audio !== 'undefined'; }
+function ttsEl() { if (!ttsAudio) { try { ttsAudio = new Audio(); ttsAudio.preload = 'auto'; ttsAudio.referrerPolicy = 'no-referrer'; ttsAudio.setAttribute('playsinline', ''); } catch (e) { return null; } } return ttsAudio; }
+function ttsUnlock() {   /* one silent play inside a tap/keypress so the WebView lets the same audio element speak later */
+    if (!TTS_ON) return; var a = ttsEl(); if (!a || a.__u) return; a.__u = 1;
+    try { a.src = SILENT; var p = a.play(); if (p && p.catch) p.catch(function () { a.__u = 0; }); } catch (e) { a.__u = 0; }
+}
+function ttsStop() { clearTimeout(ttsTimer); if (ttsAudio) { ttsAudio.onended = ttsAudio.onerror = ttsAudio.onplaying = null; try { ttsAudio.pause(); } catch (e) { } } }
+function ttsUrls(txt) {
+    var q = encodeURIComponent(txt), u = [], c = window.NOVA_TTS_URL;
+    if (typeof c === 'function') { try { var r = c(txt); if (r) u.push(r); } catch (e) { } } else if (typeof c === 'string' && c) u.push(c.replace('{text}', q));
+    (window.NOVA_TTS_VOICES || ['Raveena', 'Joanna']).forEach(function (v) { u.push('https://api.streamelements.com/kappa/v2/speech?voice=' + encodeURIComponent(v) + '&text=' + q); });
+    u.push('https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=' + q);
+    return u;
+}
+function playTTS(txt, onEnd, isEnded) {
+    var a = ttsEl(), urls = ttsUrls(txt), k = 0, over = false;
+    if (!a) return onEnd();
+    function finish() { if (over) return; over = true; clearTimeout(ttsTimer); a.onended = a.onerror = a.onplaying = null; onEnd(); }
+    function tryNext() {
+        if (over || isEnded()) return; clearTimeout(ttsTimer);
+        if (k >= urls.length) return finish();
+        a.onended = finish; a.onerror = tryNext; a.onplaying = function () { clearTimeout(ttsTimer); };
+        a.src = urls[k++]; ttsTimer = setTimeout(tryNext, 7000);     /* never started: try the next voice */
+        try { var p = a.play(); if (p && p.catch) p.catch(function (e) { if (e && e.name === 'NotAllowedError') finish(); else tryNext(); }); } catch (e) { tryNext(); }
+    }
+    tryNext();
+}
 var stopSpeakFn = null;
-function stopSpeak() { speaking = false; if (stopSpeakFn) { var f = stopSpeakFn; stopSpeakFn = null; try { f(); } catch (e) { } } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
+function stopSpeak() { ttsStop(); speaking = false; if (stopSpeakFn) { var f = stopSpeakFn; stopSpeakFn = null; try { f(); } catch (e) { } } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
 function speak(text, done) {
     var t = clean(text); stopSpeak();
-    if (!t || !('speechSynthesis' in window)) { phase = 'idle'; if (done) setTimeout(done, 200); return; }
+    if (!t || (!nativeOk() && !ttsOk())) { phase = 'idle'; if (done) setTimeout(done, 200); return; }
     killRec(); engStop(); phase = 'speak'; speaking = true; setState('speak', 'Speaking\u2026');
     var parts = chunks(t), i = 0, ended = false, started = 0, curAdv = null, idleTicks = 0, poll = null;
     var fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); clearInterval(poll); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; touch(); if (done) done(); };
     stopSpeakFn = function () { ended = true; clearTimeout(timers.speakGuard); clearInterval(poll); };
-    timers.speakGuard = setTimeout(fin, Math.min(60000, t.length * 85 + 4000));
+    timers.speakGuard = setTimeout(fin, Math.min(60000, t.length * 85 + (nativeOk() ? 4000 : 12000)));
     /* many phones never fire onend/onerror: if the voice engine has gone quiet, move on ourselves so the popup can close */
     poll = setInterval(function () {
         if (ended) return clearInterval(poll);
@@ -36432,10 +36485,13 @@ function speak(text, done) {
     }, 350);
     function next() {
         if (ended) return; if (i >= parts.length) return fin();
+        if (!nativeOk()) { curAdv = null; started = Date.now(); return playTTS(parts[i++], function () { if (!ended) next(); }, function () { return ended; }); }
         var u = new SpeechSynthesisUtterance(parts[i++]), v = pickVoice(), moved = false;
         if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
         curAdv = function () { if (moved) return; moved = true; curAdv = null; next(); };
         u.onend = u.onerror = curAdv; started = Date.now();
+        var gs = false; u.onstart = function () { gs = true; };
+        setTimeout(function () { if (gs || moved || ended) return; nativeBad = true; try { speechSynthesis.cancel(); } catch (e) { } moved = true; curAdv = null; if (ttsOk()) playTTS(u.text, function () { if (!ended) next(); }, function () { return ended; }); else fin(); }, 2500);   /* built-in voice never started: use the online voice */
         try { speechSynthesis.speak(u); } catch (e) { fin(); }
     }
     setTimeout(next, 90);   /* tiny gap after cancel(): speak() right after cancel() is dropped on some phones */
@@ -36446,7 +36502,8 @@ function blocked() {
     var q = $('auto-quiz-modal'); if (q && vis(q)) return true;                  // never listen during a live exam
     var ex = $('active-exam-view'); if (ex && vis(ex)) return true;                // never listen during a live exam
     var nv = $('nova-voice-modal'); if (nv && vis(nv)) return true;             // NOVA chat has its own mic open
-    if (window.__rtTalkingMe) return true;                                      // walkie-talkie on a group run
+    if (window.__rtTalkingMe) return true;
+    if (window.WAC && window.WAC.active) return true;                          // in a Discuss call                                      // walkie-talkie on a group run
     return false;
 }
 function wantWake() { return !MOBILE && !onnxActive() && wakeOn && !!SR && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && Date.now() > hold && !blocked(); }
@@ -36506,7 +36563,7 @@ function startRec(m) {
     var r = new SR(); rec = r; recAt = Date.now(); r.lang = LANG; r.continuous = (m === 'wake') || !MOBILE; r.interimResults = true; r.maxAlternatives = 3;
     r.onresult = onResult; r.onerror = onErr; r.onend = function () { if (rec !== r) return; rec = null; onEnd(); };
     try { r.start(); } catch (e) { rec = null; return false; }
-    if (m === 'cmd') { setState('listen', 'Listening\u2026'); clearTimeout(timers.nosp); timers.nosp = setTimeout(function () { if (mode === 'cmd' && rec && !cur) cmdTimeout(); }, 7000); }
+    if (m === 'cmd') { setState('listen', 'Listening\u2026'); clearTimeout(timers.nosp); timers.nosp = setTimeout(function () { if (mode === 'cmd' && rec && !cur) cmdTimeout(); }, pending ? 11000 : 7000); }
     updateOrb(); return true;
 }
 function resumeWake(ms) { clearTimeout(timers.wake); timers.wake = setTimeout(function () { if (wantWake() && !rec) startRec('wake'); engSync(); updateOrb(); }, ms || 300); }
@@ -36517,7 +36574,7 @@ function onErr(e) {
 }
 function onEnd() {
     var lived = Date.now() - recAt;
-    if (mode === 'cmd') { if (!submitted) { if (cur) submit(cur); else cmdTimeout(); } return; }
+    if (mode === 'cmd') { if (!submitted) { if (cur) submit(cur); else if (pending && cmdRetry < 1 && !denied) { cmdRetry++; startRec('cmd'); } else cmdTimeout(); } return; }
     failStreak = lived < 1500 ? failStreak + 1 : 0;
     resumeWake(failStreak > 4 ? 6000 : (lived > 1500 ? 80 : 350));
 }
@@ -36552,7 +36609,7 @@ function cmdTimeout() {
     if (sheetOpen) { showAns((MOBILE && !onnxActive()) ? 'I didn\u2019t catch that. Tap the mic and try again.' : 'I didn\u2019t catch that. Tap the mic or say \u201cHey Nova\u201d again.'); autoClose(3000); }
     else pillFlash('Didn\u2019t catch that', 'idle', 1600);
 }
-function listen() { phase = 'cmd'; submitted = false; cur = ''; wakeIdx = 0; strip = false; showYou(''); if (!startRec('cmd')) { openSheet(); setState('idle', 'Type to Nova'); phase = 'idle'; if (inEl) inEl.focus(); } }
+function listen() { cmdRetry = 0; phase = 'cmd'; submitted = false; cur = ''; wakeIdx = 0; strip = false; showYou(''); if (!startRec('cmd')) { openSheet(); setState('idle', 'Type to Nova'); phase = 'idle'; if (inEl) inEl.focus(); } }
 function tapMic() {
     gesture = true; audio(); build(); openSheet(); stopSpeak(); killRec();
     if (pending) { phase = 'ask'; }
@@ -36582,7 +36639,7 @@ function say(text, o) {
     if (sheetOpen) showAns(shown); else pillShow(shown, 'speak');
     speak(text, function () {
         phase = 'idle'; if (o.then) o.then();
-        if (sheetOpen) autoClose(o.keep ? Math.min(7000, 2200 + shown.length * 22) : 700);
+        if (sheetOpen) autoClose(o.keep ? Math.min(7000, 2200 + shown.length * 22) : 1800);
         else { clearTimeout(timers.pillHide); timers.pillHide = setTimeout(pillHide, 600); }
         resumeWake(300);
     });
@@ -36611,7 +36668,16 @@ function parse(orig) {
     if (/^(?:stop|cancel|never ?mind|close|dismiss|go away|that'?s all|thanks?|thank you)$/.test(t)) return { type: 'close' };
     if (/\b(?:what'?s|what is|tell me) (?:the )?time\b|\bwhat time is it\b|\bcurrent time\b/.test(t)) return { type: 'say', text: 'It\u2019s ' + new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + '.' };
     if (/\b(?:what'?s|what is) (?:the |today'?s )?(?:date|day)\b|\btoday'?s date\b/.test(t)) return { type: 'say', text: 'Today is ' + new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }) + '.' };
-    var toDiscuss = new RegExp('\\b' + DIS + '\\b').test(t) && (/\b(?:send|post|write|type|drop|put|tell)\b/.test(t) || /^(?:message|text)\b/.test(t));
+    if (/\b(?:answer|accept|pick up|receive|attend)\b.*\bcall\b/.test(t)) return { type: 'call_accept' };
+    if (/\b(?:decline|reject|ignore|dismiss)\b.*\bcall\b/.test(t)) return { type: 'call_decline' };
+    if (/\b(?:end|stop|leave|hang ?up|disconnect|finish|cut)\b.*\bcall\b|\bhang ?up\b/.test(t)) return { type: 'call_end' };
+    if (/\b(?:video|audio|voice)\s*call\b|\b(?:make|start|place|begin|launch|do|give)\s+(?:a\s+|an\s+|the\s+)?(?:\w+\s+)?call\b|^(?:call|ring)\b|\bcall\s+(?:everyone|everybody|all|the group|group|class|discuss\w*)\b/.test(t)) return { type: 'call_start', kind: /\bvideo\b/.test(t) ? 'video' : (/\b(?:audio|voice|phone|normal)\b/.test(t) ? 'audio' : '') };
+    if (!/\b(?:session|run|running|math|break|analysis|result|results|schedule|calendar|open|go to|take me to|navigate|show)\b/.test(t) && (/\b(?:give|take|attempt|practi[sc]e|start|begin|make|create|generate|prepare|conduct|set ?up|do)\b(?:\s+\w+){0,4}?\s+(?:exam|quiz|test|mock)\b/.test(t) || /\b(?:quiz|test) me\b/.test(t) || /\bmock (?:exam|test)\b/.test(t))) {
+        var tm = orig.match(/\b(?:exam|quiz|test|mock)\b.*?\b(?:on|about|of|for|in|from|covering)\s+(.+)$/i);
+        return { type: 'quiz_start', topic: tm ? tm[1] : '' };
+    }
+    var plainMsg = /\b(?:send|write|post|type|drop|compose)\s+(?:a\s+|an\s+|the\s+|one\s+|my\s+)?(?:new\s+|quick\s+)?(?:message|msg|text)\b|\b(?:message|text)\s+(?:the\s+)?(?:group|everyone|class|discuss\w*)\b|\bi\s+(?:want|need|wanna|would like)\s+to\s+(?:send|write|post)\b.*\b(?:message|msg|text)\b/.test(t);
+    var toDiscuss = plainMsg || new RegExp('\\b' + DIS + '\\b').test(t) && (/\b(?:send|post|write|type|drop|put|tell)\b/.test(t) || /^(?:message|text)\b/.test(t));
     if (toDiscuss || /^tell (?:everyone|everybody|all|the group)\b/.test(t)) return { type: 'discuss_send', text: msgOf(orig) };
     if (/\b(?:end|stop|finish|complete|close)\b.*\b(?:session|studying|focus)\b|\bi'?m done (?:studying|with (?:my |the )?session)\b/.test(t) && !/\bbreak\b/.test(t)) return { type: 'session_end' };
     if (/\b(?:resume|continue|end (?:the |my )?break|stop (?:the |my )?break|finish (?:the |my )?break|back to (?:study|studying|work))\b/.test(t) && /\b(?:session|break|study|studying|focus|resume)\b/.test(t) && !/\brun\b|\brunning\b/.test(t)) return { type: 'session_resume' };
@@ -36631,7 +36697,7 @@ function parse(orig) {
 var TYPES = ['none', 'discuss_send', 'session_start', 'session_break', 'session_resume', 'session_end', 'run_start', 'run_pause', 'run_stop', 'math_start', 'navigate'];
 function exec(a) {
     var st = isStudent();
-    var needStudent = /^(?:session_|run_|math_)/.test(a.type);
+    var needStudent = /^(?:session_|run_|math_|quiz_)/.test(a.type);
     if (needStudent && !st) return say('That one is only available on student accounts.');
     switch (a.type) {
         case 'close': phase = 'idle'; closeSheet(); return;
@@ -36647,10 +36713,15 @@ function exec(a) {
         case 'run_pause': return doRun('pause');
         case 'run_stop': return doRun('stop');
         case 'math_start': return doMath();
+        case 'quiz_start': return doQuiz(a.topic);
+        case 'call_start': return doCall(a.kind);
+        case 'call_end': return doCallEnd();
+        case 'call_accept': return doCallAnswer(true);
+        case 'call_decline': return doCallAnswer(false);
     }
     say('Sorry, I can\u2019t do that yet.');
 }
-function closeSheetQuiet() { clearTimeout(timers.close); if (!sheet) return; sheetOpen = false; sheet.classList.remove('on'); updateOrb(); fabUpdate(); }
+function closeSheetQuiet() { clearTimeout(timers.close); if (!sheet) return; if (WAKE_UI === 'sheet' && sheetOpen) return;   /* popup mode: stay open, the final answer closes it */ sheetOpen = false; sheet.classList.remove('on'); updateOrb(); fabUpdate(); }
 
 function doNav(target, feed) {
     if (!LABEL[target]) return say('I don\u2019t know that screen.');
@@ -36660,7 +36731,7 @@ function doNav(target, feed) {
     say('Opening ' + LABEL[target] + '.');
 }
 function doDiscuss(text) {
-    if (!text) { return ask2('What should I send to Discuss?', function (msg) { doDiscuss(cap(msg)); }); }
+    if (!text) { return ask2('Sure. What\u2019s your message?', function (msg) { if (/^(?:cancel|never ?mind|stop|forget it)$/i.test(String(msg).trim())) return say('Okay, cancelled.'); doDiscuss(cap(msg)); }); }
     showAns('Sending to Discuss: \u201c' + text + '\u201d'); closeSheetQuiet(); go('chat');
     wait(function () { return vis($('chat-input')); }, 5000).then(function (ok) {
         if (!ok || typeof window.sendChatMessage !== 'function') return say('Sorry, I couldn\u2019t open Discuss.');
@@ -36716,6 +36787,55 @@ function doMath() {
         if (!ok || typeof window.startMathWorkout !== 'function') return say('Sorry, I couldn\u2019t open Math Workout.');
         setTimeout(function () { window.startMathWorkout(); say('Math workout started. Good luck!'); }, 500);
     });
+}
+
+/* exam: ask the topic, then have NOVA build the quiz */
+function doQuiz(topic) {
+    topic = String(topic || '').replace(/[.?!,]+$/g, '').replace(/\b(?:please|for me)\b/ig, '').replace(/^\s*(?:the|a|an|my|some)\s+/i, '').trim();
+    if (!topic || /^(?:me|it|this|that|now)$/i.test(topic)) {
+        return ask2('Sure. Which topic should I prepare your exam on?', function (t) { if (/^(?:cancel|never ?mind|stop|forget it)$/i.test(String(t).trim())) return say('Okay, cancelled.'); doQuiz(t); });
+    }
+    topic = cap(topic);
+    if (!window.openNovaChat || !window.sendQuickNovaPrompt) return say('Sorry, the exam maker is not available right now.');
+    showAns('Preparing your exam on \u201c' + topic + '\u201d\u2026'); setState('think', 'Preparing\u2026');
+    try { window.openNovaChat(); } catch (e) { }
+    wait(function () { return vis($('nova-chat-input')); }, 4000).then(function (ok) {
+        if (!ok) return say('Sorry, I couldn\u2019t open the exam maker.');
+        setTimeout(function () {
+            try { window.sendQuickNovaPrompt('Generate a 10-question mock exam on ' + topic + '.'); } catch (e) { return say('Sorry, I couldn\u2019t start the exam.'); }
+            say('Okay. Preparing your ' + topic + ' exam. It will open in a few seconds.');
+        }, 500);
+    });
+}
+/* calls in Discuss: audio or video */
+function doCall(kind) {
+    if (window.WAC && window.WAC.active) return say('You are already in a call.');
+    if (!kind) {
+        return ask2('Sure. Audio call or video call?', function (t) {
+            var l = String(t).toLowerCase();
+            if (/video|camera|face/.test(l)) doCall('video'); else if (/audio|voice|phone|normal/.test(l)) doCall('audio'); else say('Okay, cancelled.');
+        });
+    }
+    var fn = kind === 'video' ? window.startDiscusVideoCall : window.startDiscusAudioCall;
+    if (typeof fn !== 'function') return say('Calls are not available right now.');
+    confirmVoice('Start a ' + kind + ' call in Discuss? Everyone in the group will get a ring.', function () {
+        showAns('Starting your ' + kind + ' call\u2026'); go('chat');
+        wait(function () { return vis($('chat-input')); }, 5000).then(function () {
+            setTimeout(function () {
+                say('Starting your ' + kind + ' call.', { then: function () { try { Promise.resolve(fn()).catch(function () { }); } catch (e) { } } });
+            }, 300);
+        });
+    });
+}
+function doCallEnd() {
+    if (!(window.WAC && window.WAC.active) || typeof window.closeDiscusVideoCall !== 'function') return say('You are not in a call.');
+    say('Ending the call.', { then: function () { try { window.closeDiscusVideoCall(); } catch (e) { } } });
+}
+function doCallAnswer(accept) {
+    if (!window.currentIncomingCall) return say('There is no incoming call right now.');
+    if (accept) { if (typeof window.acceptIncomingCall !== 'function') return say('I can\u2019t answer calls here.'); closeSheetQuiet(); try { window.acceptIncomingCall(); } catch (e) { } return say('Joining the call.'); }
+    if (typeof window.declineIncomingCall === 'function') { try { window.declineIncomingCall(); } catch (e) { } }
+    say('Call declined.');
 }
 
 /* spoken question first, then listen for the answer */
@@ -36800,7 +36920,7 @@ setInterval(function () {
 }, 500);
 window.addEventListener('hashchange', fabUpdate);
 fabUpdate();
-window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed };
+window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed, speak: function (t) { openSheet(); say(t || 'Hi, I am Nova. How can I help?', { keep: true }); } };
 })();
 </script>
 
