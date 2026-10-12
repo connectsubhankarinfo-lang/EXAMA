@@ -36434,7 +36434,7 @@ function pickVoice() {
 }
 if ('speechSynthesis' in window) { try { speechSynthesis.onvoiceschanged = function () { voice = null; pickVoice(); }; } catch (e) { } }
 function clean(t) { return String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[*_`#>~|]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim(); }
-function chunks(t) { var out = [], s = t.match(/[^.!?]+[.!?]*/g) || [t], buf = ''; s.forEach(function (x) { if ((buf + x).length > 180 && buf) { out.push(buf.trim()); buf = x; } else buf += x; }); if (buf.trim()) out.push(buf.trim()); return out.slice(0, 8); }
+function chunks(t) { var out = [], s = t.match(/[^.!?]+[.!?]*/g) || [t], buf = ''; s.forEach(function (x) { if ((buf + x).length > (out.length ? 180 : 90) && buf) { out.push(buf.trim()); buf = x; } else buf += x; }); if (buf.trim()) out.push(buf.trim()); return out.slice(0, 8); }
 
 /* Online voices, tried in order for every sentence: your own endpoint (window.NOVA_TTS_URL, e.g. 'https://yourworker/tts?text={text}' or a function(text)),
    StreamElements voices (Amazon Polly), then Google Translate voice. window.NOVA_TTS_VOICES = ['Raveena','Joanna'] picks the Polly voices;
@@ -36465,7 +36465,17 @@ function ttsUnlock() {
     } catch (e) { a.__u = 0; }
 }
 UNLOCK_EV.forEach(function (ev) { document.addEventListener(ev, unlockEv, { passive: true, capture: true }); });
-function ttsStop() { clearTimeout(ttsTimer); ttsSeq++; if (ttsAudio) { ttsAudio.onended = ttsAudio.onerror = ttsAudio.onplaying = null; try { ttsAudio.pause(); } catch (e) { } } }
+var ttsPre = {};   /* sentence -> Promise of a blob: URL of the finished Gemini audio (fetched while the previous sentence is still playing) */
+function ttsDrop(txt) { var p = ttsPre[txt]; if (!p) return; delete ttsPre[txt]; p.then(function (u) { if (u) { try { URL.revokeObjectURL(u); } catch (e) { } } }); }
+function ttsPrefetch(txt) {
+    var c = window.NOVA_TTS_URL; if (!txt || typeof c !== 'string' || !c || !ttsOk() || ttsPre[txt]) return;
+    var ctl = null, tm = null; try { ctl = new AbortController(); tm = setTimeout(function () { ctl.abort(); }, 20000); } catch (e) { }
+    ttsPre[txt] = fetch(c.replace('{text}', encodeURIComponent(txt)), ctl ? { signal: ctl.signal } : {})
+        .then(function (r) { if (!r.ok) throw 0; return r.blob(); })
+        .then(function (b) { clearTimeout(tm); return URL.createObjectURL(b); })
+        .catch(function () { clearTimeout(tm); return null; });
+}
+function ttsStop() { clearTimeout(ttsTimer); ttsSeq++; Object.keys(ttsPre).forEach(ttsDrop); if (ttsAudio) { ttsAudio.onended = ttsAudio.onerror = ttsAudio.onplaying = null; try { ttsAudio.pause(); } catch (e) { } } }
 function ttsUrls(txt) {
     var q = encodeURIComponent(txt), u = [], c = window.NOVA_TTS_URL;
     if (typeof c === 'function') { try { var r = c(txt); if (r) u.push(r); } catch (e) { } } else if (typeof c === 'string' && c) u.push(c.replace('{text}', q));
@@ -36476,18 +36486,18 @@ function ttsUrls(txt) {
 }
 /* plays one sentence; onEnd(true) = spoken, onEnd(false) = every voice failed, onEnd('blocked') = the phone blocked autoplay */
 function playTTS(txt, onEnd, isEnded) {
-    var a = ttsEl(), urls = ttsUrls(txt), k = 0, over = false;
+    var a = ttsEl(), urls = ttsUrls(txt), k = 0, over = false, pre = ttsPre[txt];
     if (!a) return onEnd(false);
-    function finish(r) { if (over) return; over = true; clearTimeout(ttsTimer); a.onended = a.onerror = a.onplaying = null; onEnd(r); }
+    function finish(r) { if (over) return; over = true; clearTimeout(ttsTimer); a.onended = a.onerror = a.onplaying = null; ttsDrop(txt); onEnd(r); }
     function tryNext() {
         if (over || isEnded()) return; clearTimeout(ttsTimer);
         if (k >= urls.length) return finish(false);
         var my = ++ttsSeq, adv = function () { if (my === ttsSeq) tryNext(); };      /* each attempt advances at most once */
         a.onended = function () { if (my === ttsSeq) finish(true); }; a.onerror = adv; a.onplaying = function () { if (my === ttsSeq) clearTimeout(ttsTimer); };
-        a.src = urls[k++]; ttsTimer = setTimeout(adv, 8000);     /* never started: try the next voice */
+        a.src = urls[k++]; ttsTimer = setTimeout(adv, 15000);     /* never started: try the next voice */
         try { var p = a.play(); if (p && p.catch) p.catch(function (e) { if (my !== ttsSeq) return; var n = e && e.name; if (n === 'NotAllowedError') finish('blocked'); else if (n !== 'AbortError') tryNext(); }); } catch (e) { tryNext(); }
     }
-    tryNext();
+    if (pre) pre.then(function (b) { if (over || isEnded()) return; if (b) urls.unshift(b); tryNext(); }); else tryNext();
 }
 /* browser voice for one sentence: cb(true) = it spoke, cb(false) = it never started */
 function stopNative() { if (stopNativeFn) { var f = stopNativeFn; stopNativeFn = null; try { f(); } catch (e) { } } }
@@ -36525,9 +36535,11 @@ function speak(text, done) {
             lastTry = true; nativeSay(txt, function (ok) { if (ok) forceNative = true; cb(ok); });      /* every online voice failed: last resort, the browser voice */
         }, isEnded);
     }
+    if (!nativeOk()) { ttsPrefetch(parts[0]); ttsPrefetch(parts[1]); }
     function next() {
         if (ended) return; if (i >= parts.length) return fin();
-        one(parts[i++], function (r) {
+        var cur = parts[i++]; if (!nativeOk()) { ttsPrefetch(parts[i]); ttsPrefetch(parts[i + 1]); }
+        one(cur, function (r) {
             if (ended) return;
             if (r === 'blocked') { blockedHint(text); return fin(); }
             if (r === false) return fin();                  /* nothing can speak right now: the answer is already on screen as text */
