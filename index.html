@@ -4434,7 +4434,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                                     <img id="nv-wake-img" src="https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/NOVA%20Mentor.jpg" alt="Nova" decoding="async" referrerpolicy="no-referrer" class="w-full h-full object-cover">
                                 </div>
                                 <div class="text-left min-w-0">
-                                    <span class="block text-[13px] font-bold text-slate-900 leading-tight">Hey Nova listening</span>
+                                    <span id="nv-wake-title" class="block text-[13px] font-bold text-slate-900 leading-tight">Hey Nova listening</span>
                                     <span id="nv-wake-desc" class="block text-[10px] font-medium text-slate-400 mt-0.5">Say “Hey Nova” to talk hands-free</span>
                                 </div>
                             </div>
@@ -36002,6 +36002,26 @@ scan(document);
 #nv-wake-toggle[aria-checked="true"]::after{transform:translateX(20px)}
 #nv-wake-desc.ok{color:#16a34a}
 #nv-wake-desc.bad{color:#dc2626}
+/* compact listening pill: used for quick commands so the big sheet does not pop up every time */
+#nova-pill{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top,0px));z-index:100710;max-width:min(90vw,440px);display:flex;align-items:center;gap:10px;padding:10px 16px 10px 14px;border-radius:999px;background:rgba(17,24,39,.95);color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",Roboto,system-ui,sans-serif;font-size:13.5px;font-weight:600;line-height:1.25;box-shadow:0 10px 26px -12px rgba(15,23,42,.6);transform:translate3d(-50%,-170%,0);opacity:0;visibility:hidden;pointer-events:none;transition:transform .3s cubic-bezier(.22,1,.36,1),opacity .2s ease,visibility 0s linear .3s;-webkit-tap-highlight-color:transparent;will-change:transform}
+#nova-pill.on{transform:translate3d(-50%,0,0);opacity:1;visibility:visible;pointer-events:auto;transition-delay:0s}
+.nv-pd{display:flex;align-items:center;gap:4px;flex:none;height:16px}
+.nv-pd i{display:block;width:6px;height:6px;border-radius:50%;background:#a5b4fc;transform:translateZ(0)}
+.nv-pd i:nth-child(2){background:#c4b5fd}.nv-pd i:nth-child(3){background:#7dd3fc}
+#nova-pill[data-st="listen"] .nv-pd i{animation:nvpDot .9s ease-in-out infinite}
+#nova-pill[data-st="think"] .nv-pd i{animation:nvPulse .9s ease-in-out infinite}
+#nova-pill[data-st="speak"] .nv-pd i{width:3px;height:14px;border-radius:3px;animation:nvWave .8s ease-in-out infinite}
+.nv-pd i:nth-child(2){animation-delay:.12s!important}.nv-pd i:nth-child(3){animation-delay:.24s!important}
+@keyframes nvpDot{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-4px,0)}}
+.nv-pt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (prefers-reduced-motion:reduce){#nova-pill{transition:none}.nv-pd i{animation:none!important}}
+/* floating Nova button (phones and tablets): tap to talk, no always-on mic, so no beeping */
+#nova-fab{position:fixed;z-index:9500;width:46px;height:46px;border:0;padding:0;border-radius:50%;background:#fff;box-shadow:0 6px 18px -6px rgba(79,70,229,.55),0 0 0 2px #e0e7ff;display:none;touch-action:none;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;transition:transform .15s cubic-bezier(.22,1,.36,1),left .25s cubic-bezier(.22,1,.36,1)}
+#nova-fab.on{display:block}
+#nova-fab.drag{transition:none;transform:scale(1.08)}
+#nova-fab:active{transform:scale(.94)}
+#nova-fab img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;pointer-events:none}
+#nova-fab .nv-fm{position:absolute;right:-3px;bottom:-3px;width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6 55%,#38bdf8);color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px #fff;pointer-events:none}
 </style>
 
 <script id="nova-assistant">
@@ -36015,6 +36035,9 @@ var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 var $ = function (id) { return document.getElementById(id); };
 var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { } } };
 var wakeOn = store.get('nova_wake') !== '0';
+/* touch devices: Android/Chrome plays a system beep every time speech recognition starts or stops, so an always-listening wake word beeps nonstop there. On phones and tablets Nova uses a tap-to-talk floating button instead. */
+var MOBILE = (function () { try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') || (window.matchMedia && matchMedia('(pointer:coarse)').matches && !matchMedia('(hover:hover)').matches); } catch (e) { return false; } })();
+var fabOn = store.get('nova_fab') !== '0';
 var WAKE = /\b(?:hey|hay|hai|hei|hi|hello|ok|okay|ay)[\s,.!-]*(?:n[oau]\s?[vwb][aeiou]h?|novva|norva|nowa)\b[\s,.!?:;-]*/i;
 var WAKE2 = /^\s*(?:n[oau]\s?[vwb][aeiou]h?)\b[\s,.!?:;-]*/i;
 function wk(t) { return WAKE.exec(t) || WAKE2.exec(t); }
@@ -36022,7 +36045,7 @@ function wk(t) { return WAKE.exec(t) || WAKE2.exec(t); }
 var rec = null, recAt = 0, mode = 'off', phase = 'idle';            // phase: idle | cmd | think | speak | ask
 var lastHeard = '', lastHeardAt = 0, hold = 0, gesture = false, denied = false, failStreak = 0, sheetOpen = false, speaking = false;
 var wakeIdx = -1, strip = true, cur = '', submitted = false, pending = null, timers = {}, convo = [];
-var sheet, card, stateEl, youEl, hintEl, ansEl, chipsEl, inEl, orb, sw, ac = null;
+var sheet, card, stateEl, youEl, hintEl, ansEl, chipsEl, inEl, orb, sw, ac = null, pill = null, pillTxt = null, fab = null, lastAct = Date.now();
 
 var NOVA_IMGS = ['https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/NOVA%20Mentor.jpg', 'https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true'];
 var LABEL = { chat: 'Discuss', materials: 'Material Hub', 'video-hub': 'Lecture Hub', 'session-timer': 'Focus Sessions', 'math-workout': 'Math Workout', fitness: 'Run Monitor', notices: 'Announcements', 'exam-analysis': 'NOVA Mentor', 'budget-manager': 'Budget Manager', syllabus: 'Syllabus', 'target-calc': 'Target Calculator', 'weekly-targets': 'Weekly Targets', student: 'Home', admin: 'Home' };
@@ -36054,6 +36077,7 @@ function build() {
     d.querySelector('.nv-mic').addEventListener('click', tapMic);
     d.querySelector('.nv-form').addEventListener('submit', function (e) { e.preventDefault(); var t = inEl.value.trim(); if (!t) return; inEl.value = ''; typed(t); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && sheetOpen) closeSheet(); });
+    inEl.addEventListener('input', touch); inEl.addEventListener('focus', touch); d.addEventListener('pointerdown', touch, { passive: true });
 }
 function wireImg(img) {
     if (!img || img.__nv) return; img.__nv = 1; var n = 0;
@@ -36067,6 +36091,12 @@ function mkOrb() { wireSidebar(); }
 function updateOrb() {
     wireSidebar();
     var t = $('nv-wake-toggle'), d = $('nv-wake-desc'); if (!t && !d) return;
+    if (MOBILE) {
+        var ti = $('nv-wake-title'); if (ti && ti.textContent !== 'Nova voice button') ti.textContent = 'Nova voice button';
+        if (t) { t.setAttribute('aria-checked', fabOn ? 'true' : 'false'); t.setAttribute('aria-label', 'Nova voice button'); }
+        if (d) { var mm = !SR ? 'Voice input is not supported here, but the Nova button lets you type to Nova.' : denied ? 'Microphone is blocked. Allow it in your browser settings.' : !fabOn ? 'Off. Switch on to show a floating Nova mic button.' : 'On. Tap the floating Nova button to talk. Drag it anywhere.'; d.textContent = mm; d.className = 'block text-[10px] font-medium mt-0.5' + ((!SR || denied) ? ' bad' : (fabOn ? ' ok' : ' text-slate-400')); }
+        return;
+    }
     var txt, cls = '';
     if (!SR) { txt = 'Not supported in this browser or app. Tap the mic button to type to Nova instead.'; cls = 'bad'; }
     else if (denied) { txt = 'Microphone is blocked. Allow it in your browser settings, then switch this on again.'; cls = 'bad'; }
@@ -36076,18 +36106,68 @@ function updateOrb() {
     if (t) t.setAttribute('aria-checked', wakeOn ? 'true' : 'false');
     if (d) { d.textContent = txt; d.className = 'block text-[10px] font-medium mt-0.5' + (cls ? ' ' + cls : ' text-slate-400'); }
 }
-function setState(s, label) { build(); card.dataset.st = s; stateEl.textContent = label || ''; }
-function showYou(t) { build(); youEl.textContent = t || ''; hintEl.style.display = t || ansEl.textContent ? 'none' : ''; }
-function showAns(t) { build(); ansEl.textContent = t || ''; ansEl.style.display = t ? 'block' : 'none'; hintEl.style.display = t || youEl.textContent ? 'none' : ''; ansEl.scrollTop = 0; }
-function setChips(list) { build(); chipsEl.innerHTML = ''; (list || []).forEach(function (c) { var b = document.createElement('button'); b.type = 'button'; b.textContent = c[0]; b.addEventListener('click', c[1]); chipsEl.appendChild(b); }); }
-function openSheet() { build(); clearTimeout(timers.close); if (!sheetOpen) { sheetOpen = true; sheet.classList.add('on'); } updateOrb(); }
+function setState(s, label) { build(); touch(); card.dataset.st = s; stateEl.textContent = label || ''; if (!sheetOpen && pillOn() && (s === 'listen' || s === 'think' || s === 'speak')) { pill.dataset.st = s; if (s !== 'listen' || !cur) pillTxt.textContent = label || pillTxt.textContent; } }
+function showYou(t) { build(); touch(); youEl.textContent = t || ''; hintEl.style.display = t || ansEl.textContent ? 'none' : ''; if (!sheetOpen && pillOn() && t) pillTxt.textContent = '\u201c' + t + '\u201d'; }
+function showAns(t) { build(); touch(); ansEl.textContent = t || ''; ansEl.style.display = t ? 'block' : 'none'; hintEl.style.display = t || youEl.textContent ? 'none' : ''; ansEl.scrollTop = 0; }
+function setChips(list) { build(); touch(); chipsEl.innerHTML = ''; (list || []).forEach(function (c) { var b = document.createElement('button'); b.type = 'button'; b.textContent = c[0]; b.addEventListener('click', c[1]); chipsEl.appendChild(b); }); }
+function openSheet() { build(); touch(); clearTimeout(timers.close); pillHide(); if (!sheetOpen) { sheetOpen = true; sheet.classList.add('on'); } updateOrb(); fabUpdate(); }
 function closeSheet() {
-    if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
+    pillHide(); if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
     if (phase === 'cmd' || phase === 'ask' || pending) { killRec(); }
-    pending = null; stopSpeak(); phase = 'idle'; submitted = true; setChips([]); updateOrb(); resumeWake(250);
+    pending = null; stopSpeak(); phase = 'idle'; submitted = true; setChips([]); updateOrb(); fabUpdate(); resumeWake(250);
 }
 function autoClose(ms) { clearTimeout(timers.close); timers.close = setTimeout(closeSheet, ms); }
 function reset() { cur = ''; submitted = false; showYou(''); showAns(''); setChips([]); }
+
+/* ---------------- compact pill + floating button ---------------- */
+function touch() { lastAct = Date.now(); }
+function cue() { if (MOBILE) { if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) { } } } else chime(); }   /* phones: vibration only, the system already beeps once when listening starts */
+function pillOn() { return !!pill && pill.classList.contains('on'); }
+function pillMake() {
+    if (pill) return;
+    var d = document.createElement('div'); d.id = 'nova-pill'; d.setAttribute('role', 'status'); d.dataset.st = 'listen';
+    d.innerHTML = '<span class="nv-pd"><i></i><i></i><i></i></span><span class="nv-pt"></span>';
+    document.body.appendChild(d); pill = d; pillTxt = d.querySelector('.nv-pt'); d.addEventListener('click', function () { closeSheet(); });
+}
+function pillShow(txt, st) { pillMake(); touch(); clearTimeout(timers.pillHide); if (st) pill.dataset.st = st; pillTxt.textContent = txt || 'Listening\u2026'; pill.classList.add('on'); }
+function pillHide() { clearTimeout(timers.pillHide); if (pill) pill.classList.remove('on'); }
+function pillFlash(txt, st, ms) { pillShow(txt, st); timers.pillHide = setTimeout(pillHide, ms || 1500); }
+
+function fabBlocked() { if (blocked()) return true; var rt = $('run-tracker'); return !!(rt && vis(rt)); }
+function fabPos() { try { return JSON.parse(store.get('nova_fab_pos') || 'null') || { side: 'r', y: 0.62 }; } catch (e) { return { side: 'r', y: 0.62 }; } }
+function fabPlace() {
+    if (!fab) return; var p = fabPos(), W = window.innerWidth, H = window.innerHeight, s = 46, m = 8;
+    fab.style.top = Math.max(70, Math.min(H - 140, Math.round((p.y || 0.62) * H))) + 'px';
+    fab.style.left = (p.side === 'l' ? m : W - s - m) + 'px';
+}
+function fabMake() {
+    if (fab) return;
+    var b = document.createElement('button'); b.id = 'nova-fab'; b.type = 'button'; b.setAttribute('aria-label', 'Talk to Nova');
+    b.innerHTML = '<img src="' + NOVA_IMGS[0] + '" alt="" decoding="async" referrerpolicy="no-referrer" draggable="false"><span class="nv-fm"><i class="fa-solid fa-microphone"></i></span>';
+    document.body.appendChild(b); fab = b; wireImg(b.querySelector('img'));
+    var sx = 0, sy = 0, ox = 0, oy = 0, moved = false, down = false, pid = null;
+    b.addEventListener('pointerdown', function (e) { down = true; moved = false; pid = e.pointerId; sx = e.clientX; sy = e.clientY; var r = b.getBoundingClientRect(); ox = r.left; oy = r.top; try { b.setPointerCapture(pid); } catch (x) { } });
+    b.addEventListener('pointermove', function (e) {
+        if (!down) return; var dx = e.clientX - sx, dy = e.clientY - sy;
+        if (!moved && Math.abs(dx) + Math.abs(dy) < 8) return; moved = true; b.classList.add('drag');
+        var W = window.innerWidth, H = window.innerHeight;
+        b.style.left = Math.max(4, Math.min(W - 50, ox + dx)) + 'px'; b.style.top = Math.max(60, Math.min(H - 110, oy + dy)) + 'px';
+    });
+    function end(cancel) {
+        if (!down) return; down = false; try { b.releasePointerCapture(pid); } catch (x) { } b.classList.remove('drag');
+        if (moved) { var r = b.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight; store.set('nova_fab_pos', JSON.stringify({ side: (r.left + r.width / 2) < W / 2 ? 'l' : 'r', y: r.top / H })); fabPlace(); }
+        else if (!cancel) fabTap();
+    }
+    b.addEventListener('pointerup', function () { end(false); });
+    b.addEventListener('pointercancel', function () { end(true); });
+    b.addEventListener('click', function (e) { if (e.detail === 0) fabTap(); });   /* keyboard / screen-reader activation */
+    window.addEventListener('resize', fabPlace); fabPlace();
+}
+function fabUpdate() {
+    if (!MOBILE) return;
+    var show = fabOn && !!role() && !sheetOpen && !fabBlocked() && !document.hidden;
+    if (show) fabMake(); if (fab) fab.classList.toggle('on', show);
+}
 
 /* ---------------- sounds ---------------- */
 function audio() { try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) { } return ac; }
@@ -36116,28 +36196,39 @@ function speak(text, done) {
     var t = clean(text); stopSpeak();
     if (!t || !('speechSynthesis' in window)) { phase = 'idle'; if (done) setTimeout(done, 200); return; }
     killRec(); phase = 'speak'; speaking = true; setState('speak', 'Speaking\u2026');
-    var parts = chunks(t), i = 0, ended = false, fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; if (done) done(); };
-    stopSpeakFn = function () { ended = true; clearTimeout(timers.speakGuard); };
+    var parts = chunks(t), i = 0, ended = false, started = 0, curAdv = null, idleTicks = 0, poll = null;
+    var fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); clearInterval(poll); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; touch(); if (done) done(); };
+    stopSpeakFn = function () { ended = true; clearTimeout(timers.speakGuard); clearInterval(poll); };
     timers.speakGuard = setTimeout(fin, Math.min(60000, t.length * 85 + 4000));
-    (function next() {
+    /* many phones never fire onend/onerror: if the voice engine has gone quiet, move on ourselves so the popup can close */
+    poll = setInterval(function () {
+        if (ended) return clearInterval(poll);
+        try { if (curAdv && Date.now() - started > 900 && !speechSynthesis.speaking && !speechSynthesis.pending) { if (++idleTicks >= 2) { idleTicks = 0; curAdv(); } } else idleTicks = 0; } catch (e) { }
+    }, 350);
+    function next() {
         if (ended) return; if (i >= parts.length) return fin();
-        var u = new SpeechSynthesisUtterance(parts[i++]), v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
-        u.onend = next; u.onerror = next; try { speechSynthesis.speak(u); } catch (e) { fin(); }
-    })();
+        var u = new SpeechSynthesisUtterance(parts[i++]), v = pickVoice(), moved = false;
+        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
+        curAdv = function () { if (moved) return; moved = true; curAdv = null; next(); };
+        u.onend = u.onerror = curAdv; started = Date.now();
+        try { speechSynthesis.speak(u); } catch (e) { fin(); }
+    }
+    setTimeout(next, 90);   /* tiny gap after cancel(): speak() right after cancel() is dropped on some phones */
 }
 
 /* ---------------- speech input ---------------- */
 function blocked() {
     var q = $('auto-quiz-modal'); if (q && vis(q)) return true;                  // never listen during a live exam
+    var ex = $('active-exam-view'); if (ex && vis(ex)) return true;                // never listen during a live exam
     var nv = $('nova-voice-modal'); if (nv && vis(nv)) return true;             // NOVA chat has its own mic open
     if (window.__rtTalkingMe) return true;                                      // walkie-talkie on a group run
     return false;
 }
-function wantWake() { return wakeOn && !!SR && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && Date.now() > hold && !blocked(); }
+function wantWake() { return !MOBILE && wakeOn && !!SR && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && Date.now() > hold && !blocked(); }
 function killRec() { clearTimeout(timers.sil); clearTimeout(timers.nosp); if (rec) { var r = rec; rec = null; r.onresult = r.onerror = r.onend = r.onstart = null; try { r.abort(); } catch (e) { } } }
 function startRec(m) {
     if (!SR || denied) return false; killRec(); mode = m; wakeIdx = -1;
-    var r = new SR(); rec = r; recAt = Date.now(); r.lang = LANG; r.continuous = true; r.interimResults = true; r.maxAlternatives = 3;
+    var r = new SR(); rec = r; recAt = Date.now(); r.lang = LANG; r.continuous = (m === 'wake') || !MOBILE; r.interimResults = true; r.maxAlternatives = 3;
     r.onresult = onResult; r.onerror = onErr; r.onend = function () { if (rec !== r) return; rec = null; onEnd(); };
     try { r.start(); } catch (e) { rec = null; return false; }
     if (m === 'cmd') { setState('listen', 'Listening\u2026'); clearTimeout(timers.nosp); timers.nosp = setTimeout(function () { if (mode === 'cmd' && rec && !cur) cmdTimeout(); }, 7000); }
@@ -36146,7 +36237,7 @@ function startRec(m) {
 function resumeWake(ms) { clearTimeout(timers.wake); timers.wake = setTimeout(function () { if (wantWake() && !rec) startRec('wake'); updateOrb(); }, ms || 300); }
 function onErr(e) {
     var er = e && e.error;
-    if (er === 'not-allowed' || er === 'service-not-allowed') { denied = true; killRec(); updateOrb(); if (sheetOpen) { setState('idle', 'Mic blocked'); showAns('Microphone access is blocked. Allow it in your browser, or just type to Nova below.'); } return; }
+    if (er === 'not-allowed' || er === 'service-not-allowed') { denied = true; killRec(); updateOrb(); if (sheetOpen || pillOn()) { openSheet(); setState('idle', 'Mic blocked'); showAns('Microphone access is blocked. Allow it in your browser, or just type to Nova below.'); } return; }
     if (er === 'language-not-supported' && LANG !== 'en-US') LANG = 'en-US';
 }
 function onEnd() {
@@ -36171,7 +36262,7 @@ function onResult(e) {
     }
     if (mode === 'cmd') update(e);
 }
-function heard(e, i) { chime(); phase = 'cmd'; mode = 'cmd'; wakeIdx = i; strip = true; reset(); openSheet(); setState('listen', 'Listening\u2026'); update(e); }
+function heard(e, i) { cue(); phase = 'cmd'; mode = 'cmd'; wakeIdx = i; strip = true; reset(); if (sheetOpen) openSheet(); else pillShow('Listening\u2026', 'listen'); setState('listen', 'Listening\u2026'); update(e); }
 function update(e) {
     if (submitted) return;
     var t = textFrom(e); cur = t; showYou(t);
@@ -36182,17 +36273,26 @@ function update(e) {
 function cmdTimeout() {
     killRec();
     if (pending) { pending = null; setChips([]); return say('Okay, never mind.'); }
-    phase = 'idle'; setState('idle', ''); showAns('I didn\u2019t catch that. Tap the mic or say \u201cHey Nova\u201d again.'); autoClose(3500); resumeWake(400);
+    phase = 'idle'; setState('idle', ''); resumeWake(400);
+    if (sheetOpen) { showAns(MOBILE ? 'I didn\u2019t catch that. Tap the mic and try again.' : 'I didn\u2019t catch that. Tap the mic or say \u201cHey Nova\u201d again.'); autoClose(3000); }
+    else pillFlash('Didn\u2019t catch that', 'idle', 1600);
 }
-function listen() { phase = 'cmd'; submitted = false; cur = ''; wakeIdx = 0; strip = false; showYou(''); if (!startRec('cmd')) { setState('idle', 'Type to Nova'); phase = 'idle'; if (inEl) inEl.focus(); } }
+function listen() { phase = 'cmd'; submitted = false; cur = ''; wakeIdx = 0; strip = false; showYou(''); if (!startRec('cmd')) { openSheet(); setState('idle', 'Type to Nova'); phase = 'idle'; if (inEl) inEl.focus(); } }
 function tapMic() {
     gesture = true; audio(); build(); openSheet(); stopSpeak(); killRec();
     if (pending) { phase = 'ask'; }
     reset(); if (!SR || denied) { setState('idle', 'Type to Nova'); showAns(denied ? 'Microphone access is blocked. Allow it in your browser, or type below.' : 'Voice listening is not supported here, but you can type to Nova below.'); phase = 'idle'; return; }
-    chime(); listen();
+    cue(); listen();
+}
+/* floating-button tap: listen with the small pill, the big sheet only opens when there is something long to read or confirm */
+function fabTap() {
+    gesture = true; audio(); build(); stopSpeak(); killRec(); reset(); touch();
+    if (!SR || denied) { openSheet(); setState('idle', 'Type to Nova'); showAns(denied ? 'Microphone access is blocked. Allow it in your browser, or type below.' : 'Voice listening is not supported here, but you can type to Nova below.'); phase = 'idle'; return; }
+    cue(); phase = 'cmd'; pillShow('Listening\u2026', 'listen'); listen();
 }
 function typed(t) { gesture = true; audio(); openSheet(); stopSpeak(); killRec(); phase = 'cmd'; submitted = false; cur = t; showYou(t); submit(t); }
 function setWake(on, fromUser) {
+    if (MOBILE) { fabOn = !!on; store.set('nova_fab', on ? '1' : '0'); fabUpdate(); updateOrb(); return; }
     wakeOn = !!on; store.set('nova_wake', on ? '1' : '0');
     if (on) { gesture = true; denied = false; failStreak = 0; audio(); if (!rec && wantWake()) startRec('wake'); resumeWake(250); }
     else if (mode === 'wake') killRec();
@@ -36201,7 +36301,17 @@ function setWake(on, fromUser) {
 }
 
 /* ---------------- brain ---------------- */
-function say(text, o) { o = o || {}; phase = 'speak'; showAns(clean(text)); setChips([]); speak(text, function () { phase = 'idle'; if (o.then) o.then(); if (sheetOpen) autoClose(o.keep ? 9000 : 700); resumeWake(300); }); }
+function say(text, o) {
+    o = o || {}; phase = 'speak'; var shown = clean(text); setChips([]);
+    if (!sheetOpen && shown.length > 80) openSheet();                 /* long answers need the sheet; short confirmations stay in the small pill */
+    if (sheetOpen) showAns(shown); else pillShow(shown, 'speak');
+    speak(text, function () {
+        phase = 'idle'; if (o.then) o.then();
+        if (sheetOpen) autoClose(o.keep ? Math.min(7000, 2200 + shown.length * 22) : 700);
+        else { clearTimeout(timers.pillHide); timers.pillHide = setTimeout(pillHide, 600); }
+        resumeWake(300);
+    });
+}
 function submit(t) {
     if (submitted) return; submitted = true; killRec(); t = String(t || '').trim(); if (!t) return cmdTimeout();
     showYou(t);
@@ -36265,7 +36375,7 @@ function exec(a) {
     }
     say('Sorry, I can\u2019t do that yet.');
 }
-function closeSheetQuiet() { clearTimeout(timers.close); if (!sheet) return; sheetOpen = false; sheet.classList.remove('on'); updateOrb(); }
+function closeSheetQuiet() { clearTimeout(timers.close); if (!sheet) return; sheetOpen = false; sheet.classList.remove('on'); updateOrb(); fabUpdate(); }
 
 function doNav(target, feed) {
     if (!LABEL[target]) return say('I don\u2019t know that screen.');
@@ -36373,8 +36483,8 @@ function ask(text) {
 
 /* ---------------- boot ---------------- */
 function onGesture() {
-    if (gesture) return; gesture = true; audio();
-    if (SR && wakeOn && role() && !store.get('nova_hint') && window.showToast) { store.set('nova_hint', '1'); try { window.showToast('Hey Nova is on', 'Say \u201cHey Nova\u201d anywhere in the app. Allow the microphone when asked.', 'info'); } catch (e) { } }
+    if (gesture) return; gesture = true; audio(); fabUpdate();
+    if (!MOBILE && SR && wakeOn && role() && !store.get('nova_hint') && window.showToast) { store.set('nova_hint', '1'); try { window.showToast('Hey Nova is on', 'Say \u201cHey Nova\u201d anywhere in the app. Allow the microphone when asked.', 'info'); } catch (e) { } }
     resumeWake(150);
 }
 ['pointerdown', 'touchstart', 'keydown'].forEach(function (ev) { document.addEventListener(ev, onGesture, { passive: true, once: true }); });
@@ -36395,9 +36505,9 @@ function hookNovaChat() {
     var p = window.stopNovaVoice;
     if (typeof p === 'function' && !p.__nv) { var q = function () { hold = Date.now() + 700; var r = p.apply(this, arguments); resumeWake(900); return r; }; q.__nv = 1; window.stopNovaVoice = q; }
 }
-document.addEventListener('visibilitychange', function () { if (document.hidden) { if (mode === 'wake') killRec(); } else { checkPerm(); resumeWake(300); } });
+document.addEventListener('visibilitychange', function () { if (document.hidden) { if (mode === 'wake') killRec(); } else { checkPerm(); resumeWake(300); fabUpdate(); } });
 setInterval(function () {
-    hookNovaChat();
+    hookNovaChat(); fabUpdate();
     if (!SR && role() && !store.get('nova_nosr') && window.showToast) { store.set('nova_nosr', '1'); try { window.showToast('Hey Nova unavailable', 'This browser or app cannot listen for voice commands.', 'info'); } catch (e) { } }
     if (phase !== 'idle' && phase !== 'think' && !sheetOpen && !speaking && !rec && !pending) phase = 'idle';
     if (!rec && wantWake()) startRec('wake');
@@ -36405,7 +36515,16 @@ setInterval(function () {
     updateOrb();
 }, 1500);
 mkOrb(); checkPerm(); updateOrb();
-window.NovaAssistant = { open: tapMic, setWake: setWake, ask: typed };
+/* auto-hide watchdog: whatever state the voice engine got stuck in, an idle popup always closes */
+setInterval(function () {
+    if (!sheetOpen && !pillOn()) return;
+    var idle = Date.now() - lastAct, typing = !!(inEl && sheetOpen && document.activeElement === inEl);
+    var busy = phase === 'cmd' || phase === 'think' || phase === 'ask' || phase === 'speak' || !!pending || speaking || (typing && inEl.value);
+    if (idle > 40000 || (!busy && idle > (sheetOpen ? (typing ? 12000 : 5500) : 2500))) closeSheet();
+}, 500);
+window.addEventListener('hashchange', fabUpdate);
+fabUpdate();
+window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed };
 })();
 </script>
 
