@@ -29148,7 +29148,8 @@ YOUR DIRECTIVES:
 
                     window.fetchQuizFromGemini(cbtPrompt, "AI Custom Assessment").catch(e => console.warn("Handled quiz fetch error:", e)).finally(() => window.hideNovaExamLoader());
 
-                    if (window.speechSynthesis) {
+                    if (window.NovaSpeak) window.NovaSpeak("I am generating a custom exam based on your request. Launching the CBT engine now.");
+                    else if (window.speechSynthesis) {
                         const utterance = new SpeechSynthesisUtterance("I am generating a custom exam based on your request. Launching the CBT engine now.");
                         window.speechSynthesis.speak(utterance);
                     }
@@ -29203,7 +29204,8 @@ YOUR DIRECTIVES:
                     window.dbSaveNovaChat();
 
                     // --- NOVA TTS (Voice) ---
-                    if (window.speechSynthesis) {
+                    if (window.NovaSpeak) window.NovaSpeak(aiText);
+                    else if (window.speechSynthesis) {
                         const utterance = new SpeechSynthesisUtterance(aiText.replace(/\*/g, ''));
                         window.speechSynthesis.speak(utterance);
                     }
@@ -36268,11 +36270,11 @@ function wk(t) { return WAKE.exec(t) || WAKE2.exec(t); }
 
 var rec = null, recAt = 0, mode = 'off', phase = 'idle';            // phase: idle | cmd | think | speak | ask
 var lastHeard = '', lastHeardAt = 0, hold = 0, gesture = false, denied = false, failStreak = 0, sheetOpen = false, speaking = false;
-var wakeIdx = -1, strip = true, cur = '', submitted = false, pending = null, timers = {}, convo = [];
+var wakeIdx = -1, strip = true, cur = '', submitted = false, pending = null, timers = {}, convo = [], keepOpen = false;   /* keepOpen: an answer is on screen and stays until you close it */
 var sheet, card, stateEl, youEl, hintEl, ansEl, chipsEl, inEl, orb, sw, ac = null, pill = null, pillTxt = null, fab = null, lastAct = Date.now();
 
 var NOVA_IMGS = ['https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/NOVA%20Mentor.jpg', 'https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true'];
-var LABEL = { chat: 'Discuss', materials: 'Material Hub', 'video-hub': 'Lecture Hub', 'session-timer': 'Focus Sessions', 'math-workout': 'Math Workout', fitness: 'Run Monitor', notices: 'Announcements', 'exam-analysis': 'NOVA Mentor', 'budget-manager': 'Budget Manager', syllabus: 'Syllabus', 'target-calc': 'Target Calculator', 'weekly-targets': 'Weekly Targets', student: 'Home', admin: 'Home' };
+var LABEL = { chat: 'Discuss', materials: 'Material Hub', 'video-hub': 'Lecture Hub', 'session-timer': 'Focus Sessions', 'math-workout': 'Math Workout', fitness: 'Run Monitor', notices: 'Announcements', 'exam-analysis': 'NOVA Mentor', 'budget-manager': 'Budget Manager', syllabus: 'Syllabus', 'target-calc': 'Goal Planner', 'weekly-targets': 'Weekly Targets', student: 'Home', admin: 'Home', leaderboard: 'Leaderboard', 'exam-calendar': 'Exam Calendar', 'my-profile': 'My Profile', wallet: 'Wallet', 'nova-chat': 'NOVA Chat', alarms: 'Alarms', quotes: 'Quotes', 'auto-quotes': 'Auto Quotes', motivation: 'Motivation', 'student-directory': 'Student Directory', 'budget-room': 'Budget Room' };
 
 function role() { return window.currentRole || ''; }
 function isStudent() { return role() === 'student'; }
@@ -36290,7 +36292,7 @@ function build() {
         + '<div class="nv-head"><span class="nv-badge"><img src="' + NOVA_IMGS[0] + '" alt="" decoding="async" referrerpolicy="no-referrer" draggable="false"></span><b>Nova</b><span class="nv-state"></span><button type="button" class="nv-x" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>'
         + '<div class="nv-viz"><i></i><i></i><i></i><i></i></div>'
         + '<p class="nv-you"></p>'
-        + '<p class="nv-hint">Try: \u201cstart session\u201d, \u201ctake a break\u201d, \u201csend a message on Discuss saying\u2026\u201d, \u201cstart run\u201d, \u201cstart math workout\u201d, \u201csend a message\u201d, \u201cmake a quiz\u201d, \u201cvideo call\u201d, or ask me anything.</p>'
+        + '<p class="nv-hint">Try: \u201cadd an expense\u201d, \u201cthis week spending\u201d, \u201copen lecture hub\u201d, \u201cstart session\u201d, \u201ctake a break\u201d, \u201csend a message on Discuss saying\u2026\u201d, \u201cstart run\u201d, \u201cstart math workout\u201d, \u201csend a message\u201d, \u201cmake a quiz\u201d, \u201cvideo call\u201d, or ask me anything.</p>'
         + '<div class="nv-ans"></div><div class="nv-chips"></div>'
         + '<form class="nv-form" autocomplete="off"><input class="nv-in" type="text" maxlength="400" placeholder="Type to Nova\u2026" enterkeyhint="send"><button type="button" class="nv-mic" aria-label="Speak"><i class="fa-solid fa-microphone"></i></button></form>'
         + '</div>';
@@ -36351,12 +36353,12 @@ function showAns(t) { build(); touch(); ansEl.textContent = t || ''; ansEl.style
 function setChips(list) { build(); touch(); chipsEl.innerHTML = ''; (list || []).forEach(function (c) { var b = document.createElement('button'); b.type = 'button'; b.textContent = c[0]; b.addEventListener('click', c[1]); chipsEl.appendChild(b); }); }
 function openSheet() { build(); touch(); syncMic(); clearTimeout(timers.close); pillHide(); if (!sheetOpen) { sheetOpen = true; sheet.classList.add('on'); } updateOrb(); fabUpdate(); }
 function closeSheet() {
-    pillHide(); if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
+    keepOpen = false; pillHide(); if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
     if (phase === 'cmd' || phase === 'ask' || pending) { killRec(); }
     pending = null; stopSpeak(); phase = 'idle'; submitted = true; setChips([]); updateOrb(); fabUpdate(); resumeWake(250);
 }
 function autoClose(ms) { clearTimeout(timers.close); timers.close = setTimeout(closeSheet, ms); }
-function reset() { cur = ''; submitted = false; showYou(''); showAns(''); setChips([]); }
+function reset() { keepOpen = false; cur = ''; submitted = false; showYou(''); showAns(''); setChips([]); }
 
 /* ---------------- compact pill + floating button ---------------- */
 function touch() { lastAct = Date.now(); }
@@ -36413,7 +36415,10 @@ function fabUpdate() {
 function audio() { ttsUnlock(); try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) { } return ac; }
 function chime() { try { var c = audio(); if (!c) return; var o = c.createOscillator(), g = c.createGain(), t = c.currentTime; o.type = 'sine'; o.frequency.setValueAtTime(660, t); o.frequency.exponentialRampToValueAtTime(990, t + .09); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.12, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + .16); o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + .18); } catch (e) { } if (navigator.vibrate) try { navigator.vibrate(18); } catch (e) { } }
 
-/* ---------------- speech output (browser voice, picked for the most natural one on the device) ---------------- */
+/* ---------------- speech output ----------------
+   Android WebView (Median / GoNative apps) has NO built-in text-to-speech, so Nova never depends on it there.
+   Nova's voice is a neural online voice played as ordinary audio, which any WebView can play. The browser voice is only used where it really works
+   (desktop browsers, iPhone) and as a last resort. If the phone blocks autoplay, a "Tap to hear" button appears and the answer stays on screen as text. */
 var voice = null;
 function pickVoice() {
     if (voice || !('speechSynthesis' in window)) return voice;
@@ -36429,72 +36434,112 @@ function pickVoice() {
 }
 if ('speechSynthesis' in window) { try { speechSynthesis.onvoiceschanged = function () { voice = null; pickVoice(); }; } catch (e) { } }
 function clean(t) { return String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[*_`#>~|]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim(); }
-function chunks(t) { var out = [], s = (t.match(/[^.!?]+[.!?]*/g) || [t]).reduce(function (a, x) { while (x.length > 180) { var k = Math.max(x.lastIndexOf(', ', 180), x.lastIndexOf(' ', 180)); if (k < 40) k = 180; a.push(x.slice(0, k + 1)); x = x.slice(k + 1); } a.push(x); return a; }, []), buf = ''; s.forEach(function (x) { if ((buf + x).length > 180 && buf) { out.push(buf.trim()); buf = x; } else buf += x; }); if (buf.trim()) out.push(buf.trim()); return out.slice(0, 8); }
-/* Many app WebViews (Median, etc.) have no speechSynthesis. Then Nova's voice is a free online text-to-speech service played as ordinary audio.
-   Tries, in order: your own endpoint (window.NOVA_TTS_URL, e.g. 'https://yourworker/tts?text={text}'), StreamElements voices (Amazon Polly), Google Translate voice.
-   window.NOVA_TTS_VOICES = ['Raveena','Joanna'] picks the Polly voices; localStorage nova_tts=0 turns spoken answers off. */
-var TTS_ON = store.get('nova_tts') !== '0', nativeBad = false, ttsAudio = null, ttsTimer = null;
-var SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+function chunks(t) { var out = [], s = t.match(/[^.!?]+[.!?]*/g) || [t], buf = ''; s.forEach(function (x) { if ((buf + x).length > 180 && buf) { out.push(buf.trim()); buf = x; } else buf += x; }); if (buf.trim()) out.push(buf.trim()); return out.slice(0, 8); }
+
+/* Online voices, tried in order for every sentence: your own endpoint (window.NOVA_TTS_URL, e.g. 'https://yourworker/tts?text={text}' or a function(text)),
+   StreamElements voices (Amazon Polly), then Google Translate voice. window.NOVA_TTS_VOICES = ['Raveena','Joanna'] picks the Polly voices;
+   localStorage nova_tts=0 turns spoken answers off. */
+var TTS_ON = store.get('nova_tts') !== '0', ttsAudio = null, ttsTimer = null, ttsSeq = 0;
+var SILENT = 'data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+/* Android app WebView: its built-in voice is missing or a silent stub, so skip it and use the online voice straight away */
+var IN_WV = (function () { try { var u = navigator.userAgent || ''; return /Android/i.test(u) && (/;\s*wv\)/i.test(u) || /EXAMA_APP|median|gonative/i.test(u) || !!(window.median || window.gonative)); } catch (e) { return false; } })();
+var nativeBad = IN_WV, stopNativeFn = null;
+function nativeMaybe() { try { return 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined'; } catch (e) { return false; } }
 function nativeOk() {
-    try {
-        if (nativeBad || !('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return false;
-        return !MOBILE || (speechSynthesis.getVoices() || []).length > 0;
-    } catch (e) { return false; }
+    try { if (nativeBad || !nativeMaybe()) return false; return !MOBILE || (speechSynthesis.getVoices() || []).length > 0; } catch (e) { return false; }
 }
 function ttsOk() { return TTS_ON && navigator.onLine !== false && typeof Audio !== 'undefined'; }
-function ttsEl() { if (!ttsAudio) { try { ttsAudio = new Audio(); ttsAudio.preload = 'auto'; ttsAudio.referrerPolicy = 'no-referrer'; ttsAudio.setAttribute('playsinline', ''); } catch (e) { return null; } } return ttsAudio; }
-function ttsUnlock() {   /* one silent play inside a tap/keypress so the WebView lets the same audio element speak later */
+function ttsEl() { if (!ttsAudio) { try { ttsAudio = new Audio(); ttsAudio.preload = 'auto'; ttsAudio.setAttribute('playsinline', ''); } catch (e) { return null; } } return ttsAudio; }
+/* One silent play inside a real tap lets the WebView play Nova's voice on its own later (hands-free).
+   Only touchend / pointerup / click / keydown count as a real tap on Android: touchstart and a touch pointerdown do NOT, so those cannot unlock it.
+   The unlock keeps retrying on every tap until it succeeds, then removes its own listeners. */
+var UNLOCK_EV = ['touchend', 'pointerup', 'click', 'keydown'];
+function unlockEv() { audio(); }
+function unlockDone() { UNLOCK_EV.forEach(function (ev) { try { document.removeEventListener(ev, unlockEv, true); } catch (e) { } }); }
+function ttsUnlock() {
     if (!TTS_ON) return; var a = ttsEl(); if (!a || a.__u) return; a.__u = 1;
-    try { a.src = SILENT; var p = a.play(); if (p && p.catch) p.catch(function () { a.__u = 0; }); } catch (e) { a.__u = 0; }
+    try {
+        a.src = SILENT; var p = a.play();
+        if (p && p.then) p.then(function () { a.__u = 2; unlockDone(); }, function () { a.__u = 0; });
+        else { a.__u = 2; unlockDone(); }
+    } catch (e) { a.__u = 0; }
 }
-function ttsStop() { clearTimeout(ttsTimer); if (ttsAudio) { ttsAudio.onended = ttsAudio.onerror = ttsAudio.onplaying = null; try { ttsAudio.pause(); } catch (e) { } } }
+UNLOCK_EV.forEach(function (ev) { document.addEventListener(ev, unlockEv, { passive: true, capture: true }); });
+function ttsStop() { clearTimeout(ttsTimer); ttsSeq++; if (ttsAudio) { ttsAudio.onended = ttsAudio.onerror = ttsAudio.onplaying = null; try { ttsAudio.pause(); } catch (e) { } } }
 function ttsUrls(txt) {
     var q = encodeURIComponent(txt), u = [], c = window.NOVA_TTS_URL;
     if (typeof c === 'function') { try { var r = c(txt); if (r) u.push(r); } catch (e) { } } else if (typeof c === 'string' && c) u.push(c.replace('{text}', q));
     (window.NOVA_TTS_VOICES || ['Raveena', 'Joanna']).forEach(function (v) { u.push('https://api.streamelements.com/kappa/v2/speech?voice=' + encodeURIComponent(v) + '&text=' + q); });
     u.push('https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=' + q);
+    u.push('https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=en&q=' + q);
     return u;
 }
+/* plays one sentence; onEnd(true) = spoken, onEnd(false) = every voice failed, onEnd('blocked') = the phone blocked autoplay */
 function playTTS(txt, onEnd, isEnded) {
     var a = ttsEl(), urls = ttsUrls(txt), k = 0, over = false;
-    if (!a) return onEnd();
-    function finish() { if (over) return; over = true; clearTimeout(ttsTimer); a.onended = a.onerror = a.onplaying = null; onEnd(); }
+    if (!a) return onEnd(false);
+    function finish(r) { if (over) return; over = true; clearTimeout(ttsTimer); a.onended = a.onerror = a.onplaying = null; onEnd(r); }
     function tryNext() {
         if (over || isEnded()) return; clearTimeout(ttsTimer);
-        if (k >= urls.length) return finish();
-        a.onended = finish; a.onerror = tryNext; a.onplaying = function () { clearTimeout(ttsTimer); };
-        a.src = urls[k++]; ttsTimer = setTimeout(tryNext, 7000);     /* never started: try the next voice */
-        try { var p = a.play(); if (p && p.catch) p.catch(function (e) { if (e && e.name === 'NotAllowedError') finish(); else tryNext(); }); } catch (e) { tryNext(); }
+        if (k >= urls.length) return finish(false);
+        var my = ++ttsSeq, adv = function () { if (my === ttsSeq) tryNext(); };      /* each attempt advances at most once */
+        a.onended = function () { if (my === ttsSeq) finish(true); }; a.onerror = adv; a.onplaying = function () { if (my === ttsSeq) clearTimeout(ttsTimer); };
+        a.src = urls[k++]; ttsTimer = setTimeout(adv, 8000);     /* never started: try the next voice */
+        try { var p = a.play(); if (p && p.catch) p.catch(function (e) { if (my !== ttsSeq) return; var n = e && e.name; if (n === 'NotAllowedError') finish('blocked'); else if (n !== 'AbortError') tryNext(); }); } catch (e) { tryNext(); }
     }
     tryNext();
 }
+/* browser voice for one sentence: cb(true) = it spoke, cb(false) = it never started */
+function stopNative() { if (stopNativeFn) { var f = stopNativeFn; stopNativeFn = null; try { f(); } catch (e) { } } }
+function nativeSay(txt, cb) {
+    var u, v, over = false, gs = false, t0 = Date.now(), tmr = null, poll = null;
+    function end(r) { if (over) return; over = true; clearTimeout(tmr); clearInterval(poll); stopNativeFn = null; cb(r); }
+    try { u = new SpeechSynthesisUtterance(txt); } catch (e) { return cb(false); }
+    v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
+    u.onstart = function () { gs = true; }; u.onend = u.onerror = function () { end(true); };
+    tmr = setTimeout(function () { if (gs) return; try { speechSynthesis.cancel(); } catch (e) { } end(false); }, 2500);      /* built-in voice never started */
+    /* many phones never fire onend: if the voice engine went quiet after speaking, move on ourselves */
+    poll = setInterval(function () { try { if (gs && Date.now() - t0 > 900 && !speechSynthesis.speaking && !speechSynthesis.pending) end(true); } catch (e) { } }, 350);
+    stopNativeFn = function () { over = true; clearTimeout(tmr); clearInterval(poll); };
+    try { speechSynthesis.speak(u); } catch (e) { end(false); }
+}
 var stopSpeakFn = null;
-function stopSpeak() { ttsStop(); speaking = false; if (stopSpeakFn) { var f = stopSpeakFn; stopSpeakFn = null; try { f(); } catch (e) { } } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
+function stopSpeak() { ttsStop(); stopNative(); speaking = false; if (stopSpeakFn) { var f = stopSpeakFn; stopSpeakFn = null; try { f(); } catch (e) { } } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
 function speak(text, done) {
     var t = clean(text); stopSpeak();
     if (!t || (!nativeOk() && !ttsOk())) { phase = 'idle'; if (done) setTimeout(done, 200); return; }
     killRec(); engStop(); phase = 'speak'; speaking = true; setState('speak', 'Speaking\u2026');
-    var parts = chunks(t), i = 0, ended = false, started = 0, curAdv = null, idleTicks = 0, poll = null;
-    var fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); clearInterval(poll); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; touch(); if (done) done(); };
-    stopSpeakFn = function () { ended = true; clearTimeout(timers.speakGuard); clearInterval(poll); };
-    timers.speakGuard = setTimeout(fin, Math.min(60000, t.length * 85 + (nativeOk() ? 4000 : 12000)));
-    /* many phones never fire onend/onerror: if the voice engine has gone quiet, move on ourselves so the popup can close */
-    poll = setInterval(function () {
-        if (ended) return clearInterval(poll);
-        try { if (curAdv && Date.now() - started > 900 && !speechSynthesis.speaking && !speechSynthesis.pending) { if (++idleTicks >= 2) { idleTicks = 0; curAdv(); } } else idleTicks = 0; } catch (e) { }
-    }, 350);
+    var parts = chunks(t), i = 0, ended = false, lastTry = false, forceNative = false;
+    var fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; touch(); if (done) done(); };
+    stopSpeakFn = function () { ended = true; clearTimeout(timers.speakGuard); };
+    timers.speakGuard = setTimeout(function () { ttsStop(); stopNative(); fin(); }, Math.min(90000, t.length * 85 + (nativeOk() ? 4000 : 30000)));
+    var isEnded = function () { return ended; };
+    function one(txt, cb) {
+        if (forceNative || nativeOk()) return nativeSay(txt, function (ok) {
+            if (ended) return; if (ok) return cb(true);
+            forceNative = false; nativeBad = true; if (ttsOk()) playTTS(txt, cb, isEnded); else cb(false);
+        });
+        if (!ttsOk()) return cb(false);
+        playTTS(txt, function (r) {
+            if (ended || r !== false || lastTry || !nativeMaybe()) return cb(r);
+            lastTry = true; nativeSay(txt, function (ok) { if (ok) forceNative = true; cb(ok); });      /* every online voice failed: last resort, the browser voice */
+        }, isEnded);
+    }
     function next() {
         if (ended) return; if (i >= parts.length) return fin();
-        if (!nativeOk()) { curAdv = null; started = Date.now(); return playTTS(parts[i++], function () { if (!ended) next(); }, function () { return ended; }); }
-        var u = new SpeechSynthesisUtterance(parts[i++]), v = pickVoice(), moved = false;
-        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
-        curAdv = function () { if (moved) return; moved = true; curAdv = null; next(); };
-        u.onend = u.onerror = curAdv; started = Date.now();
-        var gs = false; u.onstart = function () { gs = true; };
-        setTimeout(function () { if (gs || moved || ended) return; nativeBad = true; try { speechSynthesis.cancel(); } catch (e) { } moved = true; curAdv = null; if (ttsOk()) playTTS(u.text, function () { if (!ended) next(); }, function () { return ended; }); else fin(); }, 2500);   /* built-in voice never started: use the online voice */
-        try { speechSynthesis.speak(u); } catch (e) { fin(); }
+        one(parts[i++], function (r) {
+            if (ended) return;
+            if (r === 'blocked') { blockedHint(text); return fin(); }
+            if (r === false) return fin();                  /* nothing can speak right now: the answer is already on screen as text */
+            next();
+        });
     }
     setTimeout(next, 90);   /* tiny gap after cancel(): speak() right after cancel() is dropped on some phones */
+}
+/* the phone refused to play audio on its own: leave a one-tap button (a tap is allowed to start sound) */
+function blockedHint(text) {
+    if (!sheetOpen || !chipsEl || chipsEl.children.length) return;
+    setChips([['Tap to hear', function () { audio(); setChips([]); speak(text, function () { resumeWake(300); }); }]]);
 }
 
 /* ---------------- speech input ---------------- */
@@ -36635,11 +36680,13 @@ function setWake(on, fromUser) {
 /* ---------------- brain ---------------- */
 function say(text, o) {
     o = o || {}; phase = 'speak'; var shown = clean(text); setChips([]);
-    if (!sheetOpen && shown.length > 80) openSheet();                 /* long answers need the sheet; short confirmations stay in the small pill */
+    /* o.keep = an answer to a question: it stays on screen until you close it. Without it (a finished task: message sent, session started...) the popup hides by itself. */
+    keepOpen = !!o.keep; if (keepOpen) clearTimeout(timers.close);
+    if (!sheetOpen && (o.keep || shown.length > 80)) openSheet();    /* answers and long text need the sheet; short task confirmations stay in the small pill */
     if (sheetOpen) showAns(shown); else pillShow(shown, 'speak');
     speak(text, function () {
         phase = 'idle'; if (o.then) o.then();
-        if (sheetOpen) autoClose(o.keep ? Math.min(7000, 2200 + shown.length * 22) : 1800);
+        if (sheetOpen) { if (!o.keep) autoClose(1800); }
         else { clearTimeout(timers.pillHide); timers.pillHide = setTimeout(pillHide, 600); }
         resumeWake(300);
     });
@@ -36663,11 +36710,85 @@ function msgOf(s) {
     if (/^(?:a |the )?(?:message|msg|text)$/i.test(x.trim())) x = '';
     return cap(x);
 }
+/* ---------------- expenses + spending by voice ---------------- */
+var NUMW = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+var NUMRE = new RegExp('\\b(?:(?:' + Object.keys(NUMW).join('|') + '|hundred|thousand|lakh|lac)(?:[\\s-]+and)?[\\s-]*)+(?:rupees?|\\brs\\b|\\binr\\b)?', 'ig');
+function wordsNum(s) {
+    var tk = String(s || '').toLowerCase().replace(/[^a-z\s-]/g, ' ').replace(/-/g, ' ').split(/\s+/).filter(Boolean), total = 0, cur = 0, seen = false;
+    for (var i = 0; i < tk.length; i++) {
+        var w = tk[i];
+        if (Object.prototype.hasOwnProperty.call(NUMW, w)) { cur += NUMW[w]; seen = true; }
+        else if (w === 'hundred') { cur = (cur || 1) * 100; seen = true; }
+        else if (w === 'thousand') { total += (cur || 1) * 1000; cur = 0; seen = true; }
+        else if (w === 'lakh' || w === 'lac') { total += (cur || 1) * 100000; cur = 0; seen = true; }
+        else if (w === 'and' && seen) { continue; }
+        else if (seen) break;
+    }
+    return seen ? total + cur : null;
+}
+/* "50", "1,240", "rs 50", "fifty rupees", "two hundred and fifty" -> number (or null) */
+function numFrom(s) {
+    s = String(s == null ? '' : s).replace(/\b(?:one|an?)\s+(?:new\s+)?(?:expense|transaction|entry|spending)s?\b/gi, ' ');
+    var D = '(\\d{1,3}(?:,\\d{3})+|\\d+)(\\.\\d+)?';
+    var m = s.match(new RegExp('(?:\\u20b9|\\brs\\.?|\\binr)\\s*' + D, 'i')) || s.match(new RegExp(D + '\\s*(?:\\u20b9|rupees?|\\brs\\b|\\binr\\b|/-)', 'i')) || s.match(new RegExp(D));
+    if (m) { var n = parseFloat(m[1].replace(/,/g, '') + (m[2] || '')); return n > 0 ? n : null; }
+    var cm = s.match(/((?:[a-z]+[\s-]+){0,5}[a-z]+)\s+(?:rupees?|rs|inr)\b/i), w = cm ? wordsNum(cm[1]) : null;
+    if (!w) w = wordsNum(s);
+    return w > 0 ? w : null;
+}
+var CATS = ['Educational', 'Vegetable', 'Grocery', 'Meat', 'Food', 'Other'];
+var CATKW = [
+    ['Vegetable', /\b(?:vegetables?|veg|veggies|sabzi|sabji|tomato|tomatoes|potato|potatoes|onion|onions|brinjal|spinach|cabbage|cauliflower)\b/],
+    ['Meat', /\b(?:meat|chicken|mutton|fish|eggs?|beef|pork|prawns?)\b/],
+    ['Educational', /\b(?:educational?|books?|notebooks?|pens?|pencils?|stationery|fees?|tuition|course|exam|study|coaching|xerox|photocopy|printout|printing)\b/],
+    ['Grocery', /\b(?:grocery|groceries|rice|dal|atta|flour|oil|sugar|salt|milk|soap|shampoo|ration|masala|spices?)\b/],
+    ['Food', /\b(?:food|lunch|dinner|breakfast|snacks?|tea|coffee|biryani|pizza|burger|restaurant|canteen|mess|juice|chai|meal|sweets?|ice cream|cold drink)\b/]
+];
+function guessCat(s) {
+    s = String(s || '').toLowerCase(); var m = s.match(/\b(educational|vegetable|grocery|meat|food|other)s?\b/);
+    if (m) return m[1].charAt(0).toUpperCase() + m[1].slice(1);
+    for (var i = 0; i < CATKW.length; i++) if (CATKW[i][1].test(s)) return CATKW[i][0];
+    return '';
+}
+function methodFrom(s) {
+    s = String(s || '').toLowerCase();
+    if (/\b(?:cash|hand|physical)\b/.test(s)) return 'cash';
+    if (/\b(?:online|upi|gpay|google pay|phone ?pe|paytm|card|net ?banking|bank|digital)\b/.test(s)) return 'online';
+    return '';
+}
+/* "I spent 50 rupees on tea paid by cash" -> "Tea" */
+function titleFrom(orig) {
+    var s = String(orig || '').replace(/(?:\u20b9|\brs\.?|\binr)?\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*(?:rupees?|\brs\b\.?|\binr\b|\u20b9|\/-)?/i, ' ');
+    if (!/\d/.test(orig)) s = s.replace(NUMRE, ' ');
+    s = s.replace(/\b(?:(?:paid|pay|payment)\s+)?(?:(?:by|in|via|using|through|with)\s+)?(?:cash|online|upi|gpay|google pay|phone ?pe|paytm|card|net ?banking)\b/ig, ' ').replace(/\s+/g, ' ').trim();
+    var m;
+    if ((m = s.match(/\b(?:for|on|towards|to buy|buying)\s+(.+)$/i))) s = m[1];
+    else if ((m = s.match(/\b(?:bought|purchased|ordered|got)\s+(.+?)(?:\s+(?:for|at|worth|of)\b.*)?$/i))) s = m[1];
+    else s = '';
+    s = s.replace(/^(?:the|a|an|my|some)\s+/i, '').replace(/\b(?:please|today|yesterday|just now|right now)\b/ig, '').replace(/\b(?:expenses?)$/i, '').replace(/[\s,.;:-]+$/, '').replace(/\s+/g, ' ').trim();
+    return cap(s.slice(0, 60));
+}
+function titleLoose(t) {
+    t = String(t || '').replace(/^(?:it was |it is |its |that was |this was )?(?:for|on)\s+/i, '').replace(/^(?:the|a|an|my|some)\s+/i, '').replace(/[\s,.;:-]+$/, '').trim();
+    return cap(t.slice(0, 60));
+}
+function parseExpense(orig, t) {
+    var word = /\b(?:spend|spent|spending|spendings|expenses?|kharcha|kharch)\b/.test(t), amt = numFrom(orig);
+    var ask = /\b(?:how much|what|what'?s|whats|tell|show|check|total|summary|report|overview)\b/.test(t);
+    var create = /\b(?:expenses?|spendings?|spending|kharcha|kharch)\b/.test(t) && /\b(?:add|create|make|new|record|log|enter|note|register|save)\b/.test(t) && !ask;
+    var spent = !ask && (/\bspent\b/.test(t) || (/\b(?:paid|bought|purchased)\b/.test(t) && /(?:\u20b9|\brs\b|\binr\b|rupees?|\/-)/i.test(orig))) && amt != null && !/\b(?:send|sent|transfer)\b/.test(t);
+    if (create || spent) { var ti = titleFrom(orig); return { type: 'expense_add', amount: amt || 0, title: ti, cat: guessCat(ti) || guessCat(orig), method: methodFrom(orig) }; }
+    if (word && (ask || /\b(?:this week|weekly|last 7|today|this month|monthly|so far|week|month|did i)\b/.test(t))) {
+        return { type: 'spend_query', period: /\b(?:week|weekly|7 days|seven days)\b/.test(t) ? 'week' : /\btoday\b/.test(t) ? 'today' : /\b(?:month|monthly)\b/.test(t) ? 'month' : /\b(?:total|overall|all time|lifetime|so far|altogether)\b/.test(t) ? 'all' : 'week' };
+    }
+    return null;
+}
 function parse(orig) {
     var t = orig.toLowerCase().replace(/[.,!?]/g, ' ').replace(/\s+/g, ' ').trim(), m;
     if (/^(?:stop|cancel|never ?mind|close|dismiss|go away|that'?s all|thanks?|thank you)$/.test(t)) return { type: 'close' };
     if (/\b(?:what'?s|what is|tell me) (?:the )?time\b|\bwhat time is it\b|\bcurrent time\b/.test(t)) return { type: 'say', text: 'It\u2019s ' + new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) + '.' };
     if (/\b(?:what'?s|what is) (?:the |today'?s )?(?:date|day)\b|\btoday'?s date\b/.test(t)) return { type: 'say', text: 'Today is ' + new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }) + '.' };
+    var ex = parseExpense(orig, t); if (ex) return ex;
     if (/\b(?:answer|accept|pick up|receive|attend)\b.*\bcall\b/.test(t)) return { type: 'call_accept' };
     if (/\b(?:decline|reject|ignore|dismiss)\b.*\bcall\b/.test(t)) return { type: 'call_decline' };
     if (/\b(?:end|stop|leave|hang ?up|disconnect|finish|cut)\b.*\bcall\b|\bhang ?up\b/.test(t)) return { type: 'call_end' };
@@ -36688,16 +36809,42 @@ function parse(orig) {
     if (/\b(?:stop|end|finish|save)\b.*\b(?:run|running)\b/.test(t)) return { type: 'run_stop' };
     if (/\bmath\b/.test(t) && /\b(?:start|begin|launch|play)\b/.test(t)) return { type: 'math_start' };
     if (/^(?:go )?back$|\bgo back\b/.test(t)) return { type: 'back' };
-    if (/\b(?:open|go(?: to)?|take me to|launch|navigate to|switch to)\b/.test(t)) {
-        var map = [[/\b(?:discuss\w*|discus|chat|group)\b/, 'chat'], [/\b(?:material|notes?|pdf)s?\b/, 'materials'], [/\b(?:lecture|video)s?\b/, 'video-hub'], [/\b(?:session|focus)s?(?: timer)?\b/, 'session-timer'], [/\bmath\b/, 'math-workout'], [/\b(?:run monitor|fitness|running|runs?|feed)\b/, 'fitness'], [/\b(?:announcement|notice)s?\b/, 'notices'], [/\b(?:nova|mentor|analysis)\b/, 'exam-analysis'], [/\b(?:budget|wallet|expense)s?\b/, 'budget-manager'], [/\bsyllabus\b/, 'syllabus'], [/\b(?:target calc\w*|calculator)\b/, 'target-calc'], [/\b(?:weekly targets?|goal planner|targets?)\b/, 'weekly-targets'], [/\b(?:home|dashboard|main screen)\b/, 'student']];
+    if (/\b(?:open|go(?: to)?|take me to|launch|navigate to|switch to|show(?: me)?|visit|bring up)\b/.test(t)) {
+        /* order matters: the more specific names come first */
+        var map = [
+            [/\bgoal\s*planner\b|\btarget\s*calc\w*\b|\bplanner\b|\bgoals?\b/, 'target-calc'],
+            [/\bweekly\s*targets?\b|\bweek\s*targets?\b|\btargets?\b/, 'weekly-targets'],
+            [/\bcalendar\b|\bexam\s*schedule\b|\bschedule\b/, 'exam-calendar'],
+            [/\bleader\s*boards?\b|\branking\b|\branks\b/, 'leaderboard'],
+            [/\bbudget\s*room\b/, 'budget-room'],
+            [/\bwallet\b|\bcoins?\b/, 'wallet'],
+            [/\bbudgets?\b|\bexpenses?\b|\bspendings?\b/, 'budget-manager'],
+            [/\balarms?\b|\breminders?\b/, 'alarms'],
+            [/\bauto\s*quotes?\b/, 'auto-quotes'],
+            [/\bquotes?\b/, 'quotes'],
+            [/\bmotivation\w*\b/, 'motivation'],
+            [/\bdirectory\b|\bstudents? list\b|\ball students\b/, 'student-directory'],
+            [/\bprofile\b/, 'my-profile'],
+            [/\bnova chat\b|\bchat with nova\b|\btalk to nova\b/, 'nova-chat'],
+            [/\b(?:discuss\w*|discus|chat|group)\b/, 'chat'],
+            [/\b(?:materials?|notes?|pdfs?)\b|\b(?:natural|natreal|meterial|metrial|matirial)\b/, 'materials'],
+            [/\b(?:lectures?|videos?)\b/, 'video-hub'],
+            [/\b(?:session|focus)s?(?: timer)?\b/, 'session-timer'],
+            [/\bmath\b/, 'math-workout'],
+            [/\b(?:run monitor|fitness|running|runs?|feed)\b/, 'fitness'],
+            [/\bnotice\w*\b|\bannouncements?\b/, 'notices'],
+            [/\b(?:nova|mentor|analysis)\b/, 'exam-analysis'],
+            [/\bsyllabus\b/, 'syllabus'],
+            [/\b(?:home|dashboard|main screen)\b/, 'student']
+        ];
         for (var i = 0; i < map.length; i++) if (map[i][0].test(t)) return { type: 'navigate', target: map[i][1], feed: /\bfeed\b/.test(t) };
     }
     return null;
 }
-var TYPES = ['none', 'discuss_send', 'session_start', 'session_break', 'session_resume', 'session_end', 'run_start', 'run_pause', 'run_stop', 'math_start', 'navigate'];
+var TYPES = ['none', 'expense_add', 'spend_query', 'discuss_send', 'session_start', 'session_break', 'session_resume', 'session_end', 'run_start', 'run_pause', 'run_stop', 'math_start', 'navigate'];
 function exec(a) {
     var st = isStudent();
-    var needStudent = /^(?:session_|run_|math_|quiz_)/.test(a.type);
+    var needStudent = /^(?:session_|run_|math_|quiz_|expense_|spend_)/.test(a.type);
     if (needStudent && !st) return say('That one is only available on student accounts.');
     switch (a.type) {
         case 'close': phase = 'idle'; closeSheet(); return;
@@ -36714,6 +36861,8 @@ function exec(a) {
         case 'run_stop': return doRun('stop');
         case 'math_start': return doMath();
         case 'quiz_start': return doQuiz(a.topic);
+        case 'expense_add': return doExpense({ amount: a.amount, title: a.title, cat: a.cat, method: a.method });
+        case 'spend_query': return doSpend(a.period);
         case 'call_start': return doCall(a.kind);
         case 'call_end': return doCallEnd();
         case 'call_accept': return doCallAnswer(true);
@@ -36723,9 +36872,12 @@ function exec(a) {
 }
 function closeSheetQuiet() { clearTimeout(timers.close); if (!sheet) return; if (WAKE_UI === 'sheet' && sheetOpen) return;   /* popup mode: stay open, the final answer closes it */ sheetOpen = false; sheet.classList.remove('on'); updateOrb(); fabUpdate(); }
 
+var ADMIN_NAV = ['chat', 'notices', 'student', 'materials', 'video-hub', 'syllabus', 'weekly-targets', 'student-directory', 'budget-room', 'alarms', 'quotes', 'auto-quotes', 'motivation'], ADMIN_ONLY = ['student-directory', 'alarms', 'quotes', 'auto-quotes', 'motivation'];
 function doNav(target, feed) {
     if (!LABEL[target]) return say('I don\u2019t know that screen.');
-    if (role() === 'admin' && ['chat', 'notices', 'student'].indexOf(target) < 0) return say('That screen is only on student accounts.');
+    if (role() === 'admin' && ADMIN_NAV.indexOf(target) < 0) return say('That screen is only on student accounts.');
+    if (role() !== 'admin' && ADMIN_ONLY.indexOf(target) >= 0) return say('That screen is only on admin accounts.');
+    if (target === 'wallet') { closeSheetQuiet(); if (typeof window.openWallet === 'function') window.openWallet(); else go('wallet'); return say('Opening Wallet.'); }
     closeSheetQuiet(); go(target);
     if (feed) wait(function () { return window.rmSetTab && vis($('fitness-view')); }, 3000).then(function (ok) { if (ok) setTimeout(function () { window.rmSetTab('feed'); }, 350); });
     say('Opening ' + LABEL[target] + '.');
@@ -36807,6 +36959,77 @@ function doQuiz(topic) {
         }, 500);
     });
 }
+/* expense by voice: ask for whatever is missing, confirm, then fill the Budget Manager form and press its Save button */
+var CANCEL = /^(?:cancel|never ?mind|stop|forget it|leave it|no thanks)$/i;
+function rs(n) { return (Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' rupees'; }
+function askSlot(q, fn, ok, tries, def) {
+    ask2(q, function (t) {
+        t = String(t || '');
+        if (CANCEL.test(t.trim())) return say('Okay, cancelled.');
+        var v = fn(t); if (v) return ok(v);
+        if (!tries) return askSlot('Sorry, I did not catch that. ' + q, fn, ok, 1, def);
+        if (def) return ok(def);
+        say('Sorry, I still could not get that. Please try again.');
+    });
+}
+function doExpense(d) {
+    d = d || {};
+    if (!isStudent()) return say('Budget Manager is only available on student accounts.');
+    d.amount = Number(d.amount) > 0 ? Number(d.amount) : 0; d.title = cap(d.title || ''); d.cat = CATS.indexOf(d.cat) >= 0 ? d.cat : ''; d.method = (d.method === 'cash' || d.method === 'online') ? d.method : '';
+    if (!d.amount) return askSlot('Sure. How much was the expense, in rupees?', numFrom, function (n) { d.amount = n; doExpense(d); });
+    if (!d.title) return askSlot('What was it for?', titleLoose, function (s) { d.title = s; if (!d.cat) d.cat = guessCat(s); doExpense(d); });
+    if (!d.cat) return askSlot('Which category: Educational, Vegetable, Grocery, Meat, Food, or Other?', function (t) { return guessCat(t) || (/\b(?:other|others|none|misc\w*|anything|no category)\b/i.test(t) ? 'Other' : ''); }, function (c) { d.cat = c; doExpense(d); }, 0, 'Other');
+    if (!d.method) return askSlot('Did you pay online or in cash?', methodFrom, function (m) { d.method = m; doExpense(d); }, 0, 'online');
+    confirmVoice('Add an expense of ' + rs(d.amount) + ' for ' + d.title + ', category ' + d.cat + ', paid ' + d.method + '. Shall I save it?', function () { saveExpense(d); });
+}
+function saveExpense(d) {
+    closeSheetQuiet(); go('budget-manager');
+    wait(function () { return vis($('budget-manager-view')) && typeof window.openAddTransactionModal === 'function'; }, 4000).then(function (ok) {
+        if (!ok) return say('Sorry, I could not open the Budget Manager.');
+        setTimeout(function () {
+            try {
+                window.openAddTransactionModal();
+                var tp = document.querySelector('input[name="budget-type"][value="expense"]'); if (tp) tp.checked = true;
+                if (window.toggleBudgetCategoryFields) window.toggleBudgetCategoryFields();
+                $('budget-amount').value = d.amount; $('budget-title').value = d.title;
+                var sel = $('budget-category'); if (sel) { sel.value = d.cat; if (sel.value !== d.cat) sel.value = 'Other'; }
+                var mt = document.querySelector('input[name="budget-method"][value="' + d.method + '"]'); if (mt) mt.checked = true;
+                var btn = document.querySelector('#budget-add-modal-content button[onclick*="saveBudgetTransaction"]'); if (!btn) throw new Error('no save button');
+                setTimeout(function () {
+                    btn.click();   /* a real click, because the app's own save function reads the click event */
+                    wait(function () { var m = $('budget-add-modal'); return !!m && m.classList.contains('hidden'); }, 7000).then(function (done) {
+                        say(done ? 'Done. I added ' + rs(d.amount) + ' for ' + d.title + ' to your budget.' : 'I could not save it. Please check the form on the screen.');
+                    });
+                }, 400);
+            } catch (e) { say('Sorry, I could not fill in the expense form.'); }
+        }, 400);
+    });
+}
+/* spending summary: same 7-day window as the Budget Manager screen */
+function spendText(p) {
+    var from, label, d0 = new Date();
+    if (p === 'today') { d0.setHours(0, 0, 0, 0); from = d0.getTime(); label = 'today'; }
+    else if (p === 'month') { d0.setDate(1); d0.setHours(0, 0, 0, 0); from = d0.getTime(); label = 'this month'; }
+    else if (p === 'all') { from = 0; label = 'in total'; }
+    else { from = Date.now() - 604800000; label = 'in the last 7 days'; }
+    var spent = 0, got = 0, n = 0, cats = {};
+    (window.budgetsDB || []).forEach(function (tx) {
+        if (!(tx.timestamp >= from)) return; var a = Number(tx.amount) || 0;
+        if (tx.type === 'income') got += a;
+        else if (tx.type === 'expense' || tx.type === 'transfer') { spent += a; n++; var c = tx.type === 'transfer' ? 'Transfers' : (tx.category || 'Other'); cats[c] = (cats[c] || 0) + a; }
+    });
+    if (!n) return ('You have not spent anything ' + label + '. ' + (got ? 'You received ' + rs(got) + '.' : '')).trim();
+    var top = Object.keys(cats).sort(function (x, y) { return cats[y] - cats[x]; })[0];
+    return ('You spent ' + rs(spent) + ' ' + label + ', across ' + n + (n === 1 ? ' payment' : ' payments') + '. ' + (n > 1 && top ? 'Most of it, ' + rs(cats[top]) + ', went on ' + top + '. ' : '') + (got ? 'You also received ' + rs(got) + '.' : '')).trim();
+}
+function doSpend(period) {
+    if (!isStudent()) return say('Budget Manager is only available on student accounts.');
+    var ready = function () { return !!window.budgetListenerStarted && (window.budgetsDB || []).length > 0; };
+    closeSheetQuiet(); go('budget-manager');
+    if (ready()) return say(spendText(period), { keep: true });
+    showAns('Checking your budget\u2026'); setState('think', 'Checking\u2026');
+    wait(ready, 3500).then(function () { say(spendText(period), { keep: true }); });
+}
 /* calls in Discuss: audio or video */
 function doCall(kind) {
     if (window.WAC && window.WAC.active) return say('You are already in a call.');
@@ -36855,7 +37078,7 @@ function confirmVoice(q, yes) {
 }
 
 /* general questions + flexible phrasing -> same AI worker NOVA chat uses */
-var RULES = 'You are NOVA, the student\u2019s voice assistant inside the Exama study app. The student spoke this aloud, so answer in at most 3 short, plain sentences: no markdown, no lists, no emojis. Reply ONLY with one JSON object: {"say":"what to speak","action":{"type":"none","text":"","target":""}}. action.type is one of none, discuss_send, session_start, session_break, session_resume, session_end, run_start, run_pause, run_stop, math_start, navigate. Use an action only when the student clearly asked you to do that in the app (discuss_send puts the message in action.text; navigate puts one of chat, materials, video-hub, session-timer, math-workout, fitness, notices, exam-analysis, budget-manager, syllabus, target-calc, weekly-targets, student in action.target). For questions, use type none and answer helpfully using the student data above.';
+var RULES = 'You are NOVA, the student\u2019s voice assistant inside the Exama study app. The student spoke this aloud, so answer in at most 3 short, plain sentences: no markdown, no lists, no emojis. Reply ONLY with one JSON object: {"say":"what to speak","action":{"type":"none","text":"","target":"","amount":"","title":"","category":"","method":"","period":""}}. action.type is one of none, discuss_send, session_start, session_break, session_resume, session_end, run_start, run_pause, run_stop, math_start, navigate, expense_add, spend_query. Use an action only when the student clearly asked you to do that in the app (discuss_send puts the message in action.text; navigate puts one of chat, materials, video-hub, session-timer, math-workout, fitness, notices, exam-analysis, budget-manager, budget-room, syllabus, target-calc (the Goal Planner), weekly-targets, exam-calendar, leaderboard, wallet, nova-chat, my-profile, student in action.target; for expense_add put the rupee amount in action.amount, what it was for in action.title, one of Educational, Vegetable, Grocery, Meat, Food or Other in action.category and online or cash in action.method, and leave anything the student did not say empty because Nova will ask; for spend_query put today, week, month or all in action.period). For questions, use type none and answer helpfully using the student data above.';
 function ask(text) {
     if (!navigator.onLine || !window.WORKER_URL) { return say('I\u2019m offline right now. I can still open screens and handle sessions, runs and Discuss.', { keep: true }); }
     var sys = ''; try { sys = window.buildNovaSystemContext ? window.buildNovaSystemContext() : 'You are NOVA, a friendly AI study mentor.'; } catch (e) { sys = 'You are NOVA, a friendly AI study mentor.'; }
@@ -36870,7 +37093,7 @@ function ask(text) {
             if (m) { try { o = JSON.parse(m[0]); } catch (e) { } }
             var spoken = clean(o && o.say ? o.say : s); convo.push({ role: 'model', parts: [{ text: spoken || 'Okay.' }] });
             var a = o && o.action;
-            if (a && TYPES.indexOf(a.type) > 0) { return exec({ type: a.type, text: cap(a.text), target: a.target }); }
+            if (a && TYPES.indexOf(a.type) > 0) { return exec({ type: a.type, text: cap(a.text), target: a.target, amount: numFrom(a.amount), title: cap(a.title || ''), cat: guessCat(a.category), method: methodFrom(a.method), period: String(a.period || '').toLowerCase() }); }
             say(spoken || 'Sorry, I didn\u2019t get that.', { keep: true });
         })
         .catch(function () { clearTimeout(to); convo.pop(); say('I\u2019m having trouble reaching my servers. Please check your connection and try again.', { keep: true }); });
@@ -36914,13 +37137,27 @@ installMicWatch(); mkOrb(); checkPerm(); updateOrb();
 /* auto-hide watchdog: whatever state the voice engine got stuck in, an idle popup always closes */
 setInterval(function () {
     if (!sheetOpen && !pillOn()) return;
+    if (keepOpen && sheetOpen) return;      /* a kept answer is never auto-hidden: close it with X, the dark area, or say "close" */
     var idle = Date.now() - lastAct, typing = !!(inEl && sheetOpen && document.activeElement === inEl);
     var busy = phase === 'cmd' || phase === 'think' || phase === 'ask' || phase === 'speak' || !!pending || speaking || (typing && inEl.value);
     if (idle > 40000 || (!busy && idle > (sheetOpen ? (typing ? 12000 : 5500) : 2500))) closeSheet();
 }, 500);
 window.addEventListener('hashchange', fabUpdate);
 fabUpdate();
+/* speak a text with Nova's real audio voice, without opening the Nova popup (used by the NOVA chat screen) */
+window.NovaSpeak = function (t) { var c = clean(t); if (c.length > 420) { var cut = c.slice(0, 420).replace(/[^.!?]*$/, ''); c = cut || c.slice(0, 420); } if (c) speak(c); };
 window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed, speak: function (t) { openSheet(); say(t || 'Hi, I am Nova. How can I help?', { keep: true }); } };
+})();
+</script>
+
+<script>
+/* NOVA voice = real Gemini audio. Android WebView (Median) has no built-in text-to-speech, so Nova plays an audio file made by Gemini instead.
+   1) deploy nova-tts-worker.js on Cloudflare  2) paste your worker address below, keeping ?text={text}
+   (add &k=YOURKEY if you set NOVA_KEY in the worker, and &voice=Kore to choose a voice).
+   While it still says YOUR-WORKER, Nova keeps using the old online voices. */
+(function () {
+    var u = 'https://xama-gemini-proxy.connect-subhankar-info.workers.dev/';
+    if (u.indexOf('YOUR-WORKER') < 0) window.NOVA_TTS_URL = u;
 })();
 </script>
 
