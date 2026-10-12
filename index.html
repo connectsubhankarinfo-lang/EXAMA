@@ -47,7 +47,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 <script>
 /* Notification deep link: remember where a tapped push wants to go, before the router rewrites the hash. */
 (function () {
-    var OK = ['chat', 'notices', 'materials', 'budget-room', 'student', 'admin'];
+    var OK = ['chat', 'notices', 'materials', 'budget-room', 'student', 'admin', 'fitness'];
     try { var h0 = (location.hash || '').replace('#', ''); if (OK.indexOf(h0) !== -1) window.__pendingOpen = h0; } catch (e) { }
     // go to a screen now if logged in, otherwise as soon as login has finished
     window.__goTo = function (h) {
@@ -7411,6 +7411,13 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                 </div>
             </div>
 
+            <!-- RUN MONITOR TABS: My Runs (your own dashboard) | Feed (everyone's runs, like + comment) -->
+            <div id="rm-tabs" role="tablist" aria-label="Run Monitor sections" data-t="runs">
+                <span class="rm-tabpill" aria-hidden="true"></span>
+                <button type="button" role="tab" data-t="runs" aria-selected="true" onclick="window.rmSetTab('runs')"><i class="fa-solid fa-person-running"></i><span>My Runs</span></button>
+                <button type="button" role="tab" data-t="feed" aria-selected="false" onclick="window.rmSetTab('feed')"><i class="fa-solid fa-rss"></i><span>Feed</span></button>
+            </div>
+
             <div
                 class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-4 sm:space-y-6 relative md:w-3/4 md:mx-auto pb-28">
 
@@ -7672,7 +7679,26 @@ if(isOpen())start();
 
             </div>
 
-            
+            <!-- RUN MONITOR FEED: every student's runs (filled by rmFeedShow in the main script) -->
+            <div id="rm-feed" class="rm-feedpane no-scrollbar" aria-live="polite"></div>
+            <style id="rm-feed-css">
+            #fitness-view #rm-tabs{position:relative;z-index:5;flex:none;display:grid;grid-template-columns:1fr 1fr;width:min(calc(100% - 28px),24rem);margin:12px auto 2px;padding:4px;border-radius:999px;background:#fff;border:1px solid #eef2f7;box-shadow:0 8px 20px -12px rgba(15,23,42,.4)}
+            #fitness-view .rm-tabpill{position:absolute;top:4px;bottom:4px;left:4px;width:calc(50% - 4px);border-radius:999px;background:linear-gradient(135deg,#0d1117 0%,#4c0519 55%,#be123c 100%);box-shadow:0 8px 16px -8px rgba(190,24,93,.75);transition:transform .35s cubic-bezier(.4,0,.2,1)}
+            #fitness-view #rm-tabs[data-t="feed"] .rm-tabpill{transform:translateX(100%)}
+            #fitness-view #rm-tabs button{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:8px;height:40px;border:0;border-radius:999px;background:transparent;font:inherit;font-size:13px;font-weight:800;letter-spacing:.02em;color:#64748b;transition:color .25s;-webkit-tap-highlight-color:transparent}
+            #fitness-view #rm-tabs button[aria-selected="true"]{color:#fff}
+            #fitness-view #rm-tabs button:active{transform:scale(.97)}
+            #fitness-view .rm-feedpane{display:none;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:12px 12px calc(env(safe-area-inset-bottom,0px) + 7rem)}
+            #fitness-view.rm-feedmode .rm-feedpane{display:block}
+            #fitness-view.rm-feedmode>.overflow-y-auto{display:none!important}
+            #fitness-view .rm-feedpane .mpf-wrap{max-width:44rem}
+            #fitness-view .rm-feedpane .mpf-newpill{top:8px}
+            @media(min-width:760px){#fitness-view .rm-feedpane{padding-left:20px;padding-right:20px}#fitness-view .rm-feedpane .mpf-wrap{max-width:1120px}}
+            @media (orientation:landscape) and (max-height:520px){#fitness-view #rm-tabs{margin-top:6px}#fitness-view #rm-tabs button{height:34px}}
+            @media(prefers-reduced-motion:reduce){#fitness-view .rm-tabpill{transition:none}}
+            </style>
+
+
 <script>
 (function(){
 var E=window.escHtml,mmss=function(sec){sec=Math.round(sec);return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');};
@@ -17104,6 +17130,7 @@ window.__tpPaint = function () {
                         if (typeof renderStudyMaterials === 'function') renderStudyMaterials();
                         break;
                     case 'fitness':
+                        if (typeof window.rmFeedOnOpen === 'function') window.rmFeedOnOpen();
                         if (typeof renderFitnessMonitor === 'function') renderFitnessMonitor();
                         if (typeof window.enforceFitnessAbsence === 'function') window.enforceFitnessAbsence();
                         break;
@@ -17293,7 +17320,8 @@ window.__tpPaint = function () {
                   // screen is the real in-app Accept/Decline popup, so "Decline" still ends up somewhere
                   // truthful - it just takes one extra tap instead of acting instantly from the tray.
                   let openHash = null;
-                  if (data && data.roomId) openHash = 'budget-room';
+                  if (data && data.runFeed) openHash = 'fitness';          // run like / comment (uses the Discus sound, but opens Run Monitor -> Feed)
+                  else if (data && data.roomId) openHash = 'budget-room';
                   else if (data && data.materialId) openHash = 'materials';
                   else if (data && data.p2p) openHash = 'student';
                   else if (data && data.runner) openHash = 'fitness';
@@ -17309,7 +17337,8 @@ window.__tpPaint = function () {
 
                   // Cosmetic action buttons (all of them just open the screen above).
                   let pushButtons = null;
-                  if (category === 'run' || (data && data.runner)) pushButtons = [{ id: 'join', text: 'Join' }];
+                  if (data && data.runFeed) pushButtons = [{ id: 'view', text: 'View' }];
+                  else if (category === 'run' || (data && data.runner)) pushButtons = [{ id: 'join', text: 'Join' }];
                   else if (category === 'call') pushButtons = [{ id: 'accept', text: 'Accept' }];
                   else if (data && data.p2p === 'question_set') pushButtons = [{ id: 'attempt', text: 'Attempt' }];
                   else if (data && data.p2p === 'answer_script') pushButtons = [{ id: 'evaluate', text: 'Evaluate' }];
@@ -17359,6 +17388,7 @@ window.__tpPaint = function () {
                 if (data && data.pushCategory === 'sos') { if (window.__sosPoll) window.__sosPoll(); return; }
                 if (data && data.pushCategory === 'alarm') { if (window.__alarmPushOpened) window.__alarmPushOpened(data); return; }
                 if (!data) return;
+                if (data.runFeed) { try { window.rmOpenFeed && window.rmOpenFeed(data.logId, data.kind === 'comment'); } catch (e) { console.warn('runFeed open', e); } return; }
                 if (data.noNav) return;   // e.g. "new alarm" push: just opens the app
                 // Push-only-opens: go to the screen named in targetUrl (waits for login on a cold start)
                 if (data.targetUrl) {
@@ -22410,7 +22440,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 const tok = d.swapTok = (d.swapTok || 0) + 1;
                 const paint = () => {
                     if (d.swapTok !== tok) return;
-                    if (tab !== 'feed') feedWatchStop();
+                    if (tab !== 'feed') feedWatchStop('profile');
                     body.classList.remove('mpf-exit-l', 'mpf-exit-r', 'mpf-enter-l', 'mpf-enter-r');
                     mpDrawTab(tab, body);
                     if (!first) { void body.offsetWidth; body.classList.add(dir > 0 ? 'mpf-enter-r' : 'mpf-enter-l'); }
@@ -22420,7 +22450,30 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
             };
 
             // ---------------- RUN FEED ----------------
-            const FEED = { likes: [], comments: [], uL: null, uC: null, on: false, tm: 0, err: '' };
+            const FEED = { likes: [], comments: [], uL: null, uC: null, on: false, tm: { profile: 0, monitor: 0 }, err: '', focus: null };
+            // The same feed is shown in two places:
+            //   profile -> only the runs of the person whose profile it is
+            //   monitor -> the Feed tab inside Run Monitor: everybody's runs
+            // Likes and comments are shared (one Firestore listener), so a like made in one place shows in the other.
+            const FH = {
+                profile: {
+                    id: { list: 'mpf-list', more: 'mpf-more', neu: 'mpf-new', note: 'mpf-note' },
+                    st: () => window.__mp,
+                    scope: () => String(window.__mpTarget || window.loggedInMobile || ''),
+                    live: () => { const d = window.__mp; return !!d && d.tab === 'feed' && window.location.hash === '#my-profile' && !!document.getElementById('mpf-list'); },
+                    empty: () => {
+                        const who = String(window.__mpTarget || window.loggedInMobile || '');
+                        return who === feedMe() && window.currentRole === 'student' ? 'You have not logged a run yet. Your runs will show up here.' : window.escHtml(String(feedName(who)).split(' ')[0]) + ' has not logged a run yet.';
+                    }
+                },
+                monitor: {
+                    id: { list: 'rmf-list', more: 'rmf-more', neu: 'rmf-new', note: 'rmf-note' },
+                    st: () => window.__rmf || (window.__rmf = { feedShown: 8, feedRuns: [], feedSig: '', pb: {}, scroll: 0 }),
+                    scope: () => '',
+                    live: () => window.location.hash === '#fitness' && window.__rmTab === 'feed' && !!document.getElementById('rmf-list'),
+                    empty: () => 'No runs yet. When students log a run, it shows up here.'
+                }
+            };
             const FEED_PAL = ['linear-gradient(135deg,#312e81,#6d28d9 55%,#c026d3)', 'linear-gradient(135deg,#064e3b,#0d9488 55%,#34d399)', 'linear-gradient(135deg,#7c2d12,#ea580c 55%,#fbbf24)', 'linear-gradient(135deg,#0c4a6e,#0284c7 55%,#22d3ee)', 'linear-gradient(135deg,#831843,#e11d48 55%,#fb923c)'];
             const feedCol = n => window.getCollectionName(n);
             const feedMe = () => String(window.loggedInMobile || '');
@@ -22435,7 +22488,11 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
             };
             const feedFmtT = min => { const s = Math.max(0, Math.round((parseFloat(min) || 0) * 60)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(x).padStart(2, '0'); };
-            const feedRuns = () => (window.fitnessDB || []).filter(l => !l.isAbsent && l.pace !== 'ABSENT' && (parseFloat(l.distance) || 0) > 0).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            // mobile given -> only that person's runs (profile feed); empty -> everybody's runs (Run Monitor feed)
+            const feedRuns = mobile => (window.fitnessDB || []).filter(l => !l.isAbsent && l.pace !== 'ABSENT' && (parseFloat(l.distance) || 0) > 0 && (!mobile || String(l.mobile) === String(mobile))).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            // the card for a run that is actually on screen (the profile feed and the Run Monitor feed can both exist in the page)
+            const feedCardEl = id => { const all = document.querySelectorAll('.mpf-card[data-run="' + feedId(id) + '"]'); for (const c of all) if (c.getClientRects().length) return c; return all[0] || null; };
+            const feedRunById = id => (window.fitnessDB || []).find(z => feedId(z.id) === feedId(id)) || null;
             const feedSig = runs => runs.length + ':' + runs.slice(0, 25).map(l => l.id).join(',');
 
             // draws the saved route (flat [x,y,...], -1,-1 = pen up) as a small SVG line
@@ -22481,8 +22538,8 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     + `<circle cx="${st[0]}" cy="${st[1]}" r="${r.toFixed(0)}" fill="#34c759" stroke="#fff" stroke-width="${sw}"/><circle cx="${en[0]}" cy="${en[1]}" r="${r.toFixed(0)}" fill="#ff3b30" stroke="#fff" stroke-width="${sw}"/></svg>`;
             }
 
-            function feedCard(l, i) {
-                const esc = window.escHtml, d = window.__mp || {}, id = feedId(l.id), km = parseFloat(l.distance) || 0, me = feedMe();
+            function feedCard(l, i, st) {
+                const esc = window.escHtml, d = st || window.__mp || {}, id = feedId(l.id), km = parseFloat(l.distance) || 0, me = feedMe();
                 let hs = 0; for (const c of id) hs += c.charCodeAt(0);
                 const pal = FEED_PAL[hs % FEED_PAL.length];
                 const photo = l.photoUrl ? (window.imgCache ? window.imgCache.get('run:' + l.id, l.photoUrl) : l.photoUrl) : '';
@@ -22525,8 +22582,8 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                         <div class="mpf-cl"></div>
                         <div class="mpf-form">
                             <img class="mpf-cav" src="${esc(feedAvatar(me, feedMyName()))}" alt="">
-                            <input id="mpf-in-${id}" class="mpf-in" type="text" maxlength="300" autocomplete="off" placeholder="Write a comment…" onkeydown="if(event.key==='Enter'){event.preventDefault();mpfSend('${id}')}">
-                            <button type="button" id="mpf-send-${id}" class="mpf-send" aria-label="Send comment" onclick="mpfSend('${id}')">${ico('send', 17)}</button>
+                            <input class="mpf-in" type="text" maxlength="300" autocomplete="off" placeholder="Write a comment…" onkeydown="if(event.key==='Enter'){event.preventDefault();mpfSend('${id}')}">
+                            <button type="button" class="mpf-send" aria-label="Send comment" onclick="mpfSend('${id}')">${ico('send', 17)}</button>
                         </div></div></div></div>
                 </article>`;
             }
@@ -22549,13 +22606,13 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
 
             // updates only what changed (counts, heart, comment lists) so typed text and scroll position are never lost
             function feedPatch() {
-                const d = window.__mp; if (!d || d.tab !== 'feed') return;
+                if (!document.querySelector('.mpf-card')) return;
                 const L = {}, C = {}, me = feedMe();
                 FEED.likes.forEach(x => (L[x.logId] || (L[x.logId] = [])).push(x));
                 FEED.comments.forEach(x => (C[x.logId] || (C[x.logId] = [])).push(x));
                 Object.values(C).forEach(a => a.sort((p, q) => (p.timestamp || 0) - (q.timestamp || 0)));
                 Object.values(L).forEach(a => a.sort((p, q) => (q.timestamp || 0) - (p.timestamp || 0)));
-                document.querySelectorAll('#mp-body .mpf-card').forEach(card => {
+                document.querySelectorAll('.mpf-card').forEach(card => {
                     const id = card.dataset.run, likes = L[id] || [], cms = C[id] || [];
                     const mineL = likes.find(x => String(x.mobile) === me), mt = mineL ? (REACT[mineL.type] ? mineL.type : 'heart') : '', btn = card.querySelector('.mpf-like');
                     if (btn.dataset.rx !== mt) {
@@ -22593,44 +22650,127 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 try { FEED.uL && FEED.uL(); FEED.uC && FEED.uC(); } catch (e) { }
                 FEED.uL = FEED.uC = null; FEED.on = false; feedWatchStop();
             }
-            function feedWatchStop() { clearInterval(FEED.tm); FEED.tm = 0; }
-            function feedWatch() {
-                feedWatchStop();
-                FEED.tm = setInterval(() => {
-                    const d = window.__mp;
-                    if (!d || d.tab !== 'feed' || !document.getElementById('mpf-list') || window.location.hash !== '#my-profile') return feedWatchStop();
-                    const pill = document.getElementById('mpf-new');
-                    if (pill && feedSig(feedRuns()) !== d.feedSig) pill.style.display = 'block';   // "New runs" pill, like a social feed
+            function feedWatchStop(h) { (h ? [h] : Object.keys(FEED.tm)).forEach(k => { clearInterval(FEED.tm[k]); FEED.tm[k] = 0; }); }
+            function feedWatch(h) {
+                feedWatchStop(h);
+                FEED.tm[h] = setInterval(() => {
+                    const H = FH[h], d = H.st();
+                    if (!d || !H.live()) return feedWatchStop(h);
+                    const runs = feedRuns(H.scope());
+                    if (feedSig(runs) === d.feedSig) return;
+                    if (!(d.feedRuns || []).length) return feedDraw(h);          // nothing on screen yet (data still loading): just show it
+                    const pill = document.getElementById(H.id.neu);
+                    if (pill) pill.style.display = 'flex';                       // "New runs" pill, like a social feed
                 }, 5000);
             }
-            window.addEventListener('hashchange', () => { if (window.location.hash !== '#my-profile') feedStop(); });
+            // stop listening to Firestore once neither feed is on screen
+            function feedIdleCheck() { if (!FH.profile.live() && !FH.monitor.live()) feedStop(); }
+            window.addEventListener('hashchange', feedIdleCheck);
 
-            function feedMoreBtn() {
-                const d = window.__mp, more = document.getElementById('mpf-more'); if (!d || !more) return;
+            function feedMoreBtn(h) {
+                const H = FH[h], d = H.st(), more = document.getElementById(H.id.more); if (!d || !more) return;
                 const left = (d.feedRuns || []).length - d.feedShown;
-                more.innerHTML = left > 0 ? `<button type="button" onclick="mpfMore()" class="mpf-more">Show ${Math.min(8, left)} more</button>` : '<div style="height:24px"></div>';
+                more.innerHTML = left > 0 ? `<button type="button" onclick="mpfMore('${h}')" class="mpf-more">Show ${Math.min(8, left)} more</button>` : '<div style="height:24px"></div>';
             }
-            function feedDraw() {
-                const d = window.__mp, list = document.getElementById('mpf-list'); if (!d || !list) return;
-                const runs = feedRuns(); d.feedRuns = runs; d.feedSig = feedSig(runs);
+            function feedDraw(h) {
+                const H = FH[h], d = H.st(), list = document.getElementById(H.id.list); if (!d || !list) return;
+                const runs = feedRuns(H.scope()); d.feedRuns = runs; d.feedSig = feedSig(runs);
                 d.pb = {}; runs.forEach(l => { const p = d.pb[l.mobile] || (d.pb[l.mobile] = { max: 0, n: 0 }); p.n++; p.max = Math.max(p.max, parseFloat(l.distance) || 0); });
-                const pill = document.getElementById('mpf-new'); if (pill) pill.style.display = 'none';
-                list.innerHTML = runs.length ? runs.slice(0, d.feedShown).map(feedCard).join('')
-                    : `<div class="mpf-emptyst">${ico('activity', 40)}<p>No runs yet. When students log a run, it shows up here.</p></div>`;
-                feedMoreBtn(); feedPatch();
+                const pill = document.getElementById(H.id.neu); if (pill) pill.style.display = 'none';
+                const f = h === 'monitor' && runs.length ? FEED.focus : null;     // opened from a like / comment notification: make sure that run is on the page
+                if (f) { const ix = runs.findIndex(l => feedId(l.id) === f.id); if (ix >= d.feedShown) d.feedShown = ix + 1; }
+                list.innerHTML = runs.length ? runs.slice(0, d.feedShown).map((l, i) => feedCard(l, i, d)).join('')
+                    : `<div class="mpf-emptyst">${ico('activity', 40)}<p>${H.empty()}</p></div>`;
+                feedMoreBtn(h); feedPatch();
+                if (f) feedFocus(f);
+            }
+            // scroll to the run that a notification was about, flash it, and open its comments for a comment notification
+            function feedFocus(f) {
+                FEED.focus = null;
+                const card = feedCardEl(f.id); if (!card) return;
+                if (f.comments) { const cm = card.querySelector('.mpf-cm'); if (cm) cm.classList.add('open'); }
+                setTimeout(() => {
+                    try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { card.scrollIntoView(); }
+                    card.style.outline = '3px solid rgba(244,63,94,.65)'; card.style.outlineOffset = '2px';
+                    setTimeout(() => { card.style.outline = ''; card.style.outlineOffset = ''; }, 2200);
+                }, 350);
             }
             function mpFeedShow(body) {
                 const d = window.__mp; d.feedShown = 8; feedStart();
                 body.innerHTML = '<div class="mpf-wrap"><div id="mpf-note"></div><button type="button" id="mpf-new" class="mpf-newpill" onclick="mpfRefresh()" style="display:none">' + ico('arrowup', 14) + 'New runs</button><div id="mpf-list" class="mpf-grid"></div><div id="mpf-more"></div></div>';
-                feedNotice(); feedDraw(); feedWatch();
+                feedNotice(); feedDraw('profile'); feedWatch('profile');
             }
-            window.mpfRefresh = function () { feedDraw(); const t = document.getElementById('mp-tabs'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-            window.mpfMore = function () {
-                const d = window.__mp, list = document.getElementById('mpf-list'); if (!d || !list) return;
+            window.mpfRefresh = function () { feedDraw('profile'); const t = document.getElementById('mp-tabs'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+            window.mpfMore = function (h) {
+                h = FH[h] ? h : 'profile';
+                const H = FH[h], d = H.st(), list = document.getElementById(H.id.list); if (!d || !list) return;
                 const from = d.feedShown; d.feedShown += 8;
-                list.insertAdjacentHTML('beforeend', (d.feedRuns || []).slice(from, d.feedShown).map((l, i) => feedCard(l, i)).join(''));
-                feedMoreBtn(); feedPatch();
+                list.insertAdjacentHTML('beforeend', (d.feedRuns || []).slice(from, d.feedShown).map((l, i) => feedCard(l, i, d)).join(''));
+                feedMoreBtn(h); feedPatch();
             };
+
+            // ---------------- RUN MONITOR:  "My Runs | Feed"  ----------------
+            // Feed = everybody's runs, with the same like / comment as the profile feed.
+            function rmFeedShow() {
+                const pane = document.getElementById('rm-feed'); if (!pane) return;
+                mpfCss(); feedStart();
+                const st = FH.monitor.st(), keep = st.scroll || 0;
+                pane.innerHTML = '<div class="mpf-wrap"><div id="rmf-note"></div><button type="button" id="rmf-new" class="mpf-newpill" onclick="rmfRefresh()" style="display:none">' + ico('arrowup', 14) + 'New runs</button><div id="rmf-list" class="mpf-grid"></div><div id="rmf-more"></div></div>';
+                if (!pane.__sc) { pane.__sc = 1; pane.addEventListener('scroll', () => { if (pane.clientHeight) st.scroll = pane.scrollTop; }, { passive: true }); }
+                feedBindTap(pane); feedNotice(); feedDraw('monitor'); feedWatch('monitor');
+                if (!FEED.focus && keep) pane.scrollTop = keep;                 // coming back from someone's profile: stay where you were
+            }
+            function rmApplyTab(t) {
+                const v = document.getElementById('fitness-view'), bar = document.getElementById('rm-tabs'); if (!v) return;
+                window.__rmTab = t = (t === 'feed' ? 'feed' : 'runs');
+                v.classList.toggle('rm-feedmode', t === 'feed');
+                if (bar) { bar.dataset.t = t; bar.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', b.dataset.t === t ? 'true' : 'false')); }
+                if (t === 'feed') rmFeedShow();
+                else { feedWatchStop('monitor'); feedIdleCheck(); }
+            }
+            window.rmSetTab = function (t) { if (t === window.__rmTab && document.getElementById('fitness-view').classList.contains('rm-feedmode') === (t === 'feed')) return; rmApplyTab(t); };
+            window.rmfRefresh = function () { feedDraw('monitor'); const p = document.getElementById('rm-feed'); if (p) p.scrollTo({ top: 0, behavior: 'smooth' }); };
+            // called by the router every time Run Monitor opens: show the tab you were on (My Runs the first time)
+            window.rmFeedOnOpen = function () { rmApplyTab(window.__rmTab === 'feed' ? 'feed' : 'runs'); };
+            // a like / comment notification was tapped: open Run Monitor on the Feed, at that run
+            window.rmOpenFeed = function (logId, comments) {
+                window.__rmTab = 'feed';
+                FEED.focus = logId ? { id: feedId(logId), comments: !!comments } : null;
+                if (window.currentRole && window.location.hash === '#fitness') window.rmFeedOnOpen();     // already on Run Monitor
+                else if (window.__goTo) window.__goTo('fitness');                                           // otherwise go there (waits for login on a cold start)
+                else window.location.hash = 'fitness';
+            };
+
+            // ---- push notification to the owner of a run when somebody likes / comments on it ----
+            // Uses the "discus" category, so it plays the same custom sound as Discus chat messages.
+            // Tapping it opens Run Monitor -> Feed at that run (data.runFeed, handled in median_onesignal_push_opened).
+            const RX_EMOJI = { heart: '\u2764\uFE0F', fire: '\uD83D\uDD25', strong: '\u26A1', clap: '\uD83D\uDC4F', wow: '\uD83E\uDD29' };
+            function feedPushSeen(key) {
+                // one like-push per person per run per 24h, so like / unlike / like again never spams the owner
+                let m = {}; const now = Date.now();
+                try { m = JSON.parse(localStorage.getItem('rfPushSeen') || '{}') || {}; } catch (e) { }
+                Object.keys(m).forEach(k => { if (now - m[k] > 864e5) delete m[k]; });
+                if (m[key]) return true;
+                m[key] = now; try { localStorage.setItem('rfPushSeen', JSON.stringify(m)); } catch (e) { }
+                return false;
+            }
+            function feedPush(kind, run, info) {
+                try {
+                    if (!run || !run.mobile || typeof sendOneSignalPush !== 'function') return;
+                    const owner = String(run.mobile).trim(), me = feedMe();
+                    if (!owner || owner === me) return;                               // never notify yourself
+                    if (kind === 'like' && feedPushSeen('like|' + feedId(run.id) + '|' + me)) return;
+                    const who = feedMyName(), km = (parseFloat(run.distance) || 0).toFixed(2), what = run.photoUrl ? 'run photo' : 'run';
+                    let title, body;
+                    if (kind === 'comment') {
+                        const tx = String(info.text || ''); title = who + ' commented on your ' + what; body = '"' + (tx.length > 90 ? tx.slice(0, 90) + '\u2026' : tx) + '"';
+                    } else {
+                        title = !info.type || info.type === 'heart' ? who + ' liked your ' + what : who + ' reacted ' + (RX_EMOJI[info.type] || '') + ' to your ' + what;
+                        body = km + ' km run \u00B7 Tap to see it';
+                    }
+                    sendOneSignalPush(title, body, null, { category: 'discus', data: { runFeed: true, logId: feedId(run.id), kind } }, [owner]);
+                } catch (e) { console.warn('run feed push failed', e); }
+            }
 
             // ---- like / comment (saved in Firestore) ----
             window.mpfLike = async function (id, fromDouble, type) {
@@ -22638,7 +22778,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 const key = id + '_' + me, cur = FEED.likes.find(x => x.id === key), t = REACT[type] ? type : 'heart';
                 if (fromDouble && cur) return;                                   // double-tap only adds
                 const remove = !!cur && (!type || cur.type === t || (!cur.type && t === 'heart'));   // a plain tap on your reaction removes it
-                const btn = document.querySelector('.mpf-card[data-run="' + id + '"] .mpf-like');
+                const cardEl = feedCardEl(id), btn = cardEl && cardEl.querySelector('.mpf-like');
                 if (!remove && btn) { btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop'); }
                 FEED.likes = FEED.likes.filter(x => x.id !== key);
                 if (!remove) FEED.likes.unshift({ id: key, logId: id, mobile: me, name: feedMyName(), type: t, timestamp: Date.now() });
@@ -22646,7 +22786,10 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 if (!isFirebaseConfigured) return;
                 try {
                     if (remove) await deleteDoc(doc(db, feedCol('run_likes'), key));
-                    else await setDoc(doc(db, feedCol('run_likes'), key), { logId: id, mobile: me, name: feedMyName(), type: t, timestamp: Date.now() });
+                    else {
+                        await setDoc(doc(db, feedCol('run_likes'), key), { logId: id, mobile: me, name: feedMyName(), type: t, timestamp: Date.now() });
+                        feedPush('like', feedRunById(id), { type: t });
+                    }
                 } catch (e) {
                     console.error('feed like', e);
                     if (window.showCustomAlert) window.showCustomAlert('Could not save', 'Your reaction was not saved. Check your connection and try again.', 'error');
@@ -22661,17 +22804,18 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                 setTimeout(() => document.addEventListener('click', () => p.remove(), { once: true }), 60);
             }
             window.mpfToggle = function (id) {
-                const card = document.querySelector('.mpf-card[data-run="' + id + '"]'); if (!card) return;
+                const card = feedCardEl(id); if (!card) return;
                 const cm = card.querySelector('.mpf-cm'), on = cm.classList.toggle('open');
-                if (on) setTimeout(() => { const i = document.getElementById('mpf-in-' + id); if (i) i.focus(); }, 280);
+                if (on) setTimeout(() => { const i = card.querySelector('.mpf-in'); if (i) i.focus(); }, 280);
             };
             window.mpfSend = async function (id) {
-                const inp = document.getElementById('mpf-in-' + id), btn = document.getElementById('mpf-send-' + id); if (!inp) return;
+                const card = feedCardEl(id); if (!card) return;
+                const inp = card.querySelector('.mpf-in'), btn = card.querySelector('.mpf-send'); if (!inp) return;
                 const text = inp.value.trim().slice(0, 300), me = feedMe(); if (!text || !me) return;
                 const obj = { logId: id, mobile: me, name: feedMyName(), text, timestamp: Date.now() };
                 inp.value = ''; if (btn) btn.disabled = true;
                 try {
-                    if (isFirebaseConfigured) await addDoc(collection(db, feedCol('run_comments')), obj);
+                    if (isFirebaseConfigured) { await addDoc(collection(db, feedCol('run_comments')), obj); feedPush('comment', feedRunById(id), { text }); }
                     else { FEED.comments.push({ id: 'l' + Math.random().toString(36).slice(2), ...obj }); feedPatch(); }
                 } catch (e) {
                     console.error('feed comment', e); inp.value = text;
