@@ -6339,7 +6339,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                         function cancelAnim() { if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; } animating = false; }
                         /* Spring (critically damped, iOS-like). Animates the VIRTUAL scroll V, so card, header fold, grid and capsule all move on ONE clock.
                            v0 = release velocity in px/s, so the motion continues the finger's momentum instead of restarting. */
-                        var SP_K = 1700, SP_C = 2 * Math.sqrt(1700);
+                        var SP_K = 300, SP_C = 2 * Math.sqrt(300);   /* softer critically-damped spring: card hides / pins in ~0.4 s, no snap */
                         function springTo(target, v0) {
                             cancelAnim(); D = calcD(); if (!D) return;
                             if (reduce) { setV(target); return; }
@@ -6456,7 +6456,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                                     tOwn = true; tP0 = p;
                                 }
                                 e.preventDefault();
-                                setV(getV() + dy * 1.3);
+                                setV(getV() + dy * 1.15);
                                 tVel = tVel * 0.6 + (dy / dt) * 0.4;                 // px per ms, + = scrolling down
                             }, { passive: false });
                             function endTouch() {
@@ -12110,6 +12110,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                     }
                 }
 
+                try { if (window.__novaSidebarOpen) window.__novaSidebarOpen(); } catch (e) { }
                 // 2. Animate into view
                 overlay.classList.remove('hidden');
                 requestAnimationFrame(() => {
@@ -17615,15 +17616,18 @@ window.__tpPaint = function () {
                 } catch (e) { }
                 return '0ms';
             };
+            /* colour of a letter by its place in the line: indigo > cyan > amber > rose, the same order as the four electron dots */
+            window.__glRamp = function (t) { const S = [[79, 70, 229], [6, 182, 212], [245, 158, 11], [225, 29, 72]]; t = Math.max(0, Math.min(1, t)) * 3; const k = Math.min(2, Math.floor(t)), f = t - k, a = S[k], b = S[k + 1]; return 'rgb(' + a.map(function (v, n) { return Math.round(v + (b[n] - v) * f); }).join(',') + ')'; };
             window.__glSplit = function (el, msg) {
                 msg = String(msg); el.textContent = ''; el.setAttribute('aria-label', msg);
-                let i = 0; const words = msg.split(' ').filter(Boolean);
+                let i = 0; const words = msg.split(' ').filter(Boolean), total = Math.max(1, words.join('').length - 1);
                 words.forEach(function (w, wi) {
                     const ws = document.createElement('span'); ws.className = 'gl-w'; ws.setAttribute('aria-hidden', 'true');
-                    Array.from(w).forEach(function (ch) { const c = document.createElement('span'); c.className = 'gl-c'; c.style.setProperty('--i', Math.min(i++, 40)); c.textContent = ch; c.setAttribute('data-c', ch); ws.appendChild(c); });
+                    Array.from(w).forEach(function (ch) { const c = document.createElement('span'), idx = i++; c.className = 'gl-c'; c.style.setProperty('--i', Math.min(idx, 40)); c.style.setProperty('--cc', window.__glRamp(idx / total)); c.textContent = ch; c.setAttribute('data-c', ch); ws.appendChild(c); });
                     el.appendChild(ws); if (wi < words.length - 1) el.appendChild(document.createTextNode(' '));
                 });
-                el.style.setProperty('--d0', window.__glD0()); el.classList.add('gl-chars');
+                if (el.classList.contains('gl-live')) { const dd = document.createElement('span'); dd.className = 'gl-dots'; dd.setAttribute('aria-hidden', 'true'); for (let j = 0; j < 4; j++) { const d = document.createElement('i'); d.style.setProperty('--j', j); dd.appendChild(d); } el.appendChild(dd); }
+                el.style.setProperty('--nl', Math.min(i, 40)); el.style.setProperty('--d0', window.__glD0()); el.classList.add('gl-chars');
             };
             window.__glText = function (msg) { const p = document.getElementById('loader-text'); if (!p) return; p.dataset.msg = msg; p.classList.add('gl-live'); window.__glSplit(p, msg); };
             (function () { const p = document.getElementById('loader-text'); if (p && !p.dataset.msg && p.textContent.trim()) { p.dataset.msg = p.textContent.trim(); window.__glSplit(p, p.dataset.msg); } })();
@@ -36255,6 +36259,13 @@ function feed(x) {
     if (nz) E.lastAudio = Date.now();
     var y = resample(x); if (y.length) core.push(y);
 }
+function ctxReady(c) {   /* the audio context must really be running before the mic is opened, otherwise "listening" is shown but no audio flows */
+    if (c.state === 'running') return Promise.resolve();
+    return new Promise(function (ok, no) {
+        var bad = function () { no(Object.assign(new Error('audio suspended'), { name: 'Suspended' })); }, t = setTimeout(bad, 1500);
+        try { c.resume().then(function () { clearTimeout(t); if (c.state === 'running') ok(); else bad(); }, function () { clearTimeout(t); bad(); }); } catch (e) { clearTimeout(t); bad(); }
+    });
+}
 E.prime = function () {
     if (!E.supported) return null;
     try { if (!ctx || ctx.state === 'closed') { try { ctx = new AC({ sampleRate: C.sr }); } catch (e) { ctx = new AC(); } } if (ctx.state === 'suspended') ctx.resume(); } catch (e) { ctx = null; }
@@ -36276,7 +36287,7 @@ E.start = function (onWake) {
     if (!E.supported) return Promise.reject(Object.assign(new Error('unsupported'), { name: 'Unsupported' }));
     starting = (function () {
         var c = E.prime(); if (!c) return Promise.reject(Object.assign(new Error('no audio context'), { name: 'Unsupported' }));
-        return gum({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } }).then(function (s) {
+        return ctxReady(c).then(function () { return gum({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } }); }).then(function (s) {
             stream = s; resample = Resampler(c.sampleRate);
             core = Core(function (info) { var n = Date.now(), p = E.stats, up = info.prob >= p.peak || n - p.peakAt > 4000; E.stats = { prob: info.prob, db: info.db, gate: info.gate, at: n, peak: up ? info.prob : p.peak, peakAt: up ? n : p.peakAt }; }, function (info) { if (onWakeCb) onWakeCb(info); });
             src = c.createMediaStreamSource(s);
@@ -36412,7 +36423,7 @@ function updateOrb() {
     else if (rec && mode === 'wake') { txt = 'On. Listening for \u201cHey Nova\u201d'; cls = 'ok'; if (lastHeard && Date.now() - lastHeardAt < 8000) txt += ' \u00b7 heard: \u201c' + lastHeard.trim().slice(-40) + '\u201d'; }
     else { txt = 'On. Starting to listen\u2026'; }
     if (t) t.setAttribute('aria-checked', wakeOn ? 'true' : 'false');
-    if (d) { d.textContent = txt; d.className = 'block text-[10px] font-medium mt-0.5' + (cls ? ' ' + cls : ' text-slate-400'); }
+    if (d) { var cn = 'block text-[10px] font-medium mt-0.5' + (cls ? ' ' + cls : ' text-slate-400'); if (d.textContent !== txt) d.textContent = txt; if (d.className !== cn) d.className = cn; }
 }
 function setState(s, label) { build(); touch(); card.dataset.st = s; stateEl.textContent = label || ''; if (!sheetOpen && pillOn() && (s === 'listen' || s === 'think' || s === 'speak')) { pill.dataset.st = s; if (s !== 'listen' || !cur) pillTxt.textContent = label || pillTxt.textContent; } }
 function showYou(t) { build(); touch(); youEl.textContent = t || ''; hintEl.style.display = t || ansEl.textContent ? 'none' : ''; if (!sheetOpen && pillOn() && t) pillTxt.textContent = '\u201c' + t + '\u201d'; }
@@ -36501,12 +36512,28 @@ function pickVoice() {
 }
 if ('speechSynthesis' in window) { try { speechSynthesis.onvoiceschanged = function () { voice = null; pickVoice(); }; } catch (e) { } }
 function clean(t) { return String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[*_`#>~|]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim(); }
-function chunks(t) { var out = [], s = t.match(/[^.!?]+[.!?]*/g) || [t], buf = ''; s.forEach(function (x) { if ((buf + x).length > (out.length ? 180 : 90) && buf) { out.push(buf.trim()); buf = x; } else buf += x; }); if (buf.trim()) out.push(buf.trim()); return out.slice(0, 8); }
+function chunks(t) {
+    var out = [], s = t.match(/[^.!?]+[.!?]*/g) || [t], buf = '';
+    if (s.length && s[0].length > 70) {   /* keep the FIRST piece short (split at a comma) so the first sound is ready sooner */
+        var f = s[0], at = -1, mm, re = /[,;:]\s/g;
+        while ((mm = re.exec(f)) && mm.index < 70) { if (mm.index >= 20) at = mm.index + 1; }
+        if (at > 0) s.splice(0, 1, f.slice(0, at), f.slice(at));
+    }
+    s.forEach(function (x) { if ((buf + x).length > (out.length ? 180 : 70) && buf) { out.push(buf.trim()); buf = x; } else buf += x; });
+    if (buf.trim()) out.push(buf.trim()); return out.slice(0, 8);
+}
 
 /* Online voices, tried in order for every sentence: your own endpoint (window.NOVA_TTS_URL, e.g. 'https://yourworker/tts?text={text}' or a function(text)),
    StreamElements voices (Amazon Polly), then Google Translate voice. window.NOVA_TTS_VOICES = ['Raveena','Joanna'] picks the Polly voices;
    localStorage nova_tts=0 turns spoken answers off. */
 var TTS_ON = store.get('nova_tts') !== '0', ttsAudio = null, ttsTimer = null, ttsSeq = 0;
+/* answer text and voice appear together: the text waits (max SYNC_MAX ms) until the first sound really starts, spoke() = "sound started" */
+var SYNC_MAX = 1800, startCb = null, sayTok = 0;
+function spoke() { var f = startCb; startCb = null; if (f) { try { f(); } catch (e) { } } }
+var warmed = {};
+function warm() {   /* open the connections to the AI and voice servers early, so the first answer and its audio do not wait for a handshake */
+    try { [window.WORKER_URL, window.NOVA_TTS_URL].forEach(function (u) { if (typeof u !== 'string') return; var m = u.match(/^https?:\/\/[^\/?#]+/i); if (!m || warmed[m[0]]) return; warmed[m[0]] = 1; var l = document.createElement('link'); l.rel = 'preconnect'; l.href = m[0]; l.crossOrigin = 'anonymous'; document.head.appendChild(l); }); } catch (e) { }
+}
 var SILENT = 'data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
 /* Android app WebView: its built-in voice is missing or a silent stub, so skip it and use the online voice straight away */
 var IN_WV = (function () { try { var u = navigator.userAgent || ''; return /Android/i.test(u) && (/;\s*wv\)/i.test(u) || /EXAMA_APP|median|gonative/i.test(u) || !!(window.median || window.gonative)); } catch (e) { return false; } })();
@@ -36560,7 +36587,7 @@ function playTTS(txt, onEnd, isEnded) {
         if (over || isEnded()) return; clearTimeout(ttsTimer);
         if (k >= urls.length) return finish(false);
         var my = ++ttsSeq, adv = function () { if (my === ttsSeq) tryNext(); };      /* each attempt advances at most once */
-        a.onended = function () { if (my === ttsSeq) finish(true); }; a.onerror = adv; a.onplaying = function () { if (my === ttsSeq) clearTimeout(ttsTimer); };
+        a.onended = function () { if (my === ttsSeq) finish(true); }; a.onerror = adv; a.onplaying = function () { if (my === ttsSeq) { clearTimeout(ttsTimer); spoke(); } };
         a.src = urls[k++]; ttsTimer = setTimeout(adv, 15000);     /* never started: try the next voice */
         try { var p = a.play(); if (p && p.catch) p.catch(function (e) { if (my !== ttsSeq) return; var n = e && e.name; if (n === 'NotAllowedError') finish('blocked'); else if (n !== 'AbortError') tryNext(); }); } catch (e) { tryNext(); }
     }
@@ -36573,7 +36600,7 @@ function nativeSay(txt, cb) {
     function end(r) { if (over) return; over = true; clearTimeout(tmr); clearInterval(poll); stopNativeFn = null; cb(r); }
     try { u = new SpeechSynthesisUtterance(txt); } catch (e) { return cb(false); }
     v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
-    u.onstart = function () { gs = true; }; u.onend = u.onerror = function () { end(true); };
+    u.onstart = function () { gs = true; spoke(); }; u.onend = u.onerror = function () { end(true); };
     tmr = setTimeout(function () { if (gs) return; try { speechSynthesis.cancel(); } catch (e) { } end(false); }, 2500);      /* built-in voice never started */
     /* many phones never fire onend: if the voice engine went quiet after speaking, move on ourselves */
     poll = setInterval(function () { try { if (gs && Date.now() - t0 > 900 && !speechSynthesis.speaking && !speechSynthesis.pending) end(true); } catch (e) { } }, 350);
@@ -36582,12 +36609,12 @@ function nativeSay(txt, cb) {
 }
 var stopSpeakFn = null;
 function stopSpeak() { ttsStop(); stopNative(); speaking = false; if (stopSpeakFn) { var f = stopSpeakFn; stopSpeakFn = null; try { f(); } catch (e) { } } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
-function speak(text, done) {
-    var t = clean(text); stopSpeak();
-    if (!t || (!nativeOk() && !ttsOk())) { phase = 'idle'; if (done) setTimeout(done, 200); return; }
-    killRec(); engStop(); phase = 'speak'; speaking = true; setState('speak', 'Speaking\u2026');
+function speak(text, done, onStart) {
+    var t = clean(text); stopSpeak(); startCb = onStart || null;
+    if (!t || (!nativeOk() && !ttsOk())) { spoke(); phase = 'idle'; if (done) setTimeout(done, 200); return; }
+    killRec(); engStop(); phase = 'speak'; speaking = true; if (onStart) setState('think', 'Thinking\u2026'); else setState('speak', 'Speaking\u2026');
     var parts = chunks(t), i = 0, ended = false, lastTry = false, forceNative = false;
-    var fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; touch(); if (done) done(); };
+    var fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); spoke(); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; touch(); if (done) done(); };
     stopSpeakFn = function () { ended = true; clearTimeout(timers.speakGuard); };
     timers.speakGuard = setTimeout(function () { ttsStop(); stopNative(); fin(); }, Math.min(90000, t.length * 85 + (nativeOk() ? 4000 : 30000)));
     var isEnded = function () { return ended; };
@@ -36602,7 +36629,7 @@ function speak(text, done) {
             lastTry = true; nativeSay(txt, function (ok) { if (ok) forceNative = true; cb(ok); });      /* every online voice failed: last resort, the browser voice */
         }, isEnded);
     }
-    if (!nativeOk()) { ttsPrefetch(parts[0]); ttsPrefetch(parts[1]); }
+    if (!nativeOk()) { ttsPrefetch(parts[0]); ttsPrefetch(parts[1]); ttsPrefetch(parts[2]); }   /* first three sentences are fetched in parallel */
     function next() {
         if (ended) return; if (i >= parts.length) return fin();
         var cur = parts[i++]; if (!nativeOk()) { ttsPrefetch(parts[i]); ttsPrefetch(parts[i + 1]); }
@@ -36613,7 +36640,7 @@ function speak(text, done) {
             next();
         });
     }
-    setTimeout(next, 90);   /* tiny gap after cancel(): speak() right after cancel() is dropped on some phones */
+    if (nativeOk()) setTimeout(next, 90); else next();   /* tiny gap after cancel(): speak() right after cancel() is dropped on some phones */
 }
 /* the phone refused to play audio on its own: leave a one-tap button (a tap is allowed to start sound) */
 function blockedHint(text) {
@@ -36634,9 +36661,17 @@ function wantWake() { return !MOBILE && !onnxActive() && wakeOn && !!SR && !deni
 /* ---------------- hands-free wake word: on-device model ---------------- */
 /* the browser only lets the microphone/audio start after a REAL tap (touchend / pointerup / click / keydown - touchstart and scrolling do not count) */
 function activated() { try { return !navigator.userActivation || navigator.userActivation.hasBeenActive; } catch (e) { return true; } }
+function startNote() {   /* why the wake word is not listening yet (shown in the sidebar) */
+    if (engStarting) return 'Starting the microphone\u2026';
+    if (blocked()) return 'Paused while an exam or call is on.';
+    if (micBusy.length) return 'Paused: another feature is using the microphone.';
+    if (phase !== 'idle' || speaking || rec) return 'Paused while Nova is talking.';
+    if (Date.now() < engRetryAt) return 'Retrying the microphone\u2026';
+    return 'Starting to listen\u2026';
+}
 function onnxText() {
     if (!activated()) return 'Tap anywhere on the screen once to start listening\u2026';
-    if (!ENG || !ENG.running) return 'On. Starting to listen\u2026';
+    if (!ENG || !ENG.running) return 'On. ' + startNote();
     var s = ENG.stats, fresh = !!(s && s.at && Date.now() - s.at < 4000);
     return 'On. Listening for \u201cHey Nova\u201d \u00b7 match ' + Math.round((fresh ? (s.peak || 0) : 0) * 100) + '%';
 }
@@ -36654,6 +36689,7 @@ function engSync() {
         engStarting = false; var n = e && e.name;
         if (n === 'NotAllowedError' || n === 'SecurityError') denied = true;
         else if (n === 'Unsupported') { onnxFailed = true; fabUpdate(); }
+        else if (n === 'Suspended') { engRetryAt = Date.now() + 500; }
         else { engErrs++; engRetryAt = Date.now() + Math.min(30000, 2000 * engErrs); }
         updateOrb();
     });
@@ -36725,7 +36761,7 @@ function update(e) {
     if (submitted) return;
     var t = textFrom(e); cur = t; showYou(t);
     clearTimeout(timers.sil); clearTimeout(timers.nosp);
-    if (t) { var last = e.results[e.results.length - 1]; timers.sil = setTimeout(function () { submit(cur); }, last.isFinal ? 700 : 1500); }
+    if (t) { var last = e.results[e.results.length - 1]; timers.sil = setTimeout(function () { submit(cur); }, last.isFinal ? 350 : 1100); }
     else timers.nosp = setTimeout(function () { if (!cur) cmdTimeout(); }, 7000);
 }
 function cmdTimeout() {
@@ -36777,16 +36813,24 @@ function say(text, o) {
     /* o.keep = an answer to a question: it stays on screen until you close it. Without it (a finished task: message sent, session started...) the popup hides by itself. */
     keepOpen = !!o.keep; if (keepOpen) clearTimeout(timers.close);
     if (!sheetOpen && (o.keep || shown.length > 80)) openSheet();    /* answers and long text need the sheet; short task confirmations stay in the small pill */
-    if (sheetOpen) showAns(shown); else pillShow(shown, 'speak');
+    var tok = ++sayTok, shownOnce = false, rvT = null;
+    function reveal() {   /* text appears exactly when the voice starts (or after SYNC_MAX ms at the latest) */
+        if (shownOnce) return; shownOnce = true; clearTimeout(rvT);
+        if (tok !== sayTok || phase !== 'speak') return;
+        setState('speak', 'Speaking\u2026');
+        if (sheetOpen) showAns(shown); else pillShow(shown, 'speak');
+    }
+    rvT = setTimeout(reveal, SYNC_MAX);
     speak(text, function () {
         phase = 'idle'; if (o.then) o.then();
         if (o.keep && !o.noFollow && canFollow()) return followListen();
         if (sheetOpen) { if (!o.keep) autoClose(1800); }
         else { clearTimeout(timers.pillHide); timers.pillHide = setTimeout(pillHide, 600); }
         resumeWake(300);
-    });
+    }, reveal);
 }
 function submit(t) {
+    warm();
     if (submitted) return; submitted = true; followUp = false; killRec(); t = String(t || '').trim(); if (!t) return cmdTimeout();
     showYou(t);
     if (pending) { var p = pending; pending = null; return p(t); }
@@ -37213,7 +37257,8 @@ function actEv() {
 }
 ACT_EV.forEach(function (ev) { document.addEventListener(ev, actEv, { passive: true, capture: true }); });
 /* live match % in the sidebar while it is on screen */
-setInterval(function () { var d = $('nv-wake-desc'); if (d && onnxActive() && wakeOn && !denied && d.getClientRects().length) updateOrb(); }, 250);
+setInterval(function () { var d = $('nv-wake-desc'); if (d && onnxActive() && wakeOn && !denied && d.getClientRects().length) updateOrb(); }, 120);
+setInterval(function () { if (onnxActive() && wakeOn && !denied && ENG && !ENG.running && role()) engSync(); }, 500);   /* not listening yet: look again every half second instead of every 1.5 s */
 function checkPerm() {
     try {
         if (!navigator.permissions || !navigator.permissions.query) return;
@@ -37257,9 +37302,18 @@ window.NovaSpeak = function (t, cb) { var c = clean(t); if (c.length > 420) { va
 /* right after login: start hearing "Hey Nova" straight away (the login tap already counts as the user gesture) */
 window.__novaLoggedIn = function () {
     try {
+        warm();
         failStreak = 0; engErrs = 0; engRetryAt = 0; fabUpdate();
         if ((!MOBILE || onnxActive()) && SR && wakeOn && !store.get('nova_hint') && window.showToast) { store.set('nova_hint', '1'); window.showToast('Hey Nova is on', 'Say \u201cHey Nova\u201d anywhere in the app. Allow the microphone when asked.', 'info'); }
         if (gesture) { resumeWake(150); setTimeout(function () { resumeWake(100); }, 1200); }
+    } catch (e) { }
+};
+/* opening the settings sidebar is a real tap: start (or restart) \"Hey Nova\" right now and show the live match % straight away */
+window.__novaSidebarOpen = function () {
+    try {
+        gesture = true; if (ENG) ENG.prime(); audio(); engErrs = 0; engRetryAt = 0; failStreak = 0; denied = denied && !wakeOn;
+        checkPerm(); resumeWake(40); engSync(); updateOrb();
+        [80, 300, 800, 1600].forEach(function (ms) { setTimeout(function () { engSync(); updateOrb(); }, ms); });
     } catch (e) { }
 };
 window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed, speak: function (t) { openSheet(); say(t || 'Hi, I am Nova. How can I help?', { keep: true }); } };
@@ -37277,6 +37331,58 @@ window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed
 })();
 </script>
 
+<style id="exama-motion-v6">
+/* ===== Motion v6 - Apple-style =====
+   press = quick (90 ms) then a soft spring-back with no overshoot; screens / windows = slower, softer reveal.
+   Also fixes the old rule that used an undefined --apple-spring, which silently switched OFF every button transition. */
+:root{--apple-spring:cubic-bezier(.22,1,.36,1);--ex-ease:cubic-bezier(.32,.72,0,1);--ex-out:cubic-bezier(.22,1,.36,1);--ex-press:cubic-bezier(.25,.8,.4,1)}
+@keyframes exViewMove{from{transform:translate3d(0,24px,0) scale(.985)}to{transform:translate3d(0,0,0) scale(1)}}
+@keyframes exViewFade{from{opacity:0}to{opacity:1}}
+@keyframes exSlideIn{from{transform:translate3d(100%,0,0)}to{transform:translate3d(0,0,0)}}
+@keyframes exFadeUp{from{opacity:0;transform:translate3d(0,12px,0)}to{opacity:1;transform:translate3d(0,0,0)}}
+/* buttons everywhere */
+button,.glass-card.cursor-pointer,.feature-card{transition:transform .36s var(--ex-out),opacity .22s ease,background-color .22s ease,box-shadow .28s ease!important}
+button:active,.glass-card.cursor-pointer:active{transform:scale(.955)!important;opacity:.9!important;transition:transform .09s var(--ex-press),opacity .09s ease,background-color .1s ease,box-shadow .1s ease!important}
+/* windows / screens: soft, slower, Apple-like (slide-left + fade-in first, view-enter last so it wins on screens that carry several classes) */
+.fade-in{animation:exFadeUp .46s var(--ex-out) forwards}
+.slide-left{animation:exSlideIn .52s var(--ex-ease) forwards}
+.view-enter{animation:exViewMove .64s var(--ex-ease) both,exViewFade .46s cubic-bezier(.33,0,.2,1) both}
+/* student dashboard button grid: fast press, smooth release */
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_){transition:transform .4s var(--ex-out),box-shadow .3s ease,background-color .2s ease!important}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):active{transform:scale(.962)!important;transition:transform .09s var(--ex-press),box-shadow .1s ease,background-color .08s ease!important}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div:first-child:not(.absolute),html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)>div.absolute:first-child+div{transition:transform .34s var(--ex-out)!important}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):active>div:first-child:not(.absolute),html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):active>div.absolute:first-child+div{transform:scale(.94);transition:transform .09s var(--ex-press)!important}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_)::after{transition:opacity .2s ease}
+html body #student-view:not(#_) .sd-tiles .glass-card:not(#_):active::after{opacity:1;transition-duration:.05s}
+@media (prefers-reduced-motion:reduce){.view-enter,.fade-in,.slide-left{animation-duration:.01s!important}}
+</style>
+<style id="gl-text-v3">
+/* ===== Loader status text v3 - same language as the loader =====
+   - letters rise in one by one (soft overshoot, like the logo pop)
+   - then a light travels through the words like an electron: each letter lifts a little and glows in the colour of its place in the line
+     (indigo > cyan > amber > rose = the order of the four orbiting dots). Opacity / translate only, so it stays on the GPU.
+   - the old "..." is replaced by four little brand-colour dots that hop in turn, exactly like the dot wave at the start of the loader. */
+#loader-text{letter-spacing:.14em;font-weight:800}
+#loader-text.gl-chars::after,#loader-text.gl-live.gl-chars::after{content:none;display:none}
+@keyframes glChGlow3{0%,42%,100%{opacity:0}18%{opacity:1}}
+@keyframes glChLift3{0%,42%,100%{translate:0 0}18%{translate:0 -3px}}
+@keyframes glDotHop{0%,58%,100%{translate:0 0;scale:.85}28%{translate:0 -6px;scale:1.18}}
+@media (prefers-reduced-motion:no-preference){
+  #loader-text .gl-c{animation:glChIn2 .62s cubic-bezier(.16,1,.3,1) calc(var(--d0,0s) + var(--i,0)*26ms) backwards,glChLift3 2.8s cubic-bezier(.45,0,.35,1) calc(var(--d0,0s) + .7s + var(--i,0)*90ms) infinite}
+  #loader-text .gl-c::after{color:var(--cc,#6366f1);text-shadow:0 0 12px currentColor;animation:glChGlow3 2.8s cubic-bezier(.45,0,.35,1) calc(var(--d0,0s) + .7s + var(--i,0)*90ms) infinite}
+  #loader-text .gl-dots i{animation:glChIn2 .5s cubic-bezier(.16,1,.3,1) calc(var(--d0,0s) + var(--nl,12)*26ms + var(--j,0)*70ms) backwards,glDotHop 1.3s cubic-bezier(.37,0,.63,1) calc(var(--d0,0s) + .7s + var(--nl,12)*26ms + var(--j,0)*.13s) infinite}
+}
+#loader-text .gl-dots{display:inline-flex;align-items:center;gap:4px;height:1em;margin-left:.9em;vertical-align:middle}
+#loader-text .gl-dots i{display:block;width:5px;height:5px;border-radius:50%;box-shadow:0 0 8px -2px rgba(15,23,42,.3)}
+#loader-text .gl-dots i:nth-child(1){background:linear-gradient(135deg,#4f46e5,#6366f1)}
+#loader-text .gl-dots i:nth-child(2){background:linear-gradient(135deg,#06b6d4,#22d3ee)}
+#loader-text .gl-dots i:nth-child(3){background:linear-gradient(135deg,#f59e0b,#fbbf24)}
+#loader-text .gl-dots i:nth-child(4){background:linear-gradient(135deg,#e11d48,#f43f5e)}
+#global-loader.gl-lite #loader-text .gl-c{animation:glChIn2 .5s cubic-bezier(.16,1,.3,1) calc(var(--d0,0s) + var(--i,0)*26ms) backwards}
+#global-loader.gl-lite #loader-text .gl-c::after{display:none;animation:none}
+#global-loader.gl-out #loader-text .gl-c,#global-loader.gl-out #loader-text .gl-c::after,#global-loader.gl-out #loader-text .gl-dots i{animation-play-state:paused}
+@media (prefers-reduced-motion:reduce){#loader-text .gl-c,#loader-text .gl-c::after,#loader-text .gl-dots i{animation:none}#loader-text .gl-c::after{display:none}}
+</style>
 </body>
 
 </html>
