@@ -36268,7 +36268,7 @@ function wk(t) { return WAKE.exec(t) || WAKE2.exec(t); }
 
 var rec = null, recAt = 0, mode = 'off', phase = 'idle';            // phase: idle | cmd | think | speak | ask
 var lastHeard = '', lastHeardAt = 0, hold = 0, gesture = false, denied = false, failStreak = 0, sheetOpen = false, speaking = false;
-var wakeIdx = -1, strip = true, cur = '', submitted = false, pending = null, timers = {}, convo = [];
+var wakeIdx = -1, strip = true, cur = '', submitted = false, pending = null, timers = {}, convo = [], keepOpen = false;   /* keepOpen: an answer is on screen and stays until you close it */
 var sheet, card, stateEl, youEl, hintEl, ansEl, chipsEl, inEl, orb, sw, ac = null, pill = null, pillTxt = null, fab = null, lastAct = Date.now();
 
 var NOVA_IMGS = ['https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/NOVA%20Mentor.jpg', 'https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true'];
@@ -36351,12 +36351,12 @@ function showAns(t) { build(); touch(); ansEl.textContent = t || ''; ansEl.style
 function setChips(list) { build(); touch(); chipsEl.innerHTML = ''; (list || []).forEach(function (c) { var b = document.createElement('button'); b.type = 'button'; b.textContent = c[0]; b.addEventListener('click', c[1]); chipsEl.appendChild(b); }); }
 function openSheet() { build(); touch(); syncMic(); clearTimeout(timers.close); pillHide(); if (!sheetOpen) { sheetOpen = true; sheet.classList.add('on'); } updateOrb(); fabUpdate(); }
 function closeSheet() {
-    pillHide(); if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
+    keepOpen = false; pillHide(); if (!sheet) return; clearTimeout(timers.close); sheetOpen = false; sheet.classList.remove('on');
     if (phase === 'cmd' || phase === 'ask' || pending) { killRec(); }
     pending = null; stopSpeak(); phase = 'idle'; submitted = true; setChips([]); updateOrb(); fabUpdate(); resumeWake(250);
 }
 function autoClose(ms) { clearTimeout(timers.close); timers.close = setTimeout(closeSheet, ms); }
-function reset() { cur = ''; submitted = false; showYou(''); showAns(''); setChips([]); }
+function reset() { keepOpen = false; cur = ''; submitted = false; showYou(''); showAns(''); setChips([]); }
 
 /* ---------------- compact pill + floating button ---------------- */
 function touch() { lastAct = Date.now(); }
@@ -36413,7 +36413,10 @@ function fabUpdate() {
 function audio() { ttsUnlock(); try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) { } return ac; }
 function chime() { try { var c = audio(); if (!c) return; var o = c.createOscillator(), g = c.createGain(), t = c.currentTime; o.type = 'sine'; o.frequency.setValueAtTime(660, t); o.frequency.exponentialRampToValueAtTime(990, t + .09); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.12, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + .16); o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + .18); } catch (e) { } if (navigator.vibrate) try { navigator.vibrate(18); } catch (e) { } }
 
-/* ---------------- speech output (browser voice, picked for the most natural one on the device) ---------------- */
+/* ---------------- speech output ----------------
+   Android WebView (Median / GoNative apps) has NO built-in text-to-speech, so Nova never depends on it there.
+   Nova's voice is a neural online voice played as ordinary audio, which any WebView can play. The browser voice is only used where it really works
+   (desktop browsers, iPhone) and as a last resort. If the phone blocks autoplay, a "Tap to hear" button appears and the answer stays on screen as text. */
 var voice = null;
 function pickVoice() {
     if (voice || !('speechSynthesis' in window)) return voice;
@@ -36430,71 +36433,111 @@ function pickVoice() {
 if ('speechSynthesis' in window) { try { speechSynthesis.onvoiceschanged = function () { voice = null; pickVoice(); }; } catch (e) { } }
 function clean(t) { return String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[*_`#>~|]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim(); }
 function chunks(t) { var out = [], s = t.match(/[^.!?]+[.!?]*/g) || [t], buf = ''; s.forEach(function (x) { if ((buf + x).length > 180 && buf) { out.push(buf.trim()); buf = x; } else buf += x; }); if (buf.trim()) out.push(buf.trim()); return out.slice(0, 8); }
-/* Many app WebViews (Median, etc.) have no speechSynthesis. Then Nova's voice is a free online text-to-speech service played as ordinary audio.
-   Tries, in order: your own endpoint (window.NOVA_TTS_URL, e.g. 'https://yourworker/tts?text={text}'), StreamElements voices (Amazon Polly), Google Translate voice.
-   window.NOVA_TTS_VOICES = ['Raveena','Joanna'] picks the Polly voices; localStorage nova_tts=0 turns spoken answers off. */
-var TTS_ON = store.get('nova_tts') !== '0', nativeBad = false, ttsAudio = null, ttsTimer = null;
-var SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+
+/* Online voices, tried in order for every sentence: your own endpoint (window.NOVA_TTS_URL, e.g. 'https://yourworker/tts?text={text}' or a function(text)),
+   StreamElements voices (Amazon Polly), then Google Translate voice. window.NOVA_TTS_VOICES = ['Raveena','Joanna'] picks the Polly voices;
+   localStorage nova_tts=0 turns spoken answers off. */
+var TTS_ON = store.get('nova_tts') !== '0', ttsAudio = null, ttsTimer = null, ttsSeq = 0;
+var SILENT = 'data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+/* Android app WebView: its built-in voice is missing or a silent stub, so skip it and use the online voice straight away */
+var IN_WV = (function () { try { var u = navigator.userAgent || ''; return /Android/i.test(u) && (/;\s*wv\)/i.test(u) || /EXAMA_APP|median|gonative/i.test(u) || !!(window.median || window.gonative)); } catch (e) { return false; } })();
+var nativeBad = IN_WV, stopNativeFn = null;
+function nativeMaybe() { try { return 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined'; } catch (e) { return false; } }
 function nativeOk() {
-    try {
-        if (nativeBad || !('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return false;
-        return !MOBILE || (speechSynthesis.getVoices() || []).length > 0;
-    } catch (e) { return false; }
+    try { if (nativeBad || !nativeMaybe()) return false; return !MOBILE || (speechSynthesis.getVoices() || []).length > 0; } catch (e) { return false; }
 }
 function ttsOk() { return TTS_ON && navigator.onLine !== false && typeof Audio !== 'undefined'; }
-function ttsEl() { if (!ttsAudio) { try { ttsAudio = new Audio(); ttsAudio.preload = 'auto'; ttsAudio.referrerPolicy = 'no-referrer'; ttsAudio.setAttribute('playsinline', ''); } catch (e) { return null; } } return ttsAudio; }
-function ttsUnlock() {   /* one silent play inside a tap/keypress so the WebView lets the same audio element speak later */
+function ttsEl() { if (!ttsAudio) { try { ttsAudio = new Audio(); ttsAudio.preload = 'auto'; ttsAudio.setAttribute('playsinline', ''); } catch (e) { return null; } } return ttsAudio; }
+/* One silent play inside a real tap lets the WebView play Nova's voice on its own later (hands-free).
+   Only touchend / pointerup / click / keydown count as a real tap on Android: touchstart and a touch pointerdown do NOT, so those cannot unlock it.
+   The unlock keeps retrying on every tap until it succeeds, then removes its own listeners. */
+var UNLOCK_EV = ['touchend', 'pointerup', 'click', 'keydown'];
+function unlockEv() { audio(); }
+function unlockDone() { UNLOCK_EV.forEach(function (ev) { try { document.removeEventListener(ev, unlockEv, true); } catch (e) { } }); }
+function ttsUnlock() {
     if (!TTS_ON) return; var a = ttsEl(); if (!a || a.__u) return; a.__u = 1;
-    try { a.src = SILENT; var p = a.play(); if (p && p.catch) p.catch(function () { a.__u = 0; }); } catch (e) { a.__u = 0; }
+    try {
+        a.src = SILENT; var p = a.play();
+        if (p && p.then) p.then(function () { a.__u = 2; unlockDone(); }, function () { a.__u = 0; });
+        else { a.__u = 2; unlockDone(); }
+    } catch (e) { a.__u = 0; }
 }
-function ttsStop() { clearTimeout(ttsTimer); if (ttsAudio) { ttsAudio.onended = ttsAudio.onerror = ttsAudio.onplaying = null; try { ttsAudio.pause(); } catch (e) { } } }
+UNLOCK_EV.forEach(function (ev) { document.addEventListener(ev, unlockEv, { passive: true, capture: true }); });
+function ttsStop() { clearTimeout(ttsTimer); ttsSeq++; if (ttsAudio) { ttsAudio.onended = ttsAudio.onerror = ttsAudio.onplaying = null; try { ttsAudio.pause(); } catch (e) { } } }
 function ttsUrls(txt) {
     var q = encodeURIComponent(txt), u = [], c = window.NOVA_TTS_URL;
     if (typeof c === 'function') { try { var r = c(txt); if (r) u.push(r); } catch (e) { } } else if (typeof c === 'string' && c) u.push(c.replace('{text}', q));
     (window.NOVA_TTS_VOICES || ['Raveena', 'Joanna']).forEach(function (v) { u.push('https://api.streamelements.com/kappa/v2/speech?voice=' + encodeURIComponent(v) + '&text=' + q); });
     u.push('https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=' + q);
+    u.push('https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=en&q=' + q);
     return u;
 }
+/* plays one sentence; onEnd(true) = spoken, onEnd(false) = every voice failed, onEnd('blocked') = the phone blocked autoplay */
 function playTTS(txt, onEnd, isEnded) {
     var a = ttsEl(), urls = ttsUrls(txt), k = 0, over = false;
-    if (!a) return onEnd();
-    function finish() { if (over) return; over = true; clearTimeout(ttsTimer); a.onended = a.onerror = a.onplaying = null; onEnd(); }
+    if (!a) return onEnd(false);
+    function finish(r) { if (over) return; over = true; clearTimeout(ttsTimer); a.onended = a.onerror = a.onplaying = null; onEnd(r); }
     function tryNext() {
         if (over || isEnded()) return; clearTimeout(ttsTimer);
-        if (k >= urls.length) return finish();
-        a.onended = finish; a.onerror = tryNext; a.onplaying = function () { clearTimeout(ttsTimer); };
-        a.src = urls[k++]; ttsTimer = setTimeout(tryNext, 7000);     /* never started: try the next voice */
-        try { var p = a.play(); if (p && p.catch) p.catch(function (e) { if (e && e.name === 'NotAllowedError') finish(); else tryNext(); }); } catch (e) { tryNext(); }
+        if (k >= urls.length) return finish(false);
+        var my = ++ttsSeq, adv = function () { if (my === ttsSeq) tryNext(); };      /* each attempt advances at most once */
+        a.onended = function () { if (my === ttsSeq) finish(true); }; a.onerror = adv; a.onplaying = function () { if (my === ttsSeq) clearTimeout(ttsTimer); };
+        a.src = urls[k++]; ttsTimer = setTimeout(adv, 8000);     /* never started: try the next voice */
+        try { var p = a.play(); if (p && p.catch) p.catch(function (e) { if (my !== ttsSeq) return; var n = e && e.name; if (n === 'NotAllowedError') finish('blocked'); else if (n !== 'AbortError') tryNext(); }); } catch (e) { tryNext(); }
     }
     tryNext();
 }
+/* browser voice for one sentence: cb(true) = it spoke, cb(false) = it never started */
+function stopNative() { if (stopNativeFn) { var f = stopNativeFn; stopNativeFn = null; try { f(); } catch (e) { } } }
+function nativeSay(txt, cb) {
+    var u, v, over = false, gs = false, t0 = Date.now(), tmr = null, poll = null;
+    function end(r) { if (over) return; over = true; clearTimeout(tmr); clearInterval(poll); stopNativeFn = null; cb(r); }
+    try { u = new SpeechSynthesisUtterance(txt); } catch (e) { return cb(false); }
+    v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
+    u.onstart = function () { gs = true; }; u.onend = u.onerror = function () { end(true); };
+    tmr = setTimeout(function () { if (gs) return; try { speechSynthesis.cancel(); } catch (e) { } end(false); }, 2500);      /* built-in voice never started */
+    /* many phones never fire onend: if the voice engine went quiet after speaking, move on ourselves */
+    poll = setInterval(function () { try { if (gs && Date.now() - t0 > 900 && !speechSynthesis.speaking && !speechSynthesis.pending) end(true); } catch (e) { } }, 350);
+    stopNativeFn = function () { over = true; clearTimeout(tmr); clearInterval(poll); };
+    try { speechSynthesis.speak(u); } catch (e) { end(false); }
+}
 var stopSpeakFn = null;
-function stopSpeak() { ttsStop(); speaking = false; if (stopSpeakFn) { var f = stopSpeakFn; stopSpeakFn = null; try { f(); } catch (e) { } } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
+function stopSpeak() { ttsStop(); stopNative(); speaking = false; if (stopSpeakFn) { var f = stopSpeakFn; stopSpeakFn = null; try { f(); } catch (e) { } } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
 function speak(text, done) {
     var t = clean(text); stopSpeak();
     if (!t || (!nativeOk() && !ttsOk())) { phase = 'idle'; if (done) setTimeout(done, 200); return; }
     killRec(); engStop(); phase = 'speak'; speaking = true; setState('speak', 'Speaking\u2026');
-    var parts = chunks(t), i = 0, ended = false, started = 0, curAdv = null, idleTicks = 0, poll = null;
-    var fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); clearInterval(poll); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; touch(); if (done) done(); };
-    stopSpeakFn = function () { ended = true; clearTimeout(timers.speakGuard); clearInterval(poll); };
-    timers.speakGuard = setTimeout(fin, Math.min(60000, t.length * 85 + (nativeOk() ? 4000 : 12000)));
-    /* many phones never fire onend/onerror: if the voice engine has gone quiet, move on ourselves so the popup can close */
-    poll = setInterval(function () {
-        if (ended) return clearInterval(poll);
-        try { if (curAdv && Date.now() - started > 900 && !speechSynthesis.speaking && !speechSynthesis.pending) { if (++idleTicks >= 2) { idleTicks = 0; curAdv(); } } else idleTicks = 0; } catch (e) { }
-    }, 350);
+    var parts = chunks(t), i = 0, ended = false, lastTry = false, forceNative = false;
+    var fin = function () { if (ended) return; ended = true; clearTimeout(timers.speakGuard); speaking = false; stopSpeakFn = null; if (phase === 'speak') phase = 'idle'; touch(); if (done) done(); };
+    stopSpeakFn = function () { ended = true; clearTimeout(timers.speakGuard); };
+    timers.speakGuard = setTimeout(function () { ttsStop(); stopNative(); fin(); }, Math.min(90000, t.length * 85 + (nativeOk() ? 4000 : 30000)));
+    var isEnded = function () { return ended; };
+    function one(txt, cb) {
+        if (forceNative || nativeOk()) return nativeSay(txt, function (ok) {
+            if (ended) return; if (ok) return cb(true);
+            forceNative = false; nativeBad = true; if (ttsOk()) playTTS(txt, cb, isEnded); else cb(false);
+        });
+        if (!ttsOk()) return cb(false);
+        playTTS(txt, function (r) {
+            if (ended || r !== false || lastTry || !nativeMaybe()) return cb(r);
+            lastTry = true; nativeSay(txt, function (ok) { if (ok) forceNative = true; cb(ok); });      /* every online voice failed: last resort, the browser voice */
+        }, isEnded);
+    }
     function next() {
         if (ended) return; if (i >= parts.length) return fin();
-        if (!nativeOk()) { curAdv = null; started = Date.now(); return playTTS(parts[i++], function () { if (!ended) next(); }, function () { return ended; }); }
-        var u = new SpeechSynthesisUtterance(parts[i++]), v = pickVoice(), moved = false;
-        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
-        curAdv = function () { if (moved) return; moved = true; curAdv = null; next(); };
-        u.onend = u.onerror = curAdv; started = Date.now();
-        var gs = false; u.onstart = function () { gs = true; };
-        setTimeout(function () { if (gs || moved || ended) return; nativeBad = true; try { speechSynthesis.cancel(); } catch (e) { } moved = true; curAdv = null; if (ttsOk()) playTTS(u.text, function () { if (!ended) next(); }, function () { return ended; }); else fin(); }, 2500);   /* built-in voice never started: use the online voice */
-        try { speechSynthesis.speak(u); } catch (e) { fin(); }
+        one(parts[i++], function (r) {
+            if (ended) return;
+            if (r === 'blocked') { blockedHint(text); return fin(); }
+            if (r === false) return fin();                  /* nothing can speak right now: the answer is already on screen as text */
+            next();
+        });
     }
     setTimeout(next, 90);   /* tiny gap after cancel(): speak() right after cancel() is dropped on some phones */
+}
+/* the phone refused to play audio on its own: leave a one-tap button (a tap is allowed to start sound) */
+function blockedHint(text) {
+    if (!sheetOpen || !chipsEl || chipsEl.children.length) return;
+    setChips([['Tap to hear', function () { audio(); setChips([]); speak(text, function () { resumeWake(300); }); }]]);
 }
 
 /* ---------------- speech input ---------------- */
@@ -36635,11 +36678,13 @@ function setWake(on, fromUser) {
 /* ---------------- brain ---------------- */
 function say(text, o) {
     o = o || {}; phase = 'speak'; var shown = clean(text); setChips([]);
-    if (!sheetOpen && shown.length > 80) openSheet();                 /* long answers need the sheet; short confirmations stay in the small pill */
+    /* o.keep = an answer to a question: it stays on screen until you close it. Without it (a finished task: message sent, session started...) the popup hides by itself. */
+    keepOpen = !!o.keep; if (keepOpen) clearTimeout(timers.close);
+    if (!sheetOpen && (o.keep || shown.length > 80)) openSheet();    /* answers and long text need the sheet; short task confirmations stay in the small pill */
     if (sheetOpen) showAns(shown); else pillShow(shown, 'speak');
     speak(text, function () {
         phase = 'idle'; if (o.then) o.then();
-        if (sheetOpen) autoClose(o.keep ? Math.min(7000, 2200 + shown.length * 22) : 1800);
+        if (sheetOpen) { if (!o.keep) autoClose(1800); }
         else { clearTimeout(timers.pillHide); timers.pillHide = setTimeout(pillHide, 600); }
         resumeWake(300);
     });
@@ -36914,6 +36959,7 @@ installMicWatch(); mkOrb(); checkPerm(); updateOrb();
 /* auto-hide watchdog: whatever state the voice engine got stuck in, an idle popup always closes */
 setInterval(function () {
     if (!sheetOpen && !pillOn()) return;
+    if (keepOpen && sheetOpen) return;      /* a kept answer is never auto-hidden: close it with X, the dark area, or say "close" */
     var idle = Date.now() - lastAct, typing = !!(inEl && sheetOpen && document.activeElement === inEl);
     var busy = phase === 'cmd' || phase === 'think' || phase === 'ask' || phase === 'speak' || !!pending || speaking || (typing && inEl.value);
     if (idle > 40000 || (!busy && idle > (sheetOpen ? (typing ? 12000 : 5500) : 2500))) closeSheet();
