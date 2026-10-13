@@ -37224,7 +37224,7 @@ function onMotion(e) {
 }
 function startShake() {
     if (shakeAsked || (typeof DeviceMotionEvent === 'undefined' && typeof DeviceOrientationEvent === 'undefined')) return;
-    function on() { if (SHAKE_ON) window.addEventListener('devicemotion', onMotion, { passive: true }); if (FLIP_ON) window.addEventListener('deviceorientation', onOrient, { passive: true }); }
+    function on() { if (SHAKE_ON) window.addEventListener('devicemotion', onMotion, { passive: true }); if (FLIP_ON) { window.addEventListener('deviceorientation', onOrient, { passive: true }); window.addEventListener('devicemotion', onGrav, { passive: true }); } }
     var need = (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') ? DeviceMotionEvent : ((typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') ? DeviceOrientationEvent : null);
     shakeAsked = true;
     if (need) {   /* iPhone: needs one tap to allow motion */
@@ -37258,10 +37258,7 @@ function medianKeepAwake(on) {
             if (m.android && m.android.screen && typeof m.android.screen[fn] === 'function') { m.android.screen[fn](); used.push(k + '.android.screen'); }
         } catch (e) { used.push('error ' + (e && e.message)); }
     });
-    if (!used.length) {
-        try { if (/median|gonative/i.test(navigator.userAgent)) { window.location.href = 'median://screen/' + fn; used.push('median:// link'); } } catch (e) { }
-    }
-    return used.length ? used.join(' + ') : 'NO BRIDGE FOUND';
+    return used.length ? used.join(' + ') : 'no bridge (Free plan) - using wake lock + black cover';
 }
 function medianBrightness(v) {
     try {
@@ -37271,8 +37268,24 @@ function medianBrightness(v) {
     return false;
 }
 document.addEventListener('visibilitychange', function () { if (sleepMode && !document.hidden) { medianKeepAwake(false); medianBrightness('0'); } });
+/* FREE-PLAN SAFE: Median Free has NO JavaScript Bridge, so keep-awake uses the standard web Screen Wake Lock.
+   Awake while a focus session is STUDYING; released on flip / break / end so the phone's own timeout can lock it.
+   In the Median dashboard keep "Keep screen on" OFF, otherwise the phone can never sleep. */
+var awakeLock = null, gravSeen = false, ANDROID = /Android/i.test(navigator.userAgent || '');
+function awakeAcquire() { try { if (navigator.wakeLock && !awakeLock) { awakeLock = true; navigator.wakeLock.request('screen').then(function (l) { awakeLock = l; l.addEventListener('release', function () { awakeLock = null; }); }, function () { awakeLock = null; }); } } catch (e) { awakeLock = null; } }
+function awakeRelease() { try { if (awakeLock && awakeLock.release) awakeLock.release(); } catch (e) { } awakeLock = null; }
+function awakeSync() { var s = null; try { s = isStudent() ? live() : null; } catch (e) { } var keep = !!s && s.status === 'STUDYING';
+    if (!keep && isStudent()) { ['custom-pdf-viewer-modal', 'fullscreen-image-modal', 'video-watch-view', 'discus-video-modal', 'active-exam-view', 'auto-quiz-modal', 'math-game-screen', 'run-tracker', 'wac-stage', 'incoming-call-modal', 'nova-voice-modal', 'alarm-ring', 'sos-confirm', 'sos-popup', 'wlt-vid', 'wlt-pay'].forEach(function (id) { try { if (vis($(id))) keep = true; } catch (e) { } }); }
+    if (keep && !sleepMode && !document.hidden) awakeAcquire(); else awakeRelease(); }
+setInterval(awakeSync, 2500); document.addEventListener('visibilitychange', awakeSync);
+/* flip detection from gravity (more reliable than beta/gamma): Android reports z = +9.8 face-up, iOS the opposite */
+function onGrav(e) {
+    if (!FLIP_ON) return; var a = e.accelerationIncludingGravity; if (!a || a.z == null) return; gravSeen = true;
+    var z = ANDROID ? a.z : -a.z, flat = Math.abs(a.x || 0) < 4.5 && Math.abs(a.y || 0) < 4.5;
+    flipStep(z < -7 && flat, z > -4);
+}
 function sleepScreen() {
-    if (sleepMode) return; sleepMode = true; killRec(); engStop(); stopSpeak();
+    if (sleepMode) return; awakeRelease(); sleepMode = true; killRec(); engStop(); stopSpeak();
     var sleepInfo = medianKeepAwake(false), dimmed = medianBrightness('0');   /* Median bridge: drop "keep screen on" + dim to 0 so the phone can sleep */
     setTimeout(function () { if (sleepMode) { medianKeepAwake(false); medianBrightness('0'); } }, 1200);
     try { if (window.WAC && WAC.unlockScreen) WAC.unlockScreen(); } catch (e) { }
@@ -37287,14 +37300,14 @@ function sleepScreen() {
         }
     } catch (e) { }
 }
-function wakeSleep() { if (!sleepMode) return; sleepMode = false; medianKeepAwake(true); medianBrightness('default'); if (sleepEl && sleepEl.parentNode) sleepEl.parentNode.removeChild(sleepEl); wakeUp(); }
+function wakeSleep() { if (!sleepMode) return; sleepMode = false; setTimeout(awakeSync, 300); medianKeepAwake(true); medianBrightness('default'); if (sleepEl && sleepEl.parentNode) sleepEl.parentNode.removeChild(sleepEl); wakeUp(); }
 function flipAnnounce(resumed, fresh) {
     var s = live(), nm = s && s.sessionType ? String(s.sessionType).replace(/\s*Session$/i, '') : '', ms = studiedToday();
     var t = 'Let’s crack it! ' + (fresh ? 'Your ' + (nm ? nm + ' ' : '') + 'focus session has started. ' : resumed ? 'Back to focus. ' : 'Your focus session is running. ')
         + (ms >= 60000 ? 'Today you have studied ' + durWords(ms) + '. ' : '') + 'I will keep the time. The screen is going to sleep. Lift the phone for a break. All the best!';
     var done = false, go2 = function () { if (done) return; done = true; if (fdOn) sleepScreen(); };
-    setTimeout(go2, 20000);
-    try { gesture = true; audio(); if (TTS_ON) speak(t, go2); else setTimeout(go2, 800); } catch (e) { go2(); }
+    setTimeout(go2, 9000);
+    try { gesture = true; audio(); if (TTS_ON && window.speechSynthesis) speak(t, go2); else setTimeout(go2, 800); } catch (e) { go2(); }
 }
 function flipDown() {
     if (!flipOk()) return; var s = live(); flipBusy = true; setTimeout(function () { flipBusy = false; }, 2500);
@@ -37312,8 +37325,11 @@ function flipUp() {
     buzz(25); Promise.resolve(window.toggleSessionState && window.toggleSessionState('BREAK')).then(function () { toastG('Break started', 'Put the phone face-down again to resume.'); });
 }
 function onOrient(e) {
-    if (!FLIP_ON || e.beta == null) return; var t = Date.now(), ab = Math.abs(e.beta), ag = Math.abs(e.gamma || 0);
-    var down = ab > 150 && ag < 40, up = ab < 135;
+    if (!FLIP_ON || gravSeen || e.beta == null) return; var ab = Math.abs(e.beta), ag = Math.abs(e.gamma || 0);
+    flipStep(ab > 150 && ag < 40, ab < 135);
+}
+function flipStep(down, up) {
+    var t = Date.now();
     if (down) {
         if (!fdOn) { if (!fdSince) fdSince = t; if (upSeen && t - fdSince > 1500) { fdOn = true; upSeen = false; clearTimeout(flipLiftT); flipDown(); } }
         upSince = 0;
