@@ -37236,14 +37236,31 @@ function studiedToday() { var m = window.loggedInMobile, d = window.formatDateDD
 function durWords(ms) { var m = Math.round(ms / 60000), h = Math.floor(m / 60); m = m % 60; return (h ? h + (h === 1 ? ' hour' : ' hours') : '') + (h && m ? ' and ' : '') + (m ? m + (m === 1 ? ' minute' : ' minutes') : ''); }
 /* the page cannot lock the phone itself: instead it releases every keep-screen-on lock, stops the mic listener and covers the screen with pure black (no light on OLED).
    The phone's own screen timeout then locks it. A tap or lifting the phone brings everything back. */
+/* MEDIAN.CO keep-screen-on bridge. The app config has "Keep screen on" enabled, so the screen normally never sleeps.
+   Flip face-down  -> medianKeepAwake(false) = keepScreenNormal(): the phone's own timeout can now sleep the screen.
+   Lift / tap       -> medianKeepAwake(true)  = keepScreenOn():     back to always-awake.
+   Works on iOS (median.screen.*) and Android (median.android.screen.*), with the median:// protocol as a last resort. */
+function medianKeepAwake(on) {
+    var fn = on ? 'keepScreenOn' : 'keepScreenNormal', done = false;
+    try {
+        var m = window.median || window.gonative;
+        if (m) {
+            if (m.screen && typeof m.screen[fn] === 'function') { m.screen[fn](); done = true; }
+            else if (m.android && m.android.screen && typeof m.android.screen[fn] === 'function') { m.android.screen[fn](); done = true; }
+        }
+    } catch (e) { }
+    if (!done) { try { if (/median|gonative/i.test(navigator.userAgent)) window.location.href = 'median://screen/' + fn; } catch (e) { } }
+    return done;
+}
+document.addEventListener('visibilitychange', function () { if (sleepMode && !document.hidden) medianKeepAwake(false); });
 function sleepScreen() {
     if (sleepMode) return; sleepMode = true; killRec(); engStop(); stopSpeak();
-    try { if (window.median && median.screen && median.screen.keepScreenNormal) median.screen.keepScreenNormal(); } catch (e) { }
+    medianKeepAwake(false); setTimeout(function () { if (sleepMode) medianKeepAwake(false); }, 1200);   /* Median bridge: drop "keep screen on" so the phone can sleep */
     try { if (window.WAC && WAC.unlockScreen) WAC.unlockScreen(); } catch (e) { }
     if (!sleepEl) { sleepEl = document.createElement('div'); sleepEl.id = 'nova-sleep'; sleepEl.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;background:#000;touch-action:manipulation'; sleepEl.addEventListener('pointerdown', function () { wakeSleep(); }); }
     document.body.appendChild(sleepEl);
 }
-function wakeSleep() { if (!sleepMode) return; sleepMode = false; if (sleepEl && sleepEl.parentNode) sleepEl.parentNode.removeChild(sleepEl); wakeUp(); }
+function wakeSleep() { if (!sleepMode) return; sleepMode = false; medianKeepAwake(true); if (sleepEl && sleepEl.parentNode) sleepEl.parentNode.removeChild(sleepEl); wakeUp(); }
 function flipAnnounce(resumed, fresh) {
     var s = live(), nm = s && s.sessionType ? String(s.sessionType).replace(/\s*Session$/i, '') : '', ms = studiedToday();
     var t = 'Let’s crack it! ' + (fresh ? 'Your ' + (nm ? nm + ' ' : '') + 'focus session has started. ' : resumed ? 'Back to focus. ' : 'Your focus session is running. ')
