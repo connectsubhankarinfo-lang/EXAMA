@@ -4361,7 +4361,6 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
             #settings-menu .sg-profile:active{transform:scale(.98);background:rgba(255,255,255,.22)}
             #settings-menu .sg-av{position:relative;width:56px;height:56px;border-radius:50%;padding:2px;background:#fff;flex-shrink:0;box-shadow:0 6px 16px -6px rgba(0,0,0,.35)}
             #settings-menu .sg-av img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
-            #settings-menu .sg-dot{position:absolute;right:0;bottom:0;width:13px;height:13px;border-radius:50%;background:#22c55e;border:2px solid #fff}
             #settings-menu .sg-who{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
             #settings-menu .sg-name{font-size:16px;font-weight:900;line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
             #settings-menu .sg-role{font-size:11px;font-weight:600;opacity:.85}
@@ -4385,7 +4384,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                     <button type="button" class="sg-close" onclick="closeSettingsMenu()" aria-label="Close settings"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <button type="button" id="settings-profile-btn" class="sg-profile" onclick="openMyProfileFromMenu()" aria-label="View my profile">
-                    <span class="sg-av"><img id="settings-user-dp" src="https://ui-avatars.com/api/?name=Exama&background=4f46e5&color=fff" alt=""><i class="sg-dot"></i></span>
+                    <span class="sg-av"><img id="settings-user-dp" src="https://ui-avatars.com/api/?name=Exama&background=4f46e5&color=fff" alt=""></span>
                     <span class="sg-who">
                         <span id="settings-user-name" class="sg-name">Student</span>
                         <span id="settings-user-role" class="sg-role">Student Account</span>
@@ -22075,6 +22074,14 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     ${extra ? `<div class="mt-4">${extra}</div>` : ''}</section>`;
             };
 
+            /* keeps the active dot on the student profile live (same presence feed as the admin profile) */
+            window.__paintMpDot = function () {
+                const d = document.getElementById('mp-active-dot'); if (!d) return;
+                const on = d.getAttribute('data-mp-mine') === '1' || !!(window.__activeInfo && window.__activeInfo(d.getAttribute('data-mp-mob')).on);
+                d.classList.toggle('on', on);
+            };
+            if (!window.__mpDotTimer) window.__mpDotTimer = setInterval(window.__paintMpDot, 1500);
+
             window.renderMyProfile = function (startTab) {
                 const box = document.getElementById('my-profile-container');
                 if (!box) return;
@@ -22141,6 +22148,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                                     <div class="p-1 rounded-full bg-gradient-to-tr from-indigo-500 via-fuchsia-500 to-amber-400 shadow-xl shadow-indigo-300/50">
                                         <img src="${window.getStudentAvatar(me, stu.name)}" alt="" decoding="async" class="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-white bg-gray-100">
                                     </div>
+                                    <span id="mp-active-dot" data-mp-mob="${esc(String(me))}" data-mp-mine="${mine ? 1 : 0}" title="Active status" class="ap-dot${(mine || (window.__activeInfo && window.__activeInfo(me).on)) ? ' on' : ''}" style="position:absolute;top:8px;right:6px;width:20px;height:20px;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.25)"></span>
                                     ${mine ? `<button onclick="document.getElementById('mp-dp-input').click()" aria-label="Change profile picture" class="absolute bottom-1 right-0 w-9 h-9 rounded-full bg-white border border-gray-200 shadow-md text-gray-700 flex items-center justify-center active:scale-90 transition-transform"><i class="fa-solid fa-camera text-sm"></i></button>
                                     <input type="file" id="mp-dp-input" accept="image/*" class="hidden" onchange="mpUploadDp(this)">` : ''}
                                 </div>
@@ -37236,31 +37244,50 @@ function studiedToday() { var m = window.loggedInMobile, d = window.formatDateDD
 function durWords(ms) { var m = Math.round(ms / 60000), h = Math.floor(m / 60); m = m % 60; return (h ? h + (h === 1 ? ' hour' : ' hours') : '') + (h && m ? ' and ' : '') + (m ? m + (m === 1 ? ' minute' : ' minutes') : ''); }
 /* the page cannot lock the phone itself: instead it releases every keep-screen-on lock, stops the mic listener and covers the screen with pure black (no light on OLED).
    The phone's own screen timeout then locks it. A tap or lifting the phone brings everything back. */
-/* MEDIAN.CO keep-screen-on bridge. The app config has "Keep screen on" enabled, so the screen normally never sleeps.
-   Flip face-down  -> medianKeepAwake(false) = keepScreenNormal(): the phone's own timeout can now sleep the screen.
-   Lift / tap       -> medianKeepAwake(true)  = keepScreenOn():     back to always-awake.
-   Works on iOS (median.screen.*) and Android (median.android.screen.*), with the median:// protocol as a last resort. */
+/* MEDIAN.CO screen bridge (docs: median.screen.keepScreenOn / keepScreenNormal / setBrightness).
+   Your app config has "Keep screen on" enabled, so the screen normally never sleeps.
+   Flip face-down  -> keep-screen-on OFF + brightness 0 + black cover  (phone's own timeout then locks it)
+   Lift / tap      -> keep-screen-on ON  + brightness back to default
+   Every bridge variant that exists is called (median / gonative, .screen / .android.screen); the result is returned as text for the on-screen readout. */
 function medianKeepAwake(on) {
-    var fn = on ? 'keepScreenOn' : 'keepScreenNormal', done = false;
+    var fn = on ? 'keepScreenOn' : 'keepScreenNormal', used = [];
+    ['median', 'gonative'].forEach(function (k) {
+        try {
+            var m = window[k]; if (!m) return;
+            if (m.screen && typeof m.screen[fn] === 'function') { m.screen[fn](); used.push(k + '.screen'); }
+            if (m.android && m.android.screen && typeof m.android.screen[fn] === 'function') { m.android.screen[fn](); used.push(k + '.android.screen'); }
+        } catch (e) { used.push('error ' + (e && e.message)); }
+    });
+    if (!used.length) {
+        try { if (/median|gonative/i.test(navigator.userAgent)) { window.location.href = 'median://screen/' + fn; used.push('median:// link'); } } catch (e) { }
+    }
+    return used.length ? used.join(' + ') : 'NO BRIDGE FOUND';
+}
+function medianBrightness(v) {
     try {
         var m = window.median || window.gonative;
-        if (m) {
-            if (m.screen && typeof m.screen[fn] === 'function') { m.screen[fn](); done = true; }
-            else if (m.android && m.android.screen && typeof m.android.screen[fn] === 'function') { m.android.screen[fn](); done = true; }
-        }
+        if (m && m.screen && typeof m.screen.setBrightness === 'function') { m.screen.setBrightness({ brightness: String(v) }); return true; }
     } catch (e) { }
-    if (!done) { try { if (/median|gonative/i.test(navigator.userAgent)) window.location.href = 'median://screen/' + fn; } catch (e) { } }
-    return done;
+    return false;
 }
-document.addEventListener('visibilitychange', function () { if (sleepMode && !document.hidden) medianKeepAwake(false); });
+document.addEventListener('visibilitychange', function () { if (sleepMode && !document.hidden) { medianKeepAwake(false); medianBrightness('0'); } });
 function sleepScreen() {
     if (sleepMode) return; sleepMode = true; killRec(); engStop(); stopSpeak();
-    medianKeepAwake(false); setTimeout(function () { if (sleepMode) medianKeepAwake(false); }, 1200);   /* Median bridge: drop "keep screen on" so the phone can sleep */
+    var sleepInfo = medianKeepAwake(false), dimmed = medianBrightness('0');   /* Median bridge: drop "keep screen on" + dim to 0 so the phone can sleep */
+    setTimeout(function () { if (sleepMode) { medianKeepAwake(false); medianBrightness('0'); } }, 1200);
     try { if (window.WAC && WAC.unlockScreen) WAC.unlockScreen(); } catch (e) { }
     if (!sleepEl) { sleepEl = document.createElement('div'); sleepEl.id = 'nova-sleep'; sleepEl.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;background:#000;touch-action:manipulation'; sleepEl.addEventListener('pointerdown', function () { wakeSleep(); }); }
     document.body.appendChild(sleepEl);
+    /* tiny grey readout on the black cover for 6 s so you can see whether the Median bridge answered (hide it: localStorage nova_sleepdbg=0) */
+    try {
+        if (store.get('nova_sleepdbg') !== '0') {
+            var dbg = document.createElement('div'); dbg.style.cssText = 'position:absolute;left:0;right:0;bottom:calc(28px + env(safe-area-inset-bottom,0px));text-align:center;color:#555;font:600 11px/1.5 system-ui,sans-serif;padding:0 16px;pointer-events:none';
+            dbg.textContent = 'Screen sleep: ' + sleepInfo + (dimmed ? ' | brightness 0' : ' | brightness n/a') + ' - tap to wake';
+            sleepEl.appendChild(dbg); setTimeout(function () { if (dbg.parentNode) dbg.parentNode.removeChild(dbg); }, 6000);
+        }
+    } catch (e) { }
 }
-function wakeSleep() { if (!sleepMode) return; sleepMode = false; medianKeepAwake(true); if (sleepEl && sleepEl.parentNode) sleepEl.parentNode.removeChild(sleepEl); wakeUp(); }
+function wakeSleep() { if (!sleepMode) return; sleepMode = false; medianKeepAwake(true); medianBrightness('default'); if (sleepEl && sleepEl.parentNode) sleepEl.parentNode.removeChild(sleepEl); wakeUp(); }
 function flipAnnounce(resumed, fresh) {
     var s = live(), nm = s && s.sessionType ? String(s.sessionType).replace(/\s*Session$/i, '') : '', ms = studiedToday();
     var t = 'Let’s crack it! ' + (fresh ? 'Your ' + (nm ? nm + ' ' : '') + 'focus session has started. ' : resumed ? 'Back to focus. ' : 'Your focus session is running. ')
