@@ -7748,6 +7748,7 @@ window.rmEnhance=function(logs,o){
     <div id="rt-ms" class="hidden absolute inset-0 z-[25] items-center justify-center overflow-hidden" style="pointer-events:none"></div>
     <div id="rt-lock" class="hidden absolute inset-0 z-30 flex flex-col items-center justify-end pb-12" style="touch-action:none">
         <div style="text-align:center;margin-bottom:26px;text-shadow:0 1px 10px rgba(0,0,0,.8)"><div id="rt-lock-km">0.00</div><div style="font-size:15px;font-weight:800;color:#fb7185;margin-top:6px">km</div><div id="rt-lock-time" style="font-size:22px;font-weight:800;font-style:italic;margin-top:10px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.8)"></div></div>
+        <div id="rt-lock-music" style="display:none;margin-bottom:16px;text-align:center;max-width:86vw;text-shadow:0 1px 10px rgba(0,0,0,.8)"><p id="rt-lock-song" style="font-size:15px;font-weight:800;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Music</p><p style="font-size:11px;font-weight:700;color:rgba(255,255,255,.5);margin-top:5px">&#8249;&nbsp; Swipe left / right to change song &nbsp;&#8250;</p></div>
         <p id="rt-lock-hint" style="font-size:14px;font-weight:700;color:rgba(255,255,255,.7);margin-bottom:22px">Screen locked</p>
         <div class="rt-lockrow"><span></span><button id="rt-unlock" type="button" aria-label="Hold to unlock" class="relative w-24 h-24 rounded-full flex items-center justify-center text-white" style="touch-action:none;-webkit-touch-callout:none;background:rgba(255,255,255,.08)">
             <svg class="absolute inset-0" viewBox="0 0 96 96" width="96" height="96" style="transform:rotate(-90deg)"><circle cx="48" cy="48" r="44" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="4"/><circle id="rt-ring" cx="48" cy="48" r="44" fill="none" stroke="#fb7185" stroke-width="4" stroke-linecap="round" stroke-dasharray="276.46" stroke-dashoffset="276.46"/></svg>
@@ -20022,7 +20023,7 @@ window.__tpPaint = function () {
                 const M = { yt: null, ready: false, loading: false, active: false, card: false, want: false, playing: false, vid: '' }; window.__rtMusic = M;
                 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
                 const setT = (id, t) => { const e = $(id); if (e && e.textContent !== t) e.textContent = t; };
-                const mTitle = t => { setT('rt-mp-title', t); setT('rt-mini-title', t); };
+                const mTitle = t => { setT('rt-mp-title', t); setT('rt-mini-title', t); setT('rt-lock-song', t); };
                 const mIco = on => ['rt-mp-ico', 'rt-mini-ico'].forEach(id => { const i = $(id); if (i) { i.className = 'fa-solid ' + (on ? 'fa-pause' : 'fa-play') + (id === 'rt-mp-ico' ? ' text-lg' : ' text-sm'); i.style.marginLeft = on ? '0' : '2px'; } });
                 const mSync = () => {                                   // shows / hides the card (run screen) and the mini bar (Fitness screen)
                     const v = $('run-tracker'), trackerOpen = !!v && !v.classList.contains('hidden');
@@ -20030,17 +20031,24 @@ window.__tpPaint = function () {
                     const showCard = M.active && M.card;
                     if (card) { card.classList.toggle('hidden', !showCard); card.classList.toggle('flex', showCard); }
                     if (v) v.classList.toggle('rt-mp', showCard);
+                    { const lm = $('rt-lock-music'); if (lm) lm.style.display = M.active ? 'block' : 'none'; }
                     if (mini) { const on = M.active && !trackerOpen; mini.classList.toggle('hidden', !on); mini.classList.toggle('flex', on); }
                 };
                 window.__rtMusicSync = mSync;
+                // ===== QUEUE ENGINE: the app keeps its own song list, so Shuffle, Next and Previous always agree with each other =====
+                Object.assign(M, { q: [], i: -1, bag: [], hist: [], shuf: !!M.shuf, errs: 0, qBusy: false });
+                const mArt = id => {
+                    const u = 'https://i.ytimg.com/vi/' + id + '/mqdefault.jpg';
+                    ['rt-mp-art', 'rt-mini-art'].forEach(x => { const im = $(x); if (im) im.src = u; });
+                    return u;
+                };
                 const mInfo = () => {
                     try {
                         const d = M.yt.getVideoData && M.yt.getVideoData(); if (!d) return;
-                        const n = M.yt.getPlaylist && M.yt.getPlaylist(), i = M.yt.getPlaylistIndex && M.yt.getPlaylistIndex();
-                        if (d.title) { mTitle(d.title); setT('rt-mp-sub', ((n && n.length > 1 && i >= 0) ? (i + 1) + ' / ' + n.length + '   ' : '') + String(d.author || 'RUN MONITOR').toUpperCase()); }
+                        const n = M.q.length;
+                        if (d.title) { mTitle(d.title); setT('rt-mp-sub', ((n > 1 && M.i >= 0) ? (M.i + 1) + ' / ' + n + '   ' : '') + String(d.author || 'RUN MONITOR').toUpperCase() + (M.shuf ? '   SHUFFLE' : '')); }
                         if (d.video_id && d.video_id !== M.vid) {
-                            M.vid = d.video_id; const u = 'https://i.ytimg.com/vi/' + d.video_id + '/mqdefault.jpg';
-                            ['rt-mp-art', 'rt-mini-art'].forEach(id => { const im = $(id); if (im) im.src = u; });
+                            M.vid = d.video_id; const u = mArt(d.video_id);
                             try { if (navigator.mediaSession && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: d.title || '', artist: d.author || 'RUN MONITOR', artwork: [{ src: u, sizes: '320x180', type: 'image/jpeg' }] }); } catch (e) { }
                         }
                     } catch (e) { }
@@ -20061,16 +20069,54 @@ window.__tpPaint = function () {
                     }
                     return h;
                 };
+                // which song comes next? Shuffle = random song that has not played yet (every song once, then a fresh round); otherwise the next one in the list
+                const pickNext = () => {
+                    const n = M.q.length; if (!n) return -1;
+                    if (!M.shuf || n === 1) return n === 1 ? 0 : (M.i + 1) % n;
+                    M.bag = M.bag.filter(x => x !== M.i && x >= 0 && x < n);
+                    if (!M.bag.length) { for (let k = 0; k < n; k++) if (k !== M.i) M.bag.push(k); }
+                    return M.bag.splice(Math.floor(Math.random() * M.bag.length), 1)[0];
+                };
+                const playAt = (i, noHist) => {
+                    if (i < 0 || i >= M.q.length) return;
+                    if (!noHist && M.i >= 0 && M.i !== i) { M.hist.push(M.i); if (M.hist.length > 100) M.hist.shift(); }
+                    M.i = i; M.want = true; M.bag = M.bag.filter(x => x !== i);
+                    const id = M.q[i]; mArt(id);
+                    mTitle((PT[id] && PT[id].t) || 'Loading...');
+                    if (!M.ready) return;
+                    try { M.yt.loadVideoById(id); } catch (e) { }
+                };
+                const qInit = tries => {      // read the playlist's song list once, then the app takes over the order
+                    if (M.q.length) return;
+                    let ids = []; try { ids = (M.yt.getPlaylist && M.yt.getPlaylist()) || []; } catch (e) { }
+                    if (ids.length) {
+                        M.q = ids.slice(); M.i = -1; M.qBusy = false; mTitle('Tap play');
+                        if (M.want) playAt(M.shuf ? Math.floor(Math.random() * M.q.length) : 0);
+                        return;
+                    }
+                    if ((tries || 0) < 14) setTimeout(() => qInit((tries || 0) + 1), 500);
+                    else { M.qBusy = false; mTitle('Cannot load playlist'); }
+                };
                 const mBuild = () => {
                     const id = plId(); if (!id) return mTitle('No playlist set');
                     mHost();
                     M.yt = new YT.Player('rt-yt', {
                         width: '200', height: '200',
-                        playerVars: { listType: 'playlist', list: id, controls: 0, playsinline: 1, rel: 0, modestbranding: 1, disablekb: 1, fs: 0, iv_load_policy: 3 },
+                        playerVars: { controls: 0, playsinline: 1, rel: 0, modestbranding: 1, disablekb: 1, fs: 0, iv_load_policy: 3 },
                         events: {
-                            onReady: () => { M.ready = true; try { M.yt.setLoop(true); if (M.shuf) M.yt.setShuffle(true); } catch (e) { } mTitle('Tap play'); if (M.want) { try { M.yt.playVideo(); } catch (e) { } } },
-                            onStateChange: ev => { const st = ev.data; M.playing = (st === 1 || st === 3); mIco(M.playing); if (st === 1 || st === 2) mInfo(); if (st === 5 && !M.vid) mTitle('Tap play'); },
-                            onError: () => { mTitle('Cannot play this video'); mIco(false); }
+                            onReady: () => { M.ready = true; mTitle('Loading playlist...'); try { M.qBusy = true; M.yt.cuePlaylist({ listType: 'playlist', list: id }); } catch (e) { } },
+                            onStateChange: ev => {
+                                const st = ev.data; M.playing = (st === 1 || st === 3); mIco(M.playing);
+                                if (st === 1) M.errs = 0;
+                                if (st === 1 || st === 2) mInfo();
+                                if (st === 5 && !M.q.length) qInit(0);
+                                if (st === 0) window.runMusicNext();            // song finished: go to the next one (shuffle aware)
+                            },
+                            onError: () => {                                      // video not available / not embeddable: skip it
+                                M.errs++; mIco(false);
+                                if (M.q.length > 1 && M.errs <= M.q.length) { mTitle('Skipping...'); setTimeout(() => { if (M.active) window.runMusicNext(); }, 500); }
+                                else mTitle('Cannot play this video');
+                            }
                         }
                     });
                     try {
@@ -20100,15 +20146,31 @@ window.__tpPaint = function () {
                     M.card = !M.card; mSync();               // already playing: just show / hide the card, the music keeps going
                 };
                 window.runMusicToggle = function () {
-                    if (!M.ready) { M.want = true; return; }
-                    try { const st = M.yt.getPlayerState(); if (st === 1 || st === 3) { M.want = false; M.yt.pauseVideo(); } else { M.want = true; M.yt.playVideo(); } } catch (e) { }
+                    if (!M.ready || !M.q.length) { M.want = true; return; }
+                    try {
+                        const st = M.yt.getPlayerState();
+                        if (st === 1 || st === 3) { M.want = false; M.yt.pauseVideo(); }
+                        else if (st === -1 || st === 5 || M.i < 0) { playAt(M.i >= 0 ? M.i : (M.shuf ? Math.floor(Math.random() * M.q.length) : 0), true); }
+                        else { M.want = true; M.yt.playVideo(); }
+                    } catch (e) { }
                 };
-                window.runMusicNext = function () { if (M.ready) { try { M.want = true; M.yt.nextVideo(); } catch (e) { } } };
-                window.runMusicPrev = function () { if (M.ready) { try { M.want = true; M.yt.previousVideo(); } catch (e) { } } };
+                window.runMusicNext = function () {
+                    if (!M.ready) return;
+                    if (!M.q.length) { M.want = true; return; }
+                    playAt(pickNext());
+                };
+                window.runMusicPrev = function () {
+                    if (!M.ready) return;
+                    if (!M.q.length) { M.want = true; return; }
+                    try { if (M.yt.getCurrentTime() > 3) { M.want = true; M.yt.seekTo(0, true); M.yt.playVideo(); return; } } catch (e) { }   // song already running: first tap restarts it
+                    const n = M.q.length;
+                    if (M.shuf && M.hist.length) playAt(M.hist.pop(), true);
+                    else playAt((M.i - 1 + n) % n, true);
+                };
                 window.runMusicShuffle = function () {
-                    M.shuf = !M.shuf;
-                    try { if (M.ready && M.yt && M.yt.setShuffle) M.yt.setShuffle(M.shuf); } catch (e) { }
+                    M.shuf = !M.shuf; M.bag = [];
                     document.querySelectorAll('.rt-shuf').forEach(b => { b.style.opacity = M.shuf ? '1' : '.45'; b.style.color = M.shuf ? '#fff' : ''; });
+                    if (M.ready && M.i >= 0) mInfo();
                     if (window.showToast) window.showToast(M.shuf ? 'Shuffle on' : 'Shuffle off', '', 'info');
                 };
                 window.runMusicStop = function () {
@@ -20116,49 +20178,139 @@ window.__tpPaint = function () {
                     try { if (M.ready && M.yt) M.yt.pauseVideo(); } catch (e) { }
                     mIco(false); mSync(); if (window.closeRunPlaylist) window.closeRunPlaylist();
                 };
-                // ----- Playlist picker: tap the song title / thumbnail (run screen card or mini bar) to see every track and choose one -----
+                // ----- Song sheet: tap the song title / thumbnail. Type to filter the playlist, or search YouTube (or paste a YouTube link) and play any song -----
                 const PT = {}; let pq = [], pBusy = 0;
-                const pEsc = x => window.escHtml ? window.escHtml(x) : String(x);
+                const pEsc = x => window.escHtml ? window.escHtml(x) : String(x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                const okId = x => typeof x === 'string' && /^[\w-]{11}$/.test(x);
+                const decode = s => { const t = document.createElement('textarea'); t.innerHTML = String(s || ''); return t.value; };
                 const pFetch = () => {
                     while (pBusy < 4 && pq.length) {
                         const id = pq.shift(); pBusy++;
                         fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + id))
                             .then(r => r.ok ? r.json() : Promise.reject()).then(j => { PT[id] = { t: j.title || '', a: j.author_name || '' }; })
                             .catch(() => { PT[id] = PT[id] || { t: '', a: '' }; })
-                            .then(() => { pBusy--; pPaint(id); pFetch(); });
+                            .then(() => { pBusy--; pPaint(id); pFetch(); if (!pBusy && !pq.length && window.__rtPlRefresh) window.__rtPlRefresh(); });
                     }
                 };
                 const pPaint = id => {
                     const p = document.getElementById('rt-pl'); if (!p) return;
                     p.querySelectorAll('[data-vid="' + id + '"]').forEach(r => { const t = r.querySelector('.pt'), a = r.querySelector('.pa'); if (t && PT[id] && PT[id].t) t.textContent = PT[id].t; if (a && PT[id]) a.textContent = PT[id].a; });
                 };
-                const pRows = () => {
-                    const ids = (M.yt && M.yt.getPlaylist && M.yt.getPlaylist()) || [], cur = (M.yt && M.yt.getPlaylistIndex && M.yt.getPlaylistIndex()) || 0;
-                    const box = document.getElementById('rt-pl-list'); if (!box) return;
-                    if (!ids.length) { box.innerHTML = '<p style="padding:30px;text-align:center;font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">Playlist is still loading. Try again in a moment.</p>'; return; }
-                    box.innerHTML = ids.map((id, i) => '<div data-i="' + i + '" data-vid="' + pEsc(id) + '" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin-bottom:4px;cursor:pointer;' + (i === cur ? 'background:rgba(251,113,133,.16)' : '') + '">'
-                        + '<span style="width:20px;text-align:center;font-size:11px;font-weight:900;color:' + (i === cur ? '#fb7185' : 'rgba(255,255,255,.35)') + '">' + (i === cur ? '<i class="fa-solid fa-volume-high"></i>' : (i + 1)) + '</span>'
-                        + '<img loading="lazy" alt="" src="https://i.ytimg.com/vi/' + pEsc(id) + '/mqdefault.jpg" style="width:56px;height:56px;border-radius:10px;object-fit:cover;background:#18181b;flex:none">'
-                        + '<div style="min-width:0;flex:1"><p class="pt truncate" style="font-size:12px;font-weight:900;color:#fff">' + pEsc((PT[id] && PT[id].t) || ('Track ' + (i + 1))) + '</p><p class="pa truncate" style="font-size:9px;font-weight:900;letter-spacing:.2em;margin-top:4px;color:rgba(255,255,255,.4);text-transform:uppercase">' + pEsc((PT[id] && PT[id].a) || '') + '</p></div></div>').join('');
-                    ids.forEach(id => { if (!PT[id] && pq.indexOf(id) < 0) pq.push(id); }); pFetch();
-                    const c = box.querySelector('[data-i="' + cur + '"]'); if (c && c.scrollIntoView) c.scrollIntoView({ block: 'center' });
+                const fetchT = (url, ms) => {
+                    const c = window.AbortController ? new AbortController() : null;
+                    const t = setTimeout(() => { try { c && c.abort(); } catch (e) { } }, ms || 7000);
+                    return fetch(url, c ? { signal: c.signal } : {}).then(r => { clearTimeout(t); return r.ok ? r.json() : Promise.reject(new Error('http')); }, e => { clearTimeout(t); throw e; });
                 };
+                // Search needs no key if one of the public search servers is up. For rock-solid search put a free YouTube Data API key in window.RUN_YT_API_KEY.
+                const SEARCH_HOSTS = () => window.RUN_SEARCH_HOSTS || [
+                    { t: 'p', u: 'https://pipedapi.kavin.rocks' }, { t: 'p', u: 'https://api.piped.private.coffee' },
+                    { t: 'i', u: 'https://inv.nadeko.net' }, { t: 'i', u: 'https://yewtu.be' }
+                ];
+                const ytSearch = async q => {
+                    const key = String(window.RUN_YT_API_KEY || '').trim(), enc = encodeURIComponent(q);
+                    if (key) {
+                        try {
+                            const j = await fetchT('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&maxResults=15&q=' + enc + '&key=' + encodeURIComponent(key), 8000);
+                            const out = (j.items || []).map(x => ({ id: x.id && x.id.videoId, title: decode(x.snippet && x.snippet.title), author: decode(x.snippet && x.snippet.channelTitle) })).filter(x => okId(x.id));
+                            if (out.length) return out;
+                        } catch (e) { }
+                    }
+                    for (const h of SEARCH_HOSTS()) {
+                        try {
+                            let items = [];
+                            if (h.t === 'p') {
+                                const j = await fetchT(h.u + '/search?filter=videos&q=' + enc, 7000);
+                                items = (j.items || []).map(x => ({ id: ((x.url || '').match(/v=([\w-]{11})/) || [])[1], title: x.title, author: x.uploaderName }));
+                            } else {
+                                const j = await fetchT(h.u + '/api/v1/search?type=video&q=' + enc, 7000);
+                                items = (Array.isArray(j) ? j : []).filter(x => x.type === 'video').map(x => ({ id: x.videoId, title: x.title, author: x.author }));
+                            }
+                            items = items.filter(x => okId(x.id)).slice(0, 15);
+                            if (items.length) return items;
+                        } catch (e) { }
+                    }
+                    return [];
+                };
+                const linkId = s => { const m = String(s || '').match(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/|\/live\/)([\w-]{11})/); return m ? m[1] : ''; };
+                const playExternal = (id, title, author) => {      // play any YouTube song: it is slotted in right after the current one, so Next / Shuffle keep working
+                    if (!okId(id) || !M.ready) return;
+                    if (title || author) PT[id] = { t: title || '', a: author || '' };
+                    else if (!PT[id]) { pq.push(id); pFetch(); }
+                    let idx = M.q.indexOf(id);
+                    if (idx < 0) {
+                        const pos = M.i + 1; M.q.splice(pos, 0, id);
+                        M.hist = M.hist.map(x => x >= pos ? x + 1 : x); M.bag = M.bag.map(x => x >= pos ? x + 1 : x);
+                        idx = pos;
+                    }
+                    playAt(idx);
+                };
+                const pRow = (attrs, left, id, i, cur) => '<div ' + attrs + ' style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin-bottom:4px;cursor:pointer;' + (cur ? 'background:rgba(251,113,133,.16)' : '') + '">'
+                    + '<span style="width:20px;text-align:center;font-size:11px;font-weight:900;color:' + (cur ? '#fb7185' : 'rgba(255,255,255,.35)') + '">' + left + '</span>'
+                    + '<img loading="lazy" alt="" src="https://i.ytimg.com/vi/' + pEsc(id) + '/mqdefault.jpg" style="width:56px;height:56px;border-radius:10px;object-fit:cover;background:#18181b;flex:none">'
+                    + '<div style="min-width:0;flex:1"><p class="pt truncate" style="font-size:12px;font-weight:900;color:#fff">' + pEsc((PT[id] && PT[id].t) || ('Track ' + (i + 1))) + '</p><p class="pa truncate" style="font-size:9px;font-weight:900;letter-spacing:.2em;margin-top:4px;color:rgba(255,255,255,.4);text-transform:uppercase">' + pEsc((PT[id] && PT[id].a) || '') + '</p></div></div>';
+                const pLab = t => '<p style="font-size:9px;font-weight:900;letter-spacing:.3em;color:rgba(255,255,255,.4);padding:10px 10px 8px">' + t + '</p>';
+                const pMsg = t => '<p style="padding:18px 14px;text-align:center;font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">' + t + '</p>';
+                let webQ = '', webItems = [], webState = '';
+                const pQuery = () => { const e = document.getElementById('rt-pl-q'); return e ? e.value.trim() : ''; };
+                const pList = () => {
+                    const box = document.getElementById('rt-pl-list'); if (!box) return;
+                    const q = pQuery(), ql = q.toLowerCase(), cur = M.i;
+                    let h = '';
+                    if (!M.q.length) { box.innerHTML = pMsg('Playlist is still loading. Try again in a moment.'); return; }
+                    const lid = linkId(q);
+                    if (lid) h += '<div data-act="link" data-vid="' + pEsc(lid) + '" style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:14px;margin-bottom:6px;cursor:pointer;background:rgba(251,113,133,.16)"><i class="fa-brands fa-youtube" style="font-size:22px;color:#fb7185;width:24px;text-align:center"></i><span style="font-size:12px;font-weight:900;color:#fff">Play this YouTube link</span></div>';
+                    const rows = [];
+                    M.q.forEach((id, i) => {
+                        const t = ((PT[id] && PT[id].t) || '').toLowerCase(), a = ((PT[id] && PT[id].a) || '').toLowerCase();
+                        if (!ql || lid || t.indexOf(ql) >= 0 || a.indexOf(ql) >= 0) rows.push(pRow('data-act="local" data-i="' + i + '" data-vid="' + pEsc(id) + '"', i === cur ? '<i class="fa-solid fa-volume-high"></i>' : (i + 1), id, i, i === cur));
+                    });
+                    if (ql && !lid) h += pLab('IN YOUR PLAYLIST (' + rows.length + ')') + (rows.length ? rows.join('') : pMsg('No song with that name here.'));
+                    else h += rows.join('');
+                    if (ql && !lid) {
+                        h += pLab('YOUTUBE') + '<div data-act="search" style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:14px;margin-bottom:6px;cursor:pointer;background:rgba(255,255,255,.08)"><i class="fa-brands fa-youtube" style="font-size:22px;color:#fb7185;width:24px;text-align:center"></i><span class="truncate" style="font-size:12px;font-weight:900;color:#fff;min-width:0;flex:1">Search YouTube for "' + pEsc(q) + '"</span></div>';
+                        if (webQ === q) {
+                            if (webState === 'loading') h += pMsg('Searching YouTube...');
+                            else if (webState === 'ok') h += webItems.map((x, k) => pRow('data-act="web" data-k="' + k + '" data-vid="' + pEsc(x.id) + '"', '<i class="fa-solid fa-play" style="font-size:9px"></i>', x.id, k, false)).join('');
+                            else h += pMsg('No results. The search service may be busy. Try again, or paste a YouTube link above.');
+                        }
+                    }
+                    box.innerHTML = h;
+                    if (!q) { const c = box.querySelector('[data-i="' + cur + '"]'); if (c && c.scrollIntoView) c.scrollIntoView({ block: 'center' }); }
+                    M.q.forEach(id => { if (!PT[id] && pq.indexOf(id) < 0) pq.push(id); }); pFetch();
+                };
+                const pSearch = () => {
+                    const q = pQuery(); if (!q) return;
+                    const lid = linkId(q); if (lid) { playExternal(lid); window.closeRunPlaylist(); return; }
+                    webQ = q; webItems = []; webState = 'loading'; pList();
+                    ytSearch(q).then(items => { if (webQ !== q) return; webItems = items; items.forEach(x => { if (!(PT[x.id] && PT[x.id].t)) PT[x.id] = { t: x.title || '', a: x.author || '' }; }); webState = items.length ? 'ok' : 'none'; }).catch(() => { if (webQ === q) webState = 'none'; }).then(() => { if (webQ === q) pList(); });
+                };
+                window.__rtPlRefresh = () => { if (pQuery()) pList(); };
                 window.closeRunPlaylist = function () { const p = document.getElementById('rt-pl'); if (p) p.remove(); };
                 window.runMusicList = function () {
                     if (!M.ready || !M.yt) return;
-                    window.closeRunPlaylist();
+                    window.closeRunPlaylist(); webQ = ''; webItems = []; webState = '';
                     const p = document.createElement('div'); p.id = 'rt-pl';
                     p.style.cssText = 'position:fixed;inset:0;z-index:130;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center';
                     p.innerHTML = '<div style="width:100%;max-width:480px;height:78dvh;background:#0f0f12;color:#fff;border-radius:24px 24px 0 0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)">'
                         + '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px"><span style="font-size:11px;font-weight:900;letter-spacing:.35em">CHOOSE A SONG</span><button type="button" id="rt-pl-x" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
+                        + '<div style="display:flex;gap:8px;padding:0 14px 8px"><input id="rt-pl-q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search a song, or paste a YouTube link" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)"><button type="button" id="rt-pl-go" aria-label="Search" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-magnifying-glass"></i></button></div>'
                         + '<div id="rt-pl-list" style="flex:1;overflow-y:auto;padding:4px 10px 14px;-webkit-overflow-scrolling:touch"></div></div>';
                     p.addEventListener('click', e => {
                         if (e.target === p || e.target.closest('#rt-pl-x')) return window.closeRunPlaylist();
-                        const r = e.target.closest('[data-i]'); if (!r) return;
-                        try { M.want = true; M.yt.playVideoAt(parseInt(r.getAttribute('data-i'), 10)); } catch (x) { }
-                        window.closeRunPlaylist();
+                        if (e.target.closest('#rt-pl-go')) return pSearch();
+                        const r = e.target.closest('[data-act]'); if (!r) return;
+                        const act = r.getAttribute('data-act');
+                        if (act === 'search') return pSearch();
+                        if (act === 'local') { playAt(parseInt(r.getAttribute('data-i'), 10)); window.closeRunPlaylist(); return; }
+                        if (act === 'link') { playExternal(r.getAttribute('data-vid')); window.closeRunPlaylist(); return; }
+                        if (act === 'web') { const x = webItems[parseInt(r.getAttribute('data-k'), 10)]; if (x) playExternal(x.id, x.title, x.author); window.closeRunPlaylist(); }
                     });
-                    document.body.appendChild(p); pRows();
+                    document.body.appendChild(p); pList();
+                    const qi = document.getElementById('rt-pl-q');
+                    if (qi) {
+                        qi.addEventListener('input', () => { if (webQ && webQ !== pQuery()) { webQ = ''; webItems = []; webState = ''; } pList(); });
+                        qi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); qi.blur(); pSearch(); } });
+                    }
                 };
                 window.__rtMusicStop = window.runMusicStop;
                 // leaving the Fitness screen entirely stops the music (it must never keep playing during an exam or on another page)
@@ -20192,11 +20344,27 @@ window.__tpPaint = function () {
                     let hold = null;
                     ov.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
                     ov.addEventListener('contextmenu', e => e.preventDefault());
+                    const nudge = () => { const h = $('rt-lock-hint'); if (h && h.animate) h.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(7px)' }, { transform: 'translateX(0)' }], { duration: 260 }); };   // "locked" nudge
+                    // swipe left = next song, swipe right = previous song (works while the screen is locked; everything else stays locked)
+                    let sw = null;
                     ov.addEventListener('pointerdown', e => {
                         if (un.contains(e.target)) return;
                         e.preventDefault();
-                        const h = $('rt-lock-hint'); if (h && h.animate) h.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(7px)' }, { transform: 'translateX(0)' }], { duration: 260 });   // "locked" nudge
+                        if (e.target.closest && e.target.closest('.rt-ptt')) { nudge(); return; }
+                        sw = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
                     });
+                    const swEnd = e => {
+                        if (!sw || e.pointerId !== sw.id) return;
+                        const s = sw; sw = null; if (e.type === 'pointercancel') return;
+                        const dx = e.clientX - s.x, dy = e.clientY - s.y, dt = Date.now() - s.t;
+                        if (Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy) * 1.4 && dt < 1500) {
+                            if (!M.active) { nudge(); return; }
+                            if (dx < 0) window.runMusicNext(); else window.runMusicPrev();
+                            if (navigator.vibrate) { try { navigator.vibrate(20); } catch (x) { } }
+                            const sg = $('rt-lock-song'); if (sg && sg.animate) sg.animate([{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(' + (dx < 0 ? -36 : 36) + 'px)', opacity: 0 }, { transform: 'translateX(' + (dx < 0 ? 36 : -36) + 'px)', opacity: 0 }, { transform: 'translateX(0)', opacity: 1 }], { duration: 320 });
+                        } else if (Math.abs(dx) < 12 && Math.abs(dy) < 12) nudge();
+                    };
+                    ov.addEventListener('pointerup', swEnd); ov.addEventListener('pointercancel', swEnd);
                     const cancel = () => { clearTimeout(hold); hold = null; ring.style.transition = 'stroke-dashoffset .2s ease-out'; ring.style.strokeDashoffset = '276.46'; };
                     un.addEventListener('pointerdown', e => {
                         e.preventDefault(); clearTimeout(hold);
@@ -35494,6 +35662,9 @@ document.addEventListener('click',function(e){var b=e.target.closest&&e.target.c
 <style id="hdr-dark-mw-loader-v2">
 /* ===== 1. no glow on Goal Planner / Weekly Targets / Syllabus Tracker headers ===== */
 #target-calc-view .tp2-hero,#weekly-targets-view .tp2-hero,#syllabus-view .tp2-hero{box-shadow:none!important}
+/* Goal Planner: no coloured glow on the goal cards, rings, score panel or focused inputs */
+#target-calc-view .tp2-goal,#target-calc-view .tp2-goal:focus-within,#target-calc-view .tp2-score,#target-calc-view .tp2-step input,#target-calc-view .tp2-step input:focus{box-shadow:none!important}
+#target-calc-view .tp2-ring,#target-calc-view .tp2-sring{filter:none!important}
 #target-calc-view .tp2-hero{background:linear-gradient(160deg,#4338ca,#312e81 55%,#1e1b4b)!important}
 #weekly-targets-view .tp2-hero.hx-teal{background:linear-gradient(160deg,#0f766e,#115e59 55%,#134e4a)!important}
 #syllabus-view .tp2-hero.hx-blue{background:linear-gradient(160deg,#1e40af,#1e3a8a 55%,#172554)!important}
