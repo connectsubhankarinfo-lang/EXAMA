@@ -36290,7 +36290,7 @@ function wireImg(img) {
 }
 function wireSidebar() {
     var t = $('nv-wake-toggle'); if (t && !t.__nv) { t.__nv = 1; t.addEventListener('click', function () { setWake(!wakeOn, true); }); }
-    wireImg($('nv-wake-img'));
+    wireImg($('nv-wake-img')); var av = $('nv-wake-img'); if (av && !av.__lp0) { av.__lp0 = 1; lpAttach(av, function () { quickMenu(av); }); }
 }
 function mkOrb() { wireSidebar(); }
 function updateOrb() {
@@ -36350,7 +36350,7 @@ function fabMake() {
     if (fab) return;
     var b = document.createElement('button'); b.id = 'nova-fab'; b.type = 'button'; b.setAttribute('aria-label', 'Talk to Nova');
     b.innerHTML = '<img src="' + NOVA_IMGS[0] + '" alt="" decoding="async" referrerpolicy="no-referrer" draggable="false"><span class="nv-fm"><i class="fa-solid fa-microphone"></i></span>';
-    document.body.appendChild(b); fab = b; wireImg(b.querySelector('img'));
+    document.body.appendChild(b); fab = b; wireImg(b.querySelector('img')); lpAttach(b, function () { quickMenu(b); });
     var sx = 0, sy = 0, ox = 0, oy = 0, moved = false, down = false, pid = null;
     b.addEventListener('pointerdown', function (e) { down = true; moved = false; pid = e.pointerId; sx = e.clientX; sy = e.clientY; var r = b.getBoundingClientRect(); ox = r.left; oy = r.top; try { b.setPointerCapture(pid); } catch (x) { } });
     b.addEventListener('pointermove', function (e) {
@@ -36362,7 +36362,7 @@ function fabMake() {
     function end(cancel) {
         if (!down) return; down = false; try { b.releasePointerCapture(pid); } catch (x) { } b.classList.remove('drag');
         if (moved) { var r = b.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight; store.set('nova_fab_pos', JSON.stringify({ side: (r.left + r.width / 2) < W / 2 ? 'l' : 'r', y: r.top / H })); fabPlace(); }
-        else if (!cancel) fabTap();
+        else if (!cancel && !b.__lp) fabTap();
     }
     b.addEventListener('pointerup', function () { end(false); });
     b.addEventListener('pointercancel', function () { end(true); });
@@ -36544,7 +36544,7 @@ function blocked() {
     if (window.WAC && window.WAC.active) return true;                          // in a Discuss call                                      // walkie-talkie on a group run
     return false;
 }
-function wantWake() { return !MOBILE && wakeOn && !!SR && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && Date.now() > hold && !blocked(); }
+function wantWake() { return !MOBILE && !sleepMode && wakeOn && !!SR && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && Date.now() > hold && !blocked(); }
 /* ---------------- hands-free wake word: on-device model ---------------- */
 /* the browser only lets the microphone/audio start after a REAL tap (touchend / pointerup / click / keydown - touchstart and scrolling do not count) */
 function activated() { try { return !navigator.userActivation || navigator.userActivation.hasBeenActive; } catch (e) { return true; } }
@@ -36564,7 +36564,7 @@ function onnxText() {
 function engStop() { if (ENG && ENG.running) { try { ENG.stop(); } catch (e) { } } }
 function wantOnnx() {
     var now = Date.now(); micBusy = micBusy.filter(function (b) { return b.s && b.s.active && now - b.at < 180000; });
-    return onnxActive() && wakeOn && !denied && gesture && activated() && !!role() && !document.hidden && phase === 'idle' && !speaking && !(rec && mode !== 'wake') && now > hold && now > engRetryAt && !blocked() && !micBusy.length;
+    return onnxActive() && !sleepMode && wakeOn && !denied && gesture && activated() && !!role() && !document.hidden && phase === 'idle' && !speaking && !(rec && mode !== 'wake') && now > hold && now > engRetryAt && !blocked() && !micBusy.length;
 }
 function engSync() {
     if (!ENG || !onnxActive()) return;
@@ -37194,7 +37194,7 @@ setInterval(function () {
     if (Date.now() - stuckAt > 6000) { stuckAt = 0; phase = 'idle'; submitted = true; wakeUp(); }
 }, 2000);
 /* Shake the phone: wakes Nova up and starts listening (shake again while Nova talks to stop her). Off with localStorage nova_shake=0 */
-var SHAKE_ON = store.get('nova_shake') !== '0', shakeLast = 0, shakeHits = [], shakeAt = 0, lx = 0, ly = 0, lz = 0, shakeAsked = false;
+var FLIP_ON = store.get('nova_flip') !== '0', LP_ON = store.get('nova_lp') !== '0', EDGE_ON = store.get('nova_edge') !== '0', SHAKE_ON = store.get('nova_shake') !== '0', shakeLast = 0, shakeHits = [], shakeAt = 0, lx = 0, ly = 0, lz = 0, shakeAsked = false;
 function onShake() {
     var n = Date.now(); if (n - shakeAt < 2500) return; shakeAt = n;
     if (!role() || blocked() || document.hidden) return;
@@ -37215,14 +37215,153 @@ function onMotion(e) {
     if (d > 28) { shakeHits.push(t); shakeHits = shakeHits.filter(function (h) { return t - h < 900; }); if (shakeHits.length >= 3) { shakeHits = []; onShake(); } }
 }
 function startShake() {
-    if (!SHAKE_ON || shakeAsked || typeof DeviceMotionEvent === 'undefined') return;
-    function on() { window.addEventListener('devicemotion', onMotion, { passive: true }); }
-    if (typeof DeviceMotionEvent.requestPermission === 'function') {   /* iPhone: needs one tap to allow motion */
-        shakeAsked = true;
-        var ask = function () { document.removeEventListener('click', ask, true); DeviceMotionEvent.requestPermission().then(function (r) { if (r === 'granted') on(); }, function () { }); };
+    if (shakeAsked || (typeof DeviceMotionEvent === 'undefined' && typeof DeviceOrientationEvent === 'undefined')) return;
+    function on() { if (SHAKE_ON) window.addEventListener('devicemotion', onMotion, { passive: true }); if (FLIP_ON) window.addEventListener('deviceorientation', onOrient, { passive: true }); }
+    var need = (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') ? DeviceMotionEvent : ((typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') ? DeviceOrientationEvent : null);
+    shakeAsked = true;
+    if (need) {   /* iPhone: needs one tap to allow motion */
+        var ask = function () { document.removeEventListener('click', ask, true); need.requestPermission().then(function (r) { if (r === 'granted') on(); }, function () { }); };
         document.addEventListener('click', ask, true);
-    } else { shakeAsked = true; on(); }
+    } else on();
 }
+
+/* ---------------- gestures: flip face-down to focus, long-press Nova, swipe from the screen edge ---------------- */
+/* 1) FLIP FACE-DOWN = FOCUS. Put the phone face-down (after it was in your hand) and a focus session starts / resumes. Lift it and the session goes on a break. Off: localStorage nova_flip=0 */
+var fdSince = 0, fdOn = false, upSince = 0, upSeen = false, flipManaged = false, flipBusy = false, flipLiftT = null;
+function toastG(a, b) { try { if (window.showToast) window.showToast(a, b || '', 'info'); } catch (e) { } }
+function buzz(p) { if (navigator.vibrate) { try { navigator.vibrate(p); } catch (e) { } } }
+function flipOk() { return FLIP_ON && isStudent() && !blocked() && !document.hidden && !flipBusy; }
+var sleepMode = false, sleepEl = null;
+function studiedToday() { var m = window.loggedInMobile, d = window.formatDateDDMMYYYY ? window.formatDateDDMMYYYY() : '', ms = 0; (window.sessionsDB || []).forEach(function (x) { if (x.mobile === m && x.dateStr === d) ms += x.totalStudyMs || 0; }); return ms; }
+function durWords(ms) { var m = Math.round(ms / 60000), h = Math.floor(m / 60); m = m % 60; return (h ? h + (h === 1 ? ' hour' : ' hours') : '') + (h && m ? ' and ' : '') + (m ? m + (m === 1 ? ' minute' : ' minutes') : ''); }
+/* the page cannot lock the phone itself: instead it releases every keep-screen-on lock, stops the mic listener and covers the screen with pure black (no light on OLED).
+   The phone's own screen timeout then locks it. A tap or lifting the phone brings everything back. */
+function sleepScreen() {
+    if (sleepMode) return; sleepMode = true; killRec(); engStop(); stopSpeak();
+    try { if (window.median && median.screen && median.screen.keepScreenNormal) median.screen.keepScreenNormal(); } catch (e) { }
+    try { if (window.WAC && WAC.unlockScreen) WAC.unlockScreen(); } catch (e) { }
+    if (!sleepEl) { sleepEl = document.createElement('div'); sleepEl.id = 'nova-sleep'; sleepEl.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;background:#000;touch-action:manipulation'; sleepEl.addEventListener('pointerdown', function () { wakeSleep(); }); }
+    document.body.appendChild(sleepEl);
+}
+function wakeSleep() { if (!sleepMode) return; sleepMode = false; if (sleepEl && sleepEl.parentNode) sleepEl.parentNode.removeChild(sleepEl); wakeUp(); }
+function flipAnnounce(resumed, fresh) {
+    var s = live(), nm = s && s.sessionType ? String(s.sessionType).replace(/\s*Session$/i, '') : '', ms = studiedToday();
+    var t = 'Let’s crack it! ' + (fresh ? 'Your ' + (nm ? nm + ' ' : '') + 'focus session has started. ' : resumed ? 'Back to focus. ' : 'Your focus session is running. ')
+        + (ms >= 60000 ? 'Today you have studied ' + durWords(ms) + '. ' : '') + 'I will keep the time. The screen is going to sleep. Lift the phone for a break. All the best!';
+    var done = false, go2 = function () { if (done) return; done = true; if (fdOn) sleepScreen(); };
+    setTimeout(go2, 20000);
+    try { gesture = true; audio(); if (TTS_ON) speak(t, go2); else setTimeout(go2, 800); } catch (e) { go2(); }
+}
+function flipDown() {
+    if (!flipOk()) return; var s = live(); flipBusy = true; setTimeout(function () { flipBusy = false; }, 2500);
+    flipManaged = true; buzz([30, 50, 30]);
+    if (s && s.status !== 'BREAK') { flipAnnounce(false, false); return; }
+    if (s) { Promise.resolve(window.toggleSessionState && window.toggleSessionState('RESUME')).then(function () { flipAnnounce(true, false); }); return; }
+    go('session-timer');
+    wait(function () { return vis($('session-timer-view')); }, 4000).then(function () { setTimeout(function () { Promise.resolve(window.handleStartFocusClick && window.handleStartFocusClick()).then(function () { wait(function () { return live(); }, 3500).then(function (ok) { if (ok) flipAnnounce(false, true); else { flipManaged = false; toastG('Could not start focus', 'Choose an option on the screen.'); } }); }); }, 450); });
+}
+function flipUp() {
+    wakeSleep(); stopSpeak();
+    if (!flipManaged || !isStudent() || blocked()) return; var s = live();
+    if (!s) { flipManaged = false; return; }
+    if (s.status === 'BREAK') return;
+    buzz(25); Promise.resolve(window.toggleSessionState && window.toggleSessionState('BREAK')).then(function () { toastG('Break started', 'Put the phone face-down again to resume.'); });
+}
+function onOrient(e) {
+    if (!FLIP_ON || e.beta == null) return; var t = Date.now(), ab = Math.abs(e.beta), ag = Math.abs(e.gamma || 0);
+    var down = ab > 150 && ag < 40, up = ab < 135;
+    if (down) {
+        if (!fdOn) { if (!fdSince) fdSince = t; if (upSeen && t - fdSince > 1500) { fdOn = true; upSeen = false; clearTimeout(flipLiftT); flipDown(); } }
+        upSince = 0;
+    } else if (up) {
+        fdSince = 0;
+        if (!upSince) upSince = t;
+        if (fdOn && t - upSince > 700) { fdOn = false; flipUp(); }
+        if (!fdOn && t - upSince > 800) upSeen = true;
+    }
+}
+/* 2) LONG-PRESS NOVA: hold the floating Nova button (or the Nova picture in the settings sidebar) for a quick-action menu. Off: nova_lp=0 */
+function lpAttach(el, fn) {
+    var tm = null, sx = 0, sy = 0;
+    function clr() { clearTimeout(tm); tm = null; }
+    el.addEventListener('pointerdown', function (e) { el.__lp = 0; if (!LP_ON) return; sx = e.clientX; sy = e.clientY; clr(); tm = setTimeout(function () { tm = null; el.__lp = 1; buzz(20); fn(); }, 480); });
+    el.addEventListener('pointermove', function (e) { if (tm && Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) > 12) clr(); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { el.addEventListener(ev, clr); });
+    el.addEventListener('contextmenu', function (e) { if (LP_ON) e.preventDefault(); });
+}
+var qm = null;
+function closeQM() { if (qm) { qm.remove(); qm = null; } document.removeEventListener('pointerdown', qmOut, true); }
+function qmOut(e) { if (qm && !qm.contains(e.target)) closeQM(); }
+function quickMenu(anchor) {
+    if (!role()) return; closeQM(); gesture = true; audio(); build();
+    var s = isStudent() ? live() : null, it = [];
+    it.push(['fa-microphone', 'Talk to Nova', function () { tapMic(); }]);
+    if (isStudent()) {
+        it.push(['fa-bullseye', s ? (s.status === 'BREAK' ? 'Resume focus' : 'Take a break') : 'Start focus session', function () { typed(s ? (s.status === 'BREAK' ? 'resume session' : 'take a break') : 'start session'); }]);
+        it.push(['fa-wallet', 'Add an expense', function () { typed('add an expense'); }]);
+        it.push(['fa-person-running', 'Start a run', function () { typed('start run'); }]);
+        it.push(['fa-calculator', 'Math workout', function () { typed('start math workout'); }]);
+    }
+    it.push(['fa-comments', 'Discuss', function () { doNav('chat'); }]);
+    it.push(['fa-keyboard', 'Type to Nova', function () { openSheet(); setTimeout(function () { if (inEl) inEl.focus(); }, 200); }]);
+    it.push([TTS_ON ? 'fa-volume-xmark' : 'fa-volume-high', TTS_ON ? 'Mute Nova’s voice' : 'Unmute Nova’s voice', function () { TTS_ON = !TTS_ON; store.set('nova_tts', TTS_ON ? '1' : '0'); toastG(TTS_ON ? 'Nova voice on' : 'Nova voice off'); }]);
+    var d = document.createElement('div'); d.id = 'nova-qm'; d.setAttribute('role', 'menu');
+    d.style.cssText = 'position:fixed;z-index:10050;width:220px;background:#fff;border-radius:16px;box-shadow:0 14px 40px -8px rgba(30,27,75,.45),0 0 0 1px #e0e7ff;padding:6px;opacity:0;transform:scale(.92);transform-origin:center;transition:opacity .15s,transform .15s';
+    it.forEach(function (x) {
+        var b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'menuitem');
+        b.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:0;background:none;border-radius:10px;font:600 13px system-ui,sans-serif;color:#1e293b;text-align:left';
+        b.innerHTML = '<i class="fa-solid ' + x[0] + '" style="width:18px;text-align:center;color:#6366f1"></i><span></span>'; b.lastChild.textContent = x[1];
+        b.addEventListener('click', function () { closeQM(); x[2](); });
+        d.appendChild(b);
+    });
+    document.body.appendChild(d); qm = d;
+    var r = anchor.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight, h = d.offsetHeight;
+    var left = Math.max(8, Math.min(W - 228, r.left + r.width / 2 - 110)), top = r.top - h - 10; if (top < 8) top = Math.min(H - h - 8, r.bottom + 10);
+    d.style.left = left + 'px'; d.style.top = Math.max(8, top) + 'px';
+    requestAnimationFrame(function () { d.style.opacity = '1'; d.style.transform = 'none'; });
+    setTimeout(function () { document.addEventListener('pointerdown', qmOut, true); }, 350);
+    clearTimeout(timers.qm); timers.qm = setTimeout(closeQM, 9000);
+}
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeQM(); });
+window.addEventListener('hashchange', closeQM);
+window.addEventListener('scroll', closeQM, true);
+/* 3) EDGE SWIPE: swipe in from the LEFT edge = back, from the RIGHT edge = forward. Does nothing if the phone's own back gesture already navigated. Off: nova_edge=0 */
+var navTick = 0; window.addEventListener('popstate', function () { navTick++; }); window.addEventListener('hashchange', function () { navTick++; });
+var eg = null, egEl = null;
+function egShow(side, k) {
+    if (!egEl) { egEl = document.createElement('div'); egEl.id = 'nova-edge'; egEl.style.cssText = 'position:fixed;top:50%;z-index:10040;width:40px;height:40px;margin-top:-20px;border-radius:50%;background:#4f46e5;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 6px 18px -4px rgba(49,46,129,.6);pointer-events:none;opacity:0;transition:opacity .12s'; egEl.innerHTML = '<i class="fa-solid"></i>'; document.body.appendChild(egEl); }
+    egEl.firstChild.className = 'fa-solid ' + (side === 'L' ? 'fa-arrow-left' : 'fa-arrow-right');
+    egEl.style.left = side === 'L' ? '0' : 'auto'; egEl.style.right = side === 'R' ? '0' : 'auto';
+    var off = (1 - Math.min(1, k)) * -44; egEl.style.transform = 'translateX(' + (side === 'L' ? off : -off) + 'px)'; egEl.style.opacity = k > .15 ? String(Math.min(1, k)) : '0';
+}
+function egHide() { if (egEl) egEl.style.opacity = '0'; }
+function egBlocked(t) {
+    if (!EDGE_ON || !role() || blocked()) return true;
+    var a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+    if (document.fullscreenElement || document.webkitFullscreenElement) return true;
+    if (t && t.closest && t.closest('[data-no-edge],canvas,input[type=range],.leaflet-container')) return true;
+    return false;
+}
+function egGo(side) {
+    var n = navTick; egHide(); buzz(12);
+    setTimeout(function () {
+        if (navTick !== n) return;   /* the phone/browser already navigated by itself: do not go twice */
+        try { if (side === 'L') { if (sheetOpen) closeSheet(); else if (window.safeBack) window.safeBack(); else history.back(); } else history.forward(); } catch (e) { }
+    }, 300);
+}
+document.addEventListener('touchstart', function (e) {
+    eg = null; if (e.touches.length !== 1) return; var t = e.touches[0], W = window.innerWidth, EP = 24;
+    var side = t.clientX <= EP ? 'L' : (t.clientX >= W - EP ? 'R' : null); if (!side || egBlocked(e.target)) return;
+    eg = { side: side, x0: t.clientX, y0: t.clientY, t0: Date.now(), dx: 0, dy: 0, done: false };
+}, { passive: true, capture: true });
+document.addEventListener('touchmove', function (e) {
+    if (!eg || eg.done) return; if (e.touches.length !== 1) { eg = null; egHide(); return; }
+    var t = e.touches[0]; eg.dx = (t.clientX - eg.x0) * (eg.side === 'L' ? 1 : -1); eg.dy = Math.abs(t.clientY - eg.y0);
+    if (eg.dy > Math.max(40, eg.dx * 0.8) && eg.dx < 60) { eg = null; egHide(); return; }   /* vertical scroll, not an edge swipe */
+    if (eg.dx > 8) egShow(eg.side, eg.dx / 80);
+    if (eg.dx >= 80 && Date.now() - eg.t0 < 900) { eg.done = true; var sd = eg.side; egGo(sd); }
+}, { passive: true, capture: true });
+['touchend', 'touchcancel'].forEach(function (ev) { document.addEventListener(ev, function () { eg = null; egHide(); }, { passive: true, capture: true }); });
 startShake();
 window.NovaWakeUp = wakeUp; window.NovaShake = onShake;
 installMicWatch(); mkOrb(); checkPerm(); updateOrb();
