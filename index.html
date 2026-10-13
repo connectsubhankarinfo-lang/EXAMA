@@ -36194,7 +36194,14 @@ E.start = function (onWake) {
     return starting;
 };
 /* mic went quiet (another app took it, call, etc.): tell the caller so it can restart */
-E.stalled = function () { return E.running && Date.now() - E.lastAudio > 8000; };
+E.stalled = function () {
+    if (!E.running) return false;
+    try { if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') ctx.resume(); } catch (e) { }
+    if (ctx && ctx.state === 'closed') return true;
+    try { if (stream) { var tr = stream.getAudioTracks()[0]; if (!tr || tr.readyState === 'ended') return true; } } catch (e) { }
+    return Date.now() - E.lastAudio > 5000;
+};
+E.reset = function () { teardown(); starting = null; try { if (ctx && ctx.state === 'closed') ctx = null; } catch (e) { } };
 E.threshold = function () { return C.thr; };
 E._t = { logMel: logMel, model: model, Core: Core, Resampler: Resampler, C: C, T: T };
 window.NovaWakeEngine = E;
@@ -36219,7 +36226,7 @@ var fabOn = store.get('nova_fab') !== '0';
 /* hands-free wake word: on-device "hey nova" model (NovaWakeEngine) listens through the mic stream, so there is no recogniser beep and no floating button.
    Phones/tablets use it by default; on desktop the existing recogniser keeps working (set localStorage nova_onnx=1 to use the model there too). */
 var ENG = window.NovaWakeEngine || null, WAKE_UI = 'sheet';   /* WAKE_UI: 'sheet' = full Nova popup on wake, 'pill' = small bar at the top */
-var USE_ONNX = !!(ENG && ENG.supported && SR && (MOBILE || store.get('nova_onnx') === '1')), onnxFailed = false, micBusy = [], engRetryAt = 0, engErrs = 0, engStarting = false, cmdRetry = 0;
+var USE_ONNX = !!(ENG && ENG.supported && SR && (MOBILE || store.get('nova_onnx') !== '0')), onnxFailed = false, micBusy = [], engRetryAt = 0, engErrs = 0, engStarting = false, cmdRetry = 0;
 function onnxActive() { return USE_ONNX && !onnxFailed; }
 var WAKE = /\b(?:hey|hay|hai|hei|hi|hello|ok|okay|ay)[\s,.!-]*(?:n[oau]\s?[vwb][aeiou]h?|novva|norva|nowa)\b[\s,.!?:;-]*/i;
 var WAKE2 = /^\s*(?:n[oau]\s?[vwb][aeiou]h?)\b[\s,.!?:;-]*/i;
@@ -36537,7 +36544,7 @@ function blocked() {
     if (window.WAC && window.WAC.active) return true;                          // in a Discuss call                                      // walkie-talkie on a group run
     return false;
 }
-function wantWake() { return !MOBILE && !onnxActive() && wakeOn && !!SR && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && Date.now() > hold && !blocked(); }
+function wantWake() { return !MOBILE && wakeOn && !!SR && !denied && gesture && !!role() && !document.hidden && phase === 'idle' && !speaking && Date.now() > hold && !blocked(); }
 /* ---------------- hands-free wake word: on-device model ---------------- */
 /* the browser only lets the microphone/audio start after a REAL tap (touchend / pointerup / click / keydown - touchstart and scrolling do not count) */
 function activated() { try { return !navigator.userActivation || navigator.userActivation.hasBeenActive; } catch (e) { return true; } }
@@ -36557,11 +36564,11 @@ function onnxText() {
 function engStop() { if (ENG && ENG.running) { try { ENG.stop(); } catch (e) { } } }
 function wantOnnx() {
     var now = Date.now(); micBusy = micBusy.filter(function (b) { return b.s && b.s.active && now - b.at < 180000; });
-    return onnxActive() && wakeOn && !denied && gesture && activated() && !!role() && !document.hidden && phase === 'idle' && !speaking && !rec && now > hold && now > engRetryAt && !blocked() && !micBusy.length;
+    return onnxActive() && wakeOn && !denied && gesture && activated() && !!role() && !document.hidden && phase === 'idle' && !speaking && !(rec && mode !== 'wake') && now > hold && now > engRetryAt && !blocked() && !micBusy.length;
 }
 function engSync() {
     if (!ENG || !onnxActive()) return;
-    if (ENG.running) { if (!wantOnnx()) engStop(); else if (ENG.stalled()) { engStop(); engRetryAt = Date.now() + 1000; } return; }
+    if (ENG.running) { if (!wantOnnx()) engStop(); else if (ENG.stalled()) { engStop(); if (ENG.reset) ENG.reset(); engRetryAt = Date.now() + 400; } return; }
     if (engStarting || !wantOnnx()) return;
     engStarting = true;
     ENG.start(onnxWake).then(function () { engStarting = false; engErrs = 0; updateOrb(); }, function (e) {
@@ -36569,14 +36576,14 @@ function engSync() {
         if (n === 'NotAllowedError' || n === 'SecurityError') denied = true;
         else if (n === 'Unsupported') { onnxFailed = true; fabUpdate(); }
         else if (n === 'Suspended') { engRetryAt = Date.now() + 500; }
-        else { engErrs++; engRetryAt = Date.now() + Math.min(30000, 2000 * engErrs); }
+        else { engErrs++; engRetryAt = Date.now() + Math.min(8000, 1000 * engErrs); }
         updateOrb();
     });
 }
 /* "Hey Nova" heard: free the mic, show the popup, then listen for the command */
 function onnxWake() {
     if (phase !== 'idle' || speaking || blocked() || !role()) return;
-    engStop(); chime(); clearTimeout(timers.wake); clearTimeout(timers.close);
+    engStop(); chime(); cmdRetry = 0; clearTimeout(timers.wake); clearTimeout(timers.close);
     phase = 'cmd'; submitted = false; cur = ''; wakeIdx = 0; strip = true; reset();
     if (WAKE_UI === 'sheet' || sheetOpen) openSheet(); else pillShow('Listening\u2026', 'listen');
     setState('listen', 'Listening\u2026');
@@ -36615,7 +36622,7 @@ function onErr(e) {
 }
 function onEnd() {
     var lived = Date.now() - recAt;
-    if (mode === 'cmd') { if (!submitted) { if (cur) submit(cur); else if (pending && cmdRetry < 1 && !denied) { cmdRetry++; startRec('cmd'); } else cmdTimeout(); } return; }
+    if (mode === 'cmd') { if (!submitted) { if (cur) submit(cur); else if ((pending || lived < 1500) && cmdRetry < 1 && !denied) { cmdRetry++; setTimeout(function () { if (phase === 'cmd' && !rec && !submitted) { if (!startRec('cmd')) cmdTimeout(); } }, 300); } else cmdTimeout(); } return; }
     failStreak = lived < 1500 ? failStreak + 1 : 0;
     resumeWake(failStreak > 4 ? 6000 : (lived > 1500 ? 80 : 350));
 }
@@ -36635,7 +36642,7 @@ function onResult(e) {
     }
     if (mode === 'cmd') update(e);
 }
-function heard(e, i) { cue(); phase = 'cmd'; mode = 'cmd'; wakeIdx = i; strip = true; reset(); if (sheetOpen) openSheet(); else pillShow('Listening\u2026', 'listen'); setState('listen', 'Listening\u2026'); update(e); }
+function heard(e, i) { engStop(); cmdRetry = 0; cue(); phase = 'cmd'; mode = 'cmd'; wakeIdx = i; strip = true; reset(); if (sheetOpen) openSheet(); else pillShow('Listening\u2026', 'listen'); setState('listen', 'Listening\u2026'); update(e); }
 function update(e) {
     if (submitted) return;
     var t = textFrom(e); cur = t; showYou(t);
@@ -37163,6 +37170,61 @@ setInterval(function () {
     engSync();
     updateOrb();
 }, 1500);
+/* ---------------- wake up (self-heal) + shake ---------------- */
+/* wakeUp(): restart everything that listens. Runs when the app returns to the screen, the network or mic changes, the audio engine is suspended, and on a shake. */
+function wakeUp() {
+    try {
+        gesture = true; denied = denied && !wakeOn; failStreak = 0; engErrs = 0; engRetryAt = 0; hold = 0;
+        if (ENG && ENG.supported) ENG.prime(); audio(); checkPerm();
+        if (phase === 'idle' && !rec) startRecSoon();
+        resumeWake(60); engSync(); updateOrb();
+        [300, 900, 2000].forEach(function (ms) { setTimeout(function () { engSync(); updateOrb(); }, ms); });
+    } catch (e) { }
+}
+function startRecSoon() { setTimeout(function () { if (!rec && wantWake()) startRec('wake'); }, 80); }
+['pageshow', 'focus', 'online', 'resume'].forEach(function (ev) { window.addEventListener(ev, function () { if (!document.hidden) wakeUp(); }); });
+document.addEventListener('visibilitychange', function () { if (!document.hidden) wakeUp(); });
+try { if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', function () { if (!document.hidden) wakeUp(); }); } catch (e) { }
+/* stuck-state watchdog: a mode that never ends (recogniser died silently, phase left on cmd) is reset so "Hey Nova" always comes back */
+var stuckAt = 0;
+setInterval(function () {
+    var stuck = (phase === 'cmd' && !rec && !pending && !sheetOpen && !pillOn()) || (phase === 'idle' && ENG && onnxActive() && wakeOn && !denied && !ENG.running && wantOnnx() && Date.now() - lastAct > 20000);
+    if (!stuck) { stuckAt = 0; return; }
+    if (!stuckAt) { stuckAt = Date.now(); return; }
+    if (Date.now() - stuckAt > 6000) { stuckAt = 0; phase = 'idle'; submitted = true; wakeUp(); }
+}, 2000);
+/* Shake the phone: wakes Nova up and starts listening (shake again while Nova talks to stop her). Off with localStorage nova_shake=0 */
+var SHAKE_ON = store.get('nova_shake') !== '0', shakeLast = 0, shakeHits = [], shakeAt = 0, lx = 0, ly = 0, lz = 0, shakeAsked = false;
+function onShake() {
+    var n = Date.now(); if (n - shakeAt < 2500) return; shakeAt = n;
+    if (!role() || blocked() || document.hidden) return;
+    if (navigator.vibrate) { try { navigator.vibrate([25, 40, 25]); } catch (e) { } }
+    wakeUp();
+    if (speaking || phase === 'speak') { stopSpeak(); }
+    else if (sheetOpen && (phase === 'cmd' || phase === 'think')) return;
+    if (!SR || denied) { openSheet(); setState('idle', 'Type to Nova'); return; }
+    if (pending) return;
+    tapMic();
+}
+function onMotion(e) {
+    if (!SHAKE_ON) return;
+    var a = e.accelerationIncludingGravity || e.acceleration; if (!a) return;
+    var x = a.x || 0, y = a.y || 0, z = a.z || 0, t = Date.now();
+    var d = Math.abs(x - lx) + Math.abs(y - ly) + Math.abs(z - lz); lx = x; ly = y; lz = z;
+    if (t - shakeLast < 60) return; shakeLast = t;
+    if (d > 28) { shakeHits.push(t); shakeHits = shakeHits.filter(function (h) { return t - h < 900; }); if (shakeHits.length >= 3) { shakeHits = []; onShake(); } }
+}
+function startShake() {
+    if (!SHAKE_ON || shakeAsked || typeof DeviceMotionEvent === 'undefined') return;
+    function on() { window.addEventListener('devicemotion', onMotion, { passive: true }); }
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {   /* iPhone: needs one tap to allow motion */
+        shakeAsked = true;
+        var ask = function () { document.removeEventListener('click', ask, true); DeviceMotionEvent.requestPermission().then(function (r) { if (r === 'granted') on(); }, function () { }); };
+        document.addEventListener('click', ask, true);
+    } else { shakeAsked = true; on(); }
+}
+startShake();
+window.NovaWakeUp = wakeUp; window.NovaShake = onShake;
 installMicWatch(); mkOrb(); checkPerm(); updateOrb();
 /* auto-hide watchdog: whatever state the voice engine got stuck in, an idle popup always closes */
 setInterval(function () {
