@@ -22931,6 +22931,11 @@ function mpDrawTab(tab, body) {
 
                 // 🔥 THE LAYOUT FIX: Force the container to be a perfectly centered single column!
                 list.className = "flex flex-col gap-4 sm:gap-5 relative z-10 max-w-2xl mx-auto w-full pb-10";
+                if (window.__lbDir) {                       // arrived by swipe: slide the new tab in from the swipe side
+                    const _d = window.__lbDir; window.__lbDir = 0;
+                    list.classList.add(_d > 0 ? 'lb-enter-r' : 'lb-enter-l');
+                    if (list.parentElement) list.parentElement.scrollTop = 0;
+                }
 
                 // 1. SKELETON
                 list.innerHTML = window.getSkeletonHTML('card', 5);
@@ -23001,59 +23006,29 @@ function mpDrawTab(tab, body) {
                         const rank = idx + 1;
                         const stuDp = window.getStudentAvatar(s.mobile, s.name);
                         const isMe = s.mobile === window.loggedInMobile;
+                        const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
-                        // Visual Setup based on Rank
-                        let cardBg = '';
-                        let rankVisual = '';
-                        let glowEffect = '';
-
-                        if (rank === 1) {
-                            cardBg = 'bg-gradient-to-r from-amber-50 to-orange-50/30 border border-amber-200 shadow-[0_15px_40px_-15px_rgba(245,158,11,0.25)]';
-                            rankVisual = '<div class="text-[40px] drop-shadow-lg animate-bounce" style="animation-duration: 2s;">🥇</div>';
-                            glowEffect = '<div class="absolute -right-8 -top-8 w-32 h-32 bg-amber-400/20 rounded-full blur-2xl animate-pulse"></div>';
-                        } else if (rank === 2) {
-                            cardBg = 'bg-gradient-to-r from-slate-50 to-gray-100/30 border border-slate-200 shadow-[0_15px_40px_-15px_rgba(148,163,184,0.2)]';
-                            rankVisual = '<div class="text-[34px] drop-shadow-md">🥈</div>';
-                        } else if (rank === 3) {
-                            cardBg = 'bg-gradient-to-r from-orange-50/50 to-rose-50/30 border border-orange-200 shadow-[0_15px_40px_-15px_rgba(251,146,60,0.15)]';
-                            rankVisual = '<div class="text-[34px] drop-shadow-md">🥉</div>';
-                        } else {
-                            if (isMe) {
-                                cardBg = `bg-indigo-50 border-2 border-indigo-400 shadow-[0_15px_40px_-15px_rgba(99,102,241,0.3)]`;
-                            } else {
-                                cardBg = `bg-white border border-gray-100 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.08)] hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.12)] hover:border-gray-200`;
-                            }
-                            rankVisual = `<div class="w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center font-black text-[14px] sm:text-[16px] bg-gray-50 border border-gray-200 text-gray-500 shadow-sm z-10 group-hover:bg-indigo-50 group-hover:text-indigo-600 group-hover:border-indigo-200 transition-all duration-300 transform group-hover:scale-110 group-hover:rotate-[10deg]">${rank}</div>`;
-                        }
-
-                        // Staggered Animation Delay for cascading effect
-                        const animDelay = idx * 0.05;
+                        // Hue per tab (same pastel tokens as the dashboard button grid); podium gets gold / silver / bronze
+                        const HUE = { score: ['79,70,229', '4f46e5'], study: ['13,148,136', '0d9488'], target: ['147,51,234', '9333ea'], fitness: ['225,29,72', 'e11d48'] };
+                        const hue = HUE[window.lbMainTab] || HUE.score;
+                        let rgb = hue[0];
+                        let disc = `<span class="lbx-n">${rank}</span>`;
+                        if (rank === 1) { rgb = '245,158,11'; disc = '<i class="fa-solid fa-crown"></i>'; }
+                        else if (rank === 2) { rgb = '100,116,139'; disc = '<i class="fa-solid fa-medal"></i>'; }
+                        else if (rank === 3) { rgb = '234,88,12'; disc = '<i class="fa-solid fa-medal"></i>'; }
 
                         finalHtml += `
-            <div onclick="window.showStudentStats('${s.mobile}')" class="${cardBg} p-3 sm:p-4 rounded-3xl flex items-center cursor-pointer transition-all duration-500 ease-out hover:-translate-y-2 hover:scale-[1.03] active:scale-[0.96] gap-3 sm:gap-4 relative overflow-hidden group slide-up ${theme.hoverBorder}" style="animation-delay: ${animDelay}s; animation-fill-mode: both;">
-                ${glowEffect}
-                
-                <!-- 1. RANK COLUMN -->
-                <div class="w-12 sm:w-16 flex items-center justify-center shrink-0 relative z-10 transition-transform duration-500">
-                    ${rankVisual}
-                </div>
-
-                <!-- 2. DP & NAME COLUMN -->
-                <div class="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 relative z-10">
-                    <div class="relative shrink-0 transition-transform duration-500 group-hover:-rotate-[5deg] group-hover:scale-110">
-                        <img src="${stuDp}" class="w-12 h-12 sm:w-14 sm:h-14 rounded-full object-cover shadow-md border-[2px] border-white group-hover:border-${theme.text.split('-')[1]}-400 transition-all duration-500" onerror="this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=${theme.text.split('-')[1] === 'rose' ? 'e11d48' : theme.text.split('-')[1] === 'teal' ? '0d9488' : theme.text.split('-')[1] === 'purple' ? '9333ea' : '4f46e5'}&color=fff'">
-                    </div>
-                    <div class="min-w-0 flex flex-col justify-center">
-                        <h4 class="font-black text-gray-900 text-[15px] sm:text-[17px] break-words leading-tight group-hover:${theme.text} transition-colors duration-300 tracking-tight">${s.name} ${isMe ? `<span class="${theme.text} text-[9px] sm:text-[10px] ml-1 whitespace-nowrap bg-indigo-100/50 px-2 py-0.5 rounded-full font-black tracking-wider uppercase shadow-sm">(You)</span>` : ''}</h4>
-                        <p class="text-[11px] sm:text-[12px] text-gray-400 font-bold mt-0.5 tracking-wide uppercase group-hover:text-gray-500 transition-colors duration-300">${s.subLabel || 'Performance'}</p>
-                    </div>
-                </div>
-
-                <!-- 3. SCORE COLUMN (No View text or Arrow) -->
-                <div class="text-right shrink-0 relative z-10 flex flex-col justify-center items-end pr-2 sm:pr-3">
-                    <p class="text-[26px] sm:text-[30px] font-black text-gray-900 leading-none tracking-tighter group-hover:scale-[1.15] group-hover:-translate-x-1 transition-all duration-500 ease-out origin-right">${s.primaryVal}<span class="text-[12px] sm:text-[14px] text-gray-400 font-bold ml-0.5 tracking-normal group-hover:${theme.text} transition-colors duration-300">${s.primaryUnit}</span></p>
-                    ${s.scoreSub ? `<p class="text-[9px] sm:text-[10px] font-bold text-gray-400 mt-1 tracking-wide whitespace-nowrap">${s.scoreSub}</p>` : ''}
-                </div>
+            <div onclick="window.showStudentStats('${s.mobile}')" role="button" tabindex="0" class="lbx${rank <= 3 ? ' lbx-top' : ''}${isMe ? ' lbx-me' : ''}" style="--rgb:${rgb};--i:${idx}">
+                <span class="lbx-rk">${disc}</span>
+                <span class="lbx-av"><img src="${stuDp}" alt="" loading="lazy" onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(s.name)}&background=${hue[1]}&color=fff'"></span>
+                <span class="lbx-tx">
+                    <span class="lbx-t">${esc(s.name)}${isMe ? '<em class="lbx-you">You</em>' : ''}</span>
+                    <span class="lbx-s">${s.subLabel || 'Performance'}</span>
+                </span>
+                <span class="lbx-sc">
+                    <span class="lbx-v">${s.primaryVal}<small>${s.primaryUnit}</small></span>
+                    ${s.scoreSub ? `<span class="lbx-ss">${s.scoreSub}</span>` : ''}
+                </span>
             </div>`;
                     });
 
@@ -37898,6 +37873,62 @@ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e
   html body #student-view.view-back .xb:not(#_),html body #admin-view.view-back .xb:not(#_){animation:xbBack .55s cubic-bezier(.22,1,.36,1) calc(var(--i,0)*30ms + 90ms) both}
 }
 </style>
+<style id="lbx-css">
+/* ===== Leaderboard rank cards: same language as the dashboard button grid (xb) =====
+   soft tinted tile, fully rounded, gradient icon disc, inset white ring, springy press, quick staggered pop-in */
+#leaderboard-list .lbx{
+  --c:color-mix(in srgb,rgb(var(--rgb)) 78%,#000);
+  position:relative;isolation:isolate;box-sizing:border-box;min-width:0;
+  display:flex;align-items:center;gap:12px;padding:10px 16px 10px 10px;min-height:68px;
+  border-radius:26px;text-align:left;color:#1f2547;cursor:pointer;
+  background:linear-gradient(135deg,rgba(var(--rgb),.07),rgba(255,255,255,.94) 60%),#fff;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.75),0 6px 14px -6px rgba(15,23,42,.28),0 1px 3px rgba(15,23,42,.1);
+  -webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation;
+  transition:transform .26s cubic-bezier(.34,1.56,.64,1);
+  animation:lbxIn .3s cubic-bezier(.2,.8,.25,1) backwards;animation-delay:calc(min(var(--i,0),14)*22ms);
+}
+#leaderboard-list .lbx-top{
+  background:linear-gradient(135deg,rgba(var(--rgb),.17),rgba(255,255,255,.93) 66%),#fff;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.75),0 6px 14px -6px rgba(15,23,42,.28),0 1px 3px rgba(15,23,42,.1);
+}
+#leaderboard-list .lbx-me{
+  box-shadow:inset 0 0 0 2px rgba(var(--rgb),.85),0 6px 14px -6px rgba(15,23,42,.28),0 1px 3px rgba(15,23,42,.1);
+}
+#leaderboard-list .lbx-rk{
+  flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:50%;color:#fff;font-size:19px;
+  background:linear-gradient(160deg,color-mix(in srgb,rgb(var(--rgb)) 62%,#fff) 0%,rgb(var(--rgb)) 55%,color-mix(in srgb,rgb(var(--rgb)) 82%,#000) 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -2px 3px rgba(0,0,0,.18),0 4px 8px -3px rgba(15,23,42,.38),0 1px 2px rgba(15,23,42,.18);
+  transition:transform .26s cubic-bezier(.34,1.56,.64,1);
+}
+#leaderboard-list .lbx-rk i{filter:drop-shadow(0 1px 1px rgba(0,0,0,.28))}
+#leaderboard-list .lbx-n{font-size:17px;font-weight:800;line-height:1;text-shadow:0 1px 1px rgba(0,0,0,.28)}
+#leaderboard-list .lbx-av{flex:none;width:44px;height:44px;border-radius:50%;padding:2px;background:#fff;box-shadow:0 3px 8px -3px rgba(15,23,42,.35)}
+#leaderboard-list .lbx-av img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover;background:#e0e7ff}
+#leaderboard-list .lbx-tx{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+#leaderboard-list .lbx-t{display:block;margin:0;font-size:14px;line-height:1.2;font-weight:700;letter-spacing:-.005em;color:#1f2547;overflow-wrap:anywhere}
+#leaderboard-list .lbx-s{display:block;margin:0;font-size:10.5px;line-height:1.25;font-weight:600;color:#586174;overflow-wrap:anywhere}
+#leaderboard-list .lbx-s b{color:var(--c);font-weight:800;margin-right:2px}
+#leaderboard-list .lbx-you{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;font-style:normal;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;vertical-align:1px;color:var(--c);background:rgba(var(--rgb),.14)}
+#leaderboard-list .lbx-sc{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:2px;text-align:right}
+#leaderboard-list .lbx-v{font-size:23px;line-height:1;font-weight:800;letter-spacing:-.025em;color:#1f2547;white-space:nowrap}
+#leaderboard-list .lbx-v small{margin-left:2px;font-size:11px;font-weight:700;letter-spacing:0;color:var(--c)}
+#leaderboard-list .lbx-ss{font-size:9.5px;font-weight:700;color:#64748b;white-space:nowrap}
+#leaderboard-list .lbx:active{transform:scale(.95);transition-duration:.08s}
+#leaderboard-list .lbx:active .lbx-rk{transform:scale(.9);transition-duration:.08s}
+#leaderboard-list .lbx:focus{outline:none}
+#leaderboard-list .lbx:focus-visible{outline:2.5px solid var(--c);outline-offset:2px}
+@media (hover:hover) and (pointer:fine){#leaderboard-list .lbx:hover{transform:translate3d(0,-2px,0)}#leaderboard-list .lbx:active{transform:scale(.95)}}
+@media (max-width:359px){#leaderboard-list .lbx{gap:9px;padding-right:12px}#leaderboard-list .lbx-av{width:38px;height:38px}#leaderboard-list .lbx-v{font-size:20px}}
+@keyframes lbxIn{from{opacity:0;transform:translate3d(0,9px,0) scale(.93)}to{opacity:1;transform:none}}
+/* swipe between Score / Focus / Targets / Fitness: old list slides out, new one slides in (same motion as Profile tabs) */
+#leaderboard-list.lb-exit-l{opacity:0;transform:translateX(-22px);transition:opacity .14s ease,transform .14s ease}
+#leaderboard-list.lb-exit-r{opacity:0;transform:translateX(22px);transition:opacity .14s ease,transform .14s ease}
+@keyframes lbfR{from{opacity:0;transform:translateX(38px)}to{opacity:1;transform:none}}
+@keyframes lbfL{from{opacity:0;transform:translateX(-38px)}to{opacity:1;transform:none}}
+#leaderboard-list.lb-enter-r{animation:lbfR .4s cubic-bezier(.22,1,.36,1) both}
+#leaderboard-list.lb-enter-l{animation:lbfL .4s cubic-bezier(.22,1,.36,1) both}
+@media (prefers-reduced-motion:reduce){#leaderboard-list .lbx{animation:none;transition:none}#leaderboard-list.lb-enter-r,#leaderboard-list.lb-enter-l{animation:none}}
+</style>
 <style id="gesture-pack-css">
 .wt-row,.notice-glass,#alarm-list>div{touch-action:pan-y}
 .gp-sw-r{background:#d1fae5!important}
@@ -37978,7 +38009,7 @@ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e
     /* ---------- haptics on taps ---------- */
     D.addEventListener('click', function (e) {
         var t = e.target; if (!t || !t.closest) return;
-        if (t.closest('.mpt,#rm-tabs button,.syl-sub')) { vib(6); setTimeout(function () { if (Date.now() - lastTip > 8000) tip('tabs', 'Tip: swipe left or right to switch tabs'); }, 700); }
+        if (t.closest('.mpt,#rm-tabs button,.syl-sub,[id^="lb-main-"]')) { vib(6); setTimeout(function () { if (Date.now() - lastTip > 8000) tip('tabs', 'Tip: swipe left or right to switch tabs'); }, 700); }
         else if (t.closest('.mpf-like,.mpf-pick button,[onclick*="sendReaction"]')) vib(10);
     }, true);
 
@@ -37995,6 +38026,14 @@ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e
         var feed = v.classList.contains('rm-feedmode');
         if (dir > 0 && !feed) { vib(8); W.rmSetTab('feed'); }
         else if (dir < 0 && feed) { vib(8); W.rmSetTab('runs'); }
+    }
+    function lbSwipe(dir) {
+        var v = $('leaderboard-view'), list = $('leaderboard-list'); if (!v || !list || !W.switchLbMainTab) return;
+        var order = ['score', 'study', 'target', 'fitness'];
+        var n = order[order.indexOf(W.lbMainTab) + dir]; if (!n) return;
+        vib(8); W.__lbDir = dir;
+        list.classList.add(dir > 0 ? 'lb-exit-l' : 'lb-exit-r');      /* old list slides out, new one slides in (same feel as Profile) */
+        setTimeout(function () { W.switchLbMainTab(n); }, 140);
     }
     function sylSwipe(dir) {
         var c = $('syl-subject-tabs-container'); if (!c) return;
@@ -38019,6 +38058,7 @@ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e
             if (tg.closest('#mp-body')) mpSwipe(dir);
             else if (tg.closest('#fitness-view')) rmSwipe(dir);
             else if (tg.closest('#syllabus-view')) sylSwipe(dir);
+            else if (tg.closest('#leaderboard-view')) lbSwipe(dir);
         });
     }, { passive: true });
 
@@ -38158,30 +38198,45 @@ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e
         f.textContent = txt; f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
     }
     function dim(c) { var d = c.querySelector('#gp-dim'); if (!d) { d = D.createElement('div'); d.id = 'gp-dim'; c.appendChild(d); } return d; }
+    /* The phone-fullscreen player is CSS-ROTATED (rotate(-90deg)), so raw screen x/y no longer match the
+       player's own left/right/up/down. pframe/plocal map a screen touch into the player's own frame, so
+       double-tap seek, volume and brightness work in fullscreen exactly like in the normal view. */
+    function pframe(c) {
+        var r = c.getBoundingClientRect(), m = [1, 0, 0, 1];
+        var tf = getComputedStyle(c).transform;
+        var mm = tf && tf !== 'none' ? tf.match(/^matrix\(([^)]+)\)/) : null;
+        if (mm) { var q = mm[1].split(',').map(parseFloat); if (q.length >= 4 && q.every(isFinite)) m = [q[0], q[1], q[2], q[3]]; }
+        var rot = Math.abs(m[1]) > 0.5;
+        return { m: m, rot: rot, w: rot ? r.height : r.width, h: rot ? r.width : r.height, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+    }
+    function plocal(f, t) {
+        var dx = t.clientX - f.cx, dy = t.clientY - f.cy;
+        return { x: f.w / 2 + f.m[0] * dx + f.m[1] * dy, y: f.h / 2 + f.m[2] * dx + f.m[3] * dy };
+    }
     D.addEventListener('touchstart', function (e) {
         VG = null; var c = vc(), p = W.vjsPlayer;
         if (!c || !p || e.touches.length !== 1 || !c.contains(e.target)) return;
         if (e.target.closest('.vjs-control-bar,.vjs-big-play-button,.vjs-menu,iframe')) return;
-        var t = e.touches[0], r = c.getBoundingClientRect(), rot = rotated(c);
-        if (!rot && t.clientY > r.bottom - 52) return;
+        var f = pframe(c), l = plocal(f, e.touches[0]);
+        if (l.y > f.h - 52) return;                    /* bottom control strip, measured in the player's own frame */
         if (bri < 1) dim(c).style.opacity = String((1 - bri) * 0.8);
-        VG = { c: c, p: p, x: t.clientX, y: t.clientY, t: Date.now(), mode: null, moved: false, hold: false, rot: rot, vol0: p.volume(), bri0: bri, pb: p.paused(), rate0: p.playbackRate(), r: r };
+        VG = { c: c, p: p, f: f, lx: l.x, ly: l.y, t: Date.now(), mode: null, moved: false, hold: false, vol0: p.volume(), bri0: bri, pb: p.paused(), rate0: p.playbackRate() };
         var g = VG;
         g.ht = setTimeout(function () { if (VG === g && !g.moved && !g.p.paused()) { g.hold = true; g.p.playbackRate(2); hud(g.c, '2\u00D7 speed'); vib(12); } }, 450);
     }, { passive: true });
     D.addEventListener('touchmove', function (e) {
         var g = VG; if (!g) return;
-        var t = e.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
+        var l = plocal(g.f, e.touches[0]), dx = l.x - g.lx, dy = l.y - g.ly;
         if (!g.moved) {
             if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
             g.moved = true; clearTimeout(g.ht);
             if (g.hold) return;
-            g.mode = (Math.abs(dy) > Math.abs(dx) * 1.2 && !g.rot) ? ((g.x < g.r.left + g.r.width / 2) ? 'bri' : 'vol') : 'x';
+            g.mode = (Math.abs(dy) > Math.abs(dx) * 1.2) ? ((g.lx < g.f.w / 2) ? 'bri' : 'vol') : 'x';
         }
         if (g.hold) return;
         if (g.mode === 'vol' || g.mode === 'bri') {
             if (e.cancelable) e.preventDefault();
-            var d = -dy / (g.r.height * 0.85);
+            var d = -dy / (g.f.h * 0.85);
             if (g.mode === 'vol') { var v = Math.max(0, Math.min(1, g.vol0 + d)); g.p.muted(false); g.p.volume(v); hud(g.c, 'Volume ' + Math.round(v * 100) + '%'); }
             else { bri = Math.max(0.15, Math.min(1, g.bri0 + d)); dim(g.c).style.opacity = String((1 - bri) * 0.8); hud(g.c, 'Brightness ' + Math.round(bri * 100) + '%'); }
         }
@@ -38191,10 +38246,10 @@ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e
         clearTimeout(g.ht);
         if (g.hold) { g.p.playbackRate(g.rate0 || 1); supV = Date.now() + 450; hud(g.c, '1\u00D7 speed'); return; }
         if (g.moved) { if (g.mode === 'vol' || g.mode === 'bri') supV = Date.now() + 300; return; }
-        var now = Date.now(), t = e.changedTouches[0];
+        var now = Date.now(), l = plocal(g.f, e.changedTouches[0]);
         if (now - g.t > 300) { lastTap.t = 0; return; }
-        if (!g.rot && now - lastTap.t < 330 && Math.abs(t.clientX - lastTap.x) < 70) {
-            var rel = (t.clientX - g.r.left) / g.r.width; lastTap.t = 0;
+        if (now - lastTap.t < 330 && Math.abs(l.x - lastTap.x) < 70) {
+            var rel = l.x / g.f.w; lastTap.t = 0;
             if (rel < 0.38 || rel > 0.62) {
                 supV = now + 450;
                 if (g.p.paused() !== lastTap.pb) { if (lastTap.pb) g.p.pause(); else g.p.play(); }
@@ -38204,7 +38259,7 @@ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e
                 return;
             }
         }
-        lastTap = { t: now, x: t.clientX, pb: g.pb };
+        lastTap = { t: now, x: l.x, pb: g.pb };
     }, { passive: true });
     D.addEventListener('touchcancel', function () { var g = VG; VG = null; if (g) { clearTimeout(g.ht); if (g.hold) g.p.playbackRate(g.rate0 || 1); } }, { passive: true });
     D.addEventListener('click', function (e) { var c = vc(); if (Date.now() < supV && c && c.contains(e.target)) { e.stopPropagation(); e.preventDefault(); } }, true);
