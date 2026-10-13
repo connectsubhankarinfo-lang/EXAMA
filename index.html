@@ -16917,12 +16917,23 @@ window.__tpPaint = function () {
                     'alarms-view', 'quotes-view', 'auto-quotes-view', 'motivation-view'
                 ];
 
-                // 1. Hide all views and reset the Apple animation class
+                // 1. Hide all views and reset the Apple animation classes.
+                //    When we are going back to the dashboard, the window that was open zooms back out first, then hides.
+                const __reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                const __home = (hash === 'student' || hash === 'admin');
+                const __dash = ['login-view', 'student-view', 'admin-view'];
+                let __leaving = false;
                 views.forEach(v => {
                     const el = document.getElementById(v);
-                    if (el) {
+                    if (!el) return;
+                    const wasOpen = !el.classList.contains('hidden-view');
+                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave'); // Reset animation state
+                    if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
+                        __leaving = true;
+                        el.classList.add('view-leave');
+                        setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 340);
+                    } else {
                         el.classList.add('hidden-view');
-                        el.classList.remove('view-enter'); // Reset animation state
                     }
                 });
 
@@ -16949,7 +16960,17 @@ window.__tpPaint = function () {
                 if (targetEl) {
                     targetEl.classList.remove('hidden-view');
                     void targetEl.offsetWidth; // Force reflow to restart animation flawlessly
+                    // Window opened from a dashboard button: zoom out of that button. Back to the dashboard: pop the button grid in again.
+                    const __o = window.__xbOrigin;
+                    if (!__home && !__reduce && __o && Date.now() - __o.t < 1500) {
+                        const r = targetEl.getBoundingClientRect();
+                        targetEl.style.setProperty('--ox', (__o.x - r.left) + 'px');
+                        targetEl.style.setProperty('--oy', (__o.y - r.top) + 'px');
+                        targetEl.classList.add('view-zoom');
+                        window.__xbOrigin = null;
+                    }
                     targetEl.classList.add('view-enter');
+                    if (__home && __leaving) targetEl.classList.add('view-back');
                 }
 
                 // 4. Run View-Specific Logic
@@ -37423,7 +37444,7 @@ html body .xb.xb-w:not(#_):not(#__){padding:12px 14px 12px 12px;gap:13px;min-hei
 
 /* icon disc */
 html body .xb .xb-ic:not(#_):not(#__){
-  flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:24%;color:#fff;
+  flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;color:#fff;
   background:linear-gradient(160deg,color-mix(in srgb,rgb(var(--rgb)) 62%,#fff) 0%,rgb(var(--rgb)) 55%,color-mix(in srgb,rgb(var(--rgb)) 82%,#000) 100%);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -2px 3px rgba(0,0,0,.18),0 4px 8px -3px rgba(15,23,42,.38),0 1px 2px rgba(15,23,42,.18);
   transition:transform .26s cubic-bezier(.34,1.56,.64,1);
@@ -37567,6 +37588,22 @@ html body #admin-view .ax-tw > h3 i:not(#_){border-radius:50%!important}
   });
 })();
 </script>
+<script>
+/* remember which dashboard button was tapped, so the window can zoom out of it (and back into it) */
+document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e.target.closest('.xb'):null;if(!t)return;var r=t.getBoundingClientRect();window.__xbOrigin={x:r.left+r.width/2,y:r.top+r.height/2,t:Date.now()};},true);
+</script>
+<style id="xb-window-motion">
+@keyframes xbZoomIn{0%{opacity:0;transform:scale(.78)}55%{opacity:1}100%{opacity:1;transform:none}}
+@keyframes xbZoomOut{0%{opacity:1;transform:none}100%{opacity:0;transform:scale(.8)}}
+@keyframes xbBack{0%{opacity:0;transform:translate3d(0,14px,0) scale(.86)}100%{opacity:1;transform:none}}
+@keyframes xbDashIn{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:no-preference){
+  html body .view-enter.view-zoom:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);animation:xbZoomIn .52s cubic-bezier(.32,.72,0,1) both}
+  html body .view-leave:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);animation:xbZoomOut .32s cubic-bezier(.4,0,.6,1) both!important;pointer-events:none}
+  html body .view-enter.view-back:not(#_){animation:xbDashIn .3s ease both}
+  html body #student-view.view-back .xb:not(#_),html body #admin-view.view-back .xb:not(#_){animation:xbBack .55s cubic-bezier(.22,1,.36,1) calc(var(--i,0)*30ms + 90ms) both}
+}
+</style>
 </body>
 
 </html>
