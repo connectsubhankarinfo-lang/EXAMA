@@ -31030,7 +31030,7 @@ YOUR DIRECTIVES:
 
                 // ---------- PLAYER (hidden, audio only, no UI at all) ----------
                 // ---------- INSTAGRAM REEL POPUP (student + admin preview): the student taps play inside the popup ----------
-                function closeReel() { const e = $('ig-pop'); if (e) e.remove(); }
+                function closeReel() { const e = $('ig-pop'); if (e) { if (e._off) e._off(); e.remove(); } }
                 function showReel(c) {
                     closeReel();
                     if (!c || !/^[\w-]{5,40}$/.test(c.id || '')) return;
@@ -31039,10 +31039,31 @@ YOUR DIRECTIVES:
                     const o = document.createElement('div'); o.id = 'ig-pop'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true');
                     o.innerHTML = '<div class="ig-card">' +
                         '<button type="button" class="ig-x" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>' +
-                        '<div class="ig-body"><iframe src="' + url + 'embed/" title="Instagram reel" allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write" allowfullscreen scrolling="no"></iframe></div></div>';
+                        '<div class="ig-body nm"><iframe src="' + url + 'embed/" title="Instagram reel" allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write" allowfullscreen scrolling="no"></iframe></div></div>';
                     o.addEventListener('click', e => { if (e.target === o) closeReel(); });
                     o.querySelector('.ig-x').onclick = closeReel;
                     document.body.appendChild(o);
+                    // Instagram's player is header + video + footer (View more / like / share). It reports its total height by postMessage,
+                    // so the window is sized to (total - header - footer) and everything except the video is clipped away.
+                    const body = o.querySelector('.ig-body'), fr = o.querySelector('iframe');
+                    let measured = false, tm = 0;
+                    const cv = n => parseFloat(getComputedStyle(o).getPropertyValue(n)) || 0;
+                    const reveal = () => { fr.style.height = '2400px'; body.classList.add('on'); };
+                    const onMsg = ev => {
+                        if (ev.source !== fr.contentWindow) return;
+                        let d = ev.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return; } }
+                        const H = d && d.type === 'MEASURE' && d.details ? +d.details.height : 0;
+                        if (!(H > 0)) return;
+                        if (!measured) { if (H <= 320) return; } else if (H >= 2380) return;   // ignore values that only echo our own iframe height
+                        const vh = H - cv('--ig-hdr') - cv('--ig-ftr');
+                        if (vh < 200) return;
+                        measured = true; clearTimeout(tm);
+                        body.classList.remove('nm'); body.style.aspectRatio = 'auto'; body.style.height = Math.round(vh) + 'px';
+                        reveal();
+                    };
+                    window.addEventListener('message', onMsg);
+                    tm = setTimeout(() => { if (!measured) reveal(); }, 3500);   // no size reported: show it anyway with a black bar over the footer area
+                    o._off = () => { window.removeEventListener('message', onMsg); clearTimeout(tm); };
                 }
 
                 let P = null, A = null, T = null, W = null, armed = null, seq = 0, on = false;
@@ -32313,13 +32334,16 @@ async function loadDay(key) {
 /* student: Instagram reel popup */
 #ig-pop{position:fixed;inset:0;z-index:2147483000;background:rgba(2,6,23,.74);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom));animation:igIn .25s ease}
 @keyframes igIn{from{opacity:0}to{opacity:1}}
-/* video-only: the iframe is shifted up/clipped so Instagram's own header (profile name + View profile) and footer are not visible.
-   --ig-hdr = height of Instagram's embed header to hide. If a sliver of the header still shows, raise it; if the top of the video is cut, lower it. */
-#ig-pop{--ig-hdr:60px}
+/* video-only popup. Instagram's embed = header + video + footer. The iframe is shifted up by --ig-hdr and the window is cut --ig-ftr short of the bottom,
+   so the profile name / View profile and the View more / like / share row are never visible. Tune: if a sliver of the header shows raise --ig-hdr; if footer
+   buttons still show at the bottom raise --ig-ftr; if the top / bottom of the video is cut lower them. */
+#ig-pop{--ig-hdr:60px;--ig-ftr:150px}
 #ig-pop .ig-card{position:relative;width:min(400px,100%,max(326px,calc((100vh - 28px) * 9 / 16)));width:min(400px,100%,max(326px,calc((100dvh - 28px) * 9 / 16)));max-height:100%;display:flex;flex-direction:column;border-radius:22px;background:#000;overflow:hidden;box-shadow:0 30px 60px -20px rgba(0,0,0,.6)}
 #ig-pop .ig-x{position:absolute;top:10px;right:10px;z-index:3;width:34px;height:34px;border-radius:12px;background:rgba(15,23,42,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px}
-#ig-pop .ig-body{position:relative;flex:1;min-height:0;aspect-ratio:9/16;overflow:hidden;background:#000}
-#ig-pop iframe{position:absolute;left:0;top:calc(var(--ig-hdr) * -1);width:100%;height:calc(100% + var(--ig-hdr) + 260px);border:0;background:#000}
+#ig-pop .ig-body{position:relative;flex:0 1 auto;min-height:0;aspect-ratio:9/16;overflow:hidden;background:#000}
+#ig-pop .ig-body.nm::after{content:'';position:absolute;left:0;right:0;bottom:0;height:var(--ig-ftr);background:#000;z-index:2}
+#ig-pop iframe{position:absolute;left:0;top:calc(var(--ig-hdr) * -1);width:100%;height:300px;border:0;background:#000;opacity:0;transition:opacity .25s ease}
+#ig-pop .ig-body.on iframe{opacity:1}
 </style>
 
 <!-- ===== DAILY QUOTE: admin screen ===== -->
