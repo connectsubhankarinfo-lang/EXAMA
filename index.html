@@ -9936,10 +9936,10 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                                     <div>
                                         <h3
                                             class="font-bold text-gray-900 text-base sm:text-lg tracking-tight leading-tight font-sans">
-                                            Performance</h3>
+                                            Weekly Performance</h3>
                                         <p
                                             class="text-[10px] sm:text-[11px] font-semibold text-gray-400 uppercase tracking-[0.15em] leading-tight mt-1">
-                                            Lifetime Analytics</p>
+                                            This Week</p>
                                     </div>
                                 </div>
                             </div>
@@ -16613,9 +16613,16 @@ window.__tpPaint = function () {
 
                     let totalStudyHrs = 0; let bestSessionHrs = 0; let sessionsWithStudy = 0;
 
-                    myHistory.forEach((session, idx) => {
+                    const wkRange = window.getWeeklyRange();
+                    const inThisWeek = (session) => {
+                        let ms = 0;
+                        if (session.dateStr && session.dateStr.split('/').length === 3) { const q = session.dateStr.split('/'); ms = new Date(+q[2], +q[1] - 1, +q[0]).getTime(); }
+                        else ms = session.timestamp || 0;
+                        return ms >= wkRange.mondayMs && ms <= wkRange.sundayMs;
+                    };
+                    myHistory.forEach((session) => {
                         const sessionHrs = parseFloat((session.totalStudyMs / 3600000).toFixed(2));
-                        if (idx < 7 && session.status !== 'ABSENT') {
+                        if (inThisWeek(session) && session.status !== 'ABSENT') {
                             chartLabels.unshift(session.dateStr.substring(0, 5) + ' ' + session.sessionType.substring(0, 3));
                             chartData.unshift(sessionHrs);
 
@@ -36283,12 +36290,11 @@ function build() {
         + '<div class="nv-head"><span class="nv-badge"><img src="' + NOVA_IMGS[0] + '" alt="" decoding="async" referrerpolicy="no-referrer" draggable="false"></span><b>Nova</b><span class="nv-state"></span><button type="button" class="nv-x" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>'
         + '<div class="nv-viz"><i></i><i></i><i></i><i></i></div>'
         + '<p class="nv-you"></p>'
-        + '<p class="nv-hint">Try: \u201cadd an expense\u201d, \u201cthis week spending\u201d, \u201copen lecture hub\u201d, \u201cstart session\u201d, \u201ctake a break\u201d, \u201csend a message on Discuss saying\u2026\u201d, \u201cstart run\u201d, \u201cstart math workout\u201d, \u201csend a message\u201d, \u201cmake a quiz\u201d, \u201cvideo call\u201d, or ask me anything.</p>'
         + '<div class="nv-ans"></div><div class="nv-chips"></div>'
         + '<form class="nv-form" autocomplete="off"><input class="nv-in" type="text" maxlength="400" placeholder="Type to Nova\u2026" enterkeyhint="send"><button type="button" class="nv-mic" aria-label="Speak"><i class="fa-solid fa-microphone"></i></button></form>'
         + '</div>';
     document.body.appendChild(d); d.querySelectorAll('img').forEach(wireImg);
-    sheet = d; card = d.querySelector('.nv-card'); stateEl = d.querySelector('.nv-state'); youEl = d.querySelector('.nv-you'); hintEl = d.querySelector('.nv-hint');
+    sheet = d; card = d.querySelector('.nv-card'); stateEl = d.querySelector('.nv-state'); youEl = d.querySelector('.nv-you'); hintEl = { style: {} };
     ansEl = d.querySelector('.nv-ans'); chipsEl = d.querySelector('.nv-chips'); inEl = d.querySelector('.nv-in');
     d.querySelector('.nv-scrim').addEventListener('click', closeSheet);
     d.querySelector('.nv-x').addEventListener('click', closeSheet);
@@ -37892,6 +37898,495 @@ document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e
   html body #student-view.view-back .xb:not(#_),html body #admin-view.view-back .xb:not(#_){animation:xbBack .55s cubic-bezier(.22,1,.36,1) calc(var(--i,0)*30ms + 90ms) both}
 }
 </style>
+<style id="gesture-pack-css">
+.wt-row,.notice-glass,#alarm-list>div{touch-action:pan-y}
+.gp-sw-r{background:#d1fae5!important}
+.gp-sw-l{background:#ffe4e6!important}
+#gp-tip{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);transform:translate(-50%,16px);max-width:min(88vw,430px);z-index:2147483000;background:rgba(15,23,42,.93);color:#fff;font:600 12.5px/1.4 system-ui,-apple-system,sans-serif;padding:10px 16px;border-radius:18px;opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease;text-align:center}
+#gp-tip.on{opacity:1;transform:translate(-50%,0)}
+.gp-hud{position:absolute;top:14%;left:50%;transform:translateX(-50%);z-index:40;pointer-events:none;background:rgba(0,0,0,.66);color:#fff;font:700 13px system-ui,sans-serif;padding:7px 14px;border-radius:999px;opacity:0;transition:opacity .15s}
+.gp-hud.on{opacity:1}
+.gp-seek{position:absolute;top:50%;z-index:40;pointer-events:none;width:84px;height:84px;border-radius:50%;background:rgba(255,255,255,.24);color:#fff;font:800 14px system-ui,sans-serif;display:flex;align-items:center;justify-content:center;opacity:0;transform:translateY(-50%)}
+.gp-seek.on{animation:gpSeek .6s ease both}
+.gp-seek.l{left:10%}.gp-seek.r{right:10%}
+@keyframes gpSeek{0%{opacity:0;transform:translateY(-50%) scale(.7)}25%{opacity:1;transform:translateY(-50%) scale(1)}100%{opacity:0;transform:translateY(-50%) scale(1.12)}}
+#gp-dim{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:3}
+#gp-sel-bar{position:fixed;left:0;right:0;top:0;z-index:2147483000;display:none;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 10px;background:#075e54;color:#fff;font:700 14px system-ui,sans-serif}
+#gp-sel-bar.on{display:flex}
+#gp-sel-bar b{flex:1;font-weight:800}
+#gp-sel-bar button{border:0;background:rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:8px 14px;font:700 13px system-ui,sans-serif}
+#gp-sel-bar button.del{background:#e11d48}
+.gp-selected{background:rgba(37,211,102,.22)!important;outline:2px solid rgba(37,211,102,.55);outline-offset:-2px;border-radius:12px}
+@media(prefers-reduced-motion:reduce){.gp-seek.on{animation:none;opacity:1}}
+</style>
+<script id="gesture-pack">
+(function () {
+    'use strict';
+    var W = window, D = document;
+    function $(id) { return D.getElementById(id); }
+    function safe(fn) { try { fn(); } catch (e) { try { console.warn('gesture-pack', e); } catch (x) { } } }
+    function vib(ms) { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch (e) { } }
+    function shown(el) { return !!el && !el.classList.contains('hidden-view') && !el.classList.contains('hidden') && el.getClientRects().length > 0; }
+    function whenReady(test, fn, tries) {
+        tries = tries || 160;
+        (function t() { var ok = false; try { ok = test(); } catch (e) { } if (ok) return safe(fn); if (--tries > 0) setTimeout(t, 500); })();
+    }
+    function toast(a, b, c) { try { W.showToast && W.showToast(a, b, c || 'info'); } catch (e) { } }
+    var NOSWIPE = 'input,textarea,select,[contenteditable="true"],video,canvas,.leaflet-container,.vjs-control-bar,[id$="-modal"],[role="dialog"],#nova-voice-modal';
+    function noSwipe(t) { return !!(t && t.closest && t.closest(NOSWIPE)); }
+    function hScroll(t) {
+        var n = 0;
+        for (var e = t; e && e !== D.body && n < 14; e = e.parentElement, n++) {
+            if (e.nodeType !== 1) continue;
+            var ox = getComputedStyle(e).overflowX;
+            if ((ox === 'auto' || ox === 'scroll') && e.scrollWidth > e.clientWidth + 2) return true;
+        }
+        return false;
+    }
+    function interactive(t) { return !!(t && t.closest && t.closest('button,a,input,textarea,select,label,[contenteditable="true"],[onclick],[role="tab"],[role="button"],video,canvas,.vjs-control-bar')); }
+
+    /* ---------- first-time tips ---------- */
+    var tipEl = null, tipT = null, lastTip = 0;
+    function seen(k) { try { return localStorage.getItem('gp1_' + k) === '1'; } catch (e) { return false; } }
+    function mark(k) { try { localStorage.setItem('gp1_' + k, '1'); } catch (e) { } }
+    function tip(k, msg) {
+        if (seen(k)) return false;
+        mark(k); lastTip = Date.now();
+        if (!tipEl) { tipEl = D.createElement('div'); tipEl.id = 'gp-tip'; D.body.appendChild(tipEl); }
+        tipEl.textContent = msg; tipEl.classList.add('on');
+        clearTimeout(tipT); tipT = setTimeout(function () { tipEl.classList.remove('on'); }, 4600);
+        return true;
+    }
+    var HINTS = [
+        ['video', function () { return shown($('video-watch-view')) && W.vjsPlayer; }, 'Double-tap the sides to skip 10s \u2022 swipe up/down for volume and brightness \u2022 hold for 2x'],
+        ['wt', function () { var v = $('weekly-targets-view'); return shown(v) && v.querySelector('.wt-row'); }, 'Swipe a task right to complete it, left to delete it'],
+        ['alarms', function () { var l = $('alarm-list'); return shown($('alarms-view')) && l && l.children.length > 0 && l.querySelector('button'); }, 'Swipe an alarm right to switch it on/off, left to delete it'],
+        ['timer', function () { return shown($('session-timer-view')); }, 'Swipe up on the timer to start, down to take a break'],
+        ['chat', function () { return shown($('community-chat-view')); }, 'Long-press a message, tap \u22EE, then Select to pick several'],
+        ['pdf', function () { return shown($('custom-pdf-viewer-modal')); }, 'Swipe down from the top bar to close']
+    ];
+    setInterval(function () {
+        if (D.hidden || Date.now() - lastTip < 8000) return;
+        for (var i = 0; i < HINTS.length; i++) {
+            var h = HINTS[i];
+            if (seen(h[0])) continue;
+            var ok = false; try { ok = h[1](); } catch (e) { }
+            if (ok && tip(h[0], h[2])) break;
+        }
+    }, 2000);
+
+    /* ---------- haptics on taps ---------- */
+    D.addEventListener('click', function (e) {
+        var t = e.target; if (!t || !t.closest) return;
+        if (t.closest('.mpt,#rm-tabs button,.syl-sub')) { vib(6); setTimeout(function () { if (Date.now() - lastTip > 8000) tip('tabs', 'Tip: swipe left or right to switch tabs'); }, 700); }
+        else if (t.closest('.mpf-like,.mpf-pick button,[onclick*="sendReaction"]')) vib(10);
+    }, true);
+
+    /* ---------- 1. swipe left/right to switch tabs ---------- */
+    var ST = { ok: false, x: 0, y: 0, t: 0, tg: null };
+    function mpSwipe(dir) {
+        var bar = $('mp-tabbar'); if (!bar || !W.mpSetTab || !W.__mp) return;
+        var order = [].map.call(bar.querySelectorAll('.mpt'), function (b) { return b.dataset.tab; });
+        var n = order[order.indexOf(W.__mp.tab) + dir];
+        if (n) { vib(8); W.mpSetTab(n); }
+    }
+    function rmSwipe(dir) {
+        var v = $('fitness-view'); if (!v || !W.rmSetTab) return;
+        var feed = v.classList.contains('rm-feedmode');
+        if (dir > 0 && !feed) { vib(8); W.rmSetTab('feed'); }
+        else if (dir < 0 && feed) { vib(8); W.rmSetTab('runs'); }
+    }
+    function sylSwipe(dir) {
+        var c = $('syl-subject-tabs-container'); if (!c) return;
+        var tabs = [].slice.call(c.querySelectorAll('.syl-sub'));
+        var i = -1; tabs.forEach(function (b, k) { if (b.classList.contains('on')) i = k; });
+        var n = i < 0 ? null : tabs[i + dir]; if (!n) return;
+        vib(8); n.click();
+        setTimeout(function () { var a = c.querySelector('.syl-sub.on'); if (a && a.scrollIntoView) a.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); }, 180);
+    }
+    D.addEventListener('touchstart', function (e) {
+        ST.ok = false; if (e.touches.length !== 1) return;
+        var t = e.touches[0]; if (t.clientX < 26 || t.clientX > innerWidth - 26) return;
+        if (noSwipe(e.target) || hScroll(e.target)) return;
+        ST.x = t.clientX; ST.y = t.clientY; ST.t = Date.now(); ST.tg = e.target; ST.ok = true;
+    }, { passive: true });
+    D.addEventListener('touchend', function (e) {
+        if (!ST.ok) return; ST.ok = false;
+        var t = e.changedTouches[0], dx = t.clientX - ST.x, dy = t.clientY - ST.y;
+        if (Date.now() - ST.t > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.7) return;
+        var dir = dx < 0 ? 1 : -1, tg = ST.tg;
+        safe(function () {
+            if (tg.closest('#mp-body')) mpSwipe(dir);
+            else if (tg.closest('#fitness-view')) rmSwipe(dir);
+            else if (tg.closest('#syllabus-view')) sylSwipe(dir);
+        });
+    }, { passive: true });
+
+    /* ---------- 2. swipe down to close (video, pdf, analysis, sheets) ---------- */
+    function clickDismiss(root) {
+        if (!root) return false;
+        var bs = root.querySelectorAll('button,[onclick],a');
+        for (var i = 0; i < bs.length; i++) {
+            var b = bs[i], h = b.innerHTML || '', oc = b.getAttribute('onclick') || '';
+            if (/fa-(arrow-left|chevron-left|angle-left|xmark|times|chevron-down|circle-xmark)/.test(h) || /(close|back)/i.test(oc)) { b.click(); return true; }
+        }
+        return false;
+    }
+    var DM = [
+        { sel: '#video-watch-view', hdr: '.vx-wtop', fn: function () { W.closeWatchView && W.closeWatchView(); } },
+        { sel: '#custom-pdf-viewer-modal', hdr: '#pdf-modal-header', fn: function (el) { clickDismiss(el.querySelector('#pdf-modal-header')); } },
+        { sel: '#exam-analysis-view', h: 90, fn: function (el) { clickDismiss(el.firstElementChild); } },
+        { sel: '#action-sheet', h: 72, instant: true, fn: function () { W.closeBottomSheet && W.closeBottomSheet(); } },
+        { sel: '#ios-select-sheet', h: 72, instant: true, fn: function () { W.closeCustomSelect && W.closeCustomSelect(); } },
+        { sel: '.wt-lp-ov', mv: '.wt-lp', hdr: '.wt-lp', instant: true, fn: function (el) { el.click(); } }
+    ];
+    var DG = null;
+    D.addEventListener('touchstart', function (e) {
+        DG = null; if (e.touches.length !== 1) return;
+        var t = e.touches[0];
+        for (var i = 0; i < DM.length; i++) {
+            var c = DM[i], els = D.querySelectorAll(c.sel);
+            for (var j = 0; j < els.length; j++) {
+                var el = els[j];
+                if (!shown(el) || !el.contains(e.target)) continue;
+                var mv = c.mv ? el.querySelector(c.mv) : el; if (!mv) continue;
+                var ok;
+                if (c.hdr) { var h = e.target.closest(c.hdr); ok = !!h && el.contains(h); }
+                else ok = (t.clientY - mv.getBoundingClientRect().top) < (c.h || 72);
+                if (!ok || e.target.closest('input,textarea,select')) continue;
+                DG = { c: c, el: el, mv: mv, x: t.clientX, y: t.clientY, t: Date.now(), dy: 0, on: false, dead: false };
+                return;
+            }
+        }
+    }, { passive: true });
+    D.addEventListener('touchmove', function (e) {
+        var g = DG; if (!g || g.dead) return;
+        var t = e.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
+        if (!g.on) {
+            if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) { g.dead = true; return; }
+            if (dy < -10) { g.dead = true; return; }
+            if (dy > 10 && dy > Math.abs(dx) * 1.2) { g.on = true; g.mv.style.transition = 'none'; } else return;
+        }
+        g.dy = Math.max(0, dy);
+        g.mv.style.transform = 'translateY(' + (g.dy * 0.9) + 'px)';
+        g.mv.style.opacity = String(Math.max(0.45, 1 - g.dy / 600));
+    }, { passive: true });
+    function dgEnd(cancel) {
+        var g = DG; DG = null; if (!g || !g.on) return;
+        var mv = g.mv, v = g.dy / Math.max(1, Date.now() - g.t);
+        var go = !cancel && (g.dy > 120 || (g.dy > 55 && v > 0.6));
+        function reset() { mv.style.transition = ''; mv.style.transform = ''; mv.style.opacity = ''; }
+        mv.style.transition = 'transform .22s ease,opacity .22s ease';
+        if (go) { vib(10); safe(function () { g.c.fn(g.el); }); if (g.c.instant) reset(); else setTimeout(reset, 400); }
+        else { mv.style.transform = ''; mv.style.opacity = ''; setTimeout(reset, 260); }
+    }
+    D.addEventListener('touchend', function () { dgEnd(false); }, { passive: true });
+    D.addEventListener('touchcancel', function () { dgEnd(true); }, { passive: true });
+
+    /* ---------- 3. swipe rows: tasks, alarms, notices ---------- */
+    var RW = null, supClick = 0;
+    function rowInfo(t) {
+        var r;
+        if ((r = t.closest('#weekly-targets-view .wt-row'))) {
+            var admin = W.currentRole === 'admin';
+            var tog = r.querySelector('[onclick*="toggleTaskCompletion"]');
+            var right = (!admin && tog) ? function () { tog.click(); } : null, left = null;
+            if (admin) { var d = r.querySelector('button[onclick*="deleteWeeklyTask"]'); if (d) left = function () { d.click(); }; }
+            else if (r.hasAttribute('data-lp')) { var id = r.getAttribute('data-lp'); left = function () { W.deleteWeeklyTask && W.deleteWeeklyTask(id); }; }
+            return { el: r, right: right, left: left };
+        }
+        if ((r = t.closest('#alarm-list > div'))) {
+            var tg = r.querySelector('button[onclick*="toggleAlarm"]'), dl = r.querySelector('button[onclick*="deleteAlarm"]');
+            return { el: r, right: tg ? function () { tg.click(); } : null, left: dl ? function () { dl.click(); } : null };
+        }
+        if ((r = t.closest('.notice-glass'))) {
+            var nd = r.querySelector('.ng-del');
+            return { el: r, right: null, left: nd ? function () { nd.click(); } : null };
+        }
+        return null;
+    }
+    D.addEventListener('touchstart', function (e) {
+        RW = null; if (e.touches.length !== 1) return;
+        var t = e.touches[0]; if (t.clientX < 26 || t.clientX > innerWidth - 26) return;
+        if (e.target.closest('input,textarea,select')) return;
+        var info = rowInfo(e.target); if (!info || (!info.left && !info.right)) return;
+        RW = { i: info, x: t.clientX, y: t.clientY, dx: 0, lock: null, buzzed: false };
+    }, { passive: true });
+    D.addEventListener('touchmove', function (e) {
+        var g = RW; if (!g || g.lock === 'v') return;
+        var t = e.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y, el = g.i.el;
+        if (!g.lock) {
+            if (Math.abs(dx) < 9 && Math.abs(dy) < 9) return;
+            if (Math.abs(dx) > Math.abs(dy) * 1.4) { g.lock = 'h'; el.style.transition = 'none'; } else { g.lock = 'v'; return; }
+        }
+        var allowR = !!g.i.right, allowL = !!g.i.left, d = dx;
+        if ((d > 0 && !allowR) || (d < 0 && !allowL)) d *= 0.15;
+        d = Math.max(-140, Math.min(140, d)); g.dx = dx;
+        el.style.transform = 'translateX(' + d + 'px)';
+        var r = dx > 80 && allowR, l = dx < -80 && allowL;
+        el.classList.toggle('gp-sw-r', r); el.classList.toggle('gp-sw-l', l);
+        if ((r || l) && !g.buzzed) { g.buzzed = true; vib(10); } else if (!r && !l) g.buzzed = false;
+    }, { passive: true });
+    function rwEnd(cancel) {
+        var g = RW; RW = null; if (!g || g.lock !== 'h') return;
+        var el = g.i.el;
+        el.style.transition = 'transform .2s ease'; el.style.transform = '';
+        setTimeout(function () { el.style.transition = ''; el.classList.remove('gp-sw-r', 'gp-sw-l'); }, 230);
+        if (!cancel) {
+            if (g.dx > 80 && g.i.right) safe(g.i.right);
+            else if (g.dx < -80 && g.i.left) safe(g.i.left);
+        }
+        supClick = Date.now() + 350;   /* set AFTER the action so its own programmatic click is not blocked */
+    }
+    D.addEventListener('touchend', function () { rwEnd(false); }, { passive: true });
+    D.addEventListener('touchcancel', function () { rwEnd(true); }, { passive: true });
+    D.addEventListener('click', function (e) { if (Date.now() < supClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+
+    /* ---------- 4. video: double-tap seek, swipe volume/brightness, hold for 2x ---------- */
+    var VG = null, lastTap = { t: 0, x: 0, pb: false }, supV = 0, bri = 1;
+    function vc() { return $('native-player-container'); }
+    function rotated(c) { return /rotate/.test(c.style.transform || ''); }
+    function hud(c, txt) {
+        var h = c.querySelector('.gp-hud');
+        if (!h) { h = D.createElement('div'); h.className = 'gp-hud'; c.appendChild(h); }
+        h.textContent = txt; h.classList.add('on');
+        clearTimeout(h._t); h._t = setTimeout(function () { h.classList.remove('on'); }, 900);
+    }
+    function seekFx(c, side, txt) {
+        var f = c.querySelector('.gp-seek.' + side);
+        if (!f) { f = D.createElement('div'); f.className = 'gp-seek ' + side; c.appendChild(f); }
+        f.textContent = txt; f.classList.remove('on'); void f.offsetWidth; f.classList.add('on');
+    }
+    function dim(c) { var d = c.querySelector('#gp-dim'); if (!d) { d = D.createElement('div'); d.id = 'gp-dim'; c.appendChild(d); } return d; }
+    D.addEventListener('touchstart', function (e) {
+        VG = null; var c = vc(), p = W.vjsPlayer;
+        if (!c || !p || e.touches.length !== 1 || !c.contains(e.target)) return;
+        if (e.target.closest('.vjs-control-bar,.vjs-big-play-button,.vjs-menu,iframe')) return;
+        var t = e.touches[0], r = c.getBoundingClientRect(), rot = rotated(c);
+        if (!rot && t.clientY > r.bottom - 52) return;
+        if (bri < 1) dim(c).style.opacity = String((1 - bri) * 0.8);
+        VG = { c: c, p: p, x: t.clientX, y: t.clientY, t: Date.now(), mode: null, moved: false, hold: false, rot: rot, vol0: p.volume(), bri0: bri, pb: p.paused(), rate0: p.playbackRate(), r: r };
+        var g = VG;
+        g.ht = setTimeout(function () { if (VG === g && !g.moved && !g.p.paused()) { g.hold = true; g.p.playbackRate(2); hud(g.c, '2\u00D7 speed'); vib(12); } }, 450);
+    }, { passive: true });
+    D.addEventListener('touchmove', function (e) {
+        var g = VG; if (!g) return;
+        var t = e.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
+        if (!g.moved) {
+            if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+            g.moved = true; clearTimeout(g.ht);
+            if (g.hold) return;
+            g.mode = (Math.abs(dy) > Math.abs(dx) * 1.2 && !g.rot) ? ((g.x < g.r.left + g.r.width / 2) ? 'bri' : 'vol') : 'x';
+        }
+        if (g.hold) return;
+        if (g.mode === 'vol' || g.mode === 'bri') {
+            if (e.cancelable) e.preventDefault();
+            var d = -dy / (g.r.height * 0.85);
+            if (g.mode === 'vol') { var v = Math.max(0, Math.min(1, g.vol0 + d)); g.p.muted(false); g.p.volume(v); hud(g.c, 'Volume ' + Math.round(v * 100) + '%'); }
+            else { bri = Math.max(0.15, Math.min(1, g.bri0 + d)); dim(g.c).style.opacity = String((1 - bri) * 0.8); hud(g.c, 'Brightness ' + Math.round(bri * 100) + '%'); }
+        }
+    }, { passive: false });
+    D.addEventListener('touchend', function (e) {
+        var g = VG; VG = null; if (!g) return;
+        clearTimeout(g.ht);
+        if (g.hold) { g.p.playbackRate(g.rate0 || 1); supV = Date.now() + 450; hud(g.c, '1\u00D7 speed'); return; }
+        if (g.moved) { if (g.mode === 'vol' || g.mode === 'bri') supV = Date.now() + 300; return; }
+        var now = Date.now(), t = e.changedTouches[0];
+        if (now - g.t > 300) { lastTap.t = 0; return; }
+        if (!g.rot && now - lastTap.t < 330 && Math.abs(t.clientX - lastTap.x) < 70) {
+            var rel = (t.clientX - g.r.left) / g.r.width; lastTap.t = 0;
+            if (rel < 0.38 || rel > 0.62) {
+                supV = now + 450;
+                if (g.p.paused() !== lastTap.pb) { if (lastTap.pb) g.p.pause(); else g.p.play(); }
+                var back = rel < 0.5, ct = g.p.currentTime() || 0, du = g.p.duration() || 1e9;
+                g.p.currentTime(Math.max(0, Math.min(du - 0.2, ct + (back ? -10 : 10))));
+                seekFx(g.c, back ? 'l' : 'r', back ? '\u221210s' : '+10s'); vib(10);
+                return;
+            }
+        }
+        lastTap = { t: now, x: t.clientX, pb: g.pb };
+    }, { passive: true });
+    D.addEventListener('touchcancel', function () { var g = VG; VG = null; if (g) { clearTimeout(g.ht); if (g.hold) g.p.playbackRate(g.rate0 || 1); } }, { passive: true });
+    D.addEventListener('click', function (e) { var c = vc(); if (Date.now() < supV && c && c.contains(e.target)) { e.stopPropagation(); e.preventDefault(); } }, true);
+    D.addEventListener('dblclick', function (e) { var c = vc(); if (Date.now() < supV + 300 && c && c.contains(e.target)) e.stopPropagation(); }, true);
+
+    /* ---------- 5. study timer: swipe up = start / resume, swipe down = break ---------- */
+    whenReady(function () { return $('st-study-time'); }, function () {
+        var box = $('st-study-time').parentElement; if (!box) return;
+        box.style.touchAction = 'none';
+        var s = null;
+        box.addEventListener('touchstart', function (e) { var t = e.touches[0]; s = { x: t.clientX, y: t.clientY, t: Date.now() }; }, { passive: true });
+        box.addEventListener('touchend', function (e) {
+            var a = s; s = null; if (!a) return;
+            var t = e.changedTouches[0], dx = t.clientX - a.x, dy = t.clientY - a.y;
+            if (Math.abs(dy) < 60 || Math.abs(dy) < Math.abs(dx) * 1.5 || Date.now() - a.t > 800) return;
+            if (W.currentRole !== 'student' || !W.toggleSessionState) return;
+            var live = W.findMyLiveSession && W.findMyLiveSession(W.loggedInMobile);
+            if (dy < 0) { if (!live) { vib(14); W.toggleSessionState('START'); } else if (live.status === 'BREAK') { vib(14); W.toggleSessionState('RESUME'); } }
+            else if (live && live.status === 'STUDYING') { vib(14); W.toggleSessionState('BREAK'); }
+        }, { passive: true });
+    });
+
+    /* ---------- 6. chat: slide left to cancel a voice note ---------- */
+    function cancelRec() {
+        if (!W.cancelAudioRecord) return;
+        vib(14); W.cancelAudioRecord();
+        setTimeout(function () { W.cancelAudioRecord && W.cancelAudioRecord(); }, 450);   /* recorder's onstop re-opens the preview, so cancel once more */
+    }
+    whenReady(function () { return $('chat-recording-banner') && $('chat-audio-preview'); }, function () {
+        [$('chat-recording-banner'), $('chat-audio-preview')].forEach(function (el) {
+            var s = null;
+            el.addEventListener('touchstart', function (e) { var t = e.touches[0]; s = { x: t.clientX, y: t.clientY }; }, { passive: true });
+            el.addEventListener('touchend', function (e) {
+                var a = s; s = null; if (!a) return;
+                var t = e.changedTouches[0], dx = t.clientX - a.x, dy = t.clientY - a.y;
+                if (dx < -90 && Math.abs(dx) > Math.abs(dy) * 1.5) cancelRec();
+            }, { passive: true });
+        });
+    });
+
+    /* ---------- 7. chat: select several messages (copy / delete) ---------- */
+    var CS = { on: false, sel: {}, bar: null, mo: null };
+    function msgs() { return (W.olderChatDB || []).concat(W.chatDB || []); }
+    function getMsg(id) { return msgs().filter(function (m) { return String(m.id) === String(id); })[0]; }
+    function selIds() { return Object.keys(CS.sel); }
+    function canDel(id) { var m = getMsg(id); return !!m && (W.currentRole === 'admin' || m.mobile === W.loggedInMobile); }
+    function paint() {
+        [].forEach.call(D.querySelectorAll('#chat-messages [id^="chat-msg-"]'), function (el) { el.classList.toggle('gp-selected', !!CS.sel[el.id.slice(9)]); });
+    }
+    function ui() {
+        var n = selIds().length;
+        if (!n && CS.on) return csExit();
+        if (!CS.bar) {
+            var b = D.createElement('div'); b.id = 'gp-sel-bar';
+            b.innerHTML = '<button type="button" data-a="x" aria-label="Cancel selection">\u2715</button><b></b><button type="button" data-a="copy">Copy</button><button type="button" data-a="del" class="del">Delete</button>';
+            b.addEventListener('click', function (e) {
+                var a = e.target.closest('button'); if (!a) return;
+                e.stopPropagation();
+                var k = a.getAttribute('data-a');
+                if (k === 'x') csExit(); else if (k === 'copy') csCopy(); else if (k === 'del') csDelete();
+            });
+            D.body.appendChild(b); CS.bar = b;
+        }
+        CS.bar.querySelector('b').textContent = n + ' selected';
+        CS.bar.classList.add('on');
+    }
+    function csToggle(id, force) {
+        if (force === true || (force === undefined && !CS.sel[id])) CS.sel[id] = 1; else delete CS.sel[id];
+        vib(8); paint(); ui();
+    }
+    function csEnter(id) {
+        CS.on = true;
+        [].forEach.call(D.querySelectorAll('.chat-menu-backdrop'), function (x) { x.remove(); });
+        [].forEach.call(D.querySelectorAll('[id^="chat-actions-"]'), function (x) { x.classList.add('hidden', 'opacity-0', 'scale-90'); });
+        [].forEach.call(D.querySelectorAll('[id^="chat-msg-"]'), function (x) { x.style.zIndex = ''; });
+        csToggle(id, true);
+        var list = $('chat-messages');
+        if (list && !CS.mo) {
+            CS.mo = new MutationObserver(function () {
+                if (!CS.on) return;
+                if (!shown($('community-chat-view'))) return csExit();
+                requestAnimationFrame(paint);
+            });
+            CS.mo.observe(list, { childList: true, subtree: true });
+        }
+    }
+    function csExit() {
+        CS.on = false; CS.sel = {};
+        if (CS.bar) CS.bar.classList.remove('on');
+        if (CS.mo) { CS.mo.disconnect(); CS.mo = null; }
+        paint();
+    }
+    function copyText(txt) {
+        function fallback() {
+            var ta = D.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+            D.body.appendChild(ta); ta.select(); try { D.execCommand('copy'); } catch (e) { } ta.remove();
+        }
+        try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(txt).catch(fallback); } catch (e) { }
+        fallback();
+    }
+    function csCopy() {
+        var out = [];
+        [].forEach.call(D.querySelectorAll('#chat-messages [id^="chat-msg-"]'), function (el) {
+            var id = el.id.slice(9); if (!CS.sel[id]) return;
+            var m = getMsg(id); if (m) out.push((m.name ? m.name + ': ' : '') + (m.text || m.linkUrl || '[media]'));
+        });
+        if (!out.length) return;
+        copyText(out.join('\n'));
+        toast('Copied', out.length + (out.length > 1 ? ' messages' : ' message') + ' copied', 'success');
+        csExit();
+    }
+    async function csDelete() {
+        var list = selIds().filter(canDel);
+        if (!list.length) { toast('Cannot delete', 'You can only delete your own messages.', 'warning'); return; }
+        if (!W.showCustomConfirm || !W.deleteChatMessage) return;
+        var ok = await W.showCustomConfirm('Delete Messages', 'Delete ' + list.length + (list.length > 1 ? ' messages' : ' message') + ' for everyone?', 'Delete', 'Cancel', 'danger');
+        if (!ok) return;
+        var orig = W.showCustomConfirm;
+        W.showCustomConfirm = function () { return Promise.resolve(true); };   /* one confirmation for the whole batch */
+        try { for (var i = 0; i < list.length; i++) { await W.deleteChatMessage(list[i]); } }
+        finally { W.showCustomConfirm = orig; }
+        csExit();
+    }
+    function swallow(e) {
+        if (!CS.on) return;
+        var m = e.target.closest && e.target.closest('[id^="chat-msg-"]'), list = $('chat-messages');
+        if (!m || !list || !list.contains(m)) return;
+        e.stopPropagation();
+        if (e.type === 'click') { e.preventDefault(); csToggle(m.id.slice(9)); }
+    }
+    ['touchstart', 'touchmove', 'touchend', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click'].forEach(function (ev) { D.addEventListener(ev, swallow, true); });
+    W.addEventListener('hashchange', function () { if (CS.on) csExit(); });
+    whenReady(function () { return typeof W.showChatMenu === 'function'; }, function () {
+        var orig = W.showChatMenu;
+        if (orig.__gp) return;
+        W.showChatMenu = function (id) {
+            var r = orig.apply(this, arguments);
+            safe(function () {
+                if (CS.on) return;
+                var ex = $('chat-extra-' + id);
+                if (!ex || ex.querySelector('.gp-selbtn')) return;
+                var b = D.createElement('button');
+                b.type = 'button';
+                b.className = 'gp-selbtn hover:bg-indigo-50 hover:text-indigo-600 rounded-lg flex items-center gap-2.5 px-3 py-2 w-full text-left transition-colors relative z-[9999]';
+                b.innerHTML = '<i class="fa-regular fa-square-check"></i> Select';
+                b.addEventListener('click', function (ev) { ev.stopPropagation(); csEnter(id); });
+                var first = ex.querySelector('button');
+                if (first && first.after) first.after(b); else ex.insertBefore(b, ex.firstChild);
+            });
+            return r;
+        };
+        W.showChatMenu.__gp = 1;
+    });
+
+    /* ---------- 8. tap the top strip to scroll to top ---------- */
+    var HT = null;
+    D.addEventListener('touchstart', function (e) {
+        HT = null; if (e.touches.length !== 1) return;
+        var t = e.touches[0]; if (t.clientY > 72) return;
+        HT = { x: t.clientX, y: t.clientY, t: Date.now(), tg: e.target };
+    }, { passive: true });
+    D.addEventListener('touchend', function (e) {
+        var h = HT; HT = null; if (!h) return;
+        var t = e.changedTouches[0];
+        if (Date.now() - h.t > 260 || Math.abs(t.clientX - h.x) > 8 || Math.abs(t.clientY - h.y) > 8) return;
+        if (interactive(h.tg) || (h.tg.closest && h.tg.closest('input,textarea,img,svg,#nova-voice-modal,#gp-sel-bar'))) return;
+        safe(function () {
+            var pts = [[0.5, 0.5], [0.5, 0.3], [0.5, 0.75]];
+            for (var i = 0; i < pts.length; i++) {
+                var els = D.elementsFromPoint(innerWidth * pts[i][0], innerHeight * pts[i][1]);
+                for (var j = 0; j < els.length; j++) {
+                    var el = els[j];
+                    if (el.scrollTop > 4) {
+                        var oy = getComputedStyle(el).overflowY;
+                        if (oy === 'auto' || oy === 'scroll' || el === D.scrollingElement) { el.scrollTo({ top: 0, behavior: 'smooth' }); vib(6); return; }
+                    }
+                }
+            }
+        });
+    }, { passive: true });
+})();
+</script>
 </body>
 
 </html>
