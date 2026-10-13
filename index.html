@@ -22233,11 +22233,20 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
             };
 
             /* keeps the active dot on the student profile live (same presence feed as the admin profile) */
+            window.__mpActTxt = function (mob) {     // Facebook style: "Active now" / "Active 10 min ago" / "Active 3 hr ago" / "Active yesterday"
+                const i = window.__activeInfo ? window.__activeInfo(mob) : { on: false };
+                if (i.on) return { on: true, t: 'Active now' };
+                const p = (window.presenceDB || {})[mob], la = p && typeof p.lastActive === 'number' ? p.lastActive : 0;
+                if (!la) return { on: false, t: '' };
+                const m = Math.floor(Math.max(0, Date.now() + (window._rtdbOffset || 0) - la) / 60000);
+                return { on: false, t: 'Active ' + (m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.floor(m / 60) + ' hr ago' : m < 2880 ? 'yesterday' : Math.floor(m / 1440) + ' days ago') };
+            };
             window.__paintMpDot = function () {
                 const d = document.getElementById('mp-active-dot'); if (!d) return;
                 if (d.getAttribute('data-mp-mine') === '1') { d.remove(); return; }
-                const on = !!(window.__activeInfo && window.__activeInfo(d.getAttribute('data-mp-mob')).on);
-                d.classList.toggle('on', on);
+                const a = window.__mpActTxt(d.getAttribute('data-mp-mob')), x = document.getElementById('mp-active-txt');
+                d.classList.toggle('on', a.on);
+                if (x) { x.textContent = a.t; x.classList.toggle('on', a.on); x.style.display = a.t ? '' : 'none'; }
             };
             if (!window.__mpDotTimer) window.__mpDotTimer = setInterval(window.__paintMpDot, 1500);
 
@@ -22313,6 +22322,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                                 </div>
                                 <div class="min-w-0 max-w-full">
                                     <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-gray-900 truncate px-2">${esc(stu.name)}</h1>
+                                    ${mine ? '' : `<div id="mp-active-txt" class="mp-act-txt${window.__mpActTxt(me).on ? ' on' : ''}"${window.__mpActTxt(me).t ? '' : ' style="display:none"'}>${esc(window.__mpActTxt(me).t)}</div>`}
                                 </div>
                             </div>
                             <div class="grid grid-cols-4 gap-2 sm:gap-4 mt-4 p-3 sm:p-5 rounded-3xl bg-white/60 backdrop-blur-xl border border-white/70 shadow-sm">
@@ -22681,8 +22691,8 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
 
             function feedCommentRow(c, me, isReply) {
                 const esc = window.escHtml, canDel = String(c.mobile) === me || window.currentRole === 'admin', nm = feedName(c.mobile, c.name);
-                return `<div class="mpf-crow${isReply ? ' rep' : ''}"><img class="mpf-cav" src="${esc(feedAvatar(c.mobile, nm))}" alt="" loading="lazy">
-                    <div style="min-width:0"><div class="mpf-bub"><b>${esc(nm)}</b><p>${esc(c.text)}</p></div>
+                return `<div class="mpf-crow${isReply ? ' rep' : ''}"><img class="mpf-cav" src="${esc(feedAvatar(c.mobile, nm))}" alt="Open profile of ${esc(nm)}" loading="lazy" onclick="window.showStudentStats('${esc(String(c.mobile).replace(/\W/g, ''))}')" style="cursor:pointer">
+                    <div style="min-width:0"><div class="mpf-bub"><b onclick="window.showStudentStats('${esc(String(c.mobile).replace(/\W/g, ''))}')" style="cursor:pointer">${esc(nm)}</b><p>${esc(c.text)}</p></div>
                     <div class="mpf-cmeta"><span>${feedAgo(c.timestamp)}</span><button type="button" class="mpf-rpl" onclick="mpfReply('${feedId(c.id)}')" aria-label="Reply to ${esc(nm)}">Reply</button>${canDel ? `<button type="button" onclick="mpfDel('${feedId(c.id)}')" aria-label="Delete comment">${ico('trash', 13)}Delete</button>` : ''}</div></div></div>`;
             }
             // comments in order, each followed by its replies (replies to a reply stay in the same thread)
@@ -30985,10 +30995,14 @@ YOUR DIRECTIVES:
                         const rows = all.filter(r => r.date > dayKey());                                     // list = upcoming days only
                         box.innerHTML = rows.length ? rows.map(r => {
                             const dt = keyDate(r.date);
-                            return `<div class="qm-item">
-                              <div class="qm-date"><b>${dt.getDate()}</b><span>${esc(dt.toLocaleDateString('en', { month: 'short' }))}</span></div>
-                              <div class="qm-body"><div class="qm-when">${esc(relDay(r.date))}</div><p>${esc(r.text)}</p></div>
-                              <div class="qm-acts">
+                            return `<div class="up-card">
+                              <div class="up-date"><b>${dt.getDate()}</b><span>${esc(dt.toLocaleDateString('en', { month: 'short' }))}</span></div>
+                              <div class="up-main">
+                                <div class="up-when"><i class="fa-regular fa-calendar"></i>${esc(relDay(r.date))}</div>
+                                <p class="up-q">${esc(r.text)}</p>
+                                <div class="up-chips"><span class="up-chip"><i class="fa-solid fa-pen-nib"></i>Custom quote</span><span class="up-chip"><i class="fa-solid fa-font"></i>${String(r.text).length} chars</span></div>
+                              </div>
+                              <div class="up-acts">
                                 <button onclick="qtEdit('${esc(r.date)}')" class="qm-ico" aria-label="Edit"><i class="fa-solid fa-pen"></i></button>
                                 <button onclick="qtDelete('${esc(r.date)}')" class="qm-ico qm-del" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>
                               </div></div>`;
@@ -31483,12 +31497,14 @@ async function loadDay(key) {
                             const k = ICON[r.kind] ? r.kind : 'audio';
                             const th = r.thumb || (k === 'youtube' && r.id ? ytThumb(r.id) : '');
                             const sub = (k === 'instagram' ? 'Reel popup' : (k === 'youtube' && r.bg === false ? 'Video popup, ' : '') + mins + ' min') + ' \u2022 ' + (r.plays || 1) + '\u00d7 per student';
-                            return `<div class="qm-item">
-                              <div class="qm-thumb t-${k}"><i class="${ICON[k]}"></i>${th ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${esc(th)}" onerror="this.remove()">` : ''}</div>
-                              <div class="qm-body"><div class="qm-when">${esc(relDay(r.day))} \u2022 ${esc(dt.getDate() + ' ' + dt.toLocaleDateString('en', { month: 'short' }))}${r.enabled === false ? ' \u2022 switched off' : ''}</div>
-                                <p class="qm-two">${esc(r.title || r.url)}</p>
-                                <div class="qm-sm">${esc(LABEL[k])} \u2022 ${sub}</div></div>
-                              <div class="qm-acts">
+                            return `<div class="up-card">
+                              <div class="up-date"><b>${dt.getDate()}</b><span>${esc(dt.toLocaleDateString('en', { month: 'short' }))}</span></div>
+                              <div class="up-main">
+                                <div class="up-when"><i class="fa-regular fa-clock"></i>${esc(relDay(r.day))}</div>
+                                <div class="up-row"><div class="qm-thumb t-${k}"><i class="${ICON[k]}"></i>${th ? `<img alt="" loading="lazy" referrerpolicy="no-referrer" src="${esc(th)}" onerror="this.remove()">` : ''}</div><p class="up-t">${esc(r.title || r.url)}</p></div>
+                                <div class="up-chips"><span class="up-chip k-${k}"><i class="${ICON[k]}"></i>${esc(LABEL[k])}</span>${k === 'instagram' ? '<span class="up-chip"><i class="fa-regular fa-window-restore"></i>Popup</span>' : `<span class="up-chip"><i class="fa-regular fa-clock"></i>${mins} min</span>`}<span class="up-chip"><i class="fa-solid fa-repeat"></i>${r.plays || 1}\u00d7 per student</span>${k === 'youtube' && r.bg === false ? '<span class="up-chip"><i class="fa-solid fa-tv"></i>Video popup</span>' : ''}${r.enabled === false ? '<span class="up-chip off"><i class="fa-solid fa-eye-slash"></i>Switched off</span>' : ''}</div>
+                              </div>
+                              <div class="up-acts">
                                 <button onclick="dmEdit('${esc(r.day)}')" class="qm-ico" aria-label="Edit"><i class="fa-solid fa-pen"></i></button>
                                 <button onclick="dmDelete('${esc(r.day)}')" class="qm-ico qm-del" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>
                               </div></div>`;
@@ -32519,11 +32535,11 @@ async function loadDay(key) {
   <div class="qm-sheet">
     <div class="qm-wrap">
       <p class="qm-note">Students see an automatic quote every day. A custom quote shows <b>only on the day you pick</b>. The header shows the quote students see today.</p>
-      <button type="button" onclick="qtOpen()" class="qm-btn qm-pri" style="margin-top:0"><i class="fa-solid fa-plus"></i> Add custom quote</button>
-      <div class="qm-sub">Upcoming quotes</div>
+      <div class="qm-sub"><span><i class="fa-regular fa-calendar-check"></i>Upcoming quotes</span></div>
       <div id="qt-list" class="qm-list"></div>
     </div>
   </div>
+  <button type="button" class="qm-fab" onclick="qtOpen()" aria-label="Add custom quote"><i class="fa-solid fa-plus"></i><span>Add custom quote</span></button>
   <div id="qt-modal" class="hidden absolute inset-0 z-30 bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onclick="if(event.target===this)qtClose()">
     <div id="qt-form-card" class="qm-modal">
       <div class="qm-pophd"><h3 id="qt-modal-title">Add custom quote</h3><button type="button" onclick="qtClose()" aria-label="Close" class="qm-ico"><i class="fa-solid fa-xmark"></i></button></div>
@@ -32587,16 +32603,11 @@ async function loadDay(key) {
   </div>
   <div class="qm-sheet">
     <div class="qm-wrap">
-      <div class="dm-how">
-        <div><i class="fa-brands fa-youtube a"></i><b>YouTube</b><span>Plays quietly</span></div>
-        <div><i class="fa-solid fa-file-audio c"></i><b>Audio file</b><span>100% ad-free</span></div>
-        <div><i class="fa-brands fa-instagram b"></i><b>Reel</b><span>Popup, tap play</span></div>
-      </div>
-      <button type="button" onclick="dmOpen()" class="qm-btn qm-pri" style="margin-top:0"><i class="fa-solid fa-circle-plus"></i> Add motivation</button>
       <div class="qm-sub"><span><i class="fa-regular fa-calendar-check"></i>Upcoming motivation</span><small id="dm-count"></small></div>
       <div id="dm-list" class="qm-list"></div>
     </div>
   </div>
+  <button type="button" class="qm-fab" onclick="dmOpen()" aria-label="Add motivation"><i class="fa-solid fa-plus"></i><span>Add motivation</span></button>
   <div id="dm-modal" data-kind="" class="hidden absolute inset-0 z-30 bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onclick="if(event.target===this)dmClose()">
     <div class="dm-sheet">
       <div class="dm-top">
@@ -32665,6 +32676,31 @@ async function loadDay(key) {
     </div>
   </div>
 </div>
+<style id="mp-fb-active">
+#mp-active-dot:not(.on){display:none!important}
+.mp-act-txt{margin-top:2px;font-size:12px;font-weight:700;color:#6b7280}.mp-act-txt.on{color:#16a34a}
+.mpf-cav:active{opacity:.75}.mpf-bub b:hover{text-decoration:underline}
+</style>
+<style id="up-redesign">
+.qm-fab{position:absolute;right:16px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:20;display:flex;align-items:center;gap:9px;padding:15px 20px;border-radius:99px;color:#fff;font-weight:900;font-size:14px;line-height:1;background:linear-gradient(135deg,var(--qa),color-mix(in srgb,var(--qa) 70%,#000));box-shadow:0 18px 30px -12px color-mix(in srgb,var(--qa) 85%,#000),0 4px 10px rgba(0,0,0,.18);transition:transform .15s}
+.qm-fab:active{transform:scale(.94)}.qm-fab i{font-size:16px}
+.up-card{position:relative;display:flex;align-items:stretch;gap:12px;padding:12px 12px 12px 16px;border-radius:22px;background:#fff;border:1px solid #eef0f6;box-shadow:0 12px 26px -20px rgba(15,23,42,.5);overflow:hidden}
+.up-card::before{content:"";position:absolute;left:0;top:16px;bottom:16px;width:4px;border-radius:0 4px 4px 0;background:var(--qa)}
+.up-date{flex:none;width:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 0;border-radius:16px;background:color-mix(in srgb,var(--qa) 9%,#fff);color:var(--qa);line-height:1}
+.up-date b{font-size:22px;font-weight:900}.up-date span{margin-top:5px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+.up-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:8px}
+.up-when{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--qa)}
+.up-row{display:flex;align-items:center;gap:10px}
+.up-card .qm-thumb{width:44px;height:44px;border-radius:13px;font-size:16px}
+.up-t{margin:0;flex:1;min-width:0;font-size:13px;font-weight:800;line-height:1.35;color:#0f172a;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.up-q{margin:0;font-family:'Playfair Display',Georgia,serif;font-style:italic;font-size:14px;line-height:1.5;color:#1e293b;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
+.up-q::before{content:"\201C";margin-right:2px;font-weight:900;color:var(--qa)}
+.up-chips{display:flex;flex-wrap:wrap;gap:6px}
+.up-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:99px;background:#f1f5f9;color:#475569;font-size:10px;font-weight:800}
+.up-chip.k-youtube{background:#fef2f2;color:#dc2626}.up-chip.k-instagram{background:#fdf2f8;color:#be185d}.up-chip.k-audio{background:#f3f4f6;color:#374151}.up-chip.off{background:#fffbeb;color:#b45309}
+.up-acts{flex:none;display:flex;flex-direction:column;justify-content:center;gap:6px}
+#motivation-view .qm-empty,#quotes-view .qm-empty{background:#fff}
+</style>
 <style id="dm-redesign">
 #motivation-view .qm-fuchsia{background:linear-gradient(135deg,#c026d3 0,#7e22ce 100%)}
 .dm-how{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
