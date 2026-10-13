@@ -16919,26 +16919,18 @@ window.__tpPaint = function () {
                 // 1. Hide all views and reset the Apple animation classes.
                 //    When we are going back to the dashboard, the window that was open zooms back out first, then hides.
                 const __reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                const __motionOK = !__reduce || window.XB_FORCE_MOTION;   // dashboard genie animation (XB_FORCE_MOTION lives in the animation script)
                 const __home = (hash === 'student' || hash === 'admin');
                 const __dash = ['login-view', 'student-view', 'admin-view'];
                 let __leaving = false;
-                const __dashOpen = __dash.map(id => document.getElementById(id)).filter(x => x && !x.classList.contains('hidden-view'));
-                const __leavers = [];   // screens that fold back into their dashboard button
                 views.forEach(v => {
                     const el = document.getElementById(v);
                     if (!el) return;
                     const wasOpen = !el.classList.contains('hidden-view');
-                    try { if (el.__xbAnim) { el.__xbAnim.cancel(); el.__xbAnim = null; } el.style.transformOrigin = ''; el.style.pointerEvents = ''; el.style.willChange = ''; } catch (e) { }
-                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'xb-wapi'); // Reset animation state
-                    if (__home && wasOpen && __motionOK && __dash.indexOf(v) === -1) {
+                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave'); // Reset animation state
+                    if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
-                        if (el.__xbBtn && window.xbMorphClose) {
-                            el.classList.add('xb-wapi'); __leavers.push(el);
-                        } else {
-                            el.classList.add('view-leave');
-                            setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 340);
-                        }
+                        el.classList.add('view-leave');
+                        setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 340);
                     } else {
                         el.classList.add('hidden-view');
                     }
@@ -16969,30 +16961,15 @@ window.__tpPaint = function () {
                     void targetEl.offsetWidth; // Force reflow to restart animation flawlessly
                     // Window opened from a dashboard button: zoom out of that button. Back to the dashboard: pop the button grid in again.
                     const __o = window.__xbOrigin;
-                    let __morphed = false;
-                    targetEl.__xbBtn = null;
-                    if (!__home && __motionOK && __o && __o.el && Date.now() - __o.t < 1500 && window.xbMorphOpen) {
+                    if (!__home && !__reduce && __o && Date.now() - __o.t < 1500) {
+                        const r = targetEl.getBoundingClientRect();
+                        targetEl.style.setProperty('--ox', (__o.x - r.left) + 'px');
+                        targetEl.style.setProperty('--oy', (__o.y - r.top) + 'px');
+                        targetEl.classList.add('view-zoom');
                         window.__xbOrigin = null;
-                        targetEl.classList.add('xb-wapi');
-                        const __keep = __dashOpen.filter(x => x !== targetEl);
-                        __keep.forEach(x => x.classList.remove('hidden-view'));   // dashboard stays underneath until the genie has landed
-                        __morphed = window.xbMorphOpen(targetEl, __o.el, () => { __keep.forEach(x => x.classList.add('hidden-view')); });
-                        if (__morphed) targetEl.__xbBtn = __o.el;
-                        else { targetEl.classList.remove('xb-wapi'); __keep.forEach(x => x.classList.add('hidden-view')); }
                     }
-                    if (__home && __leavers.length) {
-                        const __dir = window.xbBackDir ? window.xbBackDir() : null;   // 'L' / 'R' = back swipe came from that edge
-                        __leavers.forEach(lv => {
-                            if (!window.xbMorphClose(lv, lv.__xbBtn, __dir)) {
-                                lv.classList.remove('xb-wapi'); lv.classList.add('view-leave');
-                                setTimeout(() => { if (lv.classList.contains('view-leave')) { lv.classList.remove('view-leave'); lv.classList.add('hidden-view'); } }, 340);
-                            }
-                        });
-                    }
-                    if (!__morphed) targetEl.classList.add('view-enter');
+                    targetEl.classList.add('view-enter');
                     if (__home && __leaving) targetEl.classList.add('view-back');
-                } else if (__leavers.length) {
-                    __leavers.forEach(lv => { lv.classList.remove('xb-wapi'); lv.classList.add('hidden-view'); });
                 }
 
                 // 4. Run View-Specific Logic
@@ -37882,119 +37859,20 @@ html body .xb:not(#_):not(#__):focus-visible{outline:2.5px solid var(--c);outlin
 })();
 </script>
 <script>
-/* ===== Mac-Dock "genie" open / back animation for the dashboard button grid (student + admin) =====
-   OPEN : the screen is pulled OUT of the tapped button - narrow at the button, widening into a full screen.
-   BACK : the screen is sucked back INTO that same button, then the button does a little dock bounce.
-          A back swipe from the LEFT / RIGHT edge makes the screen lean toward that side first.
-   XB_FORCE_MOTION = true  -> plays even when the phone has "remove animations" / reduced motion turned on. */
-(function () {
-  window.XB_FORCE_MOTION = true;
-
-  document.addEventListener('click', function (e) {
-    var t = e.target && e.target.closest ? e.target.closest('.xb') : null; if (!t) return;
-    var r = t.getBoundingClientRect();
-    window.__xbOrigin = { el: t, x: r.left + r.width / 2, y: r.top + r.height / 2, t: Date.now() };
-  }, true);
-
-  document.addEventListener('touchstart', function (e) {
-    var t = e.touches && e.touches[0]; if (!t || e.touches.length !== 1) return;
-    var W = window.innerWidth, E = 56;
-    window.__xbEdge = t.clientX <= E ? { s: 'L', t: Date.now() } : (t.clientX >= W - E ? { s: 'R', t: Date.now() } : null);
-  }, { passive: true, capture: true });
-  window.xbBackDir = function () { var e = window.__xbEdge; return (e && Date.now() - e.t < 1600) ? e.s : null; };
-
-  function rectOf(n) { try { var r = n.getBoundingClientRect(); return (r.width > 4 && r.height > 4) ? r : null; } catch (e) { return null; } }
-  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
-  function smooth(x) { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); }
-
-  /* one genie frame set. q: 0 = full screen ... 1 = squeezed into the button */
-  function frames(el, btn, reverse, sign) {
-    var R = rectOf(btn); if (!R) return null;
-    var S = el.getBoundingClientRect(); if (S.width < 60 || S.height < 60) return null;
-    var W = S.width, H = S.height;
-    var kEnd = clamp(R.width / W, .1, .95);
-    var hc = Math.min(H, R.height / kEnd), top = Math.max(0, (H - hc) * .3);
-    var tx1 = R.left - S.left, ty1 = R.top - S.top - kEnd * top;
-    var bx = R.left - S.left + R.width / 2, bTop = R.top - S.top, bBot = bTop + R.height;
-    var up = (R.top + R.height / 2) < (S.top + H / 2);                 /* tail of the genie points toward the button */
-    var yN0 = up ? 0 : H, yF0 = up ? H : 0, yN1 = up ? bTop : bBot, yF1 = up ? bBot : bTop;
-    var NF = 30, M = 16, out = [], i, j;
-    for (i = 0; i <= NF; i++) {
-      var q = reverse ? 1 - i / NF : i / NF;
-      var e = smooth(q), eN = smooth(Math.min(1, q * 1.5)), eF = smooth(Math.max(0, (q - .12) / .88));
-      var s = 1 + (kEnd - 1) * e;
-      var lean = sign ? sign * W * .12 * Math.sin(Math.PI * Math.min(1, q * 1.15)) : 0;
-      var tx = tx1 * e + lean, ty = ty1 * e + (sign ? H * .015 * Math.sin(Math.PI * Math.min(1, q * 1.15)) : 0);
-      var yN = yN0 + (yN1 - yN0) * eN, yF = yF0 + (yF1 - yF0) * eF;
-      var L = [], Rr = [];
-      for (j = 0; j <= M; j++) {
-        var t = j / M, y = yF + (yN - yF) * t;
-        var f = smooth(q * 1.9 - (1 - t) * .9);
-        var cx = (W / 2) * (1 - f) + bx * f + lean, hw = (W / 2) * (1 - f) + (R.width / 2) * f;
-        var ly = (y - ty) / s;
-        L.push(((cx - hw - tx) / s).toFixed(1) + 'px ' + ly.toFixed(1) + 'px');
-        Rr.push(((cx + hw - tx) / s).toFixed(1) + 'px ' + ly.toFixed(1) + 'px');
-      }
-      Rr.reverse();
-      out.push({
-        transform: 'translate(' + tx.toFixed(1) + 'px,' + ty.toFixed(1) + 'px) scale(' + s.toFixed(4) + ')',
-        clipPath: 'polygon(' + L.concat(Rr).join(',') + ')',
-        opacity: q < .82 ? 1 : Math.max(0, 1 - (q - .82) / .18),
-        offset: i / NF
-      });
-    }
-    return out;
-  }
-
-  function finish(el, a, hide) {
-    try { a.cancel(); } catch (e) { }
-    el.__xbAnim = null; el.style.transformOrigin = ''; el.style.willChange = ''; el.style.pointerEvents = '';
-    if (hide) { el.classList.add('hidden-view'); el.classList.remove('xb-wapi'); }
-  }
-
-  window.xbMorphOpen = function (el, btn, onEnd) {
-    try {
-      if (!el.animate) return null;
-      var fr = frames(el, btn, true, 0); if (!fr) return null;
-      el.style.transformOrigin = '0 0'; el.style.willChange = 'transform,clip-path,opacity';
-      var a = el.animate(fr, { duration: 620, easing: 'cubic-bezier(.25,.8,.3,1)', fill: 'both' });
-      el.__xbAnim = a;
-      a.onfinish = function () { if (el.__xbAnim === a) { finish(el, a, false); if (onEnd) onEnd(); } };
-      return a;
-    } catch (e) { return null; }
-  };
-
-  window.xbMorphClose = function (el, btn, dir) {
-    try {
-      if (!el.animate || !btn) return null;
-      var sign = dir === 'L' ? 1 : (dir === 'R' ? -1 : 0);
-      var fr = frames(el, btn, false, sign); if (!fr) return null;
-      el.style.transformOrigin = '0 0'; el.style.willChange = 'transform,clip-path,opacity'; el.style.pointerEvents = 'none';
-      var a = el.animate(fr, { duration: sign ? 600 : 540, easing: 'cubic-bezier(.4,0,.55,1)', fill: 'both' });
-      el.__xbAnim = a;
-      a.onfinish = function () {
-        if (el.__xbAnim !== a) return;
-        finish(el, a, true);
-        try {   /* dock bounce on the button that just swallowed the screen */
-          btn.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-12px)', offset: .25 }, { transform: 'translateY(0)', offset: .5 }, { transform: 'translateY(-5px)', offset: .72 }, { transform: 'translateY(0)' }], { duration: 560, easing: 'ease-out' });
-        } catch (e) { }
-      };
-      return a;
-    } catch (e) { return null; }
-  };
-})();
+/* remember which dashboard button was tapped, so the window can zoom out of it (and back into it) */
+document.addEventListener('click',function(e){var t=e.target&&e.target.closest?e.target.closest('.xb'):null;if(!t)return;var r=t.getBoundingClientRect();window.__xbOrigin={x:r.left+r.width/2,y:r.top+r.height/2,t:Date.now()};},true);
 </script>
 <style id="xb-window-motion">
-/* while the morph runs, the old CSS slide / fade on that screen is switched off (kept in place until the screen is hidden) */
-html body .xb-wapi:not(#_){animation:none!important}
-@keyframes xbDashIn{from{opacity:0}to{opacity:1}}
+@keyframes xbZoomIn{0%{opacity:0;transform:scale(.78)}55%{opacity:1}100%{opacity:1;transform:none}}
+@keyframes xbZoomOut{0%{opacity:1;transform:none}100%{opacity:0;transform:scale(.8)}}
 @keyframes xbBack{0%{opacity:0;transform:translate3d(0,14px,0) scale(.86)}100%{opacity:1;transform:none}}
+@keyframes xbDashIn{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:no-preference){
-  html body .view-leave:not(#_){transform-origin:50% 50%;animation:xbFadeOut .28s ease both!important;pointer-events:none}
+  html body .view-enter.view-zoom:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);animation:xbZoomIn .52s cubic-bezier(.32,.72,0,1) both}
+  html body .view-leave:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);animation:xbZoomOut .32s cubic-bezier(.4,0,.6,1) both!important;pointer-events:none}
   html body .view-enter.view-back:not(#_){animation:xbDashIn .3s ease both}
   html body #student-view.view-back .xb:not(#_),html body #admin-view.view-back .xb:not(#_){animation:xbBack .55s cubic-bezier(.22,1,.36,1) calc(var(--i,0)*30ms + 90ms) both}
 }
-@keyframes xbFadeOut{from{opacity:1}to{opacity:0}}
 </style>
 </body>
 
