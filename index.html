@@ -37599,6 +37599,9 @@ var fdSince = 0, fdOn = false, upSince = 0, upSeen = false, flipManaged = false,
 function toastG(a, b) { try { if (window.showToast) window.showToast(a, b || '', 'info'); } catch (e) { } }
 function buzz(p) { if (navigator.vibrate) { try { navigator.vibrate(p); } catch (e) { } } }
 function flipOk() { return FLIP_ON && isStudent() && !blocked() && !document.hidden && !flipBusy; }
+/* just after the app opens, login / the first data sync is still running, so flipOk() would say no and the flip got used up for nothing.
+   Instead keep the phone's face-down state and fire as soon as the app is ready (20s limit so it can never block forever). */
+function flipReady() { return !!role() && !!(window.__sessionsSynced || !window.rtdb || performance.now() > 20000); }
 var sleepMode = false, sleepEl = null;
 function studiedToday() { var m = window.loggedInMobile, d = window.formatDateDDMMYYYY ? window.formatDateDDMMYYYY() : '', ms = 0; (window.sessionsDB || []).forEach(function (x) { if (x.mobile === m && x.dateStr === d) ms += x.totalStudyMs || 0; }); return ms; }
 function durWords(ms) { var m = Math.round(ms / 60000), h = Math.floor(m / 60); m = m % 60; return (h ? h + (h === 1 ? ' hour' : ' hours') : '') + (h && m ? ' and ' : '') + (m ? m + (m === 1 ? ' minute' : ' minutes') : ''); }
@@ -37654,13 +37657,35 @@ function sleepScreen() {
     document.body.appendChild(sleepEl);
 }
 function wakeSleep() { if (!sleepMode) return; sleepMode = false; setTimeout(awakeSync, 300); medianKeepAwake(true); medianBrightness('default'); if (sleepEl && sleepEl.parentNode) sleepEl.parentNode.removeChild(sleepEl); wakeUp(); }
+/* full-screen "flip focus" card: shown while Nova announces, until the black cover takes over (tap it to close early, lifting the phone closes it too) */
+var flipIntroEl = null;
+function flipIntroHide() { var e = flipIntroEl; flipIntroEl = null; if (e && e.parentNode) e.parentNode.removeChild(e); }
+function flipIntroShow(title, sub) {
+    flipIntroHide();
+    try {
+        var d = document.createElement('div'); d.id = 'nova-flip-intro';
+        d.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147482900;display:flex;align-items:center;justify-content:center;padding:24px;background:linear-gradient(160deg,#0f172a 0%,#1e1b4b 100%);font-family:system-ui,-apple-system,sans-serif;opacity:0;transition:opacity .25s;touch-action:manipulation';
+        d.innerHTML = '<div style="width:100%;max-width:320px;text-align:center;padding:34px 26px;border-radius:28px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)">'
+            + '<div style="width:64px;height:64px;margin:0 auto 18px;border-radius:50%;background:rgba(165,180,252,.14);color:#c7d2fe;display:flex;align-items:center;justify-content:center;font-size:26px"><i class="fa-solid fa-bullseye"></i></div>'
+            + '<div style="font-size:11px;letter-spacing:.16em;font-weight:700;color:#94a3b8;margin-bottom:8px">FLIP FOCUS MODE</div>'
+            + '<div id="nfi-t" style="font-size:24px;font-weight:800;color:#f1f5f9;line-height:1.2"></div>'
+            + '<div id="nfi-s" style="font-size:13px;font-weight:500;color:#94a3b8;margin-top:10px;line-height:1.5"></div>'
+            + '<div style="font-size:12px;color:#64748b;margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1)">Screen goes dark next. Lift the phone for a break.</div></div>';
+        d.querySelector('#nfi-t').textContent = title; d.querySelector('#nfi-s').textContent = sub || '';
+        d.addEventListener('pointerdown', flipIntroHide);
+        document.body.appendChild(d); flipIntroEl = d;
+        requestAnimationFrame(function () { d.style.opacity = '1'; });
+    } catch (e) { }
+}
 function flipAnnounce(resumed, fresh) {
     var s = live(), nm = s && s.sessionType ? String(s.sessionType).replace(/\s*Session$/i, '') : '', ms = studiedToday();
     var t = 'Let’s crack it! ' + (fresh ? 'Your ' + (nm ? nm + ' ' : '') + 'focus session has started. ' : resumed ? 'Back to focus. ' : 'Your focus session is running. ')
         + (ms >= 60000 ? 'Today you have studied ' + durWords(ms) + '. ' : '') + 'I will keep the time. The screen is going to sleep. Lift the phone for a break. All the best!';
-    var done = false, go2 = function () { if (done) return; done = true; if (fdOn) sleepScreen(); };
+    var done = false, t0 = Date.now(), go2 = function () { if (done) return; done = true; flipIntroHide(); if (fdOn) sleepScreen(); },
+        later = function () { setTimeout(go2, Math.max(600, 3000 - (Date.now() - t0))); };   /* the card stays up at least 3s */
+    flipIntroShow(fresh ? (nm ? nm + ' session started' : 'Focus session started') : resumed ? 'Back to focus' : 'Focus session running', ms >= 60000 ? 'Studied today: ' + durWords(ms) : '');
     setTimeout(go2, 30000);   /* safety only: sleep after the voice FINISHES (9s used to cut it off) */
-    try { gesture = true; audio(); if (TTS_ON) speak(t, function () { setTimeout(go2, 600); }); else setTimeout(go2, 800); } catch (e) { go2(); }
+    try { gesture = true; audio(); if (TTS_ON) speak(t, later); else setTimeout(go2, 3000); } catch (e) { go2(); }
 }
 function flipDown() {
     if (!flipOk()) return; var s = live(); flipBusy = true; setTimeout(function () { flipBusy = false; }, 2500);
@@ -37671,7 +37696,7 @@ function flipDown() {
     wait(function () { return vis($('session-timer-view')); }, 4000).then(function () { setTimeout(function () { Promise.resolve(window.handleStartFocusClick && window.handleStartFocusClick()).then(function () { wait(function () { return live(); }, 9000).then(function (ok) { if (ok) flipAnnounce(false, true); else { flipManaged = false; toastG('Could not start focus', 'Choose an option on the screen.'); } }); }); }, 450); });
 }
 function flipUp() {
-    wakeSleep(); stopSpeak();
+    flipIntroHide(); wakeSleep(); stopSpeak();
     if (!flipManaged || !isStudent() || blocked()) return; var s = live();
     if (!s) { flipManaged = false; return; }
     if (s.status === 'BREAK') return;
@@ -37684,7 +37709,7 @@ function onOrient(e) {
 function flipStep(down, up) {
     var t = Date.now();
     if (down) {
-        if (!fdOn) { if (!fdSince) fdSince = t; if (upSeen && t - fdSince > 1500) { fdOn = true; upSeen = false; clearTimeout(flipLiftT); flipDown(); } }
+        if (!fdOn) { if (!fdSince) fdSince = t; if (upSeen && t - fdSince > 1500 && flipReady()) { fdOn = true; upSeen = false; clearTimeout(flipLiftT); flipDown(); } }
         upSince = 0;
     } else if (up) {
         fdSince = 0;
