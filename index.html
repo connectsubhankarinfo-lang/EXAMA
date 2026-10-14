@@ -36030,6 +36030,12 @@ document.addEventListener('DOMContentLoaded', function () { var d = document.get
 #ios-select-options button:has(.opacity-100){background:color-mix(in srgb,var(--sa) 11%,#fff)!important}
 #ios-select-options button:has(.opacity-100) span:first-child{color:color-mix(in srgb,var(--sa) 80%,#000)!important}
 </style>
+<style id="nova-exam-hide">
+/* Nova hands-free is never shown while an exam (quiz, mock test, written exam, P2P exam room) is open */
+html:has(#auto-quiz-modal:not(.hidden-view)) #nova-fab,html:has(#auto-quiz-modal:not(.hidden-view)) #nova-sheet,html:has(#auto-quiz-modal:not(.hidden-view)) #nova-pill,
+html:has(#active-exam-view:not(.hidden-view)) #nova-fab,html:has(#active-exam-view:not(.hidden-view)) #nova-sheet,html:has(#active-exam-view:not(.hidden-view)) #nova-pill,
+html:has(#peer-eval-room-modal:not(.hidden-view)) #nova-fab,html:has(#peer-eval-room-modal:not(.hidden-view)) #nova-sheet,html:has(#peer-eval-room-modal:not(.hidden-view)) #nova-pill{display:none!important}
+</style>
 <style id="mw-redesign">
 /* ===== Math Workout redesign: warm scoreboard, tactile keys, fully responsive ===== */
 #math-setup-screen{background:linear-gradient(180deg,#fff7ed 0,#fff 42%)!important;padding-top:18px!important;padding-bottom:0!important}
@@ -36892,9 +36898,11 @@ function blockedHint(text) {
 }
 
 /* ---------------- speech input ---------------- */
+/* every screen where an exam is being taken or marked: quiz, mock test, written / proctored exam, P2P peer exam room */
+var EXAM_IDS = ['auto-quiz-modal', 'active-exam-view', 'peer-eval-room-modal'];
+function examLive() { for (var i = 0; i < EXAM_IDS.length; i++) { var e = $(EXAM_IDS[i]); if (e && vis(e)) return true; } return false; }
 function blocked() {
-    var q = $('auto-quiz-modal'); if (q && vis(q)) return true;                  // never listen during a live exam
-    var ex = $('active-exam-view'); if (ex && vis(ex)) return true;                // never listen during a live exam
+    if (examLive()) return true;                                               // never listen or show Nova during any exam
     var nv = $('nova-voice-modal'); if (nv && vis(nv)) return true;             // NOVA chat has its own mic open
     if (window.__rtTalkingMe) return true;
     if (window.WAC && window.WAC.active) return true;                          // in a Discuss call                                      // walkie-talkie on a group run
@@ -37519,6 +37527,7 @@ function hookNovaChat() {
 document.addEventListener('visibilitychange', function () { if (document.hidden) { if (mode === 'wake') killRec(); engStop(); } else { checkPerm(); resumeWake(300); fabUpdate(); } });
 setInterval(function () {
     hookNovaChat(); fabUpdate();
+    if (examLive()) { if (sheetOpen || pillOn() || phase !== 'idle' || speaking) { try { closeSheet(); } catch (e) { } } if (rec) killRec(); engStop(); }
     if (!SR && role() && !store.get('nova_nosr') && window.showToast) { store.set('nova_nosr', '1'); try { window.showToast('Hey Nova unavailable', 'This browser or app cannot listen for voice commands.', 'info'); } catch (e) { } }
     if (phase !== 'idle' && phase !== 'think' && !sheetOpen && !speaking && !rec && !pending) phase = 'idle';
     if (!rec && wantWake()) startRec('wake');
@@ -37526,8 +37535,8 @@ setInterval(function () {
     engSync();
     updateOrb();
 }, 1500);
-/* ---------------- wake up (self-heal) + shake ---------------- */
-/* wakeUp(): restart everything that listens. Runs when the app returns to the screen, the network or mic changes, the audio engine is suspended, and on a shake. */
+/* ---------------- wake up (self-heal) ---------------- */
+/* wakeUp(): restart everything that listens. Runs when the app returns to the screen, the network or mic changes, and the audio engine is suspended. */
 function wakeUp() {
     try {
         gesture = true; denied = denied && !wakeOn; failStreak = 0; engErrs = 0; engRetryAt = 0; hold = 0;
@@ -37549,11 +37558,14 @@ setInterval(function () {
     if (!stuckAt) { stuckAt = Date.now(); return; }
     if (Date.now() - stuckAt > 6000) { stuckAt = 0; phase = 'idle'; submitted = true; wakeUp(); }
 }, 2000);
-/* Shake the phone: wakes Nova up and starts listening (shake again while Nova talks to stop her). Off with localStorage nova_shake=0 */
+/* Shake the phone: wakes Nova up and starts listening (shake again while Nova talks to stop her). Never while a run is on (a run bounces the phone), never in an exam. Off with localStorage nova_shake=0 */
 var FLIP_ON = store.get('nova_flip') !== '0', LP_ON = store.get('nova_lp') !== '0', EDGE_ON = store.get('nova_edge') !== '0', SHAKE_ON = store.get('nova_shake') !== '0', shakeLast = 0, shakeHits = [], shakeAt = 0, lx = 0, ly = 0, lz = 0, shakeAsked = false;
+function runBusy() {   /* a run is counting down / waiting for GPS / running / paused, or the run screen is open */
+    try { var r = window.__rt; if (r && r.st && r.st !== 'idle') return true; var t = $('run-tracker'); return !!(t && vis(t)); } catch (e) { return false; }
+}
 function onShake() {
     var n = Date.now(); if (n - shakeAt < 2500) return; shakeAt = n;
-    if (!role() || blocked() || document.hidden) return;
+    if (!role() || blocked() || runBusy() || document.hidden) return;
     if (navigator.vibrate) { try { navigator.vibrate([25, 40, 25]); } catch (e) { } }
     wakeUp();
     if (speaking || phase === 'speak') { stopSpeak(); }
@@ -37563,7 +37575,7 @@ function onShake() {
     tapMic();
 }
 function onMotion(e) {
-    if (!SHAKE_ON) return;
+    if (!SHAKE_ON || runBusy()) { shakeHits = []; return; }
     var a = e.accelerationIncludingGravity || e.acceleration; if (!a) return;
     var x = a.x || 0, y = a.y || 0, z = a.z || 0, t = Date.now();
     var d = Math.abs(x - lx) + Math.abs(y - ly) + Math.abs(z - lz); lx = x; ly = y; lz = z;
