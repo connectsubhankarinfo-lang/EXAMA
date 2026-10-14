@@ -16216,7 +16216,7 @@ window.__tpPaint = function () {
                     `;
                     modal.classList.remove('hidden-view');
                 } else {
-                    window.toggleSessionState('START');
+                    return window.toggleSessionState('START');
                 }
             };
 
@@ -26910,6 +26910,7 @@ function mpDrawTab(tab, body) {
                 container.innerHTML = `
     <div class="mb-6 bg-white">
         <h4 class="font-bold text-gray-900 text-[16px] sm:text-[18px] leading-[1.6]">${q.question}</h4>
+                                ${(proctorIcon || pinIcon) ? `<div class="ex-meta flex items-center justify-center gap-2.5 mt-1.5">${proctorIcon}${pinIcon}</div>` : ''}
     </div>
     <div class="space-y-3 sm:space-y-4" id="quiz-options-wrapper">
         ${optionsHtml}
@@ -37658,8 +37659,8 @@ function flipAnnounce(resumed, fresh) {
     var t = 'Let’s crack it! ' + (fresh ? 'Your ' + (nm ? nm + ' ' : '') + 'focus session has started. ' : resumed ? 'Back to focus. ' : 'Your focus session is running. ')
         + (ms >= 60000 ? 'Today you have studied ' + durWords(ms) + '. ' : '') + 'I will keep the time. The screen is going to sleep. Lift the phone for a break. All the best!';
     var done = false, go2 = function () { if (done) return; done = true; if (fdOn) sleepScreen(); };
-    setTimeout(go2, 9000);
-    try { gesture = true; audio(); if (TTS_ON && window.speechSynthesis) speak(t, go2); else setTimeout(go2, 800); } catch (e) { go2(); }
+    setTimeout(go2, 30000);   /* safety only: sleep after the voice FINISHES (9s used to cut it off) */
+    try { gesture = true; audio(); if (TTS_ON) speak(t, function () { setTimeout(go2, 600); }); else setTimeout(go2, 800); } catch (e) { go2(); }
 }
 function flipDown() {
     if (!flipOk()) return; var s = live(); flipBusy = true; setTimeout(function () { flipBusy = false; }, 2500);
@@ -37667,7 +37668,7 @@ function flipDown() {
     if (s && s.status !== 'BREAK') { flipAnnounce(false, false); return; }
     if (s) { Promise.resolve(window.toggleSessionState && window.toggleSessionState('RESUME')).then(function () { flipAnnounce(true, false); }); return; }
     go('session-timer');
-    wait(function () { return vis($('session-timer-view')); }, 4000).then(function () { setTimeout(function () { Promise.resolve(window.handleStartFocusClick && window.handleStartFocusClick()).then(function () { wait(function () { return live(); }, 3500).then(function (ok) { if (ok) flipAnnounce(false, true); else { flipManaged = false; toastG('Could not start focus', 'Choose an option on the screen.'); } }); }); }, 450); });
+    wait(function () { return vis($('session-timer-view')); }, 4000).then(function () { setTimeout(function () { Promise.resolve(window.handleStartFocusClick && window.handleStartFocusClick()).then(function () { wait(function () { return live(); }, 9000).then(function (ok) { if (ok) flipAnnounce(false, true); else { flipManaged = false; toastG('Could not start focus', 'Choose an option on the screen.'); } }); }); }, 450); });
 }
 function flipUp() {
     wakeSleep(); stopSpeak();
