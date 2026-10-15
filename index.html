@@ -37892,7 +37892,8 @@ fabUpdate();
 /* speak a text with Nova's real audio voice, without opening the Nova popup (used by the NOVA chat screen) */
 window.NovaStopSpeak = function () { try { stopSpeak(); } catch (e) { } };
 window.NovaCanSpeak = function () { try { return !!(nativeOk() || ttsOk()); } catch (e) { return false; } };
-window.NovaSpeak = function (t, cb) { var c = clean(String(t == null ? '' : t).replace(/\[IMAGES?:[^\]]*\]/gi, '')); if (c.length > 2400) { var cut = c.slice(0, 2400).replace(/[^.!?]*$/, ''); c = cut || c.slice(0, 2400); } if (c) speak(c, cb); };
+window.NovaSpeak = function (t, cb, onStart) { var c = clean(String(t == null ? '' : t).replace(/\[IMAGES?:[^\]]*\]/gi, '')); if (c.length > 2400) { var cut = c.slice(0, 2400).replace(/[^.!?]*$/, ''); c = cut || c.slice(0, 2400); } if (c) { speak(c, cb); if (onStart) startCb = onStart; } else if (cb) setTimeout(cb, 50); };
+window.NovaForceVoice = function () { try { if (!TTS_ON) TTS_ON = true; ttsUnlock(); } catch (e) { } };
 /* right after login: start hearing "Hey Nova" straight away (the login tap already counts as the user gesture) */
 window.__novaLoggedIn = function () {
     try {
@@ -39513,7 +39514,7 @@ html.g-lock #run-tracker, html.g-lock #run-tracker * { touch-action: pan-y !impo
     function inl(s) { return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*(?!\s)([^*]+?)\*(?=[\s).,!?:;]|$)/g, '$1<i>$2</i>'); }
     var REG = {}, seq = 0;
     function reg(o) { var id = 'nt' + (++seq); REG[id] = o; return id; }
-    var ACC = ['#5b6ee1', '#2f8fb3', '#c0507a', '#c98a1b', '#3f9a6a', '#7a5bd0'], ACC2 = ['#8a7fd6', '#5b8bd9', '#e08a5e', '#d4706a', '#4cb5a5', '#c98ad0'];
+    var ACC = ['#3b4fc4', '#0e7490', '#a21c5c', '#b45309', '#15803d', '#6d28d9'], ACC2 = ['#5b3fb0', '#1d4ed8', '#c2410c', '#b91c1c', '#0f766e', '#a21caf'];
 
     /* ---------- what the AI is told ---------- */
     window.NOVA_TEACH_RULES = `
@@ -39715,12 +39716,16 @@ Write a short normal introduction before the blocks and a one-line closing after
     /* ---------- voice helper ---------- */
     var vtk = 0;
     function stopV() { try { if (window.NovaStopSpeak) window.NovaStopSpeak(); } catch (e) { } }
-    function say(text, done) {
-        var my = ++vtk, fin1 = false; stopV();
-        var fin = function () { if (fin1 || my !== vtk) return; fin1 = true; if (done) done(); }, ok = false;
-        try { ok = !window.__ncMute && !!(window.NovaSpeak && window.NovaCanSpeak && window.NovaCanSpeak()); } catch (e) { }
-        if (ok) { try { window.NovaSpeak(text, fin); } catch (e) { } setTimeout(fin, Math.min(60000, text.length * 120 + 8000)); }
-        else setTimeout(fin, Math.max(3500, text.length * 65));
+    function showVb() { if (B) ui('.nc-vb').classList.add('on'); }
+    function hideVb() { if (B) ui('.nc-vb').classList.remove('on'); }
+    function say(text, done, onStart) {
+        var my = ++vtk, fin1 = false, st1 = false, heard = false, ok = false; stopV();
+        var start = function () { if (st1 || my !== vtk) return; st1 = true; if (onStart) onStart(); };
+        var real = function () { if (my !== vtk) return; heard = true; hideVb(); start(); };
+        var fin = function () { if (fin1 || my !== vtk) return; fin1 = true; if (ok && !heard) showVb(); start(); if (done) done(); };
+        try { if (!window.__ncMute && window.NovaForceVoice) window.NovaForceVoice(); ok = !window.__ncMute && !!(window.NovaSpeak && window.NovaCanSpeak && window.NovaCanSpeak()); } catch (e) { }
+        if (ok) { try { window.NovaSpeak(text, fin, real); } catch (e) { } setTimeout(start, 5000); setTimeout(fin, Math.min(60000, text.length * 120 + 8000)); }
+        else { start(); setTimeout(fin, Math.max(3500, text.length * 65)); }
     }
 
     function stopHear() { try { if (HR) { HR.onend = HR.onerror = HR.onresult = null; if (HR.abort) HR.abort(); else HR.stop(); } } catch (e) { } HR = null; clearTimeout(stopHear.t); }
@@ -39789,7 +39794,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         }
         return o;
     }
-    var HF = '"Segoe Print","Bradley Hand","Chalkboard SE","Comic Sans MS","Marker Felt",cursive';
+    var HF = '"Segoe Print","Bradley Hand","Chalkboard SE","Comic Sans MS","Marker Felt","Segoe UI",system-ui,sans-serif';
     function bShape(c, sh, p, g) {
         if (sh.t === 'image') { bImg(c, sh, p, g); return; }
         var n = sh.n, X = function (v) { return g.ox + v * g.s; }, Y = function (v) { return g.oy + v * g.s; }, P = null, closed = false, i;
@@ -39804,7 +39809,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         else if (sh.t === 'circle' || sh.t === 'ellipse') { var rx = sh.t === 'circle' ? n[2] : n[2], ry = sh.t === 'circle' ? n[2] : n[3]; P = []; for (i = 0; i <= 56; i++) { var q = -Math.PI / 2 + Math.PI * 2 * i / 56, k = 1 + 0.012 * Math.sin(i * 2.3 + n[0]); P.push([n[0] + rx * k * Math.cos(q), n[1] + ry * k * Math.sin(q)]); } closed = true; }
         else if (sh.t === 'curve') { P = []; for (i = 0; i <= 28; i++) { var t = i / 28, u = 1 - t; P.push([u * u * n[0] + 2 * u * t * n[2] + t * t * n[4], u * u * n[1] + 2 * u * t * n[3] + t * t * n[5]]); } }
         if (P) { bPoly(c, P, p, g); if (sh.f && closed && p > 0.98) { c.save(); c.globalAlpha = 0.16; c.fill(); c.restore(); } return; }
-        c.font = '700 ' + ((n[2] || 4) * g.s * 1.05) + 'px ' + HF; c.textBaseline = 'middle'; c.fillText(sh.s.slice(0, Math.ceil(sh.s.length * p)), X(n[0]), Y(n[1]));
+        c.font = '800 ' + (Math.max(n[2] || 4, 4.4) * g.s * 1.05) + 'px ' + HF; c.textBaseline = 'middle'; c.fillText(sh.s.slice(0, Math.ceil(sh.s.length * p)), X(n[0]), Y(n[1]));
     }
     function slideEl(s, i, n, dir) {
         var ni = s.img.length, lay = s.layout;
@@ -39852,14 +39857,14 @@ Write a short normal introduction before the blocks and a one-line closing after
     function boardPages(d) { return d.steps.map(function (s) { return { title: '', bul: [], img: [], tbl: null, key: '', fm: '', note: s.cap, layout: '', para: [], board: true, keep: !!s.keep, draw: s.sh, ask: s.ask || null }; }); }
     function ui(q) { return B.querySelector(q); }
     function sdur(sh) { return sh.t === 'image' ? 900 : sh.t === 'text' ? Math.min(1200, Math.max(350, sh.s.length * 70)) : 550; }
-    function setSt(m) { if (!B) return; ui('.nc-st').textContent = m; B.classList.toggle('talk', m === 'Teaching'); B.classList.toggle('mic', /^Listening/.test(m)); }
+    function setSt(m) { if (!B) return; var se = ui('.nc-st'); if (se) se.textContent = m; B.classList.toggle('talk', m === 'Teaching'); B.classList.toggle('mic', /^Listening/.test(m)); }
     function log(r, t) { if (!B || !t) return; var l = ui('.nc-log'), e = document.createElement('div'); e.className = 'lg ' + r; e.textContent = t; l.appendChild(e); l.scrollTop = l.scrollHeight; }
-    function capt(t, nolog) { var e = ui('.nc-cap'); e.classList.toggle('on', !!t); e.innerHTML = t ? t.split(/\s+/).map(function (w, k) { return '<em style="animation-delay:' + (k * 0.14).toFixed(2) + 's">' + esc(w) + '</em>'; }).join(' ') : ''; if (t && !nolog) log('t', t); }
+    function capt() { /* subtitles removed */ }
     function studentName() { try { var s = (window.studentsDB || []).find(function (x) { return x.mobile === window.loggedInMobile; }); return (s && (s.name || s.fullName)) || 'You'; } catch (e) { return 'You'; } }
     function showLd(h) { var l = ui('.nc-ld'); l.innerHTML = h; l.classList.add('on'); }
     function hideLd() { ui('.nc-ld').classList.remove('on'); }
     function setT(on) { ui('[data-a=t] i').className = 'fa-solid ' + (on ? 'fa-pause' : 'fa-play'); }
-    function setTool(t) { C.tool = t; B.classList.toggle('draw', t !== 'none'); ['pen', 'hl', 'er'].forEach(function (k) { ui('[data-a=' + k + ']').classList.toggle('on', t === k); }); }
+    function setTool(t) { if (C) C.tool = 'none'; if (B) B.classList.remove('draw'); }
     function cnt() { var n = C.d.pages.length; ui('.nc-ct').textContent = (C.i + 1) + ' / ' + n + (C.done ? '' : '+'); ui('.nc-prog i').style.width = (n ? (C.i + 1) / n * 100 : 0) + '%'; }
     function preload(pages) { pages.forEach(function (p) { (p.draw || []).forEach(function (sh) { if (sh.t === 'image') bLoad(sh.s); }); }); }
 
@@ -39876,11 +39881,16 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
 
     /* ---------- teacher pen (on slides and on board pages) ---------- */
-    function setInk(i) {
-        var P = C.d.pages, p = P[i], k = i; C.base = []; C.ops = []; C.anim = 0; clearTimeout(C.ink);
-        if (p.board) { C.mode = 'b'; while (k > 0 && P[k].keep && P[k - 1].board) k--; for (var j = k; j < i; j++) C.base = C.base.concat(P[j].draw || []); C.ops = (p.draw || []).slice(); C.anim = performance.now(); }
-        else { C.mode = 's'; C.ink = setTimeout(function () { autoOps(i); }, 900); }
+    function setInk(i, hold) {
+        var P = C.d.pages, p = P[i], k = i; C.base = []; C.ops = []; C.anim = 0; clearTimeout(C.tm); C.hold = !!hold;
+        if (p.board) { C.mode = 'b'; while (k > 0 && P[k].keep && P[k - 1].board) k--; for (var j = k; j < i; j++) C.base = C.base.concat(P[j].draw || []); C.ops = (p.draw || []).slice(); if (!hold) C.anim = performance.now(); }
+        else { C.mode = 's'; if (!hold) C.tm = setTimeout(function () { autoOps(i); }, 900); }
         paintT();
+    }
+    /* the teacher's pen starts at the very moment her voice starts */
+    function releaseInk(i) {
+        if (!C || C.i !== i || !C.hold) return; C.hold = false;
+        if (C.mode === 'b') { C.anim = performance.now(); paintT(); } else { clearTimeout(C.tm); C.tm = setTimeout(function () { autoOps(i); }, 300); }
     }
     function autoOps(i) {
         if (!C || C.i !== i) return; var p = C.d.pages[i], el = ui('.nc-pg .nt-sl'); if (!el) return;
@@ -39898,10 +39908,10 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     function paintT() {
         if (!C || !C.W) return; var c = C.tc.getContext('2d'), W = C.W, H = C.H; c.clearRect(0, 0, W, H);
-        var s = Math.min(W / 100, H / 60), g = C.mode === 'b' ? { s: s, ox: (W - 100 * s) / 2, oy: (H - 60 * s) / 2 } : { s: 1, ox: 0, oy: 0 };
+        var TS = 74, s = Math.min(W / 100, (H - TS - 10) / 60), g = C.mode === 'b' ? { s: s, ox: (W - 100 * s) / 2, oy: TS + ((H - TS - 10) - 60 * s) / 2 } : { s: 1, ox: 0, oy: 0 };
         c.lineCap = c.lineJoin = 'round'; var busy = false, tip = null, tipC = '#111827', acc = 0, now = performance.now(), t = C.anim ? now - C.anim : 1e9;
         C.base.forEach(function (sh) { bShape(c, sh, 1, g); });
-        C.ops.forEach(function (sh) { var du = sdur(sh), a0 = sh.at != null ? sh.at : acc, p = Math.max(0, Math.min(1, (t - a0) / du)); acc += du; if (p > 0) bShape(c, sh, p, g); if (p > 0 && p < 1) { tip = bTip(sh, p, g); tipC = sh.c || '#5b6ee1'; } if (p < 1) busy = true; });
+        (C.hold ? [] : C.ops).forEach(function (sh) { var du = sdur(sh), a0 = sh.at != null ? sh.at : acc, p = Math.max(0, Math.min(1, (t - a0) / du)); acc += du; if (p > 0) bShape(c, sh, p, g); if (p > 0 && p < 1) { tip = bTip(sh, p, g); tipC = sh.c || '#5b6ee1'; } if (p < 1) busy = true; });
         if (tip && busy) { var w = C.mode === 'b' ? Math.max(8, s * 1.7) : 14, L = w * 6; c.save(); c.translate(tip[0], tip[1]); c.rotate(-0.85); c.beginPath(); c.moveTo(0, 0); c.lineTo(w * 1.3, -w * 0.38); c.lineTo(w * 1.3, w * 0.38); c.closePath(); c.fillStyle = tipC; c.fill(); c.fillStyle = '#f1f5f9'; c.strokeStyle = '#94a3b8'; c.lineWidth = 1.5; c.fillRect(w * 1.3, -w / 2, L, w); c.strokeRect(w * 1.3, -w / 2, L, w); c.fillStyle = tipC; c.fillRect(w * 1.3 + L - w * 1.2, -w / 2, w * 1.2, w); c.restore(); }
         if (busy) { cancelAnimationFrame(C.raf); C.raf = requestAnimationFrame(paintT); } else if (C.anim) { C.anim = 0; var f = C.onEnd; C.onEnd = null; if (f) f(); }
     }
@@ -39917,19 +39927,20 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
 
     /* ---------- pages ---------- */
-    function go(i, dir, quiet) {
+    function go(i, dir, quiet, hold) {
         var P = C.d.pages; if (!P.length) return; i = Math.max(0, Math.min(P.length - 1, i)); if (!C.W) fit(); C.i = i; var p = P[i], pg = ui('.nc-pg'); pg.innerHTML = '';
         if (p.board) { var el = document.createElement('div'); el.className = 'nc-paper'; el.innerHTML = p.title ? '<span>' + inl(p.title) + '</span>' : ''; pg.appendChild(el); } else pg.appendChild(slideEl(p, i, P.length, dir || 1));
-        setInk(i); cnt(); paintS(); if (!quiet) log('s', (i + 1) + '. ' + (p.title || C.d.title));
+        setInk(i, hold); cnt(); paintS();
     }
     function stopAuto() { if (!C) return; C.auto = false; btk++; vtk++; stopV(); stopHear(); setT(false); setSt('Paused'); hideQ(); }
     function teach(i) {
-        var my = ++btk, p = C.d.pages[i]; C.auto = true; setT(true); go(i, 1); setSt('Teaching'); if (i >= C.d.pages.length - 3) more();
+        var my = ++btk, p = C.d.pages[i], rel = false; C.auto = true; setT(true); go(i, 1, false, true); setSt('Teaching'); if (i >= C.d.pages.length - 3) more();
+        var rl = function () { if (rel || my !== btk || !C) return; rel = true; releaseInk(i); };
         var need = (p.note ? 1 : 0) + (p.board && p.draw && p.draw.length ? 1 : 0);
         function fin() { if (my !== btk || !C.auto) return; if (--need > 0) return; setTimeout(function () { if (my === btk && C.auto) quiz(p, my, function () { next(my); }); }, 500); }
         if (!need) { need = 1; setTimeout(fin, 2500); }
         if (p.board && p.draw && p.draw.length) C.onEnd = fin;
-        if (p.note) { capt(p.note); say(p.note, fin); }
+        if (p.note) say(p.note, fin, rl); else rl();
     }
     function next(my) {
         if (!C || my !== btk || !C.auto) return;
@@ -40020,10 +40031,10 @@ Write a short normal introduction before the blocks and a one-line closing after
     function init(cfg, d) {
         build(); stopHear(); btk++; vtk++; stopV(); cancelAnimationFrame(C && C.raf);
         C = { cfg: cfg, d: d || { title: cfg.topic, pages: [] }, i: -1, auto: false, ink: {}, tool: 'none', col: PEN[2], z: 5, hand: false, score: { r: 0, t: 0 }, parts: 1, done: !!d, busy: false, base: [], ops: [], tc: ui('.tc'), sc: ui('.sc') };
-        window.__ncMute = cfg.voice === false;
+        window.__ncMute = cfg.voice === false; if (!window.__ncMute && window.NovaForceVoice) window.NovaForceVoice();
         var T = TYPES.filter(function (x) { return x[0] === cfg.type; })[0] || TYPES[0];
         ui('.nc-tt b').textContent = C.d.title; ui('.nc-ty').textContent = T[2]; ui('.nc-log').innerHTML = ''; ui('.nc-pg').innerHTML = ''; ui('.nc-ct').textContent = ''; ui('.nc-prog i').style.width = '0';
-        ui('.y b').textContent = studentName().charAt(0).toUpperCase(); capt(''); hideQ(); hideLd(); setT(false); setTool('none'); B.classList.remove('hand', 'side'); setSt('Paused'); B.classList.add('on');
+        hideQ(); hideVb(); hideLd(); setT(false); setTool('none'); B.classList.remove('hand', 'side'); setSt('Paused'); B.classList.add('on');
         requestAnimationFrame(function () { fit(); });
     }
     function begin(cfg) {
@@ -40044,13 +40055,11 @@ Write a short normal introduction before the blocks and a one-line closing after
     function build() {
         if (B) return B; B = document.createElement('div'); B.id = 'nc'; B.className = 'nc';
         var tk = function (a, ic, t) { return '<button type="button" class="nc-b" data-a="' + a + '" aria-label="' + t + '" title="' + t + '"><i class="fa-solid ' + ic + '"></i></button>'; };
-        B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-tt"><b></b><small><i class="nc-dot"></i>LIVE \u00b7 <span class="nc-ty"></span></small></div><span class="nc-ct"></span>' + tk('side', 'fa-comments', 'Class chat') + '</div>'
-            + '<div class="nc-main"><div class="nc-stage"><div class="nc-sw"><div class="nc-pg"></div><canvas class="tc"></canvas><canvas class="sc"></canvas></div><div class="nc-cap"></div><div class="nc-hb"><i class="fa-solid fa-hand"></i> Hand raised</div><div class="nc-q"></div><div class="nc-ld"></div></div>'
-            + '<aside class="nc-side"><div class="nc-tiles"><div class="nc-tile t"><img src="' + NOVA_IMG + '" alt=""><span>NOVA \u00b7 Teacher</span><em class="nc-st">Paused</em></div><div class="nc-tile y"><b></b><span>You</span></div></div><div class="nc-log"></div><form class="nc-fm"><input placeholder="Type a doubt for the teacher\u2026" autocomplete="off"><button type="submit" class="nc-b go" aria-label="Ask"><i class="fa-solid fa-arrow-up"></i></button></form></aside></div>'
+        B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-tt"><b></b><small><i class="nc-dot"></i>LIVE \u00b7 <span class="nc-ty"></span> \u00b7 <span class="nc-st">Paused</span></small></div><span class="nc-ct"></span>' + tk('side', 'fa-comments', 'Comments and doubts') + '</div>'
+            + '<div class="nc-main"><div class="nc-stage"><div class="nc-sw"><div class="nc-pg"></div><canvas class="tc"></canvas><canvas class="sc"></canvas></div><div class="nc-hb"><i class="fa-solid fa-hand"></i> Hand raised</div><button type="button" class="nc-vb" data-a="vfix"><i class="fa-solid fa-volume-high"></i> Tap to turn on voice</button><div class="nc-q"></div><div class="nc-ld"></div></div>'
+            + '<aside class="nc-side"><div class="nc-sh"><b>Comments &amp; doubts</b>' + tk('side', 'fa-xmark', 'Close') + '</div><div class="nc-log"></div><form class="nc-fm"><input placeholder="Type a comment or doubt\u2026" autocomplete="off"><button type="submit" class="nc-b go" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></form></aside></div>'
             + '<div class="nc-prog"><i></i></div><div class="nc-dock">' + tk('p', 'fa-backward-step', 'Previous') + tk('t', 'fa-play', 'Teach') + tk('n', 'fa-forward-step', 'Next')
-            + '<button type="button" class="nc-b hand" data-a="hand"><i class="fa-solid fa-hand"></i><span>Raise hand</span></button><span class="nc-sep"></span>'
-            + tk('pen', 'fa-pen', 'Pen') + tk('hl', 'fa-highlighter', 'Highlighter') + tk('er', 'fa-eraser', 'Eraser')
-            + PEN.map(function (c, i) { return '<button type="button" class="nc-c1' + (i === 2 ? ' on' : '') + '" data-a="col" data-c="' + c + '" style="background:' + c + '" aria-label="Pen colour"></button>'; }).join('') + tk('un', 'fa-rotate-left', 'Undo') + tk('cl', 'fa-trash-can', 'Clear my drawing') + '</div>';
+            + '<button type="button" class="nc-b hand" data-a="hand"><i class="fa-solid fa-hand"></i><span>Raise hand</span></button></div>';
         document.body.appendChild(B);
         B.addEventListener('click', function (e) {
             var o = e.target.closest('[data-k]'); if (o && C && C.qs && C.qs.onPick) { C.qs.onPick(+o.getAttribute('data-k')); return; }
@@ -40061,7 +40070,7 @@ Write a short normal introduction before the blocks and a one-line closing after
             else if (a === 'col') { C.col = b.getAttribute('data-c'); B.querySelectorAll('.nc-c1').forEach(function (x) { x.classList.toggle('on', x === b); }); if (C.tool === 'none' || C.tool === 'er') setTool('pen'); }
             else if (a === 'un') { (C.ink[C.i] || []).pop(); paintS(); } else if (a === 'cl') { C.ink[C.i] = []; paintS(); }
             else if (a === 'qgo') { var i = ui('.nc-q input'); submitQ(i && i.value); } else if (a === 'qmic') listen(); else if (a === 'qskip') { if (C.qs && C.qs.onSkip) C.qs.onSkip(); }
-            else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
+            else if (a === 'vfix') { hideVb(); if (window.NovaForceVoice) window.NovaForceVoice(); if (C.d.pages.length) teach(Math.max(0, C.i)); } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
         });
         ui('.nc-fm').addEventListener('submit', function (e) { e.preventDefault(); var i = ui('.nc-fm input'), v = i.value.trim(); if (!v || !C || !C.d.pages.length) return; i.value = ''; var was = C.auto; stopAuto(); C.hand = true; B.classList.add('hand'); doubt(v, was); });
         var sc = ui('.sc'), cur = null, sx = 0, st = ui('.nc-stage');
@@ -40249,15 +40258,6 @@ Write a short normal introduction before the blocks and a one-line closing after
 .nc-sep{width:1px;height:26px;background:rgba(255,255,255,.2)}
 .nc-c1{width:26px;height:26px;border-radius:50%;border:3px solid rgba(255,255,255,.35);padding:0;cursor:pointer;flex:none}.nc-c1.on{border-color:#fff;transform:scale(1.15)}
 @media(max-width:700px){.nc-sep{flex-basis:100%;height:0}}
-@media(min-width:900px) and (min-height:521px){
- .nc-main{flex-direction:row;gap:10px;padding-right:10px}.nc-stage{flex:1;margin-right:0}
- .nc-side{display:flex;position:static;width:330px;height:auto;border-radius:18px;box-shadow:none;flex:none}[data-a=side]{display:none}
- .nc-cap{font-size:14px}.nc-sep{flex-basis:auto;height:26px}}
-@media(orientation:landscape) and (max-height:520px){
- .nc.on{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto 1fr auto}
- .nc-top{grid-column:1;padding:4px 10px}.nc-main{grid-column:1;grid-row:2}.nc-prog{grid-column:1;grid-row:3;margin:6px 12px}
- .nc-dock{grid-column:2;grid-row:1/4;flex-direction:column;flex-wrap:nowrap;justify-content:flex-start;overflow-y:auto;padding:8px}.nc-sep{flex-basis:auto;width:26px;height:1px}
- .nc-b.hand span{display:none}.nc-b.hand{padding:0;width:40px;justify-content:center}.nc-side{height:100%;width:60%;left:auto;border-radius:18px 0 0 18px}.nc-cap{font-size:12px}}
 /* ===== topic + class type popup ===== */
 .ns{position:fixed;inset:0;z-index:100003;display:none;align-items:flex-end;justify-content:center;background:rgba(15,23,42,.55);backdrop-filter:blur(4px)}
 .ns.on{display:flex}
@@ -40279,6 +40279,51 @@ Write a short normal introduction before the blocks and a one-line closing after
 .ns-go{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:14px;padding:13px 18px;background:#5b6ee1;color:#fff;font:800 15px system-ui;cursor:pointer}.ns-c .ns-go{width:100%;margin-top:16px}
 .ns-go.alt{background:rgba(255,255,255,.14)}.ns-go:active{transform:scale(.98)}
 @media(prefers-reduced-motion:reduce){.nc-dot,.nc-spin,.nc-cap em{animation:none;opacity:1}}
+
+/* ===== NOVA Class v3: clean classroom look, notch safe, comments-only panel ===== */
+.nc{background:radial-gradient(120% 80% at 50% 0%,#26335f 0%,#141c33 58%,#0b1020 100%);padding-top:env(safe-area-inset-top,0px);padding-right:max(env(safe-area-inset-right,0px),10px);padding-bottom:max(env(safe-area-inset-bottom,0px),12px);padding-left:max(env(safe-area-inset-left,0px),10px)}
+@media(pointer:coarse){.nc{padding-top:max(env(safe-area-inset-top,0px),30px)}}
+.nc-top{padding:6px 2px 8px;gap:10px}.nc-tt b{font-size:15px;font-weight:800}
+.nc-stage{margin:0;border-radius:20px;background:#e9edf6;box-shadow:0 16px 44px rgba(0,0,0,.45)}
+.nc-sw{background:#f3f5fb}
+.nc-prog{margin:10px 6px 0}
+.nc-dock{gap:14px;padding:12px 6px 2px}
+.nc-b{width:46px;height:46px;font-size:16px}[data-a=t]{width:60px;height:60px;font-size:21px;box-shadow:0 8px 20px rgba(91,110,225,.55)}
+.nc-b.hand{height:46px;padding:0 18px;font-size:14px}
+.nc-paper{background:#fbfaf4 repeating-linear-gradient(0deg,transparent 0 39px,rgba(91,110,225,.06) 39px 40px);border:12px solid #c5ccd9}
+.nc-paper span{left:28px;top:12px;font:800 34px system-ui,"Segoe UI",sans-serif;color:#1e293b;border-bottom:4px solid #dc2626;padding-bottom:4px}
+.nc-vb{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:8px;border:0;border-radius:99px;padding:10px 16px;background:#e9b44c;color:#3b2a05;font:800 13px system-ui;cursor:pointer;box-shadow:0 8px 20px rgba(0,0,0,.35)}.nc-vb.on{display:flex}
+.nc-q{bottom:12px;left:12px;right:12px}
+.nc-side{display:none;flex-direction:column;position:absolute;left:0;right:0;bottom:0;height:56%;background:#fff;color:#1e293b;border-radius:20px 20px 0 0;z-index:7;box-shadow:0 -12px 30px rgba(0,0,0,.35);overflow:hidden}
+.nc.side .nc-side{display:flex}
+.nc-sh{display:flex;align-items:center;justify-content:space-between;padding:10px 10px 6px 16px;flex:none}.nc-sh b{font:800 14px system-ui}
+.nc-sh .nc-b{width:34px;height:34px;font-size:13px;background:#eef1fb;color:#3b4a9e}
+.nc-log{padding:0 14px 6px}.lg{background:#eef1fb;color:#1e293b}.lg.y{background:#5b6ee1;color:#fff}.lg.s{background:none;color:#64748b}
+.nc-fm{padding:8px 12px 12px;flex:none}.nc-fm input{background:#f1f4fb;color:#1e293b}
+@media(min-width:900px){.nc-side{left:auto;right:14px;bottom:14px;width:400px;height:60%;border-radius:20px}}
+@media(orientation:landscape) and (max-height:520px){
+ .nc.on{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto 1fr auto}
+ .nc-top{grid-column:1;padding:2px 2px 4px}.nc-main{grid-column:1;grid-row:2}.nc-prog{grid-column:1;grid-row:3;margin:6px 4px 0}
+ .nc-dock{grid-column:2;grid-row:1/4;flex-direction:column;flex-wrap:nowrap;justify-content:center;padding:4px 6px 4px 12px}
+ .nc-b.hand span{display:none}.nc-b.hand{padding:0;width:46px;justify-content:center}
+ .nc-side{height:100%;width:60%;left:auto;border-radius:20px 0 0 20px}}
+/* slides: dark text on a light page, coloured title band, strong contrast everywhere */
+.nc .nt-sl{background:#f3f5fb;color:#0f172a}
+.nc .nt-sl h2{background:var(--a);color:#fff;padding:.38em .7em;border-radius:.4em;font-size:1.45em;line-height:1.2}
+.nc .nt-sl h2::after{display:none}
+.nc .nt-kick{color:var(--a)}
+.nc .nt-sl p{color:#1e293b;font-weight:600}
+.nc .nt-sl li{color:#0f172a;font-weight:700}
+.nc .nt-key{background:#fff;color:#0f172a;border:2px solid var(--a);border-left-width:9px}
+.nc .nt-fm{background:#0f172a;color:#fde68a}
+.nc .l-cover{background:linear-gradient(135deg,var(--a),var(--a2));color:#fff}
+.nc .l-cover h2{background:none;padding:0;color:#fff;font-size:2.05em}
+.nc .l-cover .nt-kick,.nc .l-cover p,.nc .l-cover li{color:#fff}
+.nc .l-full{color:#fff}.nc .l-full .nt-im::after{background:linear-gradient(180deg,rgba(2,6,23,.3),rgba(2,6,23,.93))}
+.nc .l-full h2{background:none;padding:0;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.nc .l-full .nt-kick,.nc .l-full p,.nc .l-full li{color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+.nc .l-full .nt-key{background:rgba(255,255,255,.96);color:#0f172a;text-shadow:none}
+.nc .l-center h2{font-size:1.8em}
 </style>
 
 <script id="nv2-js">
