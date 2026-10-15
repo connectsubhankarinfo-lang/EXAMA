@@ -36804,7 +36804,8 @@ function chunks(t) {
    localStorage nova_tts=0 turns spoken answers off. */
 var TTS_ON = store.get('nova_tts') !== '0', ttsAudio = null, ttsTimer = null, ttsSeq = 0;
 /* answer text and voice appear together: the text waits (max SYNC_MAX ms) until the first sound really starts, spoke() = "sound started" */
-var SYNC_MAX = 1800, startCb = null, sayTok = 0;
+var SYNC_MAX = 1800, startCb = null, sayTok = 0, chunkHook = null, soundCb = null;
+function started() { var f = soundCb; soundCb = null; if (f) { try { f(); } catch (e) { } } }
 function spoke() { var f = startCb; startCb = null; if (f) { try { f(); } catch (e) { } } }
 var warmed = {};
 function warm() {   /* open the connections to the AI and voice servers early, so the first answer and its audio do not wait for a handshake */
@@ -36863,8 +36864,8 @@ function playTTS(txt, onEnd, isEnded) {
         if (over || isEnded()) return; clearTimeout(ttsTimer);
         if (k >= urls.length) return finish(false);
         var my = ++ttsSeq, adv = function () { if (my === ttsSeq) tryNext(); };      /* each attempt advances at most once */
-        a.onended = function () { if (my === ttsSeq) finish(true); }; a.onerror = adv; a.onplaying = function () { if (my === ttsSeq) { clearTimeout(ttsTimer); spoke(); } };
-        a.src = urls[k++]; ttsTimer = setTimeout(adv, 15000);     /* never started: try the next voice */
+        a.onended = function () { if (my === ttsSeq) finish(true); }; a.onerror = adv; a.onplaying = function () { if (my === ttsSeq) { clearTimeout(ttsTimer); spoke(); started(); } };
+        a.src = urls[k++]; ttsTimer = setTimeout(adv, 7000);     /* never started: try the next voice */
         try { var p = a.play(); if (p && p.catch) p.catch(function (e) { if (my !== ttsSeq) return; var n = e && e.name; if (n === 'NotAllowedError') finish('blocked'); else if (n !== 'AbortError') tryNext(); }); } catch (e) { tryNext(); }
     }
     if (pre) pre.then(function (b) { if (over || isEnded()) return; if (b) urls.unshift(b); tryNext(); }); else tryNext();
@@ -36876,7 +36877,7 @@ function nativeSay(txt, cb) {
     function end(r) { if (over) return; over = true; clearTimeout(tmr); clearInterval(poll); stopNativeFn = null; cb(r); }
     try { u = new SpeechSynthesisUtterance(txt); } catch (e) { return cb(false); }
     v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = LANG; u.rate = 1.03; u.pitch = 1;
-    u.onstart = function () { gs = true; spoke(); }; u.onend = u.onerror = function () { end(true); };
+    u.onstart = function () { gs = true; spoke(); started(); }; u.onend = u.onerror = function () { end(true); };
     tmr = setTimeout(function () { if (gs) return; try { speechSynthesis.cancel(); } catch (e) { } end(false); }, 2500);      /* built-in voice never started */
     /* many phones never fire onend: if the voice engine went quiet after speaking, move on ourselves */
     poll = setInterval(function () { try { if (gs && Date.now() - t0 > 900 && !speechSynthesis.speaking && !speechSynthesis.pending) end(true); } catch (e) { } }, 350);
@@ -36886,7 +36887,7 @@ function nativeSay(txt, cb) {
 var stopSpeakFn = null;
 function stopSpeak() { ttsStop(); stopNative(); speaking = false; if (stopSpeakFn) { var f = stopSpeakFn; stopSpeakFn = null; try { f(); } catch (e) { } } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
 function speak(text, done, onStart) {
-    var t = clean(text); stopSpeak(); startCb = onStart || null;
+    var t = clean(text); stopSpeak(); startCb = onStart || null; chunkHook = null; soundCb = null;
     if (!t || (!nativeOk() && !ttsOk())) { spoke(); phase = 'idle'; if (done) setTimeout(done, 200); return; }
     killRec(); engStop(); phase = 'speak'; speaking = true; if (onStart) setState('think', 'Thinking\u2026'); else setState('speak', 'Speaking\u2026');
     var parts = chunks(t), i = 0, ended = false, lastTry = false, forceNative = false;
@@ -36909,6 +36910,7 @@ function speak(text, done, onStart) {
     function next() {
         if (ended) return; if (i >= parts.length) return fin();
         var cur = parts[i++]; if (!nativeOk()) { ttsPrefetch(parts[i]); ttsPrefetch(parts[i + 1]); }
+        if (chunkHook) { try { chunkHook(i - 1, parts.length); } catch (e) { } }
         one(cur, function (r) {
             if (ended) return;
             if (r === 'blocked') { blockedHint(text); return fin(); }
@@ -37892,7 +37894,7 @@ fabUpdate();
 /* speak a text with Nova's real audio voice, without opening the Nova popup (used by the NOVA chat screen) */
 window.NovaStopSpeak = function () { try { stopSpeak(); } catch (e) { } };
 window.NovaCanSpeak = function () { try { return !!(nativeOk() || ttsOk()); } catch (e) { return false; } };
-window.NovaSpeak = function (t, cb, onStart) { var c = clean(String(t == null ? '' : t).replace(/\[IMAGES?:[^\]]*\]/gi, '')); if (c.length > 2400) { var cut = c.slice(0, 2400).replace(/[^.!?]*$/, ''); c = cut || c.slice(0, 2400); } if (c) { speak(c, cb); if (onStart) startCb = onStart; } else if (cb) setTimeout(cb, 50); };
+window.NovaSpeak = function (t, cb, onStart, onChunk) { var c = clean(String(t == null ? '' : t).replace(/\[IMAGES?:[^\]]*\]/gi, '')); if (c.length > 2400) { var cut = c.slice(0, 2400).replace(/[^.!?]*$/, ''); c = cut || c.slice(0, 2400); } if (c) { speak(c, cb); if (onStart) soundCb = onStart; if (onChunk) chunkHook = onChunk; } else if (cb) setTimeout(cb, 50); };
 window.NovaForceVoice = function () { try { if (!TTS_ON) TTS_ON = true; ttsUnlock(); } catch (e) { } };
 /* right after login: start hearing "Hey Nova" straight away (the login tap already counts as the user gesture) */
 window.__novaLoggedIn = function () {
@@ -39288,15 +39290,21 @@ html.g-lock #run-tracker, html.g-lock #run-tracker * { touch-action: pan-y !impo
         });
     }
     function commons(q) {
-        var u = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrnamespace=6&gsrlimit=10&gsrsearch=' + encodeURIComponent(q + ' filetype:bitmap') + '&prop=imageinfo&iiprop=url%7Csize%7Cmime&iiurlwidth=640';
+        var u = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrnamespace=6&gsrlimit=10&gsrsearch=' + encodeURIComponent(q + ' filetype:bitmap|drawing') + '&prop=imageinfo&iiprop=url%7Csize%7Cmime&iiurlwidth=640';
         return jget(u).then(function (d) {
             var p = d && d.query && d.query.pages; if (!p) return [];
             return Object.keys(p).map(function (k) { return p[k]; }).sort(function (a, b) { return (a.index || 0) - (b.index || 0); })
-                .filter(function (x) { var i = x.imageinfo && x.imageinfo[0]; return i && (i.thumburl || i.url) && /^image\/(jpeg|png|webp)/.test(i.mime || '') && (i.width || 0) >= 300; })
+                .filter(function (x) { var i = x.imageinfo && x.imageinfo[0]; return i && (i.thumburl || i.url) && /^image\/(jpeg|png|webp|svg\+xml)/.test(i.mime || '') && (i.width || 0) >= 300; })
                 .map(function (x) { var i = x.imageinfo[0]; return { src: i.thumburl || i.url, title: String(x.title || '').replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, '').replace(/_/g, ' '), page: i.descriptionurl, host: 'commons.wikimedia.org' }; });
         });
     }
     function resolve(q) {
+        return resolve0(q).then(function (o) {
+            if (o && o.length) return o; var w = String(q).replace(/[^\w\s]/g, ' ').split(/\s+/).filter(Boolean); if (w.length < 3) return o || [];
+            return resolve0(w.slice(0, Math.min(3, w.length - 1)).join(' ')).then(function (o2) { if (o2 && o2.length) cacheSet(q, o2); return o2 || []; });
+        });
+    }
+    function resolve0(q) {
         var c = cacheGet(q); if (c) return Promise.resolve(c);
         return Promise.all([wiki(q), commons(q)]).then(function (r) {
             var w = r[0] || [], c2 = r[1] || [], out = [], seen = {};
@@ -39697,13 +39705,13 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
 
     /* ---------- pictures ---------- */
-    function pic(cell, q, k, cb) {
-        if (!window.NovaImages) { cell.classList.remove('ld'); cell.classList.add('no'); return; }
+    function pic(cell, q, k, cb, fb) {
+        if (!window.NovaImages) { cell.classList.remove('ld'); cell.classList.add('no'); if (fb) fb(); return; }
         window.NovaImages.resolve(q).then(function (it) {
-            if (!it || !it[k || 0]) { cell.classList.remove('ld'); cell.classList.add('no'); return; }
+            if (!it || !it[k || 0]) { cell.classList.remove('ld'); cell.classList.add('no'); if (fb) fb(); return; }
             var im = new Image(); im.referrerPolicy = 'no-referrer'; im.alt = q;
             im.onload = function () { cell.classList.remove('ld'); cell.insertBefore(im, cell.firstChild); if (cb) cb(it[k || 0]); };
-            im.onerror = function () { cell.classList.remove('ld'); cell.classList.add('no'); };
+            im.onerror = function () { cell.classList.remove('ld'); cell.classList.add('no'); if (fb) fb(); };
             im.src = it[k || 0].src; cell.onclick = function () { if (window.NovaImages.open) window.NovaImages.open(it, k || 0, q); };
         });
     }
@@ -39718,14 +39726,22 @@ Write a short normal introduction before the blocks and a one-line closing after
     function stopV() { try { if (window.NovaStopSpeak) window.NovaStopSpeak(); } catch (e) { } }
     function showVb() { if (B) ui('.nc-vb').classList.add('on'); }
     function hideVb() { if (B) ui('.nc-vb').classList.remove('on'); }
-    function say(text, done, onStart) {
-        var my = ++vtk, fin1 = false, st1 = false, heard = false, ok = false; stopV();
+    /* voice + pictures start together. If no sound within a few seconds the class never freezes: it reads the words on screen and keeps going. */
+    function say(text, done, onStart, onChunk) {
+        var my = ++vtk, fin1 = false, st1 = false, heard = false, ok = false, quietOn = false, simT = [], deadT = 0, t0 = Date.now(); stopV();
         var start = function () { if (st1 || my !== vtk) return; st1 = true; if (onStart) onStart(); };
-        var real = function () { if (my !== vtk) return; heard = true; hideVb(); start(); };
-        var fin = function () { if (fin1 || my !== vtk) return; fin1 = true; if (ok && !heard) showVb(); start(); if (done) done(); };
+        var sim = function (ms) { if (!onChunk) return; var pr = text.match(/[^.!?]+[.!?]*/g) || [text], tot = text.length || 1, acc = 0; pr.forEach(function (x, k) { var at = acc / tot * ms; acc += x.length; simT.push(setTimeout(function () { if (my === vtk) onChunk(k, pr.length); }, at)); }); };
+        var quiet = function () { quietOn = true; ok = false; clearTimeout(deadT); if (C) C.capOn = true; capt(text); if (!window.__ncMute) showVb(); start(); var ms = Math.max(3500, text.length * 65); sim(ms); setTimeout(fin, ms); };
+        var real = function () { if (my !== vtk) return; heard = true; clearTimeout(deadT); if (C) { C.vf = 0; C.capOn = false; } capt(''); hideVb(); start(); };
+        var fin = function () { if (fin1 || my !== vtk) return; if (ok && !heard && !quietOn) { quiet(); return; } fin1 = true; clearTimeout(deadT); simT.forEach(clearTimeout); start(); if (done) done(); };
         try { if (!window.__ncMute && window.NovaForceVoice) window.NovaForceVoice(); ok = !window.__ncMute && !!(window.NovaSpeak && window.NovaCanSpeak && window.NovaCanSpeak()); } catch (e) { }
-        if (ok) { try { window.NovaSpeak(text, fin, real); } catch (e) { } setTimeout(start, 5000); setTimeout(fin, Math.min(60000, text.length * 120 + 8000)); }
-        else { start(); setTimeout(fin, Math.max(3500, text.length * 65)); }
+        if (ok && C && C.vf >= 2) ok = false;
+        if (ok) {
+            try { window.NovaSpeak(text, fin, real, onChunk ? function (k, n) { if (my === vtk) onChunk(k, n); } : null); } catch (e) { }
+            setTimeout(start, 5000);
+            deadT = setTimeout(function () { if (heard || fin1 || my !== vtk) return; if (C) C.vf = (C.vf || 0) + 1; try { if (window.NovaStopSpeak) window.NovaStopSpeak(); } catch (e) { } quiet(); }, 14000);
+            setTimeout(fin, Math.min(60000, text.length * 120 + 8000));
+        } else quiet();
     }
 
     function stopHear() { try { if (HR) { HR.onend = HR.onerror = HR.onresult = null; if (HR.abort) HR.abort(); else HR.stop(); } } catch (e) { } HR = null; clearTimeout(stopHear.t); }
@@ -39809,7 +39825,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         else if (sh.t === 'circle' || sh.t === 'ellipse') { var rx = sh.t === 'circle' ? n[2] : n[2], ry = sh.t === 'circle' ? n[2] : n[3]; P = []; for (i = 0; i <= 56; i++) { var q = -Math.PI / 2 + Math.PI * 2 * i / 56, k = 1 + 0.012 * Math.sin(i * 2.3 + n[0]); P.push([n[0] + rx * k * Math.cos(q), n[1] + ry * k * Math.sin(q)]); } closed = true; }
         else if (sh.t === 'curve') { P = []; for (i = 0; i <= 28; i++) { var t = i / 28, u = 1 - t; P.push([u * u * n[0] + 2 * u * t * n[2] + t * t * n[4], u * u * n[1] + 2 * u * t * n[3] + t * t * n[5]]); } }
         if (P) { bPoly(c, P, p, g); if (sh.f && closed && p > 0.98) { c.save(); c.globalAlpha = 0.16; c.fill(); c.restore(); } return; }
-        c.font = '800 ' + (Math.max(n[2] || 4, 4.4) * g.s * 1.05) + 'px ' + HF; c.textBaseline = 'middle'; c.fillText(sh.s.slice(0, Math.ceil(sh.s.length * p)), X(n[0]), Y(n[1]));
+        var fz = Math.max(n[2] || 4, 4.4) * g.s * 1.05; c.font = '800 ' + fz + 'px ' + HF; var tw = c.measureText(sh.s).width, room = g.ox + 100 * g.s - X(n[0]) - 4; if (tw > room && room > 20) { fz = fz * room / tw; c.font = '800 ' + fz + 'px ' + HF; } c.textBaseline = 'middle'; c.fillText(sh.s.slice(0, Math.ceil(sh.s.length * p)), X(n[0]), Y(n[1]));
     }
     function slideEl(s, i, n, dir) {
         var ni = s.img.length, lay = s.layout;
@@ -39833,7 +39849,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         }
         el.innerHTML = tx + im;
         el.querySelectorAll('.nt-gi').forEach(function (g) {
-            pic(g, g.getAttribute('data-q'), +g.getAttribute('data-k'), function (it) { var cr = document.createElement('span'); cr.className = 'nt-cr'; cr.textContent = it.host || ''; g.appendChild(cr); });
+            pic(g, g.getAttribute('data-q'), +g.getAttribute('data-k'), function (it) { var cr = document.createElement('span'); cr.className = 'nt-cr'; cr.textContent = it.host || ''; g.appendChild(cr); }, function () { noImg(el); });
         });
         return el;
     }
@@ -39852,14 +39868,14 @@ Write a short normal introduction before the blocks and a one-line closing after
         + '[CLASS: lesson title]\n## Slide title\n- short bullet, max 10 words\n- short bullet\n[IMAGE: specific english picture search query]\n[KEY: one key line]\n[FORMULA: x = y]\n[PEN: 1, 2, key]\n[SAY: what you say aloud, 3 to 5 warm spoken sentences with natural pauses like okay, now look here]\n[ASK: question to the student | short model answer]\n---\n'
         + '## Whiteboard page title\n[BOARD]\n[SAY: what you say while drawing, 3 to 5 spoken sentences]\nline x1 y1 x2 y2 color\narrow x1 y1 x2 y2 color\nrect x y w h color\ncircle cx cy r color\nellipse cx cy rx ry color\ncurve x1 y1 cx cy x2 y2 color\npoly x1 y1 x2 y2 x3 y3 color\ntext x y "words" color size\nimage x y w h "specific english picture search query"\n[KEEP]\n---\n'
         + '## Quick check\n[SAY: one sentence]\n[MCQ: question | option A | option B | option C | option D | number of the correct option 1 to 4 | one line why]\n[/CLASS]\n\n'
-        + 'Rules: every page needs [SAY:] and pages are separated by a line of ---. A slide page has a title, 2 to 4 bullets and usually one [IMAGE:]. [PEN:] lists what your pen underlines while you speak (max 3): bullet numbers, key, fm, img. A [BOARD] page has no bullets: you draw on a board 100 wide and 60 high, origin top-left, everything inside it. Colors: black blue red green orange purple. Add the word fill after the colour on rect, circle, ellipse or poly for shading. Text size defaults to 4. [KEEP] keeps the previous drawing on the board instead of a clean page. Draw neat, labelled diagrams, flows, graphs and worked steps. Never use the | character inside text except as a separator.';
+        + 'Rules: every page needs [SAY:] and pages are separated by a line of ---. A slide page has a title, 2 to 4 short bullets and one or two [IMAGE:] lines. Every picture query must be 2 to 4 simple words that Wikipedia surely has a real photo, diagram or map for, like Ganga river map, human heart diagram, Mughal empire map. For geography, history, travel and earth science always use a map query. Put the bullets in the same order you talk about them, and in [SAY:] speak about the bullets one by one, one sentence for each bullet. [PEN:] lists what your pen underlines while you speak (max 3): bullet numbers, key, fm, img. A [BOARD] page has no bullets: you draw on a board 100 wide and 60 high, origin top-left, everything inside it. Colors: black blue red green orange purple. Add the word fill after the colour on rect, circle, ellipse or poly for shading. Text size defaults to 4. [KEEP] keeps the previous drawing on the board instead of a clean page. Draw neat, labelled diagrams, flows, graphs and worked steps. Never use the | character inside text except as a separator.';
 
     function boardPages(d) { return d.steps.map(function (s) { return { title: '', bul: [], img: [], tbl: null, key: '', fm: '', note: s.cap, layout: '', para: [], board: true, keep: !!s.keep, draw: s.sh, ask: s.ask || null }; }); }
     function ui(q) { return B.querySelector(q); }
     function sdur(sh) { return sh.t === 'image' ? 900 : sh.t === 'text' ? Math.min(1200, Math.max(350, sh.s.length * 70)) : 550; }
     function setSt(m) { if (!B) return; var se = ui('.nc-st'); if (se) se.textContent = m; B.classList.toggle('talk', m === 'Teaching'); B.classList.toggle('mic', /^Listening/.test(m)); }
     function log(r, t) { if (!B || !t) return; var l = ui('.nc-log'), e = document.createElement('div'); e.className = 'lg ' + r; e.textContent = t; l.appendChild(e); l.scrollTop = l.scrollHeight; }
-    function capt() { /* subtitles removed */ }
+    function capt(t) { var e = B && ui('.nc-cap'); if (!e) return; var on = !!t && !!(C && C.capOn); e.classList.toggle('on', on); e.textContent = on ? t : ''; }
     function studentName() { try { var s = (window.studentsDB || []).find(function (x) { return x.mobile === window.loggedInMobile; }); return (s && (s.name || s.fullName)) || 'You'; } catch (e) { return 'You'; } }
     function showLd(h) { var l = ui('.nc-ld'); l.innerHTML = h; l.classList.add('on'); }
     function hideLd() { ui('.nc-ld').classList.remove('on'); }
@@ -39884,14 +39900,33 @@ Write a short normal introduction before the blocks and a one-line closing after
     function setInk(i, hold) {
         var P = C.d.pages, p = P[i], k = i; C.base = []; C.ops = []; C.anim = 0; clearTimeout(C.tm); C.hold = !!hold;
         if (p.board) { C.mode = 'b'; while (k > 0 && P[k].keep && P[k - 1].board) k--; for (var j = k; j < i; j++) C.base = C.base.concat(P[j].draw || []); C.ops = (p.draw || []).slice(); if (!hold) C.anim = performance.now(); }
-        else { C.mode = 's'; if (!hold) C.tm = setTimeout(function () { autoOps(i); }, 900); }
+        else C.mode = 's';
         paintT();
     }
     /* the teacher's pen starts at the very moment her voice starts */
     function releaseInk(i) {
         if (!C || C.i !== i || !C.hold) return; C.hold = false;
-        if (C.mode === 'b') { C.anim = performance.now(); paintT(); } else { clearTimeout(C.tm); C.tm = setTimeout(function () { autoOps(i); }, 300); }
+        if (C.mode === 'b') { C.anim = performance.now(); paintT(); }
     }
+    /* slides are built up point by point while the teacher talks (like a real smart class) */
+    function elsOf() { var el = ui('.nc-pg .nt-sl'); return el ? [].slice.call(el.querySelectorAll('li,.nt-key,.nt-fm')) : []; }
+    function revealTo(n) { elsOf().forEach(function (e, k) { e.classList.toggle('on', k < n); e.classList.toggle('act', k === n - 1); }); }
+    function showAll() { var el = ui('.nc-pg .nt-sl'); if (el) el.classList.add('all'); elsOf().forEach(function (e) { e.classList.remove('act'); }); }
+    /* shrink the text until the whole slide fits: nothing is ever cut off */
+    function fitText(el) {
+        if (!el || !el.isConnected) return; var tx = el.querySelector('.nt-tx'); if (!tx) return; el.style.fontSize = '';
+        var fs = parseFloat(getComputedStyle(el).fontSize) || 28, min = C && C.por ? 14 : 15, im = el.querySelector('.nt-im'), n = 0, big = /l-(full|cover)/.test(el.className);
+        function over() {
+            var cs = getComputedStyle(tx), gap = parseFloat(cs.rowGap) || 0, need = 0, kids = [].slice.call(tx.children);
+            kids.forEach(function (k) { need += k.offsetHeight; }); need += gap * Math.max(0, kids.length - 1);
+            var room = tx.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+            if (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2 || tx.scrollWidth > tx.clientWidth + 2 || need > room + 2) return true;
+            if (im && !big && C && C.por && im.offsetHeight < el.clientHeight * 0.3 && !el.classList.contains('noimg')) return true;
+            return false;
+        }
+        while (over() && fs > min && n < 30) { fs -= 1; el.style.fontSize = fs + 'px'; n++; }
+    }
+    function noImg(el) { var gs = [].slice.call(el.querySelectorAll('.nt-gi')); if (gs.length && gs.every(function (g) { return g.classList.contains('no'); })) { el.classList.add('noimg'); fitText(el); } }
     function autoOps(i) {
         if (!C || C.i !== i) return; var p = C.d.pages[i], el = ui('.nc-pg .nt-sl'); if (!el) return;
         var sw = ui('.nc-sw').getBoundingClientRect(), s = C.s, ops = [], cols = ['#dc2626', '#2563eb', '#16a34a'], li = [].slice.call(el.querySelectorAll('li'));
@@ -39908,7 +39943,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     function paintT() {
         if (!C || !C.W) return; var c = C.tc.getContext('2d'), W = C.W, H = C.H; c.clearRect(0, 0, W, H);
-        var TS = 74, s = Math.min(W / 100, (H - TS - 10) / 60), g = C.mode === 'b' ? { s: s, ox: (W - 100 * s) / 2, oy: TS + ((H - TS - 10) - 60 * s) / 2 } : { s: 1, ox: 0, oy: 0 };
+        var TS = 74, BM = C.capOn ? 80 : 10, s = Math.min(W / 100, (H - TS - BM) / 60), g = C.mode === 'b' ? { s: s, ox: (W - 100 * s) / 2, oy: TS + ((H - TS - BM) - 60 * s) / 2 } : { s: 1, ox: 0, oy: 0 };
         c.lineCap = c.lineJoin = 'round'; var busy = false, tip = null, tipC = '#111827', acc = 0, now = performance.now(), t = C.anim ? now - C.anim : 1e9;
         C.base.forEach(function (sh) { bShape(c, sh, 1, g); });
         (C.hold ? [] : C.ops).forEach(function (sh) { var du = sdur(sh), a0 = sh.at != null ? sh.at : acc, p = Math.max(0, Math.min(1, (t - a0) / du)); acc += du; if (p > 0) bShape(c, sh, p, g); if (p > 0 && p < 1) { tip = bTip(sh, p, g); tipC = sh.c || '#5b6ee1'; } if (p < 1) busy = true; });
@@ -39929,18 +39964,19 @@ Write a short normal introduction before the blocks and a one-line closing after
     /* ---------- pages ---------- */
     function go(i, dir, quiet, hold) {
         var P = C.d.pages; if (!P.length) return; i = Math.max(0, Math.min(P.length - 1, i)); if (!C.W) fit(); C.i = i; var p = P[i], pg = ui('.nc-pg'); pg.innerHTML = '';
-        if (p.board) { var el = document.createElement('div'); el.className = 'nc-paper'; el.innerHTML = p.title ? '<span>' + inl(p.title) + '</span>' : ''; pg.appendChild(el); } else pg.appendChild(slideEl(p, i, P.length, dir || 1));
+        if (p.board) { var el = document.createElement('div'); el.className = 'nc-paper'; el.innerHTML = p.title ? '<span>' + inl(p.title) + '</span>' : ''; pg.appendChild(el); } else { pg.appendChild(slideEl(p, i, P.length, dir || 1)); var se = pg.querySelector('.nt-sl'); if (se) { if (!hold) se.classList.add('all'); fitText(se); setTimeout(function () { if (C && se.isConnected) fitText(se); }, 450); } }
         setInk(i, hold); cnt(); paintS();
     }
     function stopAuto() { if (!C) return; C.auto = false; btk++; vtk++; stopV(); stopHear(); setT(false); setSt('Paused'); hideQ(); }
     function teach(i) {
-        var my = ++btk, p = C.d.pages[i], rel = false; C.auto = true; setT(true); go(i, 1, false, true); setSt('Teaching'); if (i >= C.d.pages.length - 3) more();
-        var rl = function () { if (rel || my !== btk || !C) return; rel = true; releaseInk(i); };
+        var my = ++btk, p = C.d.pages[i], rel = false; C.auto = true; setT(true); capt(''); go(i, 1, false, true); setSt('Teaching'); if (i >= C.d.pages.length - 3) more();
+        var rl = function () { if (rel || my !== btk || !C) return; rel = true; releaseInk(i); if (elsOf().length) revealTo(1); };
+        var ch = function (k, n) { if (my !== btk || !C || !rel) return; var E = elsOf().length; if (E) revealTo(Math.min(E, 1 + Math.floor(k * E / Math.max(1, n)))); };
         var need = (p.note ? 1 : 0) + (p.board && p.draw && p.draw.length ? 1 : 0);
-        function fin() { if (my !== btk || !C.auto) return; if (--need > 0) return; setTimeout(function () { if (my === btk && C.auto) quiz(p, my, function () { next(my); }); }, 500); }
+        function fin() { if (my !== btk || !C.auto) return; if (--need > 0) return; showAll(); setTimeout(function () { if (my === btk && C.auto) quiz(p, my, function () { next(my); }); }, 900); }
         if (!need) { need = 1; setTimeout(fin, 2500); }
         if (p.board && p.draw && p.draw.length) C.onEnd = fin;
-        if (p.note) say(p.note, fin, rl); else rl();
+        if (p.note) say(p.note, fin, rl, ch); else { rl(); showAll(); }
     }
     function next(my) {
         if (!C || my !== btk || !C.auto) return;
@@ -39966,7 +40002,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         if (o.onSkip) h += '<button type="button" class="qs" data-a="qskip">Skip</button>';
         q.innerHTML = h; q.classList.add('on'); var inp = q.querySelector('input'); if (inp) { inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); submitQ(inp.value); } }; if (!window.matchMedia('(pointer:coarse)').matches) inp.focus(); }
     }
-    function hideQ() { if (!B) return; ui('.nc-q').classList.remove('on'); if (C) C.qs = null; }
+    function hideQ() { if (!B) return; ui('.nc-q').classList.remove('on'); if (C) { C.qs = null; clearTimeout(C.qt); } }
     function submitQ(t) { t = String(t || '').trim(); if (!t || !C || !C.qs || !C.qs.onText) return; var f = C.qs.onText; stopHear(); f(t); }
     function listen() { hear(function (u) { var i = ui('.nc-q input'); if (i) i.value = u; submitQ(u); }, function () { if (C) setSt(C.auto ? 'Teaching' : 'Paused'); }); }
     function quiz(p, my, nx) {
@@ -39974,7 +40010,9 @@ Write a short normal introduction before the blocks and a one-line closing after
         if (!C.cfg.ask || (!p.mcq && !p.ask)) return nx(); setSt('Teaching');
         if (p.mcq) {
             var m = p.mcq; say(m.q, function () { });
-            return showQ({ q: m.q, opts: m.o, onPick: function (k) { hideQ(); C.score.t++; var good = k === m.k; if (good) C.score.r++; var t = (good ? 'Correct! ' : 'Not quite. The answer is ' + m.o[m.k] + '. ') + m.w; log('y', m.o[k]); log('t', t); say(t, function () { if (ok()) setTimeout(nx, 400); }); }, onSkip: function () { hideQ(); say('The answer is ' + m.o[m.k] + '. ' + m.w, function () { if (ok()) nx(); }); } });
+            var armQ = function () { clearTimeout(C.qt); var cq = C.qs; C.qt = setTimeout(function () { if (ok() && C.qs && C.qs === cq && C.qs.onSkip) C.qs.onSkip(); }, 35000); };
+            showQ({ q: m.q, opts: m.o, onPick: function (k) { hideQ(); C.score.t++; var good = k === m.k; if (good) C.score.r++; var t = (good ? 'Correct! ' : 'Not quite. The answer is ' + m.o[m.k] + '. ') + m.w; log('y', m.o[k]); log('t', t); say(t, function () { if (ok()) setTimeout(nx, 400); }); }, onSkip: function () { hideQ(); say('The answer is ' + m.o[m.k] + '. ' + m.w, function () { if (ok()) nx(); }); } });
+            return armQ();
         }
         var a = p.ask; say(a.q, function () { if (ok() && C.qs) listen(); });
         showQ({ q: a.q, input: true, onText: function (u) {
@@ -39983,6 +40021,7 @@ Write a short normal introduction before the blocks and a one-line closing after
                 if (!ok()) return; setSt('Teaching'); var t = spoken(r) || ((judge(u, a.a) ? 'Very good, that is right. ' : 'Good try. Listen carefully. ') + a.a); log('t', t); say(t, function () { if (ok()) nx(); });
             });
         }, onSkip: function () { hideQ(); stopHear(); say('No problem. ' + a.a, function () { if (ok()) nx(); }); } });
+        clearTimeout(C.qt); var cq2 = C.qs; C.qt = setTimeout(function () { if (ok() && C.qs && C.qs === cq2 && C.qs.onSkip) C.qs.onSkip(); }, 40000);
     }
 
     /* ---------- raise hand: ask a doubt by voice or typing ---------- */
@@ -40055,8 +40094,8 @@ Write a short normal introduction before the blocks and a one-line closing after
     function build() {
         if (B) return B; B = document.createElement('div'); B.id = 'nc'; B.className = 'nc';
         var tk = function (a, ic, t) { return '<button type="button" class="nc-b" data-a="' + a + '" aria-label="' + t + '" title="' + t + '"><i class="fa-solid ' + ic + '"></i></button>'; };
-        B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-tt"><b></b><small><i class="nc-dot"></i>LIVE \u00b7 <span class="nc-ty"></span> \u00b7 <span class="nc-st">Paused</span></small></div><span class="nc-ct"></span>' + tk('side', 'fa-comments', 'Comments and doubts') + '</div>'
-            + '<div class="nc-main"><div class="nc-stage"><div class="nc-sw"><div class="nc-pg"></div><canvas class="tc"></canvas><canvas class="sc"></canvas></div><div class="nc-hb"><i class="fa-solid fa-hand"></i> Hand raised</div><button type="button" class="nc-vb" data-a="vfix"><i class="fa-solid fa-volume-high"></i> Tap to turn on voice</button><div class="nc-q"></div><div class="nc-ld"></div></div>'
+        B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-av"><img src="' + NOVA_IMG + '" alt="" onerror="this.style.visibility=\'hidden\'"></div><div class="nc-tt"><b></b><small><i class="nc-dot"></i>LIVE \u00b7 <span class="nc-ty"></span> \u00b7 <span class="nc-st">Paused</span></small></div><span class="nc-ct"></span>' + tk('side', 'fa-comments', 'Comments and doubts') + '</div>'
+            + '<div class="nc-main"><div class="nc-stage"><div class="nc-sw"><div class="nc-pg"></div><canvas class="tc"></canvas><canvas class="sc"></canvas></div><div class="nc-cap"></div><div class="nc-hb"><i class="fa-solid fa-hand"></i> Hand raised</div><button type="button" class="nc-vb" data-a="vfix"><i class="fa-solid fa-volume-high"></i> Tap to turn on voice</button><div class="nc-q"></div><div class="nc-ld"></div></div>'
             + '<aside class="nc-side"><div class="nc-sh"><b>Comments &amp; doubts</b>' + tk('side', 'fa-xmark', 'Close') + '</div><div class="nc-log"></div><form class="nc-fm"><input placeholder="Type a comment or doubt\u2026" autocomplete="off"><button type="submit" class="nc-b go" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></form></aside></div>'
             + '<div class="nc-prog"><i></i></div><div class="nc-dock">' + tk('p', 'fa-backward-step', 'Previous') + tk('t', 'fa-play', 'Teach') + tk('n', 'fa-forward-step', 'Next')
             + '<button type="button" class="nc-b hand" data-a="hand"><i class="fa-solid fa-hand"></i><span>Raise hand</span></button></div>';
@@ -40070,7 +40109,7 @@ Write a short normal introduction before the blocks and a one-line closing after
             else if (a === 'col') { C.col = b.getAttribute('data-c'); B.querySelectorAll('.nc-c1').forEach(function (x) { x.classList.toggle('on', x === b); }); if (C.tool === 'none' || C.tool === 'er') setTool('pen'); }
             else if (a === 'un') { (C.ink[C.i] || []).pop(); paintS(); } else if (a === 'cl') { C.ink[C.i] = []; paintS(); }
             else if (a === 'qgo') { var i = ui('.nc-q input'); submitQ(i && i.value); } else if (a === 'qmic') listen(); else if (a === 'qskip') { if (C.qs && C.qs.onSkip) C.qs.onSkip(); }
-            else if (a === 'vfix') { hideVb(); if (window.NovaForceVoice) window.NovaForceVoice(); if (C.d.pages.length) teach(Math.max(0, C.i)); } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
+            else if (a === 'vfix') { hideVb(); C.vf = 0; C.capOn = false; capt(''); if (window.NovaForceVoice) window.NovaForceVoice(); if (C.d.pages.length) teach(Math.max(0, C.i)); } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
         });
         ui('.nc-fm').addEventListener('submit', function (e) { e.preventDefault(); var i = ui('.nc-fm input'), v = i.value.trim(); if (!v || !C || !C.d.pages.length) return; i.value = ''; var was = C.auto; stopAuto(); C.hand = true; B.classList.add('hand'); doubt(v, was); });
         var sc = ui('.sc'), cur = null, sx = 0, st = ui('.nc-stage');
@@ -40324,6 +40363,28 @@ Write a short normal introduction before the blocks and a one-line closing after
 .nc .l-full .nt-kick,.nc .l-full p,.nc .l-full li{color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.6)}
 .nc .l-full .nt-key{background:rgba(255,255,255,.96);color:#0f172a;text-shadow:none}
 .nc .l-center h2{font-size:1.8em}
+
+/* ===== class v4: real-class pacing, nothing cut, maps visible ===== */
+.nc-av{width:40px;height:40px;flex:none}
+.nc-tt small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nc-av img{width:100%;height:100%;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.55);background:#5b6ee1;display:block}
+.nc.talk .nc-av img{border-color:#7fd6c7;box-shadow:0 0 0 4px rgba(127,214,199,.28);animation:nvTk .9s ease-in-out infinite alternate}
+.nc.mic .nc-av img{border-color:#e9b44c;box-shadow:0 0 0 4px rgba(233,180,76,.3)}
+.nc-cap{font:600 15px/1.4 system-ui;max-height:4.3em;left:10px;right:10px;bottom:10px;background:rgba(15,23,42,.88)}
+.nc .nt-sl li{animation:none;transition:opacity .45s ease,transform .45s ease,background .35s ease,box-shadow .35s ease}
+.nc .nt-key,.nc .nt-fm{transition:opacity .45s ease,transform .45s ease}
+.nc .nt-sl:not(.all) li:not(.on),.nc .nt-sl:not(.all) .nt-key:not(.on),.nc .nt-sl:not(.all) .nt-fm:not(.on){opacity:0;transform:translateY(12px)}
+.nc .nt-sl li.act{background:rgba(250,204,21,.3);box-shadow:0 0 0 6px rgba(250,204,21,.3)}
+.nc .nt-sl li.act::before{transform:scale(1.35)}
+.nc .nt-key.act,.nc .nt-fm.act{box-shadow:0 0 0 5px rgba(250,204,21,.45)}
+.nc .nt-gi{background:#fff}
+.nc .nt-gi img{object-fit:contain}
+.nc .l-full .nt-gi img,.nc .l-hero .nt-gi img,.nc .l-cover .nt-gi img{object-fit:cover}
+.nc .nt-gi.no{display:none}
+.nc .nt-sl.noimg .nt-im{display:none}
+.nc .l-split.noimg,.nc .l-grid.noimg{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr)}
+.nc .l-hero.noimg{grid-template-rows:1fr}.nc .l-hero.noimg .nt-tx{justify-content:center}
+.nc .l-full.noimg{background:linear-gradient(135deg,var(--a),var(--a2))}
 </style>
 
 <script id="nv2-js">
