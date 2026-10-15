@@ -39750,11 +39750,11 @@ Write a short normal introduction before the blocks and a one-line closing after
         else if (/\bin\s+hindi\b|hindi\s+(me|mein|mai|te)\b|hindi\s+bol/i.test(t)) id = 'hi';
         else if (/\bin\s+(bengali|bangla)\b|(bengali|bangla)\s+(te|e|me|mein)\b|(bengali|bangla)\s+bol/i.test(t)) id = 'bn';
         else if (/\bin\s+english\b|english\s+(me|mein|te)\b/i.test(t)) id = 'en';
-        if (id && id !== C.cfg.lang) { C.cfg.lang = id; SEL.lang = id; VC.cache = {}; VC.pref = 0; VC.dead = 0; C.vf = 0; setVs('Language: ' + LANGS[id].n); }
+        if (id && id !== C.cfg.lang) { C.cfg.lang = id; SEL.lang = id; VC.cache = {}; VC.pref = 0; VC.dead = 0; C.vf = 0; nvWarm(); setVs('Language: ' + LANGS[id].n); }
     }
     function cycleLang() {
         if (!C) return; var ids = ['en', 'hi', 'bn', 'hg'], i = ids.indexOf(C.cfg.lang || 'en'), id = ids[(i + 1) % ids.length];
-        C.cfg.lang = id; SEL.lang = id; VC.cache = {}; VC.pref = 0; VC.dead = 0; C.vf = 0; try { localStorage.setItem('nc_lang', id); } catch (e) { }
+        C.cfg.lang = id; SEL.lang = id; VC.cache = {}; VC.pref = 0; VC.dead = 0; C.vf = 0; nvWarm(); try { localStorage.setItem('nc_lang', id); } catch (e) { }
         setVs('Language: ' + LANGS[id].n); log('t', LANGS[id].n + ' selected. My answers and the next part of the class will use it.');
     }
     function examLine(cfg) {
@@ -39812,6 +39812,43 @@ Write a short normal introduction before the blocks and a one-line closing after
         out.forEach(function (x) { while (x.length > 200) { var at = x.lastIndexOf(',', 190); if (at < 40) at = x.lastIndexOf(' ', 190); if (at < 40) at = 190; o2.push(x.slice(0, at + 1).trim()); x = x.slice(at + 1).trim(); } if (x) o2.push(x); });
         return o2.length ? o2 : [String(t || '')];
     }
+    /* ---------- natural voice that runs inside the phone: Kokoro (English) and Piper (Hindi). Downloaded once, cached by the browser. ---------- */
+    var LV = { k: { s: 'idle' }, p: { s: 'idle' }, q: Promise.resolve(), pct: 0 }, dimp = null;
+    try { dimp = new Function('u', 'return import(u)'); } catch (e) { dimp = null; }
+    function nvDefault() { var v = lsGet('nc_nv', ''); if (v) return v === '1'; try { var c = navigator.connection || {}, d = document.documentElement.classList; return !(c.saveData || (navigator.deviceMemory && navigator.deviceMemory <= 2) || d.contains('perf-low') || d.contains('mem-low')); } catch (e) { return true; } }
+    function nvOn() { var v = (C && C.cfg && C.cfg.nv !== undefined) ? C.cfg.nv : (SEL && SEL.nv); return v !== false && !window.__ncMute && !!dimp && typeof WebAssembly === 'object'; }
+    function nvEng() { var id = LG().id; return id === 'en' ? 'k' : (id === 'hi' || id === 'hg') ? 'p' : null; }
+    function nvUse() { var e = nvEng(); return !!e && nvOn() && LV[e].s === 'ready'; }
+    function nvImport(urls) { var i = 0; return new Promise(function (ok, no) { (function nx() { if (i >= urls.length) return no('import'); var p; try { p = dimp(urls[i++]); } catch (e) { return nx(); } p.then(ok, nx); })(); }); }
+    function nvFail(s, e) { s.s = 'failed'; setVs('Natural voice not available \u2013 using backup voice', false); try { console.warn('Natural voice failed', e); } catch (x) { } }
+    function nvLoadK() {
+        var s = LV.k; if (s.s !== 'idle') return; s.s = 'loading'; LV.pct = 0; setVs('Natural voice: preparing\u2026');
+        nvImport(['https://cdn.jsdelivr.net/npm/kokoro-js@1.2.0/+esm', 'https://esm.sh/kokoro-js@1.2.0']).then(function (m) {
+            return m.KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', { dtype: 'q8', device: 'wasm', progress_callback: function (p) { if (p && p.status === 'progress' && p.total > 5e6) { LV.pct = Math.max(LV.pct, Math.round(p.progress || 0)); setVs('Natural voice: downloading ' + LV.pct + '%'); } } });
+        }).then(function (t) { s.t = t; s.s = 'ready'; setVs('Natural voice ready'); }, function (e) { nvFail(s, e); });
+    }
+    function nvLoadP() {
+        var s = LV.p; if (s.s !== 'idle') return; s.s = 'loading'; LV.pct = 0; setVs('Natural voice: preparing\u2026');
+        nvImport(['https://cdn.jsdelivr.net/npm/@diffusion-studio/vits-web/+esm', 'https://esm.sh/@diffusion-studio/vits-web']).then(function (m) {
+            s.m = m; return (m.voices ? m.voices() : Promise.resolve([])).catch(function () { return []; });
+        }).then(function (vs) {
+            var f = (vs || []).filter(function (v) { return /^hi_IN/i.test(v.key || v.id || ''); })[0]; s.key = (f && (f.key || f.id)) || 'hi_IN-rohan-medium';
+            return s.m.download(s.key, function (p) { if (p && p.total) { LV.pct = Math.round(p.loaded / p.total * 100); setVs('Natural voice: downloading ' + LV.pct + '%'); } });
+        }).then(function () { s.s = 'ready'; setVs('Natural voice ready'); }, function (e) { nvFail(s, e); });
+    }
+    function nvWarm() { try { if (!nvOn()) return; var e = nvEng(); if (e === 'k') nvLoadK(); else if (e === 'p') nvLoadP(); } catch (x) { } }
+    function nvReset() { ['k', 'p'].forEach(function (x) { if (LV[x].s === 'failed') LV[x].s = 'idle'; }); nvWarm(); }
+    function nvSynth(t) {
+        var e = nvEng(), ctx = acx(); if (!e || !ctx || !nvUse()) return Promise.reject('nv');
+        var job = function () {
+            if (!nvUse() || nvEng() !== e) return Promise.reject('nv');
+            var run = e === 'k'
+                ? LV.k.t.generate(t, { voice: window.NOVA_KOKORO_VOICE || 'af_heart', speed: 1 }).then(function (a) { var d = a && a.audio; if (!d || !d.length) throw 'empty'; var b = ctx.createBuffer(1, d.length, (a && a.sampling_rate) || 24000); b.copyToChannel(d, 0); return b; })
+                : LV.p.m.predict({ text: t, voiceId: LV.p.key }).then(function (w) { return w.arrayBuffer(); }).then(function (ab) { return new Promise(function (a1, z1) { var pr = ctx.decodeAudioData(ab, a1, z1); if (pr && pr.catch) pr.catch(z1); }); });
+            return wt(run, 10000);
+        };
+        var r = LV.q.then(job, job); LV.q = r.catch(function () { }); return r;
+    }
     function cvFetch(t) {
         var ctx = acx(); if (!ctx) return Promise.reject('noctx');
         var lg = LG(), q = encodeURIComponent(t), L = [], c = window.NOVA_TTS_URL;
@@ -39830,7 +39867,7 @@ Write a short normal introduction before the blocks and a one-line closing after
             })();
         });
     }
-    function cvGet(t) { var key = LG().id + '|' + t; if (!VC.cache[key]) { VC.cache[key] = cvFetch(t); VC.cache[key].catch(function () { }); } return VC.cache[key]; }
+    function cvGet(t) { var key = LG().id + '|' + t; if (!VC.cache[key]) { VC.cache[key] = nvUse() ? nvSynth(t).catch(function () { return cvFetch(t); }) : cvFetch(t); VC.cache[key].catch(function () { }); } return VC.cache[key]; }
     function wt(pr, ms) { return new Promise(function (ok, no) { var t = setTimeout(function () { no('timeout'); }, ms); pr.then(function (v) { clearTimeout(t); ok(v); }, function (e) { clearTimeout(t); no(e); }); }); }
     function playBuf(ctx, buf, onStart) {
         return new Promise(function (ok, no) {
@@ -39846,7 +39883,7 @@ Write a short normal introduction before the blocks and a one-line closing after
             for (var j = 0; j < Math.min(3, S.length); j++) cvGet(S[j]);
             (function step() {
                 if (my !== vtk || k >= S.length) return res(); var idx = k; if (idx + 3 < S.length) cvGet(S[idx + 3]);
-                wt(cvGet(S[idx]), idx === 0 ? 10000 : 14000).then(function (buf) {
+                wt(cvGet(S[idx]), idx === 0 ? (nvUse() ? 16000 : 10000) : (nvUse() ? 24000 : 14000)).then(function (buf) {
                     if (my !== vtk) return res();
                     return playBuf(ctx, buf, function () { if (my !== vtk) return; if (first) { first = false; h.first(); } h.sent(idx, S.length); }).then(function () { k++; setTimeout(step, 120); });
                 }).catch(function (e) {
@@ -40244,7 +40281,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     function init(cfg, d) {
         build(); stopHear(); btk++; vtk++; stopV(); cancelAnimationFrame(C && C.raf);
         C = { cfg: cfg, d: d || { title: cfg.topic, pages: [] }, i: -1, auto: false, ink: {}, tool: 'none', col: PEN[2], z: 5, hand: false, score: { r: 0, t: 0 }, parts: 1, done: !!d, busy: false, base: [], ops: [], tc: ui('.tc'), sc: ui('.sc') };
-        window.__ncMute = cfg.voice === false; if (!window.__ncMute && window.NovaForceVoice) window.NovaForceVoice(); unlockAudio(); VC.cache = {}; setVs(window.__ncMute ? 'Voice muted \u2013 words appear here' : 'Voice on', !window.__ncMute);
+        window.__ncMute = cfg.voice === false; if (!window.__ncMute && window.NovaForceVoice) window.NovaForceVoice(); unlockAudio(); VC.cache = {}; nvWarm(); setVs(window.__ncMute ? 'Voice muted \u2013 words appear here' : 'Voice on', !window.__ncMute);
         var T = TYPES.filter(function (x) { return x[0] === cfg.type; })[0] || TYPES[0];
         ui('.nc-tt b').textContent = C.d.title; ui('.nc-ty').textContent = T[2]; ui('.nc-log').innerHTML = ''; ui('.nc-pg').innerHTML = ''; ui('.nc-ct').textContent = ''; ui('.nc-prog i').style.width = '0';
         hideQ(); hideVb(); hideLd(); setT(false); setTool('none'); B.classList.remove('hand', 'side'); setSt('Paused'); B.classList.add('on');
@@ -40283,7 +40320,7 @@ Write a short normal introduction before the blocks and a one-line closing after
             else if (a === 'col') { C.col = b.getAttribute('data-c'); B.querySelectorAll('.nc-c1').forEach(function (x) { x.classList.toggle('on', x === b); }); if (C.tool === 'none' || C.tool === 'er') setTool('pen'); }
             else if (a === 'un') { (C.ink[C.i] || []).pop(); paintS(); } else if (a === 'cl') { C.ink[C.i] = []; paintS(); }
             else if (a === 'qgo') { var i = ui('.nc-q input'); submitQ(i && i.value); } else if (a === 'qmic') listen(); else if (a === 'qskip') { if (C.qs && C.qs.onSkip) C.qs.onSkip(); }
-            else if (a === 'vol') { unlockAudio(); if (window.__ncMute) { window.__ncMute = false; C.vf = 0; setVs('Voice on'); } else if (C.vf >= 2) { C.vf = 0; C.vok = false; VC.cache = {}; VC.dead = 0; setVs('Voice: trying again\u2026'); if (C.d.pages.length && C.auto) teach(Math.max(0, C.i)); } else { window.__ncMute = true; stopV(); setVs('Voice muted \u2013 words appear here', false); } } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
+            else if (a === 'vol') { unlockAudio(); if (window.__ncMute) { window.__ncMute = false; C.vf = 0; setVs('Voice on'); } else if (C.vf >= 2) { C.vf = 0; C.vok = false; VC.cache = {}; VC.dead = 0; nvReset(); setVs('Voice: trying again\u2026'); if (C.d.pages.length && C.auto) teach(Math.max(0, C.i)); } else { window.__ncMute = true; stopV(); setVs('Voice muted \u2013 words appear here', false); } } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
         });
         ui('.nc-fm').addEventListener('submit', function (e) { e.preventDefault(); var i = ui('.nc-fm input'), v = i.value.trim(); if (!v || !C || !C.d.pages.length) return; i.value = ''; var was = C.auto; stopAuto(); C.hand = true; B.classList.add('hand'); doubt(v, was); });
         var sc = ui('.sc'), cur = null, sx = 0, st = ui('.nc-stage');
@@ -40299,7 +40336,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
 
     /* ---------- header popup: choose the topic and the type of class ---------- */
-    var SU = null, SEL = { type: 'smart', level: 'Beginner', parts: 2, ask: true, voice: true, topic: '', lang: lsGet('nc_lang', 'en'), exam: lsGet('nc_exam', 'none'), secret: false };
+    var SU = null, SEL = { type: 'smart', level: 'Beginner', parts: 2, ask: true, voice: true, topic: '', lang: lsGet('nc_lang', 'en'), exam: lsGet('nc_exam', 'none'), secret: false, nv: nvDefault() };
     function recents() { try { return JSON.parse(localStorage.getItem('nc_recent') || '[]').slice(0, 3); } catch (e) { return []; } }
     function drawSetup() {
         var seg = function (k, arr) { return '<div class="ns-sg">' + arr.map(function (a) { return '<button type="button" data-s="' + k + '" data-v="' + a[0] + '" class="' + (SEL[k] == a[0] ? 'on' : '') + '">' + a[1] + '</button>'; }).join('') + '</div>'; };
@@ -40309,14 +40346,14 @@ Write a short normal introduction before the blocks and a one-line closing after
             + '<div class="ns-l">Exam (optional)</div><div class="ns-ch">' + EXL.map(function (x) { return '<button type="button" data-s="exam" data-v="' + x[0] + '" class="' + (SEL.exam === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div><div class="ns-l">Class language</div>' + seg('lang', LGL) + '<div class="ns-l">Class type</div><div class="ns-tg">' + TYPES.map(function (t) { return '<button type="button" class="ns-t' + (SEL.type === t[0] ? ' on' : '') + '" data-s="type" data-v="' + t[0] + '" style="--c:' + t[4] + '"><i class="fa-solid ' + t[1] + '"></i><b>' + t[2] + '</b><small>' + t[3] + '</small></button>'; }).join('') + '</div>'
             + '<div class="ns-l">Level</div>' + seg('level', [['Beginner', 'Beginner'], ['Intermediate', 'Intermediate'], ['Advanced', 'Advanced']])
             + '<div class="ns-l">Length</div>' + seg('parts', [[1, 'Quick \u00b7 5 min'], [2, 'Standard \u00b7 10 min'], [4, 'Full \u00b7 20 min']])
-            + sw('ask', 'Teacher asks me questions') + sw('voice', 'Teacher speaks aloud') + sw('secret', 'Exam secrets: shortcut tricks, mnemonics, common traps')
+            + sw('ask', 'Teacher asks me questions') + sw('voice', 'Teacher speaks aloud') + sw('nv', 'Natural voice (one-time download, about 100 MB \u2013 use Wi-Fi)') + sw('secret', 'Exam secrets: shortcut tricks, mnemonics, common traps')
             + '<button type="button" class="ns-go" data-s="go"><i class="fa-solid fa-person-chalkboard"></i> Start class</button></div>';
     }
     function goClass() {
         var t = String(SEL.topic || '').trim();
         if (!t) { var i = SU.querySelector('#ns-topic'); if (i) i.focus(); try { if (window.showToast) window.showToast('Topic needed', 'Type the topic you want to learn', 'danger'); } catch (e) { } return; }
         if (!/weakest|next exam|ai picks/i.test(t)) try { var r = recents().filter(function (x) { return x !== t; }); r.unshift(t); localStorage.setItem('nc_recent', JSON.stringify(r.slice(0, 5))); } catch (e) { }
-        try { localStorage.setItem('nc_lang', SEL.lang); localStorage.setItem('nc_exam', SEL.exam); } catch (e) { } SU.classList.remove('on'); begin({ topic: t, type: SEL.type, level: SEL.level, parts: SEL.parts, ask: SEL.ask, voice: SEL.voice, lang: SEL.lang, exam: SEL.exam, secret: SEL.secret });
+        try { localStorage.setItem('nc_lang', SEL.lang); localStorage.setItem('nc_exam', SEL.exam); localStorage.setItem('nc_nv', SEL.nv ? '1' : '0'); } catch (e) { } SU.classList.remove('on'); begin({ topic: t, type: SEL.type, level: SEL.level, parts: SEL.parts, ask: SEL.ask, voice: SEL.voice, lang: SEL.lang, exam: SEL.exam, secret: SEL.secret, nv: SEL.nv });
     }
     function setup(o) {
         o = o || {}; if (o.topic) SEL.topic = o.topic; if (o.type) SEL.type = o.type;
@@ -40324,7 +40361,7 @@ Write a short normal introduction before the blocks and a one-line closing after
             SU = document.createElement('div'); SU.className = 'ns'; document.body.appendChild(SU);
             SU.addEventListener('click', function (e) {
                 if (e.target === SU) { SU.classList.remove('on'); return; } var b = e.target.closest('[data-s]'); if (!b) return; var k = b.getAttribute('data-s'), v = b.getAttribute('data-v');
-                if (k === 'x') SU.classList.remove('on'); else if (k === 'go') goClass(); else { if (k === 'parts') v = +v; if (k === 'ask' || k === 'voice' || k === 'secret') v = !SEL[k]; SEL[k] = v; drawSetup(); }
+                if (k === 'x') SU.classList.remove('on'); else if (k === 'go') goClass(); else { if (k === 'parts') v = +v; if (k === 'ask' || k === 'voice' || k === 'secret' || k === 'nv') v = !SEL[k]; SEL[k] = v; drawSetup(); }
             });
             SU.addEventListener('input', function (e) { if (e.target.id === 'ns-topic') SEL.topic = e.target.value; });
         }
