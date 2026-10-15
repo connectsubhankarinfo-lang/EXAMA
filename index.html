@@ -39723,25 +39723,117 @@ Write a short normal introduction before the blocks and a one-line closing after
 
     /* ---------- voice helper ---------- */
     var vtk = 0;
-    function stopV() { try { if (window.NovaStopSpeak) window.NovaStopSpeak(); } catch (e) { } }
-    function showVb() { if (B) ui('.nc-vb').classList.add('on'); }
-    function hideVb() { if (B) ui('.nc-vb').classList.remove('on'); }
-    /* voice + pictures start together. If no sound within a few seconds the class never freezes: it reads the words on screen and keeps going. */
-    function say(text, done, onStart, onChunk) {
-        var my = ++vtk, fin1 = false, st1 = false, heard = false, ok = false, quietOn = false, simT = [], deadT = 0, t0 = Date.now(); stopV();
+    function stopV() { try { if (window.NovaStopSpeak) window.NovaStopSpeak(); } catch (e) { } cvStop(); }
+    /* ================= NOVA class voice =================
+       1) WebAudio from online voices: starts by itself, no tap needed after "Start class"
+       2) the phone's own voice   3) the old audio-tag voice   4) last: she keeps teaching, words appear in the chat */
+    var AC = null, VC = { cache: {}, pref: 0, cur: null };
+    function showVb() { } function hideVb() { }
+    function acx() { if (!AC) { try { var A = window.AudioContext || window.webkitAudioContext; if (A) AC = new A(); } catch (e) { } } return AC; }
+    function unlockAudio() { var c = acx(); if (!c) return; try { if (c.state !== 'running') c.resume(); var b0 = c.createBuffer(1, 1, 22050), s0 = c.createBufferSource(); s0.buffer = b0; s0.connect(c.destination); s0.start(0); } catch (e) { } }
+    function armResume() { ['pointerdown', 'touchend', 'keydown'].forEach(function (ev) { document.addEventListener(ev, unlockAudio, { once: true, capture: true, passive: true }); }); }
+    function setVs(m, on) { if (!B) return; var e = ui('.nc-vs'); if (e) e.textContent = m; var i = ui('[data-a=vol] i'); if (i) i.className = 'fa-solid ' + (on === false ? 'fa-volume-xmark' : 'fa-volume-high'); B.classList.toggle('vo', on !== false); }
+    function cvStop() { if (VC.cur) { try { VC.cur.onended = null; VC.cur.stop(); } catch (e) { } VC.cur = null; } try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) { } }
+    function splitS(t) {
+        var a0 = String(t || '').replace(/\s+/g, ' ').trim().match(/[^.!?]+[.!?]*/g) || [], out = [], o2 = [];
+        a0.forEach(function (x) { x = x.trim(); if (!x) return; if (out.length && out[out.length - 1].length < 28) out[out.length - 1] += ' ' + x; else out.push(x); });
+        out.forEach(function (x) { while (x.length > 200) { var at = x.lastIndexOf(',', 190); if (at < 40) at = x.lastIndexOf(' ', 190); if (at < 40) at = 190; o2.push(x.slice(0, at + 1).trim()); x = x.slice(at + 1).trim(); } if (x) o2.push(x); });
+        return o2.length ? o2 : [String(t || '')];
+    }
+    function cvFetch(t) {
+        var ctx = acx(); if (!ctx) return Promise.reject('noctx');
+        var q = encodeURIComponent(t), L = [], c = window.NOVA_TTS_URL;
+        if (typeof c === 'string' && c) L.push(c.replace('{text}', q));
+        ['Raveena', 'Brian', 'Joanna'].forEach(function (v) { L.push('https://api.streamelements.com/kappa/v2/speech?voice=' + v + '&text=' + q); });
+        var order = L.map(function (u, i) { return { u: u, i: i }; }); if (VC.pref > 0 && order[VC.pref]) order.unshift(order.splice(VC.pref, 1)[0]);
+        return new Promise(function (ok, no) {
+            var n = 0;
+            (function nx() {
+                if (n >= order.length) return no('all'); var it = order[n++], ctl = null, tm = null;
+                try { ctl = new AbortController(); tm = setTimeout(function () { ctl.abort(); }, 6000); } catch (e) { }
+                fetch(it.u, ctl ? { signal: ctl.signal } : {}).then(function (r) { if (!r.ok) throw 0; return r.arrayBuffer(); })
+                    .then(function (b) { clearTimeout(tm); if (!b || b.byteLength < 800) throw 0; return new Promise(function (a1, z1) { var pr = ctx.decodeAudioData(b, a1, z1); if (pr && pr.catch) pr.catch(z1); }); })
+                    .then(function (buf) { VC.pref = it.i; ok(buf); }, function () { clearTimeout(tm); nx(); });
+            })();
+        });
+    }
+    function cvGet(t) { if (!VC.cache[t]) { VC.cache[t] = cvFetch(t); VC.cache[t].catch(function () { }); } return VC.cache[t]; }
+    function wt(pr, ms) { return new Promise(function (ok, no) { var t = setTimeout(function () { no('timeout'); }, ms); pr.then(function (v) { clearTimeout(t); ok(v); }, function (e) { clearTimeout(t); no(e); }); }); }
+    function playBuf(ctx, buf, onStart) {
+        return new Promise(function (ok, no) {
+            var src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); VC.cur = src;
+            src.onended = function () { VC.cur = null; ok(); };
+            try { if (ctx.state !== 'running') ctx.resume(); src.start(0); } catch (e) { return no('start'); }
+            var tries = 0; (function chk() { if (VC.cur !== src) return; if (ctx.state === 'running') return onStart(); if (++tries > 12) { try { src.onended = null; src.stop(); } catch (e) { } VC.cur = null; return no('blocked'); } setTimeout(chk, 100); })();
+        });
+    }
+    function cvPlay(S, my, h) {
+        return new Promise(function (res, rej) {
+            var ctx = acx(); if (!ctx) return rej('noctx'); var k = 0, first = true;
+            for (var j = 0; j < Math.min(3, S.length); j++) cvGet(S[j]);
+            (function step() {
+                if (my !== vtk || k >= S.length) return res(); var idx = k; if (idx + 3 < S.length) cvGet(S[idx + 3]);
+                wt(cvGet(S[idx]), idx === 0 ? 7500 : 12000).then(function (buf) {
+                    if (my !== vtk) return res();
+                    return playBuf(ctx, buf, function () { if (my !== vtk) return; if (first) { first = false; h.first(); } h.sent(idx, S.length); }).then(function () { k++; setTimeout(step, 120); });
+                }).catch(function (e) {
+                    if (idx === 0 && first) return rej(e); if (my !== vtk) return res();
+                    h.sent(idx, S.length); setTimeout(function () { k++; step(); }, Math.max(1500, S[idx].length * 65));
+                });
+            })();
+        });
+    }
+    function nativePlay(S, my, h) {
+        return new Promise(function (res, rej) {
+            if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return rej('nonative'); var k = 0, first = true;
+            (function one() {
+                if (my !== vtk || k >= S.length) return res(); var idx = k, u, started = false, over = false, tm = null, tm2 = null;
+                try { u = new SpeechSynthesisUtterance(S[idx]); } catch (e) { return rej('nonative'); }
+                var vs = []; try { vs = speechSynthesis.getVoices() || []; } catch (e) { }
+                var v = vs.filter(function (x) { return /^en[-_]IN/i.test(x.lang); })[0] || vs.filter(function (x) { return /^en/i.test(x.lang); })[0]; if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-IN'; u.rate = 0.98;
+                var end = function () { if (over) return; over = true; clearTimeout(tm); clearTimeout(tm2); if (my !== vtk) return res(); if (!started && idx === 0 && first) return rej('nostart'); k++; setTimeout(one, 100); };
+                u.onstart = function () { started = true; clearTimeout(tm); if (first) { first = false; h.first(); } h.sent(idx, S.length); };
+                u.onend = u.onerror = end;
+                tm = setTimeout(function () { if (!started) { try { speechSynthesis.cancel(); } catch (e) { } end(); } }, 2500);
+                tm2 = setTimeout(end, S[idx].length * 110 + 6000);
+                try { if (idx === 0) speechSynthesis.cancel(); setTimeout(function () { try { speechSynthesis.speak(u); } catch (e) { end(); } }, idx === 0 ? 90 : 0); } catch (e) { end(); }
+            })();
+        });
+    }
+    function legacyPlay(text, my, h) {
+        return new Promise(function (res, rej) {
+            var heard = false, over = false; try { if (window.NovaForceVoice) window.NovaForceVoice(); if (!(window.NovaSpeak && window.NovaCanSpeak && window.NovaCanSpeak())) return rej('no'); } catch (e) { return rej('no'); }
+            var tm = setTimeout(function () { if (heard || over) return; over = true; try { if (window.NovaStopSpeak) window.NovaStopSpeak(); } catch (e) { } rej('slow'); }, 6500);
+            try { window.NovaSpeak(text, function () { if (over) return; over = true; clearTimeout(tm); if (heard) res(); else rej('silent'); }, function () { heard = true; clearTimeout(tm); h.first(); }, function (k, n) { h.sent(k, n); }); } catch (e) { rej('err'); }
+            setTimeout(function () { if (heard && !over) { over = true; res(); } }, Math.min(70000, text.length * 120 + 9000));
+        });
+    }
+    function mkBubble(S) {
+        if (!B) return null; var l = ui('.nc-log'), e = document.createElement('div'), n = 0; e.className = 'lg t'; e.style.display = 'none'; l.appendChild(e);
+        return { set: function (c) { c = Math.max(0, Math.min(S.length, c)); if (c <= n) return; n = c; e.style.display = ''; e.textContent = S.slice(0, c).join(' '); l.scrollTop = l.scrollHeight; } };
+    }
+    function prefetch(i) { try { var pg = C.d.pages[i]; if (!pg || !pg.note || window.__ncMute || C.vf >= 2) return; splitS(pg.note).slice(0, 2).forEach(cvGet); } catch (e) { } }
+    /* say(): voice and picture start together; the words go to the chat sidebar, never over the slide */
+    function say(text, done, onStart, onChunk, chat) {
+        var my = ++vtk, S = splitS(text), fin1 = false, st1 = false, simT = [], bb = chat ? mkBubble(S) : null; stopV();
         var start = function () { if (st1 || my !== vtk) return; st1 = true; if (onStart) onStart(); };
-        var sim = function (ms) { if (!onChunk) return; var pr = text.match(/[^.!?]+[.!?]*/g) || [text], tot = text.length || 1, acc = 0; pr.forEach(function (x, k) { var at = acc / tot * ms; acc += x.length; simT.push(setTimeout(function () { if (my === vtk) onChunk(k, pr.length); }, at)); }); };
-        var quiet = function () { quietOn = true; ok = false; clearTimeout(deadT); if (C) C.capOn = true; capt(text); if (!window.__ncMute) showVb(); start(); var ms = Math.max(3500, text.length * 65); sim(ms); setTimeout(fin, ms); };
-        var real = function () { if (my !== vtk) return; heard = true; clearTimeout(deadT); if (C) { C.vf = 0; C.capOn = false; } capt(''); hideVb(); start(); };
-        var fin = function () { if (fin1 || my !== vtk) return; if (ok && !heard && !quietOn) { quiet(); return; } fin1 = true; clearTimeout(deadT); simT.forEach(clearTimeout); start(); if (done) done(); };
-        try { if (!window.__ncMute && window.NovaForceVoice) window.NovaForceVoice(); ok = !window.__ncMute && !!(window.NovaSpeak && window.NovaCanSpeak && window.NovaCanSpeak()); } catch (e) { }
-        if (ok && C && C.vf >= 2) ok = false;
-        if (ok) {
-            try { window.NovaSpeak(text, fin, real, onChunk ? function (k, n) { if (my === vtk) onChunk(k, n); } : null); } catch (e) { }
-            setTimeout(start, 5000);
-            deadT = setTimeout(function () { if (heard || fin1 || my !== vtk) return; if (C) C.vf = (C.vf || 0) + 1; try { if (window.NovaStopSpeak) window.NovaStopSpeak(); } catch (e) { } quiet(); }, 14000);
-            setTimeout(fin, Math.min(60000, text.length * 120 + 8000));
-        } else quiet();
+        var sent = function (k, n) { if (my !== vtk) return; if (bb) bb.set(Math.ceil((k + 1) / Math.max(1, n) * S.length)); if (onChunk) onChunk(k, n); };
+        var finish = function () { if (fin1 || my !== vtk) return; fin1 = true; clearTimeout(safe); simT.forEach(clearTimeout); if (bb) bb.set(S.length); start(); if (done) done(); };
+        var first = function () { if (my !== vtk) return; if (C) { C.vf = 0; C.vok = true; } if (!window.__ncMute) setVs('Voice on'); start(); };
+        var quiet = function (why) {
+            if (my !== vtk) return; if (why) setVs(why, false); start(); var ms = Math.max(3500, text.length * 65), tot = text.length || 1, acc = 0;
+            S.forEach(function (x, k) { var at = acc / tot * ms; acc += x.length; simT.push(setTimeout(function () { sent(k, S.length); }, at)); }); simT.push(setTimeout(finish, ms));
+        };
+        var safe = setTimeout(start, 5000), h = { first: first, sent: sent };
+        if (window.__ncMute) return quiet('Voice muted \u2013 words appear here');
+        if (C && C.vf >= 2) return quiet('Voice unavailable \u2013 tap the speaker to retry');
+        cvPlay(S, my, h).then(finish, function (e) {
+            if (my !== vtk) return; if (e === 'blocked') armResume();
+            return nativePlay(S, my, h).then(finish, function () {
+                if (my !== vtk) return;
+                return legacyPlay(text, my, h).then(finish, function () { if (my !== vtk) return; if (C) C.vf = (C.vf || 0) + (C.vok ? 1 : 2); quiet('Voice unavailable \u2013 tap the speaker to retry'); });
+            });
+        });
     }
 
     function stopHear() { try { if (HR) { HR.onend = HR.onerror = HR.onresult = null; if (HR.abort) HR.abort(); else HR.stop(); } } catch (e) { } HR = null; clearTimeout(stopHear.t); }
@@ -39875,7 +39967,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     function sdur(sh) { return sh.t === 'image' ? 900 : sh.t === 'text' ? Math.min(1200, Math.max(350, sh.s.length * 70)) : 550; }
     function setSt(m) { if (!B) return; var se = ui('.nc-st'); if (se) se.textContent = m; B.classList.toggle('talk', m === 'Teaching'); B.classList.toggle('mic', /^Listening/.test(m)); }
     function log(r, t) { if (!B || !t) return; var l = ui('.nc-log'), e = document.createElement('div'); e.className = 'lg ' + r; e.textContent = t; l.appendChild(e); l.scrollTop = l.scrollHeight; }
-    function capt(t) { var e = B && ui('.nc-cap'); if (!e) return; var on = !!t && !!(C && C.capOn); e.classList.toggle('on', on); e.textContent = on ? t : ''; }
+    function capt() { }
     function studentName() { try { var s = (window.studentsDB || []).find(function (x) { return x.mobile === window.loggedInMobile; }); return (s && (s.name || s.fullName)) || 'You'; } catch (e) { return 'You'; } }
     function showLd(h) { var l = ui('.nc-ld'); l.innerHTML = h; l.classList.add('on'); }
     function hideLd() { ui('.nc-ld').classList.remove('on'); }
@@ -39969,14 +40061,14 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     function stopAuto() { if (!C) return; C.auto = false; btk++; vtk++; stopV(); stopHear(); setT(false); setSt('Paused'); hideQ(); }
     function teach(i) {
-        var my = ++btk, p = C.d.pages[i], rel = false; C.auto = true; setT(true); capt(''); go(i, 1, false, true); setSt('Teaching'); if (i >= C.d.pages.length - 3) more();
+        var my = ++btk, p = C.d.pages[i], rel = false; C.auto = true; setT(true); go(i, 1, false, true); log('s', 'Slide ' + (i + 1) + ' \u00b7 ' + (p.title || (p.board ? 'Whiteboard' : C.d.title))); prefetch(i + 1); setSt('Teaching'); if (i >= C.d.pages.length - 3) more();
         var rl = function () { if (rel || my !== btk || !C) return; rel = true; releaseInk(i); if (elsOf().length) revealTo(1); };
         var ch = function (k, n) { if (my !== btk || !C || !rel) return; var E = elsOf().length; if (E) revealTo(Math.min(E, 1 + Math.floor(k * E / Math.max(1, n)))); };
         var need = (p.note ? 1 : 0) + (p.board && p.draw && p.draw.length ? 1 : 0);
         function fin() { if (my !== btk || !C.auto) return; if (--need > 0) return; showAll(); setTimeout(function () { if (my === btk && C.auto) quiz(p, my, function () { next(my); }); }, 900); }
         if (!need) { need = 1; setTimeout(fin, 2500); }
         if (p.board && p.draw && p.draw.length) C.onEnd = fin;
-        if (p.note) say(p.note, fin, rl, ch); else { rl(); showAll(); }
+        if (p.note) say(p.note, fin, rl, ch, true); else { rl(); showAll(); }
     }
     function next(my) {
         if (!C || my !== btk || !C.auto) return;
@@ -40070,7 +40162,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     function init(cfg, d) {
         build(); stopHear(); btk++; vtk++; stopV(); cancelAnimationFrame(C && C.raf);
         C = { cfg: cfg, d: d || { title: cfg.topic, pages: [] }, i: -1, auto: false, ink: {}, tool: 'none', col: PEN[2], z: 5, hand: false, score: { r: 0, t: 0 }, parts: 1, done: !!d, busy: false, base: [], ops: [], tc: ui('.tc'), sc: ui('.sc') };
-        window.__ncMute = cfg.voice === false; if (!window.__ncMute && window.NovaForceVoice) window.NovaForceVoice();
+        window.__ncMute = cfg.voice === false; if (!window.__ncMute && window.NovaForceVoice) window.NovaForceVoice(); unlockAudio(); VC.cache = {}; setVs(window.__ncMute ? 'Voice muted \u2013 words appear here' : 'Voice on', !window.__ncMute);
         var T = TYPES.filter(function (x) { return x[0] === cfg.type; })[0] || TYPES[0];
         ui('.nc-tt b').textContent = C.d.title; ui('.nc-ty').textContent = T[2]; ui('.nc-log').innerHTML = ''; ui('.nc-pg').innerHTML = ''; ui('.nc-ct').textContent = ''; ui('.nc-prog i').style.width = '0';
         hideQ(); hideVb(); hideLd(); setT(false); setTool('none'); B.classList.remove('hand', 'side'); setSt('Paused'); B.classList.add('on');
@@ -40094,22 +40186,22 @@ Write a short normal introduction before the blocks and a one-line closing after
     function build() {
         if (B) return B; B = document.createElement('div'); B.id = 'nc'; B.className = 'nc';
         var tk = function (a, ic, t) { return '<button type="button" class="nc-b" data-a="' + a + '" aria-label="' + t + '" title="' + t + '"><i class="fa-solid ' + ic + '"></i></button>'; };
-        B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-av"><img src="' + NOVA_IMG + '" alt="" onerror="this.style.visibility=\'hidden\'"></div><div class="nc-tt"><b></b><small><i class="nc-dot"></i>LIVE \u00b7 <span class="nc-ty"></span> \u00b7 <span class="nc-st">Paused</span></small></div><span class="nc-ct"></span>' + tk('side', 'fa-comments', 'Comments and doubts') + '</div>'
-            + '<div class="nc-main"><div class="nc-stage"><div class="nc-sw"><div class="nc-pg"></div><canvas class="tc"></canvas><canvas class="sc"></canvas></div><div class="nc-cap"></div><div class="nc-hb"><i class="fa-solid fa-hand"></i> Hand raised</div><button type="button" class="nc-vb" data-a="vfix"><i class="fa-solid fa-volume-high"></i> Tap to turn on voice</button><div class="nc-q"></div><div class="nc-ld"></div></div>'
-            + '<aside class="nc-side"><div class="nc-sh"><b>Comments &amp; doubts</b>' + tk('side', 'fa-xmark', 'Close') + '</div><div class="nc-log"></div><form class="nc-fm"><input placeholder="Type a comment or doubt\u2026" autocomplete="off"><button type="submit" class="nc-b go" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></form></aside></div>'
+        B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-tt"><b></b><small><i class="nc-dot"></i>LIVE \u00b7 <span class="nc-ty"></span> \u00b7 <span class="nc-st">Paused</span></small></div><span class="nc-ct"></span>' + tk('vol', 'fa-volume-high', 'Voice on or off') + tk('side', 'fa-comments', 'Class chat') + '</div>'
+            + '<div class="nc-main"><div class="nc-stage"><div class="nc-sw"><div class="nc-pg"></div><canvas class="tc"></canvas><canvas class="sc"></canvas></div><div class="nc-hb"><i class="fa-solid fa-hand"></i> Hand raised</div><div class="nc-q"></div><div class="nc-ld"></div></div>'
+            + '<aside class="nc-side"><div class="nc-sh"><div class="nc-av"><img src="' + NOVA_IMG + '" alt="" onerror="this.style.visibility=\'hidden\'"></div><div class="nc-sn"><b>NOVA \u00b7 your teacher</b><small class="nc-vs">Voice on</small></div></div><div class="nc-log"></div><form class="nc-fm"><input placeholder="Type a comment or doubt\u2026" autocomplete="off"><button type="submit" class="nc-b go" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></form></aside></div>'
             + '<div class="nc-prog"><i></i></div><div class="nc-dock">' + tk('p', 'fa-backward-step', 'Previous') + tk('t', 'fa-play', 'Teach') + tk('n', 'fa-forward-step', 'Next')
             + '<button type="button" class="nc-b hand" data-a="hand"><i class="fa-solid fa-hand"></i><span>Raise hand</span></button></div>';
-        document.body.appendChild(B);
+        document.body.appendChild(B); B.addEventListener('pointerdown', unlockAudio, true);
         B.addEventListener('click', function (e) {
             var o = e.target.closest('[data-k]'); if (o && C && C.qs && C.qs.onPick) { C.qs.onPick(+o.getAttribute('data-k')); return; }
             var b = e.target.closest('[data-a]'); if (!b || !C) return; var a = b.getAttribute('data-a');
             if (a === 'x') close(); else if (a === 'p') { stopAuto(); go(C.i - 1, -1); } else if (a === 'n') { stopAuto(); go(C.i + 1, 1); } else if (a === 't') { if (C.auto) stopAuto(); else if (C.d.pages.length) teach(Math.max(0, C.i)); }
-            else if (a === 'hand') hand(); else if (a === 'side') B.classList.toggle('side');
+            else if (a === 'hand') hand(); else if (a === 'side') B.classList.toggle('noside');
             else if (a === 'pen' || a === 'hl' || a === 'er') setTool(C.tool === a ? 'none' : a);
             else if (a === 'col') { C.col = b.getAttribute('data-c'); B.querySelectorAll('.nc-c1').forEach(function (x) { x.classList.toggle('on', x === b); }); if (C.tool === 'none' || C.tool === 'er') setTool('pen'); }
             else if (a === 'un') { (C.ink[C.i] || []).pop(); paintS(); } else if (a === 'cl') { C.ink[C.i] = []; paintS(); }
             else if (a === 'qgo') { var i = ui('.nc-q input'); submitQ(i && i.value); } else if (a === 'qmic') listen(); else if (a === 'qskip') { if (C.qs && C.qs.onSkip) C.qs.onSkip(); }
-            else if (a === 'vfix') { hideVb(); C.vf = 0; C.capOn = false; capt(''); if (window.NovaForceVoice) window.NovaForceVoice(); if (C.d.pages.length) teach(Math.max(0, C.i)); } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
+            else if (a === 'vol') { unlockAudio(); if (window.__ncMute) { window.__ncMute = false; C.vf = 0; setVs('Voice on'); } else if (C.vf >= 2) { C.vf = 0; C.vok = false; VC.cache = {}; setVs('Voice: trying again\u2026'); if (C.d.pages.length && C.auto) teach(Math.max(0, C.i)); } else { window.__ncMute = true; stopV(); setVs('Voice muted \u2013 words appear here', false); } } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
         });
         ui('.nc-fm').addEventListener('submit', function (e) { e.preventDefault(); var i = ui('.nc-fm input'), v = i.value.trim(); if (!v || !C || !C.d.pages.length) return; i.value = ''; var was = C.auto; stopAuto(); C.hand = true; B.classList.add('hand'); doubt(v, was); });
         var sc = ui('.sc'), cur = null, sx = 0, st = ui('.nc-stage');
@@ -40280,8 +40372,6 @@ Write a short normal introduction before the blocks and a one-line closing after
 .nc-ld.on{display:flex}.nc-ld b{font-size:17px}.nc-ld span{font-size:13px;color:#9fb0c8}.nc-tr{font-size:34px;color:#e9b44c}
 .nc-spin{width:38px;height:38px;border-radius:50%;border:4px solid rgba(255,255,255,.18);border-top-color:#7fd6c7;animation:ncS 1s linear infinite}@keyframes ncS{to{transform:rotate(360deg)}}
 .nc-eb{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:6px}
-.nc-side{display:none;flex-direction:column;min-height:0;background:#18213a;border-radius:18px 18px 0 0;position:absolute;left:0;right:0;bottom:0;height:58%;z-index:7;box-shadow:0 -12px 30px rgba(0,0,0,.4)}
-.nc.side .nc-side{display:flex}
 .nc-tiles{display:flex;gap:8px;padding:10px}
 .nc-tile{position:relative;flex:1;max-width:50%;aspect-ratio:16/10;border-radius:12px;overflow:hidden;background:#243049;display:flex;align-items:center;justify-content:center}
 .nc-tile img{width:100%;height:100%;object-fit:cover}.nc-tile>b{width:44px;height:44px;border-radius:50%;background:#5b6ee1;display:flex;align-items:center;justify-content:center;font-size:20px}
@@ -40333,19 +40423,16 @@ Write a short normal introduction before the blocks and a one-line closing after
 .nc-paper span{left:28px;top:12px;font:800 34px system-ui,"Segoe UI",sans-serif;color:#1e293b;border-bottom:4px solid #dc2626;padding-bottom:4px}
 .nc-vb{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;display:none;align-items:center;gap:8px;border:0;border-radius:99px;padding:10px 16px;background:#e9b44c;color:#3b2a05;font:800 13px system-ui;cursor:pointer;box-shadow:0 8px 20px rgba(0,0,0,.35)}.nc-vb.on{display:flex}
 .nc-q{bottom:12px;left:12px;right:12px}
-.nc-side{display:none;flex-direction:column;position:absolute;left:0;right:0;bottom:0;height:56%;background:#fff;color:#1e293b;border-radius:20px 20px 0 0;z-index:7;box-shadow:0 -12px 30px rgba(0,0,0,.35);overflow:hidden}
-.nc.side .nc-side{display:flex}
 .nc-sh{display:flex;align-items:center;justify-content:space-between;padding:10px 10px 6px 16px;flex:none}.nc-sh b{font:800 14px system-ui}
 .nc-sh .nc-b{width:34px;height:34px;font-size:13px;background:#eef1fb;color:#3b4a9e}
 .nc-log{padding:0 14px 6px}.lg{background:#eef1fb;color:#1e293b}.lg.y{background:#5b6ee1;color:#fff}.lg.s{background:none;color:#64748b}
 .nc-fm{padding:8px 12px 12px;flex:none}.nc-fm input{background:#f1f4fb;color:#1e293b}
-@media(min-width:900px){.nc-side{left:auto;right:14px;bottom:14px;width:400px;height:60%;border-radius:20px}}
 @media(orientation:landscape) and (max-height:520px){
  .nc.on{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto 1fr auto}
  .nc-top{grid-column:1;padding:2px 2px 4px}.nc-main{grid-column:1;grid-row:2}.nc-prog{grid-column:1;grid-row:3;margin:6px 4px 0}
  .nc-dock{grid-column:2;grid-row:1/4;flex-direction:column;flex-wrap:nowrap;justify-content:center;padding:4px 6px 4px 12px}
  .nc-b.hand span{display:none}.nc-b.hand{padding:0;width:46px;justify-content:center}
- .nc-side{height:100%;width:60%;left:auto;border-radius:20px 0 0 20px}}
+}
 /* slides: dark text on a light page, coloured title band, strong contrast everywhere */
 .nc .nt-sl{background:#f3f5fb;color:#0f172a}
 .nc .nt-sl h2{background:var(--a);color:#fff;padding:.38em .7em;border-radius:.4em;font-size:1.45em;line-height:1.2}
@@ -40385,6 +40472,25 @@ Write a short normal introduction before the blocks and a one-line closing after
 .nc .l-split.noimg,.nc .l-grid.noimg{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr)}
 .nc .l-hero.noimg{grid-template-rows:1fr}.nc .l-hero.noimg .nt-tx{justify-content:center}
 .nc .l-full.noimg{background:linear-gradient(135deg,var(--a),var(--a2))}
+
+/* ===== class v5: teacher chat sidebar (phone: under the slide, tablet/desktop/landscape: beside it) ===== */
+.nc-main{flex-direction:column;gap:10px}
+.nc-stage{flex:1 1 0;min-height:0}
+.nc-side{display:flex;flex-direction:column;position:static;flex:0 0 34%;min-height:150px;max-height:320px;background:#fff;color:#1e293b;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.nc.noside .nc-side{display:none}
+.nc-sh{display:flex;align-items:center;justify-content:flex-start;gap:10px;padding:9px 14px;flex:none;border-bottom:1px solid #eef1f8}
+.nc-sn b{display:block;font:800 13.5px system-ui;color:#1e293b}.nc-sn small{display:block;font:600 11.5px system-ui;color:#64748b}
+.nc-sh .nc-av{width:36px;height:36px}
+.nc-log{flex:1;min-height:0;overflow-y:auto;padding:10px 12px;gap:8px;display:flex;flex-direction:column;scroll-behavior:smooth;-webkit-overflow-scrolling:touch}
+.lg{max-width:92%;padding:8px 12px;border-radius:14px;font:500 13.5px/1.5 system-ui;background:#eef1fb;color:#1e293b;align-self:flex-start;border-bottom-left-radius:4px;animation:nvPg .3s ease both}
+.lg.t::before{content:"NOVA";display:block;font:800 9.5px system-ui;letter-spacing:.1em;color:#4f46e5;margin-bottom:2px}
+.lg.y{align-self:flex-end;background:#5b6ee1;color:#fff;border-bottom-left-radius:14px;border-bottom-right-radius:4px}
+.lg.s{align-self:center;max-width:100%;background:none;color:#64748b;font:800 10.5px system-ui;letter-spacing:.06em;text-transform:uppercase;padding:2px 0;text-align:center}
+.nc-fm{padding:8px 10px 10px;flex:none;border-top:1px solid #eef1f8}
+.nc-fm input{background:#f1f4fb;color:#1e293b}
+.nc:not(.vo) [data-a=vol]{background:rgba(239,68,68,.45)}
+@media(min-width:760px) and (min-height:521px){.nc-main{flex-direction:row}.nc-side{flex:0 0 clamp(300px,32vw,400px);max-height:none;min-height:0}}
+@media(orientation:landscape) and (max-height:520px){.nc-main{flex-direction:row}.nc-side{flex:0 0 38%;max-height:none;min-height:0;border-radius:16px}.nc-sh{padding:6px 12px}.nc-sh .nc-av{width:30px;height:30px}}
 </style>
 
 <script id="nv2-js">
