@@ -2749,7 +2749,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
                 s.armed = true;
                 setTimeout(function () {
                     if (navCount !== s.nav) return;                     // system already went back -> leave it
-                    if (!applied || keyboardUp || viewerActive()) return;
+                    if (!applied || keyboardUp || viewerActive() || (window.gestureLocked && window.gestureLocked())) return;
                     try { if (typeof window.safeBack === 'function') window.safeBack(); else history.back(); }
                     catch (e) { history.back(); }
                 }, 300);
@@ -2767,7 +2767,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
                 const opt = { passive: true, capture: true };
                 document.addEventListener('touchstart', function (e) {
                     g = null;
-                    if (!inMedian() || !applied || keyboardUp || e.touches.length !== 1 || viewerActive()) return;
+                    if (!inMedian() || !applied || keyboardUp || e.touches.length !== 1 || viewerActive() || (window.gestureLocked && window.gestureLocked())) return;
                     const t = e.touches[0], W = window.innerWidth;
                     const side = t.clientX <= EDGE_PX ? 'L' : (t.clientX >= W - EDGE_PX ? 'R' : null);
                     if (!side) return;
@@ -13489,13 +13489,12 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
 
             window.uploadChatImages = async function (event) {
                 const files = Array.from(event.target.files); if (files.length === 0) return; showLoader(files.length > 1 ? `Uploading ${files.length} images` : "Uploading image");
-                const IMGBB_API_KEY = "0bb18568779ce0a49ee8947c55e4fcf9";
                 try {
                     let urls = [];
                     for (let file of files) {
                         const compressedFile = await window.compressImage(file, 800, 800, 0.8);
                         const formData = new FormData(); formData.append("image", compressedFile);
-                        const res = await fetch(`https://api.imgbb.com/1/upload?expiration=86400&key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
+                        const res = await fetch(`${window.WORKER_URL}upload`, { method: "POST", body: formData });
                         const data = await res.json();
                         if (data.success) urls.push(data.data.url);
                     }
@@ -26610,7 +26609,7 @@ function mpDrawTab(tab, body) {
                         base64Images.push(base64Data);
                     }
 
-                    const prompt = `Analyze these pages from the document. Generate exactly 20 multiple-choice questions based on the concepts, text, and diagrams found across these pages. Based on the overall topic, create a short, catchy title for this quiz.\n\nReturn strictly in this JSON format with no markdown blocks:\n{"quizTitle": "Generated Title Here", "questions": [{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]}`;
+                    const prompt = `Analyze these pages from the document. Generate exactly 30 multiple-choice questions based on the concepts, text, and diagrams found across these pages. Based on the overall topic, create a short, catchy title for this quiz.\n\nReturn strictly in this JSON format with no markdown blocks:\n{"quizTitle": "Generated Title Here", "questions": [{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]}`;
 
                     // Grab the actual Topic Name from the Reader Header
                     const topicName = document.getElementById('pdf-viewer-title').innerText || "Document";
@@ -26673,6 +26672,10 @@ function mpDrawTab(tab, body) {
                 // Assign the AI generated title, fallback to the original title if missing
                 window.activeQuizData = parsedData.questions || [];
                 window.activeQuizTitle = parsedData.quizTitle || title;
+                // Self-generated quiz: max 30 questions, 30 minutes, never treated as an admin exam
+                if (window.activeQuizData.length > 30) window.activeQuizData = window.activeQuizData.slice(0, 30);
+                window.activeExamIdForQuiz = null;
+                window.quizTimeRemaining = 30 * 60;
 
                 window.renderQuizModal();
             };
@@ -26720,7 +26723,7 @@ function mpDrawTab(tab, body) {
                     const img = await window.imageUrlToBase64(imgUrl);
                     const b64 = img.data;
 
-                    const prompt = `Analyze the educational content, formulas, or concepts in this image. Generate exactly 20 multiple-choice questions based on these concepts. Based on the overall topic, create a short, catchy title for this quiz. Keep the explanation to EXACTLY ONE short sentence.\n\nReturn strictly in this JSON format with no markdown blocks:\n{"quizTitle": "Generated Title Here", "questions": [{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]}`;
+                    const prompt = `Analyze the educational content, formulas, or concepts in this image. Generate exactly 30 multiple-choice questions based on these concepts. Based on the overall topic, create a short, catchy title for this quiz. Keep the explanation to EXACTLY ONE short sentence.\n\nReturn strictly in this JSON format with no markdown blocks:\n{"quizTitle": "Generated Title Here", "questions": [{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]}`;
 
                     await window.fetchQuizFromGemini(prompt, `Image Quiz: ${String(title || '').substring(0, 15)}`, b64, img.mime);
                 } catch (e) {
@@ -26793,6 +26796,10 @@ function mpDrawTab(tab, body) {
                     // Assign the AI generated title, fallback to the original title if missing
                     window.activeQuizData = parsedData.questions || [];
                     window.activeQuizTitle = parsedData.quizTitle || title;
+                // Self-generated quiz: max 30 questions, 30 minutes, never treated as an admin exam
+                if (window.activeQuizData.length > 30) window.activeQuizData = window.activeQuizData.slice(0, 30);
+                window.activeExamIdForQuiz = null;
+                window.quizTimeRemaining = 30 * 60;
 
                     if (!window.activeQuizData || window.activeQuizData.length === 0) {
                         throw new Error("AI failed to generate a valid JSON questions array.");
@@ -28716,7 +28723,7 @@ function mpDrawTab(tab, body) {
             window.submitNovaTopicModal = function () {
                 const topic = document.getElementById('nova-topic-input').value.trim();
                 if (topic) {
-                    window.sendQuickNovaPrompt(`Generate a 10-question mock exam on ${topic}.`);
+                    window.sendQuickNovaPrompt(`Generate a 30-question mock exam on ${topic}.`);
                     document.getElementById('nova-topic-input').value = '';
                     window.closeNovaTopicModal();
                 } else {
@@ -29361,7 +29368,7 @@ YOUR DIRECTIVES:
             }
 
             document.getElementById('app').addEventListener('touchstart', (e) => {
-                if (isRefreshing || tpIsOpen()) return;
+                if (isRefreshing || tpIsOpen() || (window.gestureLocked && window.gestureLocked())) return;
 
                 // --- NEW UX FIX: DISABLE PULL-TO-REFRESH IN SPECIFIC VIEWS ---
                 const isStudentActive = !document.getElementById('student-view').classList.contains('hidden-view');
@@ -37342,7 +37349,7 @@ function doQuiz(topic) {
     wait(function () { return vis($('nova-chat-input')); }, 4000).then(function (ok) {
         if (!ok) return say('Sorry, I couldn\u2019t open the exam maker.');
         setTimeout(function () {
-            try { window.sendQuickNovaPrompt('Generate a 10-question mock exam on ' + topic + '.'); } catch (e) { return say('Sorry, I couldn\u2019t start the exam.'); }
+            try { window.sendQuickNovaPrompt('Generate a 30-question mock exam on ' + topic + '.'); } catch (e) { return say('Sorry, I couldn\u2019t start the exam.'); }
             say('Okay. Preparing your ' + topic + ' exam. It will open in a few seconds.');
         }, 500);
     });
@@ -38835,6 +38842,81 @@ html.is-tablet.is-landscape body #action-sheet[id]{height:calc(100dvh - max(env(
 html.is-tablet body #action-sheet>.shrink-0,html.is-tablet.is-landscape body #action-sheet>.shrink-0{padding-top:16px!important;padding-bottom:6px!important}
 html.is-tablet body #action-sheet #action-sheet-scroll{padding-top:10px!important}
 </style>
+
+<style id="gesture-lock-css">
+/* GESTURE LOCK: while a run or any exam screen is open, only vertical scrolling is allowed.
+   No horizontal swipe, pinch-zoom, double-tap zoom or pull-to-refresh / overscroll. */
+html.g-lock, html.g-lock body { overscroll-behavior: none !important; }
+html.g-lock #auto-quiz-modal, html.g-lock #auto-quiz-modal *,
+html.g-lock #active-exam-view, html.g-lock #active-exam-view *,
+html.g-lock #peer-eval-room-modal, html.g-lock #peer-eval-room-modal *,
+html.g-lock #run-tracker, html.g-lock #run-tracker * { touch-action: pan-y !important; }
+#g-lock-toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 2147483000; background: rgba(15,23,42,.92); color: #fff; font: 700 12px/1.3 system-ui, sans-serif; padding: 10px 16px; border-radius: 999px; max-width: 86vw; text-align: center; pointer-events: none; opacity: 0; transition: opacity .2s; }
+#g-lock-toast.on { opacity: 1; }
+</style>
+<script id="gesture-lock">
+(function () {
+    var RUN = 'run-tracker', EXAMS = ['auto-quiz-modal', 'active-exam-view', 'peer-eval-room-modal'];
+    var EDGE = 40, trap = false, ignore = 0, sx = 0, sy = 0, edge = false, tt = null;
+
+    function shown(id) {
+        var e = document.getElementById(id);
+        if (!e || e.classList.contains('hidden-view') || e.classList.contains('hidden')) return false;
+        return e.getClientRects().length > 0;
+    }
+    function examOpen() { for (var i = 0; i < EXAMS.length; i++) if (shown(EXAMS[i])) return true; return false; }
+    function locked() { return examOpen() || shown(RUN); }
+    window.gestureLocked = locked;
+
+    function toast(msg) {
+        var t = document.getElementById('g-lock-toast');
+        if (!t) { t = document.createElement('div'); t.id = 'g-lock-toast'; document.body.appendChild(t); }
+        t.textContent = msg; t.classList.add('on');
+        clearTimeout(tt); tt = setTimeout(function () { t.classList.remove('on'); }, 1800);
+    }
+
+    // keep <html class="g-lock"> in step with the screens; trap the phone's back swipe during exams only
+    function sync() {
+        document.documentElement.classList.toggle('g-lock', locked());
+        var ex = examOpen();
+        if (ex && !trap) { trap = true; try { history.pushState({ glock: 1 }, '', location.href); } catch (e) { } }
+        else if (!ex && trap) {
+            trap = false;
+            if (history.state && history.state.glock) { ignore++; try { history.back(); } catch (e) { } }
+        }
+    }
+    setInterval(sync, 300);
+    document.addEventListener('touchstart', sync, { passive: true, capture: true });
+
+    // back swipe / back button during an exam: stay on the exam
+    window.addEventListener('popstate', function (e) {
+        if (ignore > 0) { ignore--; return; }
+        if (examOpen()) {
+            try { history.pushState({ glock: 1 }, '', location.href); } catch (x) { }
+            try { e.stopImmediatePropagation(); } catch (x) { }
+            toast('Gestures are disabled during the exam. Use the Submit button.');
+        }
+    }, true);
+
+    // two-finger pinch and edge swipes are cancelled (single taps and vertical scrolling still work)
+    document.addEventListener('touchstart', function (e) {
+        if (!locked()) return;
+        var t = e.touches[0]; if (!t) return;
+        sx = t.clientX; sy = t.clientY;
+        edge = sx <= EDGE || sx >= window.innerWidth - EDGE;
+        if (e.touches.length > 1 && e.cancelable) e.preventDefault();
+    }, { passive: false, capture: true });
+    document.addEventListener('touchmove', function (e) {
+        if (!locked() || !e.cancelable) return;
+        if (e.touches.length > 1) { e.preventDefault(); return; }
+        var t = e.touches[0]; if (!t) return;
+        if (edge && Math.abs(t.clientX - sx) > Math.abs(t.clientY - sy)) e.preventDefault();
+    }, { passive: false, capture: true });
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (n) {
+        document.addEventListener(n, function (e) { if (locked() && e.cancelable) e.preventDefault(); }, { passive: false });
+    });
+})();
+</script>
 </body>
 
 </html>
