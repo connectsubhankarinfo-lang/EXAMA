@@ -39888,7 +39888,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         return o2.length ? o2 : [String(t || '')];
     }
     /* the board follows the voice you actually HEAR: phones play audio a little after the code says play (decode + speaker + bluetooth delay) */
-    function lagMs() { if (typeof window.NOVA_SYNC_LAG === 'number') return window.NOVA_SYNC_LAG; var c = null; try { c = acx(); } catch (e) { } var l = c && (c.outputLatency || c.baseLatency); return Math.min(900, Math.round((l ? l * 1000 : 120) + 250)); }
+    function lagMs() { if (typeof window.NOVA_SYNC_LAG === 'number') return window.NOVA_SYNC_LAG; var c = null; try { c = acx(); } catch (e) { } var l = c && (c.outputLatency || c.baseLatency); return Math.min(450, Math.max(80, Math.round((l ? l * 1000 : 90) + 40))); }
     function vOff() { return 'Voice unavailable' + (VC.why ? ' (' + VC.why + ')' : '') + ' \u2013 tap the speaker to retry'; }
     function cvFetch(t) {
         var ctx = acx(); if (!ctx) return Promise.reject('noctx');
@@ -39943,7 +39943,7 @@ Write a short normal introduction before the blocks and a one-line closing after
                 var vs = []; try { vs = speechSynthesis.getVoices() || []; } catch (e) { }
                 var lg = LG(), v = vs.filter(function (x) { return lg.nv.test(x.lang) && (lg.id !== 'en' || /^en[-_]IN/i.test(x.lang)); })[0] || vs.filter(function (x) { return lg.nv.test(x.lang); })[0]; if (!v && lg.id !== 'en') return rej('novoice'); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = lg.rec; u.rate = 0.98;
                 var end = function () { if (over) return; over = true; clearTimeout(tm); clearTimeout(tm2); if (my !== vtk) return res(); if (!started && idx === 0 && first) return rej('nostart'); k++; setTimeout(one, 100); };
-                u.onstart = function () { started = true; clearTimeout(tm); if (first) { first = false; h.first(); } h.sent(idx, S.length, false, S[idx].length * 70); };
+                u.onstart = function () { started = true; clearTimeout(tm); if (first) { first = false; h.first(true); } h.sent(idx, S.length, true, S[idx].length * 70); };
                 u.onend = u.onerror = end;
                 tm = setTimeout(function () { if (!started) { try { speechSynthesis.cancel(); } catch (e) { } end(); } }, 2500);
                 tm2 = setTimeout(end, S[idx].length * 110 + 6000);
@@ -39970,7 +39970,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         var start = function () { if (st1 || my !== vtk) return; st1 = true; if (onStart) onStart(); };
         var sent = function (k, n, nl, du) { var go = function () { if (my !== vtk) return; if (bb) bb.set(Math.ceil((k + 1) / Math.max(1, n) * S.length)); if (onChunk) onChunk(k, n, du); }; if (nl) go(); else setTimeout(go, lagMs()); };
         var finish = function () { if (fin1 || my !== vtk) return; fin1 = true; clearTimeout(safe); simT.forEach(clearTimeout); if (bb) bb.set(S.length); start(); if (done) done(); };
-        var first = function () { if (my !== vtk) return; if (C) { C.vf = 0; C.vok = true; } if (!window.__ncMute) setVs('Voice on'); setTimeout(start, lagMs()); };
+        var first = function (nl) { if (my !== vtk) return; if (C) { C.vf = 0; C.vok = true; } if (!window.__ncMute) setVs('Voice on'); setTimeout(start, nl ? 0 : lagMs()); };
         var quiet = function (why) {
             if (my !== vtk) return; if (why) setVs(why, false); start(); var ms = Math.max(3500, text.length * 65), tot = text.length || 1, acc = 0;
             S.forEach(function (x, k) { var at = acc / tot * ms; acc += x.length; simT.push(setTimeout(function () { sent(k, S.length, true, x.length / tot * ms); }, at)); }); simT.push(setTimeout(finish, ms));
@@ -40144,9 +40144,32 @@ Write a short normal introduction before the blocks and a one-line closing after
         ui('.nc-sw').style.cssText = 'width:' + W + 'px;height:' + H + 'px;transform:translate(-50%,-50%) scale(' + s + ')';
         [C.tc, C.sc].forEach(function (c) { c.style.width = W + 'px'; c.style.height = H + 'px'; c.width = Math.round(W * s * dpr); c.height = Math.round(H * s * dpr); c.getContext('2d').setTransform(s * dpr, 0, 0, s * dpr, 0, 0); });
         C.W = W; C.H = H; C.s = s; C.por = por;
-        if (mode && C.i >= 0) go(C.i, 1, true); else { paintT(); paintS(); }
+        if (mode && C.i >= 0) relayout(); else { paintT(); paintS(); }
     }
 
+    /* the layout changed shape (phone turned, full screen on/off): rebuild the slide for the new shape but KEEP the lesson state: points already shown, pen strokes and voice sync (the old code restarted the page here) */
+    function relayout() {
+        var i = C.i, P = C.d.pages, p = P[i]; if (!p) return;
+        if (p.board) { paintT(); paintS(); return; }
+        var pg = ui('.nc-pg'), old = pg.querySelector('.nt-sl'), all = !!(old && old.classList.contains('all')),
+            st = elsOf().map(function (e) { return [e.classList.contains('on'), e.classList.contains('act')]; }), oOps = C.ops || [], oAnim = C.anim, se;
+        pg.innerHTML = ''; se = slideEl(p, i, P.length, 1); pg.appendChild(se);
+        if (all) se.classList.add('all');
+        elsOf().forEach(function (e, k) { if (st[k]) { e.classList.toggle('on', st[k][0]); e.classList.toggle('act', st[k][1]); } });
+        fitText(se); setTimeout(function () { if (C && se.isConnected) fitText(se); }, 450);
+        if (C.sy && C.sy.built) {
+            C.sy.built = false; penBuild(i);
+            var og = {}, ng = {};
+            oOps.forEach(function (o) { (og[o.g] = og[o.g] || []).push(o); });
+            (C.ops || []).forEach(function (o) {
+                var a = og[o.g], k = ng[o.g] || 0, src = a && a.length ? a[Math.min(k, a.length - 1)] : null; ng[o.g] = k + 1;
+                if (src && src.at < 1e11) { o.at = src.at; o.du = src.du; }
+                if (!oAnim && !(o.at < 1e11)) { o.at = 0; o.du = 1; }
+            });
+            C.anim = oAnim;
+        }
+        paintT(); paintS();
+    }
     /* ---------- teacher pen (on slides and on board pages) ---------- */
     function setInk(i, hold) {
         var P = C.d.pages, p = P[i], k = i; C.base = []; C.ops = []; C.anim = 0; clearTimeout(C.tm); clearTimeout(C.syFb); C.sy = null; C.hold = !!hold;
@@ -40331,7 +40354,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     function ctx() { var p = C.d.pages[C.i] || {}; return 'Class topic: ' + C.cfg.topic + '. Current page: ' + (p.title || '') + ' ' + (p.bul || []).join('; ') + '. ' + (p.note || ''); }
     function askDoubt(was) { showQ({ q: 'Yes, tell me your doubt', input: true, ph: 'Type or speak your doubt\u2026', onText: function (u) { doubt(u, was); }, onSkip: function () { lower(was); } }); }
     function hand() {
-        if (!C || !C.d.pages.length || C.hand) return; var was = C.auto; stopAuto(); C.hand = true; B.classList.add('hand'); askDoubt(was);
+        if (!C || !C.d.pages.length) return; if (C.hand) { stopV(); lower(!!C.hw); return; } var was = C.auto; C.hw = was; stopAuto(); C.hand = true; B.classList.add('hand'); askDoubt(was);
         say('Yes, tell me your doubt.', function () { if (C && C.hand && C.qs) listen(); });
     }
     function doubt(u, was) { autoLang(u);
@@ -40340,14 +40363,14 @@ Write a short normal introduction before the blocks and a one-line closing after
             if (!C || my !== btk) return; var t = spoken(r) || 'Sorry, I could not answer that. Please ask again.'; log('t', t); capt(t, 1); setSt('Teaching');
             say(t, function () {
                 if (!C || my !== btk) return; setSt('Paused');
-                showQ({ q: 'Is it clear?', nol: 1, opts: ['Yes, continue', 'Explain again', 'Another doubt'], onPick: function (k) { if (k === 0) lower(was); else if (k === 1) doubt('Please explain that again in simpler words with a small example.', was); else { hideQ(); C.hand = true; B.classList.add('hand'); askDoubt(was); } } });
+                showQ({ q: 'Is it clear?', nol: 1, opts: ['Yes, continue', 'Explain again', 'Another doubt'], onPick: function (k) { if (k === 0) lower(was); else if (k === 1) doubt('Please explain that again in simpler words with a small example.', was); else { hideQ(); C.hand = true; C.hw = was; B.classList.add('hand'); askDoubt(was); } } });
             });
         });
     }
     function sideMic() {
         if (!C || !C.d.pages.length) return;
         if (HR) { stopHear(); lower(C.smWas); return; }
-        var was = C.auto; C.smWas = was; stopAuto(); C.hand = true; B.classList.add('hand'); unlockAudio();
+        var was = C.auto; C.smWas = was; C.hw = was; stopAuto(); C.hand = true; B.classList.add('hand'); unlockAudio();
         hear(function (u) { if (!C) return; var i = ui('.nc-fm input'); if (i) i.value = ''; doubt(u, was); }, function () { if (C) lower(was); });
     }
     function lower(was) {
@@ -40413,8 +40436,9 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     function fsOn() {
         if (!B) return; B.classList.add('fs'); var r = B.requestFullscreen || B.webkitRequestFullscreen;
-        try { var p = r && r.call(B); if (p && p.catch) p.catch(function () { }); } catch (e) { }
-        try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () { }); } catch (e) { }
+        var lockL = function () { try { if (screen.orientation && screen.orientation.lock) { var q = screen.orientation.lock('landscape'); if (q && q.catch) q.catch(function () { }); } } catch (e) { } };
+        try { var p = r && r.call(B); if (p && p.then) p.then(lockL, lockL); else lockL(); } catch (e) { lockL(); }
+        /* landscape lock runs above, after full screen is granted */
         fsSync();
     }
     function fsOff() {
@@ -40456,6 +40480,12 @@ Write a short normal introduction before the blocks and a one-line closing after
         st.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
         st.addEventListener('touchend', function (e) { var dx = e.changedTouches[0].clientX - sx; if (C && C.tool === 'none' && C.d.pages.length && Math.abs(dx) > 60) { stopAuto(); go(C.i + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1); } }, { passive: true });
         window.addEventListener('resize', function () { if (C && B.classList.contains('on')) fit(); });
+        /* the stage can change size without a window resize (full screen on/off, rotation, bars): refit the drawing whenever it does */
+        try { if (window.ResizeObserver) { var fr = 0; new ResizeObserver(function () { cancelAnimationFrame(fr); fr = requestAnimationFrame(function () { if (C && B.classList.contains('on')) fit(); }); }).observe(st); } } catch (e) { }
+        /* raise-hand button: label follows the state (tap again to lower the hand) */
+        try { var hb = B.querySelector('[data-a=hand]'), hs = hb && hb.querySelector('span'); new MutationObserver(function () { var h = B.classList.contains('hand'); if (hs) hs.textContent = h ? 'Lower hand' : 'Raise hand'; if (hb) { hb.title = h ? 'Lower hand' : 'Raise hand'; hb.setAttribute('aria-label', hb.title); hb.setAttribute('aria-pressed', h ? 'true' : 'false'); } }).observe(B, { attributes: true, attributeFilter: ['class'] }); } catch (e) { }
+        /* typing a doubt in full screen: lift the box above the phone keyboard */
+        try { var vv2 = window.visualViewport; if (vv2) { var kbq = function () { var q = B.querySelector('.nc-q'); if (!q) return; var d = Math.max(0, window.innerHeight - vv2.height - vv2.offsetTop), on = B.classList.contains('fs') && d > 80 && q.contains(document.activeElement); q.style.bottom = on ? (d + 8) + 'px' : ''; }; vv2.addEventListener('resize', kbq); vv2.addEventListener('scroll', kbq); } } catch (e) { }
         ['pointermove', 'pointerdown', 'touchstart', 'keydown'].forEach(function (ev) { B.addEventListener(ev, function () { if (B.classList.contains('fs')) fsShow(); }, { passive: true }); });
         B.addEventListener('click', function (e) { if (B.classList.contains('fs') && !e.target.closest('.nc-b,.nc-dock,.nc-top,.nc-fm,.nc-q,.nc-side,button,input,[data-k]')) { if (B.classList.contains('ui')) { B.classList.remove('ui'); clearTimeout(FS.t); } else fsShow(); } });
         document.addEventListener('keydown', function (e) { if (!C || !B.classList.contains('on') || /INPUT|TEXTAREA/.test((e.target || {}).tagName || '')) return; if (e.key === 'f' || e.key === 'F') toggleFs(); else if (e.key === 'Escape') { if (B.classList.contains('fs')) fsOff(); else close(); } else if (e.key === 'ArrowRight') { stopAuto(); go(C.i + 1, 1); } else if (e.key === 'ArrowLeft') { stopAuto(); go(C.i - 1, -1); } });
@@ -41023,6 +41053,28 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 .nc.fs .nc-b{background:rgba(255,255,255,.16);color:#fff}
 .nc.fs [data-a=side]{display:none}
 .nc-top [data-a=fs]{flex:none}
+</style>
+<style id="nc-fs2-css">
+/* ===== full screen v2: grey controls, raise-hand that works in full screen ===== */
+.nc.fs .nc-top{background:linear-gradient(180deg,rgba(17,24,39,.78),rgba(17,24,39,0))}
+.nc.fs .nc-dock{background:linear-gradient(0deg,rgba(17,24,39,.78),rgba(17,24,39,0))}
+.nc.fs .nc-b{background:rgba(75,85,99,.94);color:#f3f4f6;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.nc.fs .nc-b:hover{background:rgba(107,114,128,.97)}
+.nc.fs .nc-b:active{background:#374151}
+.nc.fs .nc-b.on,.nc.fs [data-a=t]{background:#6b7280;color:#fff}
+.nc.fs [data-a=t]{box-shadow:0 6px 18px rgba(0,0,0,.45)}
+.nc.fs .nc-b.hand{width:auto;padding:0 18px;justify-content:center;background:rgba(75,85,99,.94);color:#f3f4f6}
+.nc.fs .nc-b.hand span{display:inline}
+.nc.fs .nc-b.hand i{color:#fbbf24}
+.nc.fs.hand .nc-b.hand{background:#f59e0b;color:#2b1d02;box-shadow:0 0 0 3px rgba(245,158,11,.4),0 6px 16px rgba(0,0,0,.4);animation:ncHp 1.4s ease-in-out infinite}
+.nc.fs.hand .nc-b.hand i{color:#2b1d02}
+@keyframes ncHp{50%{box-shadow:0 0 0 9px rgba(245,158,11,0),0 6px 16px rgba(0,0,0,.4)}}
+/* doubt / quiz box: sits above the controls (was hidden behind them), buttons inside stay visible */
+.nc.fs .nc-q{left:50%;right:auto;width:min(640px,calc(100% - 24px));transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 96px);max-height:calc(100% - 150px);overflow-y:auto;z-index:40}
+.nc.fs .nc-q .nc-b{background:#eef1fb;color:#3b4a9e;box-shadow:none}
+.nc.fs .nc-q .nc-b.go{background:#5b6ee1;color:#fff}
+.nc.fs .nc-hb{top:calc(max(env(safe-area-inset-top,0px),10px) + 58px);right:max(env(safe-area-inset-right,0px),14px);z-index:35}
+@media(prefers-reduced-motion:reduce){.nc.fs.hand .nc-b.hand{animation:none}}
 </style>
 <style id="nv-theme-oct16">
 /* ===== hub cards carry their own feature colours ===== */
