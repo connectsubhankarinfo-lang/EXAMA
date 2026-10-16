@@ -40313,9 +40313,50 @@ Write a short normal introduction before the blocks and a one-line closing after
     function end() {
         var s = C.score, msg = 'That is the end of our class. Well done. ' + (s.t ? 'You answered ' + s.r + ' of ' + s.t + ' questions correctly. ' : '') + 'Raise your hand any time you have a doubt.';
         C.auto = false; setT(false); setSt('Paused'); log('t', msg); say(msg, function () { });
-        showLd('<i class="fa-solid fa-trophy nc-tr"></i><b>Class complete</b><span>' + (s.t ? s.r + ' of ' + s.t + ' questions correct \u00b7 ' : '') + C.d.pages.length + ' pages</span><div class="nc-eb"><button class="ns-go" data-a="notes">Save notes</button><button class="ns-go alt" data-a="review">Review slides</button><button class="ns-go alt" data-a="again">New class</button></div>');
+        showLd(doneHtml());
     }
-    function notes() {
+    /* ---------- class complete popup + notes saved as a PDF ---------- */
+    function doneHtml() {
+        var s = C.score, pc = s.t ? Math.round(s.r / s.t * 100) : 100, T = TYPES.filter(function (x) { return x[0] === C.cfg.type; })[0] || TYPES[0];
+        return '<div class="nc-dn"><div class="nc-dn-ring" style="--p:' + pc + '"><i class="fa-solid fa-trophy"></i></div>'
+            + '<b class="nc-dn-h">Class complete!</b><span class="nc-dn-sub">' + esc(C.d.title) + '</span><span class="nc-dn-ty">' + esc(T[2]) + '</span>'
+            + '<div class="nc-dn-st"><div><b>' + C.d.pages.length + '</b><small>Pages</small></div>'
+            + (s.t ? '<div><b>' + s.r + '/' + s.t + '</b><small>Correct</small></div><div><b>' + pc + '%</b><small>Score</small></div>' : '<div><b><i class="fa-solid fa-check"></i></b><small>Finished</small></div>') + '</div>'
+            + '<div class="nc-dn-bt"><button type="button" class="nc-dn-pdf" data-a="notes"><i class="fa-solid fa-file-pdf"></i><span>Save notes as PDF</span></button>'
+            + '<div class="nc-dn-r"><button type="button" class="nc-dn-alt" data-a="review"><i class="fa-solid fa-rotate-left"></i> Review slides</button><button type="button" class="nc-dn-alt" data-a="again"><i class="fa-solid fa-plus"></i> New class</button></div></div></div>';
+    }
+    function notesHtml() {
+        var T = TYPES.filter(function (x) { return x[0] === C.cfg.type; })[0] || TYPES[0], s = C.score, ACCS = ['#4f46e5', '#0d9488', '#c98a1b', '#c0507a', '#7a5bd0', '#3f9a6a'], F = 'font-family:Segoe UI,Arial,sans-serif;',
+            cl = function (x) { return esc(String(x || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim()); }, dt = '';
+        try { dt = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { }
+        var chip = function (t) { return '<span style="display:inline-block;background:rgba(255,255,255,.2);border-radius:99px;padding:4px 11px;margin:0 6px 4px 0;font-weight:700;font-size:11.5px">' + t + '</span>'; };
+        var h = '<div style="' + F + 'color:#0f172a;padding:6px 26px 0">'
+            + '<div style="background:linear-gradient(120deg,#4f46e5,#7c3aed 55%,#0d9488);color:#fff;border-radius:18px;padding:22px 24px;margin:0 0 16px">'
+            + '<div style="font-weight:800;font-size:11px;letter-spacing:.16em;opacity:.85">NOVA CLASS NOTES</div>'
+            + '<div style="font-weight:900;font-size:25px;line-height:1.25;margin:6px 0 12px">' + cl(C.d.title) + '</div>'
+            + chip(cl(T[2])) + chip(esc(dt)) + chip(cl(studentName())) + chip(C.d.pages.length + ' pages') + (s.t ? chip(s.r + ' of ' + s.t + ' correct') : '') + '</div>';
+        C.d.pages.forEach(function (p, k) {
+            var ac = ACCS[k % 6];
+            h += '<div class="pdf-keep" style="border:1px solid #e2e8f0;border-left:6px solid ' + ac + ';border-radius:14px;padding:13px 16px;margin:0 0 11px;background:#fff">'
+                + '<div style="font-weight:800;font-size:15px;line-height:1.3"><span style="display:inline-block;min-width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;background:' + ac + ';color:#fff;font-size:12px;margin-right:9px">' + (k + 1) + '</span>' + cl(p.title || (p.board ? 'Whiteboard' : C.d.title)) + '</div>';
+            if (p.bul && p.bul.length) h += '<ul style="margin:8px 0 0;padding-left:22px;font-size:13px;line-height:1.55;font-weight:600">' + p.bul.map(function (b) { return '<li style="margin:2px 0">' + cl(b) + '</li>'; }).join('') + '</ul>';
+            if (p.key) h += '<div style="margin-top:8px;background:#fef9c3;border-left:4px solid #eab308;border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:700">Key point: ' + cl(p.key) + '</div>';
+            if (p.fm) h += '<div style="margin-top:8px;background:#eef2ff;border-radius:8px;padding:7px 10px;font-family:Consolas,monospace;font-size:13px;font-weight:700;color:#3730a3">' + cl(p.fm) + '</div>';
+            if (p.note) h += '<div style="margin-top:8px;color:#475569;font-size:12px;line-height:1.6">' + cl(p.note) + '</div>';
+            h += '</div>';
+        });
+        return h + '<div style="text-align:center;color:#94a3b8;font-size:10.5px;font-weight:700;margin:14px 0 4px">Made with NOVA Mentor \u00b7 EXAMA</div></div>';
+    }
+    function notes(btn) {
+        var sp = btn && btn.querySelector ? btn.querySelector('span') : null, ic = btn && btn.querySelector ? btn.querySelector('i') : null,
+            lab = function (t, c) { if (sp) sp.textContent = t; if (ic && c) ic.className = 'fa-solid ' + c; };
+        if (typeof window.exaMakePdf !== 'function') return notesTxt();
+        if (btn && btn.disabled) return; if (btn) btn.disabled = true; lab('Creating PDF\u2026', 'fa-spinner fa-spin');
+        var name = 'nova-class-' + String(C.d.title || 'notes').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) + '.pdf', pr = null;
+        try { pr = window.exaMakePdf(notesHtml(), name); } catch (e) { pr = null; }
+        Promise.resolve(pr).then(function (r) { if (btn) btn.disabled = false; lab(r ? 'PDF saved' : 'Try again', r ? 'fa-circle-check' : 'fa-file-pdf'); }, function () { if (btn) btn.disabled = false; lab('Try again', 'fa-file-pdf'); });
+    }
+    function notesTxt() {
         var t = '# ' + C.d.title + '\n\n' + C.d.pages.map(function (p, k) { return (k + 1) + '. ' + (p.title || 'Whiteboard') + (p.bul.length ? '\n' + p.bul.map(function (b) { return '   - ' + b; }).join('\n') : '') + (p.key ? '\n   Key: ' + p.key : '') + (p.fm ? '\n   Formula: ' + p.fm : '') + (p.note ? '\n   ' + p.note : ''); }).join('\n\n');
         try { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t.replace(/\*\*/g, '')], { type: 'text/plain' })); a.download = 'nova-class-notes.txt'; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 800); } catch (e) { }
     }
@@ -40454,7 +40495,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     function build() {
         if (B) return B; B = document.createElement('div'); B.id = 'nc'; B.className = 'nc';
         var tk = function (a, ic, t) { return '<button type="button" class="nc-b" data-a="' + a + '" aria-label="' + t + '" title="' + t + '"><i class="fa-solid ' + ic + '"></i></button>'; };
-        B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-tt"><b></b><small><i class="nc-dot"></i>LIVE \u00b7 <span class="nc-ty"></span> \u00b7 <span class="nc-st">Paused</span></small></div><span class="nc-ct"></span>' + tk('fs', 'fa-expand', 'Full screen') + tk('vol', 'fa-volume-high', 'Voice on or off') + tk('side', 'fa-comments', 'Class chat') + '</div>'
+        B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-tt"><b></b><small><i class="nc-dot"></i><span class="nc-lv">LIVE</span> \u00b7 <span class="nc-ty"></span> \u00b7 <span class="nc-st">Paused</span></small></div><span class="nc-ct"></span>' + tk('fs', 'fa-expand', 'Full screen') + tk('vol', 'fa-volume-high', 'Voice on or off') + tk('side', 'fa-comments', 'Class chat') + '</div>'
             + '<div class="nc-main"><div class="nc-stage"><div class="nc-sw"><div class="nc-pg"></div><canvas class="tc"></canvas><canvas class="sc"></canvas></div><div class="nc-hb"><i class="fa-solid fa-hand"></i> Hand raised</div><div class="nc-q"></div><div class="nc-ld"></div></div>'
             + '<aside class="nc-side"><div class="nc-sh"><div class="nc-av"><img src="' + NOVA_IMG + '" alt="" onerror="this.style.visibility=\'hidden\'"></div><div class="nc-sn"><b>NOVA \u00b7 your teacher</b><small class="nc-vs">Voice on</small></div></div><div class="nc-log"></div><form class="nc-fm"><input placeholder="Type a comment or doubt\u2026" autocomplete="off"><button type="button" class="nc-b nc-sm" data-a="smic" aria-label="Speak your doubt" title="Speak your doubt"><i class="fa-solid fa-microphone"></i></button><button type="submit" class="nc-b go" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></form></aside></div>'
             + '<div class="nc-prog"><i></i></div><div class="nc-dock">' + tk('p', 'fa-backward-step', 'Previous') + tk('t', 'fa-play', 'Teach') + tk('n', 'fa-forward-step', 'Next')
@@ -40469,7 +40510,7 @@ Write a short normal introduction before the blocks and a one-line closing after
             else if (a === 'col') { C.col = b.getAttribute('data-c'); B.querySelectorAll('.nc-c1').forEach(function (x) { x.classList.toggle('on', x === b); }); if (C.tool === 'none' || C.tool === 'er') setTool('pen'); }
             else if (a === 'un') { (C.ink[C.i] || []).pop(); paintS(); } else if (a === 'cl') { C.ink[C.i] = []; paintS(); }
             else if (a === 'qgo') { var i = ui('.nc-q input'); submitQ(i && i.value); } else if (a === 'qmic') listen(); else if (a === 'qskip') { if (C.qs && C.qs.onSkip) C.qs.onSkip(); }
-            else if (a === 'vol') { unlockAudio(); if (window.__ncMute) { window.__ncMute = false; C.vf = 0; setVs('Voice on'); } else if (C.vf >= 2) { C.vf = 0; C.vok = false; VC.cache = {}; VC.dead = 0; setVs('Voice: trying again\u2026'); if (C.d.pages.length && C.auto) teach(Math.max(0, C.i)); } else { window.__ncMute = true; stopV(); setVs('Voice muted \u2013 words appear here', false); } } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
+            else if (a === 'vol') { unlockAudio(); if (window.__ncMute) { window.__ncMute = false; C.vf = 0; setVs('Voice on'); } else if (C.vf >= 2) { C.vf = 0; C.vok = false; VC.cache = {}; VC.dead = 0; setVs('Voice: trying again\u2026'); if (C.d.pages.length && C.auto) teach(Math.max(0, C.i)); } else { window.__ncMute = true; stopV(); setVs('Voice muted \u2013 words appear here', false); } } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(b); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
         });
         ui('.nc-fm').addEventListener('submit', function (e) { e.preventDefault(); var i = ui('.nc-fm input'), v = i.value.trim(); if (!v || !C || !C.d.pages.length) return; i.value = ''; var was = C.auto; stopAuto(); C.hand = true; B.classList.add('hand'); doubt(v, was); });
         var sc = ui('.sc'), cur = null, sx = 0, st = ui('.nc-stage');
@@ -41055,26 +41096,56 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 .nc-top [data-a=fs]{flex:none}
 </style>
 <style id="nc-fs2-css">
-/* ===== full screen v2: grey controls, raise-hand that works in full screen ===== */
-.nc.fs .nc-top{background:linear-gradient(180deg,rgba(17,24,39,.78),rgba(17,24,39,0))}
-.nc.fs .nc-dock{background:linear-gradient(0deg,rgba(17,24,39,.78),rgba(17,24,39,0))}
-.nc.fs .nc-b{background:rgba(75,85,99,.94);color:#f3f4f6;box-shadow:0 2px 10px rgba(0,0,0,.35)}
-.nc.fs .nc-b:hover{background:rgba(107,114,128,.97)}
-.nc.fs .nc-b:active{background:#374151}
-.nc.fs .nc-b.on,.nc.fs [data-a=t]{background:#6b7280;color:#fff}
-.nc.fs [data-a=t]{box-shadow:0 6px 18px rgba(0,0,0,.45)}
-.nc.fs .nc-b.hand{width:auto;padding:0 18px;justify-content:center;background:rgba(75,85,99,.94);color:#f3f4f6}
+/* ===== full screen v3: glass (frosted, lightly tinted) controls + working raise-hand ===== */
+.nc.fs .nc-top{background:linear-gradient(180deg,rgba(15,23,42,.5),rgba(15,23,42,0))}
+.nc.fs .nc-dock{background:linear-gradient(0deg,rgba(15,23,42,.5),rgba(15,23,42,0))}
+.nc.fs .nc-b{background:linear-gradient(145deg,rgba(255,255,255,.26),rgba(255,255,255,.08)),rgba(30,41,82,.34);color:#fff;border:1px solid rgba(255,255,255,.34);box-shadow:0 8px 22px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.45);-webkit-backdrop-filter:blur(16px) saturate(1.7);backdrop-filter:blur(16px) saturate(1.7);text-shadow:0 1px 4px rgba(0,0,0,.45)}
+.nc.fs .nc-b:hover{background:linear-gradient(145deg,rgba(255,255,255,.34),rgba(255,255,255,.12)),rgba(30,41,82,.4)}
+.nc.fs .nc-b:active{transform:scale(.93)}
+.nc.fs .nc-b.on,.nc.fs [data-a=t]{background:linear-gradient(145deg,rgba(255,255,255,.3),rgba(255,255,255,.06)),rgba(99,102,241,.55);color:#fff}
+.nc.fs [data-a=t]{box-shadow:0 10px 26px rgba(79,70,229,.45),inset 0 1px 0 rgba(255,255,255,.5)}
+.nc.fs .nc-b.hand{width:auto;padding:0 18px;justify-content:center;color:#fff}
 .nc.fs .nc-b.hand span{display:inline}
-.nc.fs .nc-b.hand i{color:#fbbf24}
-.nc.fs.hand .nc-b.hand{background:#f59e0b;color:#2b1d02;box-shadow:0 0 0 3px rgba(245,158,11,.4),0 6px 16px rgba(0,0,0,.4);animation:ncHp 1.4s ease-in-out infinite}
+.nc.fs .nc-b.hand i{color:#fcd34d}
+.nc.fs.hand .nc-b.hand{background:linear-gradient(145deg,rgba(255,255,255,.4),rgba(255,255,255,.1)),rgba(245,158,11,.72);color:#2b1d02;text-shadow:none;border-color:rgba(255,255,255,.55);box-shadow:0 0 0 3px rgba(245,158,11,.4),0 8px 22px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.55);animation:ncHp 1.4s ease-in-out infinite}
 .nc.fs.hand .nc-b.hand i{color:#2b1d02}
-@keyframes ncHp{50%{box-shadow:0 0 0 9px rgba(245,158,11,0),0 6px 16px rgba(0,0,0,.4)}}
-/* doubt / quiz box: sits above the controls (was hidden behind them), buttons inside stay visible */
+@keyframes ncHp{50%{box-shadow:0 0 0 9px rgba(245,158,11,0),0 8px 22px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.55)}}
+/* doubt / quiz box: sits above the controls, buttons inside stay visible */
 .nc.fs .nc-q{left:50%;right:auto;width:min(640px,calc(100% - 24px));transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 96px);max-height:calc(100% - 150px);overflow-y:auto;z-index:40}
-.nc.fs .nc-q .nc-b{background:#eef1fb;color:#3b4a9e;box-shadow:none}
+.nc.fs .nc-q .nc-b{background:#eef1fb;color:#3b4a9e;border:0;box-shadow:none;text-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
 .nc.fs .nc-q .nc-b.go{background:#5b6ee1;color:#fff}
 .nc.fs .nc-hb{top:calc(max(env(safe-area-inset-top,0px),10px) + 58px);right:max(env(safe-area-inset-right,0px),14px);z-index:35}
 @media(prefers-reduced-motion:reduce){.nc.fs.hand .nc-b.hand{animation:none}}
+</style>
+<style id="nc-up-css">
+/* ===== LIVE in red, class type in green ===== */
+.nc-lv{color:#ef4444;font-weight:900;letter-spacing:.1em;text-shadow:0 0 10px rgba(239,68,68,.45)}
+.nc-ty{color:#22c55e;font-weight:800;text-shadow:0 0 10px rgba(34,197,94,.35)}
+.nc-tt small .nc-st{color:#cbd5e1}
+/* ===== class complete popup ===== */
+.nc-ld{overflow-y:auto;-webkit-overflow-scrolling:touch;background:radial-gradient(110% 90% at 50% 0%,rgba(79,70,229,.55),rgba(13,19,34,.96) 62%);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.nc-dn{margin:auto;width:min(420px,100%);display:flex;flex-direction:column;align-items:center;gap:8px;padding:22px 18px 18px;border-radius:26px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.22);box-shadow:0 24px 60px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.25);-webkit-backdrop-filter:blur(18px) saturate(1.5);backdrop-filter:blur(18px) saturate(1.5);animation:ncPop .55s cubic-bezier(.2,.9,.25,1.2) both}
+@keyframes ncPop{from{opacity:0;transform:translateY(14px) scale(.92)}}
+.nc-dn-ring{--p:100;width:96px;height:96px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(#22c55e calc(var(--p)*1%),rgba(255,255,255,.16) 0);position:relative;margin-bottom:4px;box-shadow:0 0 34px rgba(34,197,94,.35)}
+.nc-dn-ring::before{content:"";position:absolute;inset:7px;border-radius:50%;background:#1b2447}
+.nc-dn-ring i{position:relative;font-size:34px;color:#fbbf24;filter:drop-shadow(0 4px 10px rgba(251,191,36,.5));animation:ncTr 2.4s ease-in-out infinite}
+@keyframes ncTr{50%{transform:translateY(-3px) rotate(-6deg)}}
+.nc-ld .nc-dn-h{font-size:24px;font-weight:900;letter-spacing:-.02em;color:#fff}
+.nc-ld .nc-dn-sub{font-size:14px;font-weight:700;color:#e2e8f0;text-align:center;line-height:1.35;max-width:100%}
+.nc-ld .nc-dn-ty{font-size:11.5px;font-weight:800;color:#22c55e;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.4);padding:3px 12px;border-radius:99px;letter-spacing:.04em}
+.nc-dn-st{display:flex;gap:8px;width:100%;margin:8px 0 4px}
+.nc-dn-st>div{flex:1;min-width:0;padding:10px 4px;border-radius:16px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);text-align:center}
+.nc-ld .nc-dn-st b{display:block;font-size:20px;font-weight:900;color:#fff}
+.nc-ld .nc-dn-st small{font-size:11px;font-weight:700;color:#a5b4d4}
+.nc-dn-bt{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:4px}
+.nc-dn-pdf,.nc-dn-alt{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:16px;cursor:pointer;font:800 14px system-ui,sans-serif;color:#fff;touch-action:manipulation}
+.nc-dn-pdf{height:50px;background:linear-gradient(115deg,#6366f1,#8b5cf6 55%,#ec4899);box-shadow:0 12px 26px -10px rgba(139,92,246,.8);font-size:15px}
+.nc-dn-pdf[disabled]{opacity:.75;cursor:wait}
+.nc-dn-r{display:flex;gap:8px}
+.nc-dn-alt{flex:1;height:44px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.nc-dn-pdf:active,.nc-dn-alt:active{transform:scale(.97)}
+@media(max-height:520px){.nc-dn{flex-direction:row;flex-wrap:wrap;justify-content:center;width:min(640px,100%);padding:14px}.nc-dn-ring{width:64px;height:64px}.nc-dn-ring i{font-size:22px}.nc-dn-bt{margin-top:0}}
+@media(prefers-reduced-motion:reduce){.nc-dn,.nc-dn-ring i{animation:none}}
 </style>
 <style id="nv-theme-oct16">
 /* ===== hub cards carry their own feature colours ===== */
