@@ -37923,7 +37923,7 @@ window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed
    (add &k=YOURKEY if you set NOVA_KEY in the worker, and &voice=Kore to choose a voice).
    While it still says YOUR-WORKER, Nova keeps using the old online voices. */
 (function () {
-    var u = 'https://xama-gemini-proxy.connect-subhankar-info.workers.dev/?text={text}';
+    var u = 'https://voice.connect-subhankar-info.workers.dev/?text={text}';
     if (u.indexOf('YOUR-WORKER') < 0) window.NOVA_TTS_URL = u;
 })();
 </script>
@@ -39812,6 +39812,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         out.forEach(function (x) { while (x.length > 200) { var at = x.lastIndexOf(',', 190); if (at < 40) at = x.lastIndexOf(' ', 190); if (at < 40) at = 190; o2.push(x.slice(0, at + 1).trim()); x = x.slice(at + 1).trim(); } if (x) o2.push(x); });
         return o2.length ? o2 : [String(t || '')];
     }
+    function vOff() { return 'Voice unavailable' + (VC.why ? ' (' + VC.why + ')' : '') + ' \u2013 tap the speaker to retry'; }
     function cvFetch(t) {
         var ctx = acx(); if (!ctx) return Promise.reject('noctx');
         var lg = LG(), q = encodeURIComponent(t), L = [], c = window.NOVA_TTS_URL;
@@ -39823,10 +39824,10 @@ Write a short normal introduction before the blocks and a one-line closing after
             var n = 0;
             (function nx() {
                 if (n >= order.length) return no('all'); var it = order[n++], ctl = null, tm = null;
-                try { ctl = new AbortController(); tm = setTimeout(function () { ctl.abort(); }, 6000); } catch (e) { }
-                fetch(it.u, ctl ? { signal: ctl.signal } : {}).then(function (r) { if (!r.ok) throw 0; return r.arrayBuffer(); })
-                    .then(function (b) { clearTimeout(tm); if (!b || b.byteLength < 800) throw 0; return new Promise(function (a1, z1) { var pr = ctx.decodeAudioData(b, a1, z1); if (pr && pr.catch) pr.catch(z1); }); })
-                    .then(function (buf) { VC.pref = it.i; ok(buf); }, function () { clearTimeout(tm); nx(); });
+                try { ctl = new AbortController(); tm = setTimeout(function () { ctl.abort(); }, (c && it.u === L[0]) ? 15000 : 6000); } catch (e) { }
+                var why = ''; fetch(it.u, ctl ? { signal: ctl.signal } : {}).then(function (r) { if (!r.ok) { why = 'HTTP ' + r.status; throw 0; } return r.arrayBuffer(); })
+                    .then(function (b) { clearTimeout(tm); if (!b || b.byteLength < 800) { why = 'audio too small'; throw 0; } return new Promise(function (a1, z1) { var pr = ctx.decodeAudioData(b, a1, z1); if (pr && pr.catch) pr.catch(z1); }); })
+                    .then(function (buf) { VC.pref = it.i; if (it.u === L[0]) VC.why = ''; ok(buf); }, function (e) { clearTimeout(tm); if (!why) why = (e && e.name === 'AbortError') ? 'timeout' : (e && e.name === 'EncodingError') ? 'cannot decode audio' : 'network or CORS blocked'; if (c && it.u === L[0]) VC.why = why; nx(); });
             })();
         });
     }
@@ -39899,13 +39900,13 @@ Write a short normal introduction before the blocks and a one-line closing after
         };
         var safe = setTimeout(start, 5000), h = { first: first, sent: sent };
         if (window.__ncMute) return quiet('Voice muted \u2013 words appear here');
-        if (C && C.vf >= 2) { if (Date.now() - (C.vfT || 0) > 25000) C.vf = 1; else return quiet('Voice unavailable \u2013 tap the speaker to retry'); }
-        var skipCloud = VC.dead && Date.now() - VC.dead < 90000;
+        if (C && C.vf >= 2) { if (Date.now() - (C.vfT || 0) > 25000) C.vf = 1; else return quiet(vOff()); }
+        var skipCloud = VC.dead && Date.now() - VC.dead < 20000;
         (skipCloud ? Promise.reject('skip') : cvPlay(S, my, h)).then(finish, function (e) {
             if (my !== vtk) return; if (e === 'blocked') armResume(); if (e !== 'skip' && e !== 'blocked') VC.dead = Date.now();
             return nativePlay(S, my, h).then(finish, function () {
                 if (my !== vtk) return;
-                var lastTry = function () { return tagPlay(S, my, h).then(finish, function (e2) { if (my !== vtk) return; if (e2 === 'blocked') armResume(); if (C) { C.vf = (C.vf || 0) + (C.vok ? 1 : 2); C.vfT = Date.now(); } quiet('Voice unavailable \u2013 tap the speaker to retry'); }); };
+                var lastTry = function () { return tagPlay(S, my, h).then(finish, function (e2) { if (my !== vtk) return; if (e2 === 'blocked') armResume(); if (C) { C.vf = (C.vf || 0) + (C.vok ? 1 : 2); C.vfT = Date.now(); } quiet(vOff()); }); };
                 if (LG().id !== 'en') return lastTry();
                 return legacyPlay(text, my, h).then(finish, lastTry);
             });
