@@ -40237,7 +40237,7 @@ Write a short normal introduction before the blocks and a one-line closing after
 
     /* ---------- pages ---------- */
     function go(i, dir, quiet, hold) {
-        var P = C.d.pages; if (!P.length) return; i = Math.max(0, Math.min(P.length - 1, i)); if (!C.W) fit(); C.i = i; var p = P[i], pg = ui('.nc-pg'); pg.innerHTML = '';
+        var P = C.d.pages; if (!P.length) return; i = Math.max(0, Math.min(P.length - 1, i)); if (!C.W) fit(); if (C.i >= 0 && C.i !== i) { try { snapInk(C.i); } catch (e) { } } C.i = i; var p = P[i], pg = ui('.nc-pg'); pg.innerHTML = '';
         if (p.board) { var el = document.createElement('div'); el.className = 'nc-paper'; el.innerHTML = p.title ? '<span>' + inl(p.title) + '</span>' : ''; pg.appendChild(el); } else { pg.appendChild(slideEl(p, i, P.length, dir || 1)); var se = pg.querySelector('.nt-sl'); if (se) { if (!hold) se.classList.add('all'); fitText(se); setTimeout(function () { if (C && se.isConnected) fitText(se); }, 450); } }
         setInk(i, hold); cnt(); paintS();
     }
@@ -40312,7 +40312,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     function end() {
         var s = C.score, msg = 'That is the end of our class. Well done. ' + (s.t ? 'You answered ' + s.r + ' of ' + s.t + ' questions correctly. ' : '') + 'Raise your hand any time you have a doubt.';
-        C.auto = false; setT(false); setSt('Paused'); log('t', msg); say(msg, function () { });
+        try { snapInk(C.i); } catch (e) { } C.auto = false; setT(false); setSt('Paused'); log('t', msg); say(msg, function () { });
         showLd(doneHtml());
     }
     /* ---------- class complete popup + notes saved as a PDF ---------- */
@@ -40322,8 +40322,8 @@ Write a short normal introduction before the blocks and a one-line closing after
             + '<b class="nc-dn-h">Class complete!</b><span class="nc-dn-sub">' + esc(C.d.title) + '</span><span class="nc-dn-ty">' + esc(T[2]) + '</span>'
             + '<div class="nc-dn-st"><div><b>' + C.d.pages.length + '</b><small>Pages</small></div>'
             + (s.t ? '<div><b>' + s.r + '/' + s.t + '</b><small>Correct</small></div><div><b>' + pc + '%</b><small>Score</small></div>' : '<div><b><i class="fa-solid fa-check"></i></b><small>Finished</small></div>') + '</div>'
-            + '<div class="nc-dn-bt"><button type="button" class="nc-dn-pdf" data-a="notes"><i class="fa-solid fa-file-pdf"></i><span>Save notes as PDF</span></button>'
-            + '<div class="nc-dn-r"><button type="button" class="nc-dn-alt" data-a="review"><i class="fa-solid fa-rotate-left"></i> Review slides</button><button type="button" class="nc-dn-alt" data-a="again"><i class="fa-solid fa-plus"></i> New class</button></div></div></div>';
+            + '<div class="nc-dn-bt"><button type="button" class="nc-dn-pdf" data-a="notes"><i class="fa-solid fa-file-powerpoint"></i><span>Save notes (PPT with drawing)</span></button>'
+            + '<div class="nc-dn-r"><button type="button" class="nc-dn-alt" data-a="review"><i class="fa-solid fa-rotate-left"></i><span>Review</span></button><button type="button" class="nc-dn-alt" data-a="notespdf"><i class="fa-solid fa-file-pdf"></i><span>Save PDF</span></button><button type="button" class="nc-dn-alt" data-a="again"><i class="fa-solid fa-plus"></i><span>New class</span></button></div></div></div>';
     }
     function notesHtml() {
         var T = TYPES.filter(function (x) { return x[0] === C.cfg.type; })[0] || TYPES[0], s = C.score, ACCS = ['#4f46e5', '#0d9488', '#c98a1b', '#c0507a', '#7a5bd0', '#3f9a6a'], F = 'font-family:Segoe UI,Arial,sans-serif;',
@@ -40347,7 +40347,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         });
         return h + '<div style="text-align:center;color:#94a3b8;font-size:10.5px;font-weight:700;margin:14px 0 4px">Made with NOVA Mentor \u00b7 EXAMA</div></div>';
     }
-    function notes(btn) {
+    function notesText(btn) {
         var sp = btn && btn.querySelector ? btn.querySelector('span') : null, ic = btn && btn.querySelector ? btn.querySelector('i') : null,
             lab = function (t, c) { if (sp) sp.textContent = t; if (ic && c) ic.className = 'fa-solid ' + c; };
         if (typeof window.exaMakePdf !== 'function') return notesTxt();
@@ -40355,6 +40355,84 @@ Write a short normal introduction before the blocks and a one-line closing after
         var name = 'nova-class-' + String(C.d.title || 'notes').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) + '.pdf', pr = null;
         try { pr = window.exaMakePdf(notesHtml(), name); } catch (e) { pr = null; }
         Promise.resolve(pr).then(function (r) { if (btn) btn.disabled = false; lab(r ? 'PDF saved' : 'Try again', r ? 'fa-circle-check' : 'fa-file-pdf'); }, function () { if (btn) btn.disabled = false; lab('Try again', 'fa-file-pdf'); });
+    }
+    /* ---------- notes = the class slides as a PPT (or PDF), WITH the teacher's drawing on every page ---------- */
+    function snapInk(i) {
+        var p = C && C.d.pages[i]; if (!p || p.board || !C.tc || !C.tc.width) return;
+        var o = document.createElement('canvas'); o.width = C.tc.width; o.height = C.tc.height; o.getContext('2d').drawImage(C.tc, 0, 0); p.inkSnap = o; p.snapW = C.W; p.snapH = C.H;
+    }
+    function ensureLib(url, ok) {
+        return new Promise(function (res, rej) {
+            if (ok()) return res(); var sc = document.createElement('script'); sc.src = url; sc.onload = function () { ok() ? res() : rej('lib'); }; sc.onerror = function () { rej('load'); }; document.head.appendChild(sc);
+        });
+    }
+    function plainT(x) { return String(x || '').replace(/<[^>]*>/g, '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim(); }
+    function pageCanvas(i, sc) {
+        var P = C.d.pages, p = P[i], W = C.W, H = C.H, out = document.createElement('canvas'), c;
+        out.width = Math.round(W * sc); out.height = Math.round(H * sc); c = out.getContext('2d'); c.scale(sc, sc);
+        if (p.board) {
+            c.fillStyle = '#fbfaf4'; c.fillRect(0, 0, W, H); c.strokeStyle = '#c5ccd9'; c.lineWidth = 12; c.strokeRect(6, 6, W - 12, H - 12);
+            if (p.title) { c.fillStyle = '#475569'; c.font = '800 26px ' + HF; c.textBaseline = 'middle'; c.fillText(plainT(p.title), 36, 42); }
+            var TS = 74, BM = 10, s = Math.min(W / 100, (H - TS - BM) / 60), g = { s: s, ox: (W - 100 * s) / 2, oy: TS + ((H - TS - BM) - 60 * s) / 2 }, k = i;
+            while (k > 0 && P[k].keep && P[k - 1].board) k--;
+            c.lineCap = c.lineJoin = 'round';
+            for (var j = k; j <= i; j++) (P[j].draw || []).forEach(function (sh) { bShape(c, sh, 1, g); });
+            return Promise.resolve(out);
+        }
+        return new Promise(function (ok) {
+            var wrap = document.createElement('div'), sw, se, t0 = Date.now(), fin;
+            wrap.className = 'nc'; wrap.style.cssText = 'display:block;position:fixed;left:-20000px;top:0;right:auto;bottom:auto;width:' + W + 'px;height:' + H + 'px;padding:0;background:none;z-index:-1;pointer-events:none';
+            wrap.innerHTML = '<div class="nc-sw" style="position:absolute;left:0;top:0;transform:none;width:' + W + 'px;height:' + H + 'px"><div class="nc-pg"></div></div>';
+            document.body.appendChild(wrap); sw = wrap.firstChild; se = slideEl(p, i, P.length, 1); se.classList.add('all'); sw.firstChild.appendChild(se); fitText(se);
+            fin = function (cv) {
+                try { wrap.remove(); } catch (e) { }
+                if (cv) c.drawImage(cv, 0, 0, W, H);
+                else { c.fillStyle = '#f3f5fb'; c.fillRect(0, 0, W, H); c.fillStyle = '#0f172a'; c.font = '800 30px ' + HF; c.textBaseline = 'top'; c.fillText(plainT(p.title || C.d.title), 36, 36); c.font = '600 20px ' + HF; (p.bul || []).slice(0, 8).forEach(function (b, k) { c.fillText('\u2022 ' + plainT(b), 36, 100 + k * 34); }); }
+                if (p.inkSnap && p.snapW === W && p.snapH === H) { try { c.drawImage(p.inkSnap, 0, 0, W, H); } catch (e) { } }
+                ok(out);
+            };
+            (function wait() {
+                var gs = [].slice.call(se.querySelectorAll('.nt-gi')), ready = gs.every(function (g) { var im = g.querySelector('img'); return g.classList.contains('no') || (im && im.complete); });
+                if (!ready && Date.now() - t0 < 3500) return setTimeout(wait, 150);
+                if (!window.html2canvas) return fin(null);
+                var opt = { scale: sc, useCORS: true, logging: false, backgroundColor: '#f3f5fb', width: W, height: H, windowWidth: W, windowHeight: H, scrollX: 0, scrollY: 0,
+                    ignoreElements: function (el) { return !(el === wrap || wrap.contains(el) || el.contains(wrap) || /^(STYLE|LINK|HEAD|META|TITLE)$/.test(el.tagName)); } };
+                try { window.html2canvas(sw, opt).then(fin, function () { fin(null); }); } catch (e) { fin(null); }
+            })();
+        });
+    }
+    function exportSlides(kind) {
+        var P = C.d.pages, W = C.W, H = C.H, sc = Math.min(2, 1500 / W), imgs = [], seq, name = 'nova-class-' + String(C.d.title || 'notes').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40),
+            notes0 = P.map(function (p) { return plainT(p.note); }), ttl = C.d.title;
+        var libs = [ensureLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', function () { return !!window.html2canvas; }).catch(function () { })];
+        libs.push(kind === 'pdf' ? ensureLib('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', function () { return !!(window.jspdf && window.jspdf.jsPDF); })
+            : ensureLib('https://cdnjs.cloudflare.com/ajax/libs/PptxGenJS/3.12.0/pptxgen.bundle.js', function () { return !!window.PptxGenJS; }));
+        return Promise.all(libs).then(function () {
+            seq = Promise.resolve();
+            P.forEach(function (_, k) { seq = seq.then(function () { if (!C) throw 'closed'; return pageCanvas(k, sc).then(function (cv) { imgs.push(cv.toDataURL('image/jpeg', 0.88)); }); }); });
+            return seq;
+        }).then(function () {
+            if (kind === 'pdf') {
+                var pdf = new window.jspdf.jsPDF({ orientation: W >= H ? 'l' : 'p', unit: 'px', format: [W, H], compress: true, hotfixes: ['px_scaling'] });
+                imgs.forEach(function (d, k) { if (k) pdf.addPage([W, H], W >= H ? 'l' : 'p'); pdf.addImage(d, 'JPEG', 0, 0, W, H); });
+                pdf.save(name + '.pdf'); return true;
+            }
+            var px = new window.PptxGenJS(), wi = 13.333, hi = Math.round(wi * H / W * 1000) / 1000;
+            px.defineLayout({ name: 'NCLASS', width: wi, height: hi }); px.layout = 'NCLASS'; px.title = ttl;
+            imgs.forEach(function (d, k) { var sl = px.addSlide(); sl.addImage({ data: d.replace(/^data:/, ''), x: 0, y: 0, w: wi, h: hi }); if (notes0[k]) sl.addNotes(notes0[k]); });
+            return px.writeFile({ fileName: name + '.pptx' }).then(function () { return true; });
+        });
+    }
+    function notes(btn, kind) {
+        var sp = btn && btn.querySelector ? btn.querySelector('span') : null, ic = btn && btn.querySelector ? btn.querySelector('i') : null, old = sp ? sp.textContent : '', oic = ic ? ic.className : '',
+            lab = function (t, c) { if (sp) sp.textContent = t; if (ic && c) ic.className = 'fa-solid ' + c; };
+        if (!C || !C.d.pages.length) return; if (btn && btn.disabled) return; if (btn) btn.disabled = true; lab('Creating\u2026', 'fa-spinner fa-spin');
+        var back = function () { setTimeout(function () { if (btn) btn.disabled = false; if (sp) sp.textContent = old; if (ic) ic.className = oic; }, 2200); };
+        exportSlides(kind || 'ppt').then(function () { lab('Saved', 'fa-circle-check'); back(); }, function (e) {
+            try { console.error(e); } catch (x) { }
+            if (btn) btn.disabled = false; lab(old, null); if (ic) ic.className = oic;
+            if (C) notesText(btn);
+        });
     }
     function notesTxt() {
         var t = '# ' + C.d.title + '\n\n' + C.d.pages.map(function (p, k) { return (k + 1) + '. ' + (p.title || 'Whiteboard') + (p.bul.length ? '\n' + p.bul.map(function (b) { return '   - ' + b; }).join('\n') : '') + (p.key ? '\n   Key: ' + p.key : '') + (p.fm ? '\n   Formula: ' + p.fm : '') + (p.note ? '\n   ' + p.note : ''); }).join('\n\n');
@@ -40510,7 +40588,7 @@ Write a short normal introduction before the blocks and a one-line closing after
             else if (a === 'col') { C.col = b.getAttribute('data-c'); B.querySelectorAll('.nc-c1').forEach(function (x) { x.classList.toggle('on', x === b); }); if (C.tool === 'none' || C.tool === 'er') setTool('pen'); }
             else if (a === 'un') { (C.ink[C.i] || []).pop(); paintS(); } else if (a === 'cl') { C.ink[C.i] = []; paintS(); }
             else if (a === 'qgo') { var i = ui('.nc-q input'); submitQ(i && i.value); } else if (a === 'qmic') listen(); else if (a === 'qskip') { if (C.qs && C.qs.onSkip) C.qs.onSkip(); }
-            else if (a === 'vol') { unlockAudio(); if (window.__ncMute) { window.__ncMute = false; C.vf = 0; setVs('Voice on'); } else if (C.vf >= 2) { C.vf = 0; C.vok = false; VC.cache = {}; VC.dead = 0; setVs('Voice: trying again\u2026'); if (C.d.pages.length && C.auto) teach(Math.max(0, C.i)); } else { window.__ncMute = true; stopV(); setVs('Voice muted \u2013 words appear here', false); } } else if (a === 'retry') begin(C.cfg); else if (a === 'notes') notes(b); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
+            else if (a === 'vol') { unlockAudio(); if (window.__ncMute) { window.__ncMute = false; C.vf = 0; setVs('Voice on'); } else if (C.vf >= 2) { C.vf = 0; C.vok = false; VC.cache = {}; VC.dead = 0; setVs('Voice: trying again\u2026'); if (C.d.pages.length && C.auto) teach(Math.max(0, C.i)); } else { window.__ncMute = true; stopV(); setVs('Voice muted \u2013 words appear here', false); } } else if (a === 'retry') begin(C.cfg); else if (a === 'notes' || a === 'notespdf') notes(b, a === 'notespdf' ? 'pdf' : 'ppt'); else if (a === 'review') hideLd(); else if (a === 'again') { var t = C.cfg.topic; close(); setup({ topic: t }); }
         });
         ui('.nc-fm').addEventListener('submit', function (e) { e.preventDefault(); var i = ui('.nc-fm input'), v = i.value.trim(); if (!v || !C || !C.d.pages.length) return; i.value = ''; var was = C.auto; stopAuto(); C.hand = true; B.classList.add('hand'); doubt(v, was); });
         var sc = ui('.sc'), cur = null, sx = 0, st = ui('.nc-stage');
@@ -41138,11 +41216,11 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 .nc-ld .nc-dn-st b{display:block;font-size:20px;font-weight:900;color:#fff}
 .nc-ld .nc-dn-st small{font-size:11px;font-weight:700;color:#a5b4d4}
 .nc-dn-bt{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:4px}
-.nc-dn-pdf,.nc-dn-alt{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:16px;cursor:pointer;font:800 14px system-ui,sans-serif;color:#fff;touch-action:manipulation}
+.nc-dn-pdf,.nc-dn-pdf *,.nc-dn-alt,.nc-dn-alt *{color:#fff!important}.nc-dn-pdf,.nc-dn-alt{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;border-radius:16px;cursor:pointer;font:800 14px system-ui,sans-serif;touch-action:manipulation}
 .nc-dn-pdf{height:50px;background:linear-gradient(115deg,#6366f1,#8b5cf6 55%,#ec4899);font-size:15px}
 .nc-dn-pdf[disabled]{opacity:.75;cursor:wait}
 .nc-dn-r{display:flex;gap:8px}
-.nc-dn-alt{flex:1;height:44px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.nc-dn-alt{flex:1;min-width:0;padding:0 6px;font-size:13px;height:44px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .nc-dn-pdf:active,.nc-dn-alt:active{transform:scale(.97)}
 @media(max-height:520px){.nc-dn{flex-direction:row;flex-wrap:wrap;justify-content:center;width:min(640px,100%);padding:14px}.nc-dn-ring{width:64px;height:64px}.nc-dn-ring i{font-size:22px}.nc-dn-bt{margin-top:0}}
 @media(prefers-reduced-motion:reduce){.nc-dn,.nc-dn-ring i{animation:none}}
