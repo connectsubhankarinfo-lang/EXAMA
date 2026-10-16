@@ -6550,7 +6550,7 @@ html.is-tablet #nfb-list { padding-left: 16px; padding-right: 16px; }
                             <div class="xb xb-f-materials xb-v xb-mint cursor-pointer" role="button" tabindex="0" style="--i:0" onclick="window.location.hash='materials'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-materials"/></svg></span><span class="xb-tx"><span class="xb-t">Material Hub</span><span class="xb-s">PDFs &amp; Notes</span></span></div>
                             <div class="xb xb-f-lecture xb-v xb-pink cursor-pointer" role="button" tabindex="0" style="--i:1" onclick="window.location.hash='video-hub'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-lecture"/></svg></span><span class="xb-tx"><span class="xb-t">Lecture Hub</span><span class="xb-s">Video Classes</span></span></div>
                             <div class="xb xb-f-math xb-v xb-peach cursor-pointer" role="button" tabindex="0" style="--i:2" onclick="window.location.hash='math-workout'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-math"/></svg></span><span class="xb-tx"><span class="xb-t">Math Workout</span><span class="xb-s">Calculation Practice</span></span></div>
-                            <div class="xb xb-f-nova xb-v xb-orchid cursor-pointer" role="button" tabindex="0" style="--i:3" onclick="window.location.hash='nova-mentor'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-teacher"/></svg></span><span class="xb-tx"><span class="xb-t">NOVA Mentor</span><span class="xb-s">AI Teacher</span></span></div>
+                            <div class="xb xb-f-nova xb-v xb-orchid cursor-pointer" role="button" tabindex="0" style="--i:3" onclick="window.location.hash='nova-mentor'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-teacher"/></svg></span><span class="xb-tx"><span class="xb-t">NOVA MENTOR</span><span class="xb-s">AI Teacher</span></span></div>
                         </div>
                     </div>
 
@@ -28856,24 +28856,20 @@ function mpDrawTab(tab, body) {
             };
 
             window.clearNovaChat = async function () {
-                if (await window.showCustomConfirm("Clear Chat", "Clear conversation with NOVA?", "Clear", "Cancel", "warning")) {
-                    window.novaChatHistory = [];
+                let ok = false;
+                try { ok = await window.showCustomConfirm("Clear Chat", "Clear conversation with NOVA?", "Clear", "Cancel", "warning"); } catch (e) { ok = true; }
+                if (!ok) return;
 
-                    // Delete from Firebase
-                    if (isFirebaseConfigured && window.loggedInMobile) {
-                        try {
-                            await deleteDoc(doc(db, window.getCollectionName("nova_chats"), window.loggedInMobile));
-                        } catch (e) { console.error("Error clearing chat from db", e); }
-                    }
-
-                    const chatBox = document.getElementById('nova-chat-messages');
-                    if (chatBox) {
-                        const rendered = chatBox.querySelectorAll('.rendered-msg');
-                        rendered.forEach(el => el.remove());
-
-                        const wrapper = document.createElement('div');
-                        wrapper.className = 'rendered-msg flex justify-start relative z-10 w-full mt-1';
-                        wrapper.innerHTML = `
+                /* 1. clear everything on screen and on this device first, so it works even offline */
+                window.novaChatHistory = [];
+                window.novaChatVisibleCount = 10;
+                try { localStorage.removeItem('novaChatHistory'); } catch (e) { }
+                const chatBox = document.getElementById('nova-chat-messages');
+                if (chatBox) {
+                    chatBox.querySelectorAll('.rendered-msg, .load-more-btn-container, #nova-typing-indicator, #nova-exam-loader').forEach(el => el.remove());
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'rendered-msg flex justify-start relative z-10 w-full mt-1';
+                    wrapper.innerHTML = `
         <div class="flex flex-col gap-0.5 max-w-[90%]">
             <div class="flex items-center gap-1.5 ml-1">
                 <img src="https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true" class="w-5 h-5 rounded-full object-cover shadow-sm">
@@ -28881,8 +28877,19 @@ function mpDrawTab(tab, body) {
             </div>
             <div class="bg-white rounded-[1.25rem] rounded-tl-sm px-4 py-2.5 shadow-[0_2px_10px_rgba(0,0,0,0.03)] border border-gray-100/60 text-[13.5px] sm:text-[15px] text-[#1f1f1f] font-normal whitespace-pre-wrap leading-relaxed mt-0 text-center italic text-gray-500">Memory cleared. What's next?</div>
         </div>`;
-                        chatBox.appendChild(wrapper);
-                    }
+                    chatBox.appendChild(wrapper);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+                try { if (window.showToast) window.showToast('Chat cleared', 'Your conversation with NOVA was cleared.', 'success'); } catch (e) { }
+
+                /* 2. then remove the saved copy in the cloud (never blocks the screen) */
+                if (isFirebaseConfigured && window.loggedInMobile) {
+                    try {
+                        await Promise.race([
+                            deleteDoc(doc(db, window.getCollectionName("nova_chats"), window.loggedInMobile)),
+                            new Promise(r => setTimeout(r, 8000))
+                        ]);
+                    } catch (e) { console.error("Error clearing chat from db", e); }
                 }
             };
 
@@ -40354,7 +40361,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         var tk = function (a, ic, t) { return '<button type="button" class="nc-b" data-a="' + a + '" aria-label="' + t + '" title="' + t + '"><i class="fa-solid ' + ic + '"></i></button>'; };
         B.innerHTML = '<div class="nc-top">' + tk('x', 'fa-xmark', 'Leave class') + '<div class="nc-tt"><b></b><small><i class="nc-dot"></i>LIVE \u00b7 <span class="nc-ty"></span> \u00b7 <span class="nc-st">Paused</span></small></div><span class="nc-ct"></span>' + tk('fs', 'fa-expand', 'Full screen') + tk('vol', 'fa-volume-high', 'Voice on or off') + tk('side', 'fa-comments', 'Class chat') + '</div>'
             + '<div class="nc-main"><div class="nc-stage"><div class="nc-sw"><div class="nc-pg"></div><canvas class="tc"></canvas><canvas class="sc"></canvas></div><div class="nc-hb"><i class="fa-solid fa-hand"></i> Hand raised</div><div class="nc-q"></div><div class="nc-ld"></div></div>'
-            + '<aside class="nc-side"><div class="nc-sh"><div class="nc-av"><img src="' + NOVA_IMG + '" alt="" onerror="this.style.visibility=\'hidden\'"></div><div class="nc-sn"><b>NOVA \u00b7 your teacher</b><small class="nc-vs">Voice on</small></div></div><div class="nc-log"></div><form class="nc-fm"><input placeholder="Type a comment or doubt\u2026" autocomplete="off"><button type="button" class="nc-b nc-sm" data-a="smic" aria-label="Speak your doubt" title="Speak your doubt"><i class="fa-solid fa-microphone"></i></button><button type="submit" class="nc-b go" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></form></aside></div>'
+            + '<aside class="nc-side"><div class="nc-sh"><div class="nc-av"><img src="' + NOVA_IMG + '" alt="" onerror="this.style.visibility=\'hidden\'"></div><div class="nc-sn"><b>NOVA \u00b7 Your Teacher</b><small class="nc-vs">Voice on</small></div></div><div class="nc-log"></div><form class="nc-fm"><input placeholder="Type a comment or doubt\u2026" autocomplete="off"><button type="button" class="nc-b nc-sm" data-a="smic" aria-label="Speak your doubt" title="Speak your doubt"><i class="fa-solid fa-microphone"></i></button><button type="submit" class="nc-b go" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></form></aside></div>'
             + '<div class="nc-prog"><i></i></div><div class="nc-dock">' + tk('p', 'fa-backward-step', 'Previous') + tk('t', 'fa-play', 'Teach') + tk('n', 'fa-forward-step', 'Next')
             + '<button type="button" class="nc-b hand" data-a="hand"><i class="fa-solid fa-hand"></i><span>Raise hand</span></button></div>';
         document.body.appendChild(B); B.addEventListener('pointerdown', unlockAudio, true);
@@ -41004,7 +41011,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 #nc-start.ready{animation:ncReady 2.4s ease-in-out infinite}
 @keyframes ncReady{50%{box-shadow:0 10px 30px -6px rgba(20,184,166,.9)}}
 #nc-start i{font-size:14px}
-.cl-pad{height:calc(92px + env(safe-area-inset-bottom,0px));flex:none}
+.cl-pad{height:calc(112px + env(safe-area-inset-bottom,0px));flex:none}
+#nc-page .cl-wrap{height:auto!important;flex:0 0 auto!important}
 @media(max-width:380px){#cl-dock .cl-dt small{display:none}#nc-start{min-width:130px}}
 @media(prefers-reduced-motion:reduce){#nc-start.ready{animation:none}}
 /* the round floating Nova button sat on top of the Start class button and swallowed the tap: hide it on the Nova screens and during a class */
