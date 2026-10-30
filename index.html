@@ -17145,16 +17145,8 @@ window.__tpPaint = function () {
                     const d = document.getElementById(id); if (!d) return;
                     if (!d.classList.contains('hidden-view')) __fromDash = true;
                 });
-                // run heavy screen set-up one moment later, so the open animation gets its first frames cleanly
-                const __defer = (fn) => {
-                    if (__fromDash && __toWin && !__reduce) {
-                        // Let the window finish opening on the GPU first; the heavy screen set-up runs right after,
-                        // so the main thread is never busy while the open animation is playing.
-                        setTimeout(() => {
-                            if (window.location.hash.replace('#', '') === rawHash) fn();
-                        }, window.__vwSettle || 280);
-                    } else fn();
-                };
+                // heavy screen set-up now runs BEFORE the window starts to move (see __pre below), so the animation never competes with it
+                const __defer = (fn) => fn();
 
                 let __leaving = false;
                 const __leaveEls = [];   // windows that zoom back into their button; 'view-leave' is added once the dashboard is back on screen, so the button can be measured
@@ -17162,30 +17154,43 @@ window.__tpPaint = function () {
                 // "dashboard gone" and "window visible"), then it is hidden once the window has covered it.
                 clearTimeout(window.__vwUnderT);
                 const __keepUnder = __fromDash && __toWin && !__reduce;
+                const __underEls = [];   // dashboards that step back under the opening window
                 const __busy = (ms) => { const r = document.documentElement; r.classList.add('vw-busy'); clearTimeout(window.__vwBusyT); window.__vwBusyT = setTimeout(() => r.classList.remove('vw-busy'), ms); };
                 views.forEach(v => {
                     const el = document.getElementById(v);
                     if (!el) return;
                     const wasOpen = !el.classList.contains('hidden-view');
-                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'vw-under'); // Reset animation state
+                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'vw-under', 'vw-prep'); // Reset animation state
                     if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
                         __leaveEls.push(el);
                         setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, window.__vwHideMs || 580);
                     } else if (__keepUnder && wasOpen && __iosD.indexOf(v) !== -1) {
-                        el.classList.add('vw-under');   // still visible, sits beneath the opening window
+                        __underEls.push(el);   // gets 'vw-under' the moment the window starts to move
+                    } else if (__toWin && __iosD.indexOf(v) !== -1) {
+                        // dashboard going under a window: it stays laid out ("parked", only invisible), so coming back is a pure composite step
+                        el.classList.add('hidden-view');
+                        if (wasOpen || el.classList.contains('vw-park')) el.classList.add('vw-park');
                     } else {
                         el.classList.add('hidden-view');
+                        el.classList.remove('vw-park');
                     }
                 });
 
                 // 3. Apply the transition (window opens out of the tapped button / closes back into it; dashboard buttons pop back in)
                 const targetEl = document.getElementById(targetViewId);
+                // Dashboard -> window: build the screen first (window held still + invisible), THEN start the slide, so the
+                // motion never shares the main thread with the screen set-up and the window arrives already filled in.
+                const __pre = !!(__keepUnder && targetEl);
+                let __open = null;
                 if (targetEl) {
                     targetEl.classList.remove('hidden-view');
+                    targetEl.classList.remove('vw-park');
+                    if (__pre) targetEl.classList.add('vw-prep');
                     void targetEl.offsetWidth; // Force reflow to restart animation flawlessly
                     if (__leaveEls.length) { if (window.__vwLeave) window.__vwLeave(__leaveEls, targetEl); else __leaveEls.forEach(w => w.classList.add('view-leave')); }
-                    {
+                    __open = () => {
+                        __underEls.forEach(d => d.classList.add('vw-under'));
                         // Window opened from a dashboard button: zoom out of that button (measured against the parent, not the window,
                         // because the window is still carrying its own slide transform at this moment).
                         const __o = window.__xbOrigin;
@@ -17203,14 +17208,16 @@ window.__tpPaint = function () {
                         targetEl.classList.add('view-enter');
                         if (__home && __leaving) targetEl.classList.add('view-back');
                         if (!__reduce) {
-                            if (__keepUnder) __busy(780); else if (__home && __leaving) __busy(780);
+                            // 'vw-busy' (GPU hints + no live blur on the dashboard) lasts exactly as long as the motion, not longer
+                            if (__keepUnder) __busy((window.__vwUnderMs || 600) + 60); else if (__home && __leaving) __busy((window.__vwHideMs || 520) + 60);
                         }
                         if (__keepUnder) {
                             window.__vwUnderT = setTimeout(() => {
-                                __iosD.forEach(id => { const d = document.getElementById(id); if (d && d.classList.contains('vw-under')) { d.classList.remove('vw-under'); d.classList.add('hidden-view'); } });
+                                __iosD.forEach(id => { const d = document.getElementById(id); if (d && d.classList.contains('vw-under')) { d.classList.remove('vw-under'); d.classList.add('hidden-view'); d.classList.add('vw-park'); } });
                             }, window.__vwUnderMs || 680);
                         }
-                    }
+                    };
+                    if (!__pre) __open();
                 }
 
                 if (!targetEl && __leaveEls.length) __leaveEls.forEach(w => w.classList.add('view-leave'));
@@ -17355,7 +17362,17 @@ window.__tpPaint = function () {
                 } };
                 // Redirect / permission checks run at once. Everything that builds a screen waits two frames while a window opens from the dashboard.
                 const __NOW = ['login', 'student', 'admin', 'admin-profile', 'active-exam', 'alarms', 'motivation', 'auto-quotes', 'quotes', 'math-workout'];
-                if (__NOW.indexOf(hash) > -1) __run(); else __defer(__run);
+                if (__pre) {
+                    try { __run(); } catch (e) { try { console.error(e); } catch (_) { } }
+                    if (window.location.hash.replace('#', '') === rawHash && targetEl.classList.contains('vw-prep') && __open) {
+                        targetEl.classList.remove('vw-prep');
+                        void targetEl.offsetWidth;   // the finished screen is laid out now, off the animation's clock
+                        __open();
+                    } else {
+                        targetEl.classList.remove('vw-prep');   // redirected / navigated away: the newer navigation owns the screen
+                    }
+                    setTimeout(() => { if (targetEl.classList.contains('vw-prep')) targetEl.classList.remove('vw-prep'); }, 1200);   // safety net
+                } else if (__NOW.indexOf(hash) > -1) __run(); else __defer(__run);
             };
 
             // Map original global function name to window scope so internal legacy buttons don't break
@@ -43247,6 +43264,38 @@ html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):n
   W.addEventListener('hashchange',sample);
 })();
 </script>
+<style id="vw-butter">
+/* ===== Butter-smooth windows - support layer (works together with the 'apple-motion' block above) =====
+   What used to make opening / closing a window stutter, and what this layer does about it:
+   1. The dashboard was display:none while a window was open, so every Back re-built its layout and replayed the animations of
+      every card in it, in the same frames as the closing motion.  Now it is PARKED: still laid out, only invisible (.vw-park).
+      Coming back is a pure GPU composite, the scroll position is kept, and nothing inside it re-animates.
+   2. The screen was built while it was already sliding in (empty window, then a pop of content + a freeze).  Now it is built first
+      (.vw-prep: held still and invisible for a few milliseconds) and only then starts to move, already filled in.
+   3. Every tile carries a live blur and the whole dashboard was scaled under it, so the GPU re-blurred ~20 layers on every frame.
+      While the motion runs (html.vw-busy) the dashboard is drawn flat and its endless animations are paused. */
+
+/* 1) parked dashboard: same box as when open, just not painted and not touchable */
+html body #student-view.hidden-view.vw-park:not(#_):not(#__):not(#___),
+html body #admin-view.hidden-view.vw-park:not(#_):not(#__):not(#___){display:flex!important;visibility:hidden!important;pointer-events:none!important}
+html body #student-view.hidden-view.vw-park:not(#_):not(#__) *,
+html body #admin-view.hidden-view.vw-park:not(#_):not(#__) *{animation-play-state:paused!important}
+
+/* 2) screen being built: no motion yet, nothing painted (opacity, not visibility, so the screen can still focus its inputs while it is built) */
+html body .vw-prep:not(#_):not(#__):not(#___){animation:none!important;opacity:0!important;pointer-events:none!important}
+
+/* 3) while a window opens / closes the dashboard under it is drawn flat and calm */
+html.vw-busy body #student-view:not(#_):not(#__) *,
+html.vw-busy body #admin-view:not(#_):not(#__) *,
+html.vw-busy body #student-view:not(#_):not(#__),
+html.vw-busy body #admin-view:not(#_):not(#__){-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html.vw-busy body #student-view:not(#_):not(#__) *:not(#_):not(#__):not(#___),
+html.vw-busy body #admin-view:not(#_):not(#__) *:not(#_):not(#__):not(#___){animation-play-state:paused!important}
+/* the tile that was just pressed must not bounce back while the whole screen is moving */
+html.vw-busy body #student-view .xb:not(#_):not(#__),html.vw-busy body #admin-view .xb:not(#_):not(#__),
+html.vw-busy body #student-view .xb .xb-ic:not(#_):not(#__),html.vw-busy body #admin-view .xb .xb-ic:not(#_):not(#__),
+html.vw-busy body #student-view .glass-card:not(#_):not(#__),html.vw-busy body #admin-view .glass-card:not(#_):not(#__){transition:none!important}
+</style>
 <style id="ad-ov-css">
 /* ===== Admin dashboard: Students Overview widget (under the Student Directory tile) ===== */
 #ad-ov{container:adov / inline-size;padding:16px}
@@ -43429,10 +43478,12 @@ html.is-landscape body #admin-view>div:nth-child(2)>#admin-exams-list:not(#_):no
     var d=compute();
     var sig=[d.stu,d.exams,d.avg==null?'':d.avg.toFixed(2),d.pass==null?'':d.pass.toFixed(2),d.rows.map(function(r){return r.name+':'+r.n+':'+r.avg.toFixed(1)}).join('|')].join('~');
     var first=!S.vis;S.vis=true;
-    if(first||sig!==S.sig||!box.firstChild){
+    var wNow=Math.floor(box.clientWidth);
+    /* coming back from a window: the graph is already there and unchanged - leave it alone (no re-draw, no replayed draw-in) */
+    if(sig!==S.sig||!box.firstChild||(first&&wNow>=120&&Math.abs(wNow-S.w)>1)){
       var keep=(sig!==S.sig&&!first)?S.sel:-1;
       S.sig=sig;S.data=d;if(keep<0||keep>=d.rows.length)S.sel=-1;
-      paintStats(d);draw(first||!box.firstChild)
+      paintStats(d);draw(!box.firstChild)
     }
   }
 
