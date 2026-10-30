@@ -36713,7 +36713,7 @@ function ttsPrefetch(txt) {
         .catch(function () { clearTimeout(tm); return null; });
 }
 function ttsStop() { clearTimeout(ttsTimer); ttsSeq++; Object.keys(ttsPre).forEach(ttsDrop); if (ttsAudio) { ttsAudio.onended = ttsAudio.onerror = ttsAudio.onplaying = null; try { ttsAudio.pause(); } catch (e) { } } }
-/* voice order for every spoken sentence: 1) free local Kokoro voice (NOVA_TTS_URL, runs on the device)  2) Amazon voice (Polly via StreamElements)  3) the phone / PC voice  4) Google voice as the very last resort.
+/* voice order for every spoken sentence: 1) Gemini voice (NOVA_TTS_URL)  2) Amazon voice (Polly via StreamElements)  3) the phone / PC voice  4) Google voice as the very last resort.
    A voice that just failed is skipped for 45 s so the next sentences do not wait for it again. */
 var gemDeadAt = 0, amzDeadAt = 0;
 function gemUrl() { var c = window.NOVA_TTS_URL; return (typeof c === 'string' && c) || (typeof c === 'function' ? c : null); }
@@ -36729,7 +36729,7 @@ function ttsUrls(txt, grp) {
 }
 /* plays one sentence; onEnd(true) = spoken, onEnd(false) = every voice failed, onEnd('blocked') = the phone blocked autoplay */
 function playTTS(txt, onEnd, isEnded, grp) {
-    grp = grp || 'goo'; var a = ttsEl(), urls = ttsUrls(txt, grp), k = 0, over = false, pre = grp === 'gem' ? (ttsPre[txt] || (ttsPrefetch(txt), ttsPre[txt])) : null;
+    grp = grp || 'goo'; var a = ttsEl(), urls = ttsUrls(txt, grp), k = 0, over = false, pre = grp === 'gem' ? ttsPre[txt] : null;
     if (!a) return onEnd(false);
     function finish(r) { if (over) return; over = true; clearTimeout(ttsTimer); a.onended = a.onerror = a.onplaying = null; ttsDrop(txt); onEnd(r); }
     function tryNext() {
@@ -37806,151 +37806,14 @@ window.NovaAssistant = { open: tapMic, fab: fabTap, setWake: setWake, ask: typed
 })();
 </script>
 
-<script id="nova-local-voice">
-/* NOVA voice = FREE open-source Kokoro-82M (Apache 2.0, github.com/hexgrad/kokoro) running inside the phone / browser itself.
-   No server, no API key, no Gemini, no cost. The model (about 80 MB) downloads ONCE from the free Hugging Face hub and is then cached by the browser.
-   It runs in a background worker, so the screen never freezes while Nova speaks.
-   How it plugs in: both voice modules (Nova assistant + Nova class board) already ask "window.NOVA_TTS_URL" for audio.
-   That address now points to a local marker that is answered by Kokoro on the device; nothing leaves the phone.
-   If Kokoro cannot run (very old phone, offline on first use, Hindi etc.) the old free voices take over automatically:
-   Amazon Polly (StreamElements) -> the phone / PC voice -> Google voice.
-   Options:  window.NOVA_KOKORO_VOICE = 'af_heart' (default) | 'af_bella' | 'af_nicole' | 'bf_emma' | 'am_michael' | 'bm_george' ...
-             window.NOVA_KOKORO_SPEED = 1   |   localStorage nova_kokoro = '0' turns the local voice off. */
+<script>
+/* NOVA voice = real Gemini audio. Android WebView (Median) has no built-in text-to-speech, so Nova plays an audio file made by Gemini instead.
+   1) deploy nova-tts-worker.js on Cloudflare  2) paste your worker address below, keeping ?text={text}
+   (add &k=YOURKEY if you set NOVA_KEY in the worker, and &voice=Kore to choose a voice).
+   While it still says YOUR-WORKER, Nova keeps using the old online voices. */
 (function () {
-    'use strict';
-    var PATH = '/__kokoro__/tts';
-    window.NOVA_TTS_URL = PATH + '?text={text}';
-
-    var MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX';
-    var LIBS = ['https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm', 'https://esm.sh/kokoro-js@1.2.1'];
-    var RETRY_MS = 300000;                               // after a failure, try the local voice again in 5 minutes
-    var K = { worker: null, ready: null, deadAt: 0, why: '', id: 0, jobs: {}, toast: false };
-
-    /* ---- runs INSIDE the background worker (stringified into a Blob worker) ---- */
-    function workerMain(MODEL, LIBS) {
-        var tts = null, chain = Promise.resolve(), gone = {};
-        async function load() {
-            var mod = null, err = null;
-            for (var i = 0; i < LIBS.length; i++) { try { mod = await import(LIBS[i]); break; } catch (e) { err = e; } }
-            if (!mod) throw err || new Error('library blocked');
-            tts = await mod.KokoroTTS.from_pretrained(MODEL, {
-                dtype: 'q8', device: 'wasm',
-                progress_callback: function (p) { try { if (p && p.status === 'progress' && p.total > 5e6) postMessage({ t: 'prog', loaded: p.loaded, total: p.total }); } catch (e) { } }
-            });
-        }
-        onmessage = function (ev) {
-            var m = ev.data;
-            if (m.t === 'init') {
-                load().then(function () { postMessage({ t: 'ready' }); }, function (e) { postMessage({ t: 'err', e: String(e && e.message || e) }); });
-            } else if (m.t === 'cancel') {
-                gone[m.id] = 1;
-            } else if (m.t === 'gen') {
-                chain = chain.then(async function () {
-                    if (gone[m.id]) { delete gone[m.id]; return postMessage({ t: 'fail', id: m.id, e: 'cancelled' }); }
-                    try {
-                        var audio = await tts.generate(m.text, { voice: m.voice, speed: m.speed });
-                        var blob = await audio.toBlob();
-                        var buf = await blob.arrayBuffer();
-                        postMessage({ t: 'audio', id: m.id, buf: buf }, [buf]);
-                    } catch (e) { postMessage({ t: 'fail', id: m.id, e: String(e && e.message || e) }); }
-                });
-            }
-        };
-    }
-
-    function flag(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
-    function isDead() { return !!K.deadAt && Date.now() - K.deadAt < RETRY_MS; }
-    function failAll(why) {
-        K.deadAt = Date.now(); K.why = String(why || ''); K.ready = null;
-        try { if (K.worker) K.worker.terminate(); } catch (e) { } K.worker = null;
-        var j = K.jobs; K.jobs = {}; Object.keys(j).forEach(function (id) { try { j[id].no(why); } catch (e) { } });
-        try { console.warn('Local voice (Kokoro) unavailable, using the backup voices:', K.why); } catch (e) { }
-    }
-    function onProg(m) {
-        if (K.toast || flag('nova_kokoro_dl')) return; K.toast = true;
-        try { localStorage.setItem('nova_kokoro_dl', '1'); } catch (e) { }
-        try { if (window.showToast) window.showToast('Natural voice', 'Downloading the free voice, one time only (about 80 MB). Other voices speak meanwhile.', 'info'); } catch (e) { }
-    }
-    function boot() {
-        if (K.ready) return K.ready;
-        if (!window.Worker || !window.WebAssembly) { failAll('no worker / WebAssembly'); return Promise.reject('unsupported'); }
-        K.ready = new Promise(function (ok, no) {
-            try {
-                var src = '(' + workerMain.toString() + ')(' + JSON.stringify(MODEL) + ',' + JSON.stringify(LIBS) + ')';
-                var w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), { type: 'module' });
-                K.worker = w;
-                w.onmessage = function (ev) {
-                    var m = ev.data || {};
-                    if (m.t === 'ready') ok();
-                    else if (m.t === 'err') { failAll(m.e); no(m.e); }
-                    else if (m.t === 'prog') onProg(m);
-                    else if (m.t === 'audio' || m.t === 'fail') {
-                        var j = K.jobs[m.id]; if (!j) return; delete K.jobs[m.id];
-                        if (m.t === 'audio') j.ok(m.buf); else j.no(m.e);
-                    }
-                };
-                w.onerror = function (e) { failAll('worker error'); no('worker'); };
-                w.postMessage({ t: 'init' });
-            } catch (e) { failAll(e); no(e); }
-        });
-        K.ready.catch(function () { });
-        return K.ready;
-    }
-    function start(text, voice) {
-        var id = ++K.id, p = new Promise(function (ok, no) { K.jobs[id] = { ok: ok, no: no }; });
-        K.worker.postMessage({ t: 'gen', id: id, text: text, voice: voice || window.NOVA_KOKORO_VOICE || 'af_heart', speed: window.NOVA_KOKORO_SPEED || 1 });
-        return { id: id, p: p };
-    }
-    function cancel(id) { if (K.jobs[id]) { delete K.jobs[id]; try { K.worker && K.worker.postMessage({ t: 'cancel', id: id }); } catch (e) { } } }
-
-    function parse(url) {
-        var o = {}, q = url.split('?')[1] || '';
-        q.split('&').forEach(function (p) { var i = p.indexOf('='); if (i > 0) { try { o[p.slice(0, i)] = decodeURIComponent(p.slice(i + 1).replace(/\+/g, ' ')); } catch (e) { } } });
-        return o;
-    }
-    function reply(status, body, type) { return new Response(body, { status: status, headers: { 'Content-Type': type || 'text/plain' } }); }
-    function local(url, init) {
-        var o = parse(url), text = (o.text || '').trim();
-        if (!text || flag('nova_kokoro') === '0' || isDead()) return Promise.resolve(reply(503, ''));
-        if (o.lang && o.lang.toLowerCase().indexOf('en') !== 0) return Promise.resolve(reply(415, ''));   // the browser build of Kokoro has English voices only: other languages use the backup voices
-        if (text.length > 420) return Promise.resolve(reply(413, ''));
-        return new Promise(function (ok, no) {
-            var sig = init && init.signal, done = false, job = null;
-            function abort() { if (done) return; done = true; if (job) cancel(job.id); no(new DOMException('Aborted', 'AbortError')); }
-            if (sig) { if (sig.aborted) return abort(); sig.addEventListener('abort', abort); }
-            boot().then(function () {
-                if (done) return;
-                job = start(text, o.voice);
-                return job.p;
-            }).then(function (buf) {
-                if (done || !buf) return; done = true;
-                ok(reply(200, new Blob([buf], { type: 'audio/wav' }), 'audio/wav'));
-            }, function () { if (done) return; done = true; ok(reply(503, '')); });
-        });
-    }
-
-    /* every other request goes through untouched */
-    var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
-    if (nativeFetch) window.fetch = function (input, init) {
-        var url = typeof input === 'string' ? input : (input && input.url) ? input.url : String(input);
-        if (url.indexOf(PATH) === 0 || url.indexOf((location.origin || '') + PATH) === 0) return local(url, init);
-        return nativeFetch(input, init);
-    };
-
-    /* get the model ready in the background once someone is logged in, so the first spoken answer is instant.
-       Not on data-saver or mobile data (it is an 80 MB download): there it starts the first time Nova speaks. */
-    function preload() {
-        if (flag('nova_kokoro') === '0' || !window.Worker || !window.WebAssembly) return;
-        var c = navigator.connection; if (c && (c.saveData || c.type === 'cellular')) return;
-        boot();
-    }
-    var tries = 0;
-    (function wait() {
-        if (window.currentRole) return (window.requestIdleCallback || setTimeout)(preload);
-        if (++tries < 120) setTimeout(wait, 5000);
-    })();
-
-    window.NovaLocalVoice = { boot: boot, status: function () { return { ready: !!K.ready && !isDead(), failed: isDead(), why: K.why }; } };
+    var u = 'https://voice.connect-subhankar-info.workers.dev/?text={text}';
+    if (u.indexOf('YOUR-WORKER') < 0) window.NOVA_TTS_URL = u;
 })();
 </script>
 
