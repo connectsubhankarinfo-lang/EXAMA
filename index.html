@@ -44434,14 +44434,21 @@ html.is-tablet.is-landscape #admin-profile-view .ap-col:not(#_){display:contents
 #sin-ov.hidden{display:none}
 #sin-ov .dl-panel{width:100%;max-width:none;box-sizing:border-box;max-height:92vh;overflow-y:auto;padding:8px 18px calc(18px + env(safe-area-inset-bottom,0px))}
 @media(min-width:768px){#sin-ov .dl-panel{padding:10px 32px calc(26px + env(safe-area-inset-bottom,0px))}}
-.sin-sel{position:relative;display:block;width:100%;max-width:none;margin:0 0 12px;box-sizing:border-box}
-.sin-sel select{display:block;width:100%;min-width:100%;max-width:none;box-sizing:border-box;min-height:54px;-webkit-appearance:none;appearance:none;border:2px solid transparent;border-radius:16px;background:#f0f2f5;padding:14px 46px 14px 46px;font:inherit;font-size:15px;font-weight:700;color:#64748b;outline:0;cursor:pointer;text-overflow:ellipsis}
-.sin-sel select:focus{border-color:#6366f1;background:#fff}
-.sin-sel select.has{color:#4338ca;background:#eef2ff;border-color:#6366f1}
-.sin-sel select option{color:#111b21;font-weight:600}
-.sin-sel i{position:absolute;top:50%;transform:translateY(-50%);color:#64748b;pointer-events:none}
-.sin-sel .sin-ch{right:17px;font-size:12px}
-.sin-sel .sin-ti{left:17px;font-size:15px;color:#6366f1}
+.sin-dd{position:relative;display:block;width:100%;margin:0 0 12px;box-sizing:border-box}
+.sin-dd-btn{display:flex;align-items:center;gap:10px;width:100%;min-height:54px;box-sizing:border-box;border:2px solid transparent;border-radius:16px;background:#f0f2f5;padding:12px 16px;font:inherit;font-size:15px;font-weight:700;color:#64748b;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.sin-dd-btn .sin-ti{color:#6366f1;font-size:15px;flex:none}
+.sin-dd-btn .sin-lb{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sin-dd-btn .sin-ch{font-size:12px;color:#64748b;flex:none;transition:transform .2s}
+.sin-dd.open .sin-dd-btn{border-color:#6366f1;background:#fff}
+.sin-dd.open .sin-ch{transform:rotate(180deg)}
+.sin-dd.has .sin-dd-btn{color:#4338ca;background:#eef2ff;border-color:#6366f1}
+.sin-dd-list{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:5;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 14px 34px rgba(15,23,42,.18);padding:6px}
+.sin-dd.open .sin-dd-list{display:block}
+.sin-opt{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;box-sizing:border-box;border:0;background:transparent;padding:12px 12px;border-radius:12px;font:inherit;font-size:14px;font-weight:700;color:#111b21;text-align:left;cursor:pointer}
+.sin-opt:active,.sin-opt:hover{background:#f1f5f9}
+.sin-opt.on{background:#eef2ff;color:#4338ca}
+.sin-opt .fa-check{opacity:0;font-size:12px}
+.sin-opt.on .fa-check{opacity:1}
 #sin-list{max-height:250px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-right:3px}
 #sin-list::-webkit-scrollbar{width:4px}
 #sin-list::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
@@ -44451,6 +44458,7 @@ html.is-tablet.is-landscape #admin-profile-view .ap-col:not(#_){display:contents
 .sin-ct{display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#94a3b8;margin:4px 4px 10px}
 .sin-ok{display:none;padding:10px 12px;border-radius:14px;background:#dcfce7;color:#166534;font-size:13px;font-weight:800;margin-bottom:10px}
 .sin-er{display:none;padding:8px 12px;border-radius:12px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:700;margin-bottom:10px}
+#sin-send.sin-dim{opacity:.55}
 .sin-li{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:14px;background:#f8fafc;border:1px solid #eef2f7;margin-bottom:6px}
 .sin-li .t{flex:1;min-width:0;font-size:12px;font-weight:800;color:#0f172a}
 .sin-li .t small{display:block;font-size:10px;font-weight:600;color:#94a3b8;margin-top:2px}
@@ -44469,21 +44477,53 @@ html.is-tablet.is-landscape #admin-profile-view .ap-col:not(#_){display:contents
   var ref = function (m, sub) { return FB.ref(window.rtdb, pre() + 'support_inbox/' + m + (sub ? '/' + sub : '')); };
   var load = function () { return FB ? Promise.resolve(FB) : import('https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js').then(function (x) { return (FB = x); }); };
   var norm = function (t) { return String(t || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+  var DBURL = 'https://exama-cfb56-default-rtdb.asia-southeast1.firebasedatabase.app';
+  var path = function (m) { return pre() + 'support_inbox/' + encodeURIComponent(m); };
+  function restGet(m) {
+    return withTimeout(fetch(DBURL + '/' + path(m) + '.json', { cache: 'no-store' }), 8000).then(function (r) { if (!r.ok) throw { code: 'HTTP ' + r.status }; return r.json(); });
+  }
+  function restPush(m, rec) {
+    return withTimeout(fetch(DBURL + '/' + path(m) + '.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rec) }), 12000).then(function (r) {
+      if (!r.ok) { return r.text().then(function (tx) { throw { code: (r.status === 401 || r.status === 403) ? 'PERMISSION_DENIED' : 'HTTP ' + r.status, message: tx }; }); }
+      return r.json();
+    });
+  }
+  function savePush(m, rec) {
+    // 1st try the Firebase SDK, if it fails or hangs, save through the REST endpoint instead
+    return withTimeout(load().then(function () { return FB.push(ref(m), rec); }), 6000).catch(function (e) {
+      var c = String((e && (e.code || e.message)) || '');
+      if (/permission|denied/i.test(c)) throw e;
+      console.warn('[support inbox] SDK push failed, using REST', e);
+      return restPush(m, rec);
+    });
+  }
   function say(id, t) { try { var e = $(id); if (!e) return; e.style.display = t ? 'block' : 'none'; if (t) e.textContent = t; } catch (x) { } }
+  function withTimeout(p, ms) { return new Promise(function (res, rej) { var t = setTimeout(function () { rej({ timeout: true }); }, ms); p.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); }); }); }
   function build() {
     if ($('sin-ov')) return;
     var d = document.createElement('div'); d.id = 'sin-ov'; d.className = 'hidden'; d.onclick = function (e) { if (e.target === d) window.supInClose(); };
     d.innerHTML = '<div class="dl-panel" role="dialog" aria-label="Support"><div class="dl-grab"></div><div class="dl-top"><span class="dl-topico"><i class="fa-solid fa-headset"></i></span><h4>Support, tell us what\'s wrong</h4><button type="button" class="dl-x" onclick="window.supInClose()" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>' +
-      '<div class="sin-lbl">What do you need support for?</div><div class="sin-sel"><i class="fa-solid fa-life-ring sin-ti"></i><select id="sin-topic" data-native="1" class="custom-select-initialized" aria-label="Support topic" onchange="window.supInTopic(this.selectedIndex - 1)"><option value="">Choose a topic</option>' + TOPICS.map(function (t) { return '<option value="' + esc(t) + '">' + esc(t) + '</option>'; }).join('') + '</select><i class="fa-solid fa-chevron-down sin-ch"></i></div>' +
+      '<div class="sin-lbl">What do you need support for?</div>' +
+      '<div class="sin-dd" id="sin-dd"><button type="button" class="sin-dd-btn" id="sin-dd-btn" aria-haspopup="listbox" onclick="window.supInDD()"><i class="fa-solid fa-life-ring sin-ti"></i><span class="sin-lb" id="sin-lb">Choose a topic</span><i class="fa-solid fa-chevron-down sin-ch"></i></button>' +
+      '<div class="sin-dd-list" id="sin-dd-list" role="listbox">' + TOPICS.map(function (t, i) { return '<button type="button" class="sin-opt" role="option" data-i="' + i + '" onclick="window.supInTopic(' + i + ')"><span>' + esc(t) + '</span><i class="fa-solid fa-check"></i></button>'; }).join('') + '</div></div>' +
       '<textarea id="sin-tx" maxlength="500" placeholder="Describe the problem (10 to 500 characters)"></textarea><div class="sin-ct"><span id="sin-hint">Minimum 10 characters</span><span id="sin-n">0/500</span></div>' +
       '<div class="sin-ok" id="sin-ok"></div><div class="sin-er" id="sin-er"></div>' +
-      '<button type="button" id="sin-send" class="dl-send" disabled onclick="window.supInSend()"><i class="fa-solid fa-paper-plane"></i> Send</button>' +
+      '<button type="button" id="sin-send" class="dl-send" onclick="window.supInSend()"><i class="fa-solid fa-paper-plane"></i> Send</button>' +
       '<div class="sin-lbl" style="margin-top:16px">My support messages</div><div id="sin-list"><div class="dl-hint">No messages yet</div></div></div>';
     document.body.appendChild(d);
     $('sin-tx').addEventListener('input', check);
+    // tap anywhere outside the dropdown closes it
+    d.addEventListener('click', function (e) { var dd = $('sin-dd'); if (dd && !dd.contains(e.target)) dd.classList.remove('open'); });
+  }
+  function paintTopic() {
+    try {
+      var dd = $('sin-dd'), lb = $('sin-lb'); if (!dd || !lb) return;
+      lb.textContent = S.topic || 'Choose a topic'; dd.classList.toggle('has', !!S.topic);
+      Array.prototype.forEach.call(dd.querySelectorAll('.sin-opt'), function (b) { b.classList.toggle('on', TOPICS[+b.getAttribute('data-i')] === S.topic); });
+    } catch (e) { }
   }
   function check() {
-    try { var t = $('sin-tx').value, n = t.trim().length; $('sin-n').textContent = t.length + '/500'; $('sin-send').disabled = !(S.topic && n >= 10 && n <= 500) || S.busy; say('sin-er', ''); } catch (e) { }
+    try { var t = $('sin-tx').value; $('sin-n').textContent = t.length + '/500'; var sb = $('sin-send'); sb.classList.toggle('sin-dim', S.busy); sb.innerHTML = S.busy ? '<i class="fa-solid fa-spinner fa-spin"></i> Sending...' : '<i class="fa-solid fa-paper-plane"></i> Send'; say('sin-er', ''); } catch (e) { }
   }
   function paint(L) {
     try {
@@ -44495,49 +44535,59 @@ html.is-tablet.is-landscape #admin-profile-view .ap-col:not(#_){display:contents
       }).join('');
     } catch (e) { }
   }
+  function toList(v) { v = v || {}; return Object.keys(v).map(function (k) { return v[k]; }).filter(function (x) { return x && typeof x === 'object'; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }); }
   function mine() {
-    return load().then(function () { return FB.get(ref(me())); }).then(function (sn) {
-      var v = sn.val() || {}; return Object.keys(v).map(function (k) { return v[k]; }).filter(function (x) { return x && typeof x === 'object'; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    return withTimeout(load().then(function () { return FB.get(ref(me())); }).then(function (sn) { return toList(sn.val()); }), 6000).catch(function (e) {
+      console.warn('[support inbox] SDK list failed, using REST', e);
+      return restGet(me()).then(toList);
     });
   }
   function refresh() { mine().then(paint).catch(function (e) { console.warn('[support inbox] list', e); }); }
   window.supInOpen = function () {
     try {
-      if (window.currentRole === 'admin' || !me()) return;
+      if (window.currentRole === 'admin') return;
       if (window.closeSettingsMenu) window.closeSettingsMenu();
       build(); S.topic = ''; S.busy = false; $('sin-tx').value = ''; say('sin-ok', ''); say('sin-er', '');
-      var sl = $('sin-topic'); if (sl) { sl.value = ''; sl.classList.remove('has'); }
-      check(); $('sin-ov').classList.remove('hidden'); refresh();
+      var dd = $('sin-dd'); if (dd) dd.classList.remove('open');
+      paintTopic(); check(); $('sin-ov').classList.remove('hidden');
+      if (!me()) { say('sin-er', 'Please log in again to send a support message.'); return; }
+      refresh();
     } catch (e) { console.warn('[support inbox] open', e); }
   };
-  window.supInClose = function () { try { var o = $('sin-ov'); if (o) o.classList.add('hidden'); } catch (e) { } };
+  window.supInClose = function () { try { var o = $('sin-ov'); if (o) o.classList.add('hidden'); var dd = $('sin-dd'); if (dd) dd.classList.remove('open'); } catch (e) { } };
+  window.supInDD = function () { try { var dd = $('sin-dd'); if (dd) dd.classList.toggle('open'); } catch (e) { } };
   window.supInTopic = function (i) {
-    try { S.topic = TOPICS[i] || ''; var sl = $('sin-topic'); if (sl) { sl.value = S.topic; sl.classList.toggle('has', !!S.topic); } check(); } catch (e) { }
+    try { S.topic = TOPICS[i] || ''; paintTopic(); var dd = $('sin-dd'); if (dd) dd.classList.remove('open'); check(); } catch (e) { }
   };
   window.supInSend = function () {
     try {
+      if (S.busy) return;
       var m = me(), t = ($('sin-tx').value || '').trim(), topic = S.topic;
-      if (!m || S.busy) return;
+      say('sin-ok', ''); say('sin-er', '');
+      if (!m) { say('sin-er', 'Please log in again to send a support message.'); return; }
       if (!topic) { say('sin-er', 'Please choose a topic.'); return; }
       if (!t) { say('sin-er', 'Please write your message.'); return; }
-      if (t.length < 10 || t.length > 500) { say('sin-er', 'Message must be 10 to 500 characters.'); return; }
-      S.busy = true; $('sin-send').disabled = true; say('sin-ok', ''); say('sin-er', '');
+      if (t.length < 10) { say('sin-er', 'Message must be at least 10 characters.'); return; }
+      if (t.length > 500) { say('sin-er', 'Message must be 500 characters or less.'); return; }
+      S.busy = true; check();
       var nm = ((window.studentsDB || []).find(function (s) { return String(s.mobile) === m; }) || {}).name || m;
-      mine().then(function (L) {
+      // spam check is best effort: if the list can't be read quickly, the message is still sent
+      mine().catch(function (e) { console.warn('[support inbox] precheck skipped', e); return []; }).then(function (L) {
         var hr = Date.now() - 3600000;
         if (L.filter(function (x) { return (x.ts || 0) >= hr; }).length >= 5) throw { soft: 'You can send 5 messages per hour. Please try again later.' };
         if (L.some(function (x) { return norm(x.text) === norm(t); })) throw { soft: 'You already sent this message.' };
-        return FB.push(ref(m), { topic: topic, text: t, ts: Date.now(), status: 'new', name: nm });
+        return savePush(m, { topic: topic, text: t, ts: Date.now(), status: 'new', name: nm });
       }).then(function () {
-        $('sin-tx').value = ''; S.topic = ''; var sl2 = $('sin-topic'); if (sl2) { sl2.value = ''; sl2.classList.remove('has'); }
+        $('sin-tx').value = ''; S.topic = ''; paintTopic();
         say('sin-ok', 'Sent. We\'ll look into it.');
         try { if (typeof window.sendOneSignalPush === 'function') window.sendOneSignalPush('Support: ' + nm, topic + ': ' + t.slice(0, 80), null, { category: 'exam', data: { supportInbox: true, mobile: m } }, ['9475757821']); } catch (e) { console.warn('[support inbox] push', e); }
         refresh();
       }).catch(function (e) {
         if (e && e.soft) say('sin-er', e.soft);
+        else if (e && e.timeout) say('sin-er', 'Could not send: no response from the server. Check your internet and try again.');
         else { var c = String((e && (e.code || e.message)) || ''); console.error('[support inbox] send', e); say('sin-er', /permission|denied/i.test(c) ? 'Could not send: Firebase blocked it (PERMISSION_DENIED). The Realtime Database rule for "support_inbox" is not published yet.' : 'Could not send (' + (c.slice(0, 80) || 'unknown error') + '). Please try again.'); }
       }).then(function () { S.busy = false; check(); });
-    } catch (e) { S.busy = false; console.warn('[support inbox] send', e); }
+    } catch (e) { S.busy = false; check(); console.warn('[support inbox] send', e); say('sin-er', 'Something went wrong. Please try again.'); }
   };
 })();
 </script>
