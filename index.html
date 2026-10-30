@@ -43114,27 +43114,24 @@ html.perf-lite body #student-view:not(#_):not(#__) [style*="backdrop-filter"]{-w
 </script>
 
 <style id="apple-motion">
-/* ===== Window motion - Apple card / sheet style (spring) =====
-   Not tied to the tapped button any more.
-   OPEN  : the window rises from the bottom edge as a rounded card (top corners round off as it lands); the dashboard behind it
-           steps back a little (smaller, rounded, dimmed) like the card stack in iOS.
-   CLOSE : the card slides back down and the dashboard comes forward again. Tiles do not re-animate.
-   Two looks, switch with STYLE at the top of the 'apple-motion-js' script:
-     'sheet' (default) - rises from the bottom, dashboard tucks back          'push' - slides in from the right, dashboard slides left (iOS navigation)
-   Easing is a real damped spring (script solves it and writes it as linear(); older WebViews keep the cubic-bezier fallback). */
-:root{--ap-open:.5s;--ap-close:.4s;--ap-soft:.44s;
+/* ===== Window motion - Apple card / sheet style, GPU-only =====
+   Only transform and opacity are animated (they run on the GPU, off the main thread), so the motion stays smooth on weak phones too:
+   no clip-path, no filter, no layout. The dim behind the window is one plain layer that only fades.
+   OPEN  : the window rises from the bottom edge; the dashboard behind steps back (smaller) while a dim fades in over it.
+   CLOSE : the window slides back down; the dashboard comes forward and the dim fades out. Tiles do not re-animate.
+   Looks, switch with STYLE at the top of the 'apple-motion-js' script:  'sheet' (rises from the bottom)  |  'push' (slides in from the right)
+   Easing is a real damped spring (written as linear() by the script; older WebViews keep the cubic-bezier fallback).
+   Lighter versions: html.perf-low (weak phones) and html.ap-lite (set automatically if frames are dropped) keep the window slide and
+   the dim but leave the dashboard still. */
+:root{--ap-open:.48s;--ap-close:.4s;--ap-soft:.42s;
   --ap-ease-open:cubic-bezier(.32,.72,0,1);--ap-ease-close:cubic-bezier(.32,.72,0,1);
-  --ap-in-from:translate3d(0,100%,0);--ap-clip-in:inset(0px round 30px 30px 0px 0px);
-  --ap-under-to:translate3d(0,10px,0) scale(.93);--ap-under-clip:inset(0px round 30px);--ap-dim:.7}
-html.ap-push{--ap-in-from:translate3d(100%,0,0);--ap-clip-in:inset(0px round 0px 0px 0px 0px);
-  --ap-under-to:translate3d(-26%,0,0);--ap-under-clip:inset(0px round 0px);--ap-dim:.8}
-@keyframes apIn{from{transform:var(--ap-in-from);clip-path:var(--ap-clip-in)}to{transform:none;clip-path:inset(0px round 0px 0px 0px 0px)}}
-@keyframes apOut{from{transform:none;clip-path:inset(0px round 0px 0px 0px 0px)}to{transform:var(--ap-in-from);clip-path:var(--ap-clip-in)}}
-@keyframes apInLite{from{transform:var(--ap-in-from)}to{transform:none}}
-@keyframes apOutLite{from{transform:none}to{transform:var(--ap-in-from)}}
-@keyframes apUnder{from{transform:none;filter:brightness(1);clip-path:inset(0px round 0px)}to{transform:var(--ap-under-to);filter:brightness(var(--ap-dim));clip-path:var(--ap-under-clip)}}
-@keyframes apReturn{from{transform:var(--ap-under-to);filter:brightness(var(--ap-dim));clip-path:var(--ap-under-clip)}to{transform:none;filter:brightness(1);clip-path:inset(0px round 0px)}}
-@keyframes apSoft{from{opacity:0;transform:translate3d(0,14px,0) scale(.97)}to{opacity:1;transform:none}}
+  --ap-in-from:translate3d(0,100%,0);--ap-under-to:translate3d(0,8px,0) scale(.94)}
+html.ap-push{--ap-in-from:translate3d(100%,0,0);--ap-under-to:translate3d(-24%,0,0)}
+@keyframes apIn{from{transform:var(--ap-in-from)}to{transform:none}}
+@keyframes apOut{from{transform:none}to{transform:var(--ap-in-from)}}
+@keyframes apUnder{from{transform:none}to{transform:var(--ap-under-to)}}
+@keyframes apReturn{from{transform:var(--ap-under-to)}to{transform:none}}
+@keyframes apSoft{from{opacity:0;transform:translate3d(0,12px,0)}to{opacity:1;transform:none}}
 @keyframes apFade{from{opacity:0}to{opacity:1}}
 @keyframes apFadeOut{from{opacity:1}to{opacity:0}}
 
@@ -43143,7 +43140,7 @@ html.ap-push{--ap-in-from:translate3d(100%,0,0);--ap-clip-in:inset(0px round 0px
   html body .view-enter:not(#student-view):not(#admin-view):not(#login-view):not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apIn var(--ap-open) var(--ap-ease-open) backwards!important}
   /* base screens (login, dashboards) appearing on their own: soft rise + fade */
   html body #student-view.view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #login-view.view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apSoft var(--ap-soft) var(--ap-ease-open) backwards!important}
-  /* closing: the card goes back down / out to the right */
+  /* closing: the window goes back down / out to the right */
   html body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apOut var(--ap-close) var(--ap-ease-close) both!important;pointer-events:none}
   /* the dashboard steps back while a window opens (stays opaque: no flash) ... */
   html body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:50% 0;animation:apUnder var(--ap-open) var(--ap-ease-open) both!important;pointer-events:none}
@@ -43151,10 +43148,10 @@ html.ap-push{--ap-in-from:translate3d(100%,0,0);--ap-clip-in:inset(0px round 0px
   html body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:50% 0;animation:apReturn var(--ap-close) var(--ap-ease-close) backwards!important}
   html body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
 }
-/* low phones: same slide, without rounded crop / dimming; the dashboard stays still */
-html.perf-low body .view-enter:not(#student-view):not(#admin-view):not(#login-view):not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apInLite var(--ap-open) var(--ap-ease-open) backwards!important}
-html.perf-low body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apOutLite var(--ap-close) var(--ap-ease-close) both!important}
-html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
+/* lighter versions: the dashboard stays still, only the window moves */
+html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),html.ap-lite body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),
+html.perf-low body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html.ap-lite body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),
+html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html.ap-lite body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
 /* reduced-motion setting: a short fade is all there is */
 @media (prefers-reduced-motion:reduce){
   html body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apFade .15s linear both!important}
@@ -43164,8 +43161,9 @@ html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),h
 </style>
 <script id="apple-motion-js">
 (function(){
-  var W=window,R=document.documentElement;
+  var W=window,D=document,R=D.documentElement;
   var STYLE='sheet';   /* 'sheet' = rises from the bottom (default)   |   'push' = slides in from the right */
+  var DIM=.4;          /* how dark the dashboard gets behind an open window (0 - 1) */
 
   /* damped spring 0 -> 1 as a CSS linear() easing + the time it needs to settle
      (response = seconds per swing, zeta = damping: 1 = no overshoot, below 1 = a little bounce) */
@@ -43184,7 +43182,7 @@ html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),h
   }
   R.classList.add(STYLE==='push'?'ap-push':'ap-sheet');
   var ok=false;try{ok=!!(W.CSS&&CSS.supports&&CSS.supports('animation-timing-function','linear(0,1)'))}catch(e){}
-  var open=ok?spring(.46,.92):{ms:500},close=ok?spring(.34,1):{ms:400};
+  var open=ok?spring(.44,.94):{ms:480,css:'cubic-bezier(.32,.72,0,1)'},close=ok?spring(.33,1):{ms:400,css:'cubic-bezier(.32,.72,0,1)'};
   if(ok){
     var s=R.style;
     s.setProperty('--ap-ease-open',open.css);s.setProperty('--ap-open',open.ms+'ms');s.setProperty('--ap-soft',Math.round(open.ms*.9)+'ms');
@@ -43193,11 +43191,60 @@ html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),h
   /* the router hides a closing window / the dashboard under an opening window after these many ms: just after the spring has settled */
   W.__vwHideMs=close.ms+90;W.__vwUnderMs=open.ms+120;
   W.__apSprings={open:open,close:close};
+  /* the router starts the heavy screen set-up this long after the window begins to open: wait until the slide is almost finished,
+     so the main thread is idle for every frame of the motion (this beats the per-device values the page sets by default) */
+  try{Object.defineProperty(W,'__vwSettle',{get:function(){return Math.round(open.ms*.9)},set:function(){},configurable:true})}catch(e){}
+
+  /* ---------- the dim behind the window: one plain layer, only its opacity animates (GPU) ---------- */
+  var scrim=null;
+  function getScrim(){
+    if(scrim&&scrim.isConnected)return scrim;
+    var app=D.getElementById('app');if(!app)return null;
+    scrim=D.createElement('div');scrim.id='ap-scrim';scrim.setAttribute('aria-hidden','true');
+    scrim.style.cssText='position:absolute;top:0;right:0;bottom:0;left:0;z-index:60;background:#0b1020;opacity:0;display:none;pointer-events:none';
+    app.appendChild(scrim);return scrim;
+  }
+  function scrimTo(to,spr,hideWhenDone){
+    var sc=getScrim();if(!sc)return;
+    var from=0;try{from=parseFloat(W.getComputedStyle(sc).opacity)||0}catch(e){}
+    if(sc.__a){try{sc.__a.cancel()}catch(e){}}
+    sc.style.display='block';sc.style.opacity=String(from);
+    try{
+      var a=sc.animate([{opacity:from},{opacity:to}],{duration:spr.ms,easing:spr.css,fill:'forwards'});
+      sc.__a=a;
+      a.onfinish=function(){sc.style.opacity=String(to);try{a.cancel()}catch(e){}sc.__a=null;if(hideWhenDone||to===0)sc.style.display='none'};
+    }catch(e){sc.style.opacity=String(to);if(hideWhenDone||to===0)sc.style.display='none'}
+  }
+  /* a window opens out of the dashboard: dim fades in (hidden again once the window covers everything) */
+  function dimIn(){if(D.querySelector('.vw-under'))scrimTo(DIM,open,true)}
 
   /* hooks the router calls; this look does not need to know which tile was tapped */
-  W.__vwOpenRect=function(){};
-  W.__vwClear=function(){};
-  W.__vwLeave=function(wins){wins.forEach(function(win){win.classList.add('view-leave')})};
+  W.__vwOpenRect=dimIn;
+  W.__vwClear=dimIn;
+  W.__vwLeave=function(wins,dash){
+    var sc=getScrim();
+    if(sc&&dash&&sc.style.display==='none'){sc.style.opacity=String(DIM);sc.style.display='block'}   /* it was hidden under the open window: bring it back, then fade out */
+    wins.forEach(function(win){win.classList.add('view-leave')});
+    scrimTo(0,close,false);
+  };
+
+  /* ---------- automatic lighter mode ----------
+     Watches the frames during the first screen changes. If a device drops frames, the dashboard stops animating (only the window moves),
+     which is the single most expensive part. Fast devices never notice this. */
+  var sampling=false,checks=0;
+  function sample(){
+    if(sampling||checks>=3||R.classList.contains('ap-lite')||R.classList.contains('perf-low'))return;
+    sampling=true;checks++;
+    var last=0,bad=0,n=0,t0=0;
+    function f(t){
+      if(!t0){t0=t;last=t;W.requestAnimationFrame(f);return}
+      var d=t-last;last=t;n++;if(n>2&&d>36)bad++;
+      if(t-t0<720&&!D.hidden){W.requestAnimationFrame(f);return}
+      sampling=false;if(bad>=4)R.classList.add('ap-lite');
+    }
+    W.requestAnimationFrame(f);
+  }
+  W.addEventListener('hashchange',sample);
 })();
 </script>
 <style id="ad-ov-css">
