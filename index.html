@@ -17171,7 +17171,7 @@ window.__tpPaint = function () {
                     if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
                         __leaveEls.push(el);
-                        setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 580);
+                        setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, window.__vwHideMs || 580);
                     } else if (__keepUnder && wasOpen && __iosD.indexOf(v) !== -1) {
                         el.classList.add('vw-under');   // still visible, sits beneath the opening window
                     } else {
@@ -17208,7 +17208,7 @@ window.__tpPaint = function () {
                         if (__keepUnder) {
                             window.__vwUnderT = setTimeout(() => {
                                 __iosD.forEach(id => { const d = document.getElementById(id); if (d && d.classList.contains('vw-under')) { d.classList.remove('vw-under'); d.classList.add('hidden-view'); } });
-                            }, 680);
+                            }, window.__vwUnderMs || 680);
                         }
                     }
                 }
@@ -43083,7 +43083,7 @@ html.is-tablet.is-landscape .st-vid{aspect-ratio:16/9}
 
 <style id="vw-smooth">
 /* ===== Smooth windows - support rules =====
-   The motion itself (window open / close, dashboard step-back) lives in the 'samsung-motion' style block further down.
+   The motion itself (window open / close, dashboard step-back) lives in the 'apple-motion' style block further down.
    This block only keeps the GPU / layout hints that go with it. */
 /* no permanent GPU layers: every open window used to stay promoted forever (memory + blurry text on small phones) */
 html body .slide-up:not(#_):not(#__),html body .fade-in:not(#_):not(#__),html body .slide-left:not(#_):not(#__),html body .view-enter:not(#_):not(#__){will-change:auto;-webkit-backface-visibility:visible;backface-visibility:visible}
@@ -43113,128 +43113,91 @@ html.perf-lite body #student-view:not(#_):not(#__) [style*="backdrop-filter"]{-w
 })();
 </script>
 
-<style id="samsung-motion">
-/* ===== Window motion - One UI style =====
-   OPEN  : the window starts as a rounded rectangle with exactly the size and shape of the button you tapped, then grows to full
-           screen. Its content scales up together with it, and the dashboard behind it steps back a little (1 -> .95).
-   CLOSE : the window shrinks back into the same button (measured at that moment, so it lands exactly on it) and fades out only at
-           the very end; the dashboard comes forward again (.95 -> 1). The buttons themselves stay put, like launcher icons.
-   No button known (opened from a notification, after login ...): soft zoom from the centre (.94 -> 1) + fade.
-   transform + opacity run on the GPU. The rounded crop is clip-path (high / mid phones); low phones get the same zoom without the crop.
-   The 'sm-motion-js' script below measures the button and sets, on the window:
-     --ox --oy  scale origin (puts the window centre on the button centre)      --s0  scale of the content at the start
-     --ct --cr --cb --cl --rr  crop at the start (top / right / bottom / left inset + corner radius)
-   Tune here:  --sm-open / --sm-close (duration)   --sm-out / --sm-in (curve)   --sm-under (how far the dashboard steps back) */
-:root{--sm-open:.46s;--sm-close:.36s;--sm-out:cubic-bezier(.22,.88,.24,1);--sm-in:cubic-bezier(.3,.72,.2,1);--sm-under:.95}
-@keyframes smOpenT{from{transform:scale(var(--s0,.6))}to{transform:scale(1)}}
-@keyframes smOpenC{from{clip-path:inset(var(--ct,0px) var(--cr,0px) var(--cb,0px) var(--cl,0px) round var(--rr,0px))}to{clip-path:inset(0px 0px 0px 0px round 0px)}}
-@keyframes smOpenO{from{opacity:0}to{opacity:1}}
-@keyframes smCloseT{from{transform:scale(1)}to{transform:scale(var(--s0,.92))}}
-@keyframes smCloseC{from{clip-path:inset(0px 0px 0px 0px round 0px)}to{clip-path:inset(var(--ct,0px) var(--cr,0px) var(--cb,0px) var(--cl,0px) round var(--rr,0px))}}
-@keyframes smCloseO{0%,45%{opacity:1}100%{opacity:0}}
-@keyframes smSoft{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
-@keyframes smUnder{from{transform:scale(1)}to{transform:scale(var(--sm-under))}}
-@keyframes smReturn{from{transform:scale(var(--sm-under))}to{transform:scale(1)}}
-
-/* while the closing window is being aimed at its button, the dashboard must be at rest (no tile entrance transforms) */
-html body .vw-measure:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .vw-measure *:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important;transition:none!important}
+<style id="apple-motion">
+/* ===== Window motion - Apple card / sheet style (spring) =====
+   Not tied to the tapped button any more.
+   OPEN  : the window rises from the bottom edge as a rounded card (top corners round off as it lands); the dashboard behind it
+           steps back a little (smaller, rounded, dimmed) like the card stack in iOS.
+   CLOSE : the card slides back down and the dashboard comes forward again. Tiles do not re-animate.
+   Two looks, switch with STYLE at the top of the 'apple-motion-js' script:
+     'sheet' (default) - rises from the bottom, dashboard tucks back          'push' - slides in from the right, dashboard slides left (iOS navigation)
+   Easing is a real damped spring (script solves it and writes it as linear(); older WebViews keep the cubic-bezier fallback). */
+:root{--ap-open:.5s;--ap-close:.4s;--ap-soft:.44s;
+  --ap-ease-open:cubic-bezier(.32,.72,0,1);--ap-ease-close:cubic-bezier(.32,.72,0,1);
+  --ap-in-from:translate3d(0,100%,0);--ap-clip-in:inset(0px round 30px 30px 0px 0px);
+  --ap-under-to:translate3d(0,10px,0) scale(.93);--ap-under-clip:inset(0px round 30px);--ap-dim:.7}
+html.ap-push{--ap-in-from:translate3d(100%,0,0);--ap-clip-in:inset(0px round 0px 0px 0px 0px);
+  --ap-under-to:translate3d(-26%,0,0);--ap-under-clip:inset(0px round 0px);--ap-dim:.8}
+@keyframes apIn{from{transform:var(--ap-in-from);clip-path:var(--ap-clip-in)}to{transform:none;clip-path:inset(0px round 0px 0px 0px 0px)}}
+@keyframes apOut{from{transform:none;clip-path:inset(0px round 0px 0px 0px 0px)}to{transform:var(--ap-in-from);clip-path:var(--ap-clip-in)}}
+@keyframes apInLite{from{transform:var(--ap-in-from)}to{transform:none}}
+@keyframes apOutLite{from{transform:none}to{transform:var(--ap-in-from)}}
+@keyframes apUnder{from{transform:none;filter:brightness(1);clip-path:inset(0px round 0px)}to{transform:var(--ap-under-to);filter:brightness(var(--ap-dim));clip-path:var(--ap-under-clip)}}
+@keyframes apReturn{from{transform:var(--ap-under-to);filter:brightness(var(--ap-dim));clip-path:var(--ap-under-clip)}to{transform:none;filter:brightness(1);clip-path:inset(0px round 0px)}}
+@keyframes apSoft{from{opacity:0;transform:translate3d(0,14px,0) scale(.97)}to{opacity:1;transform:none}}
+@keyframes apFade{from{opacity:0}to{opacity:1}}
+@keyframes apFadeOut{from{opacity:1}to{opacity:0}}
 
 @media (prefers-reduced-motion:no-preference){
-  /* a window opens and no button is known (notification, login ...): soft zoom + fade */
-  html body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smSoft var(--sm-open) var(--sm-out) backwards!important}
-  /* a window opens out of the tapped button */
-  html body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:var(--ox,50%) var(--oy,50%);animation:smOpenT var(--sm-open) var(--sm-out) backwards,smOpenO .14s linear backwards,smOpenC var(--sm-open) var(--sm-out) backwards!important}
-  /* a window closes back into its button, fading only in the second half so the shrink stays visible */
-  html body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:var(--ox,50%) var(--oy,50%);animation:smCloseT var(--sm-close) var(--sm-in) both,smCloseO var(--sm-close) linear both,smCloseC var(--sm-close) var(--sm-in) both!important;pointer-events:none}
-  /* the dashboard steps back while a window opens (still fully opaque: no dark flash) ... */
-  html body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:50% 50%;animation:smUnder var(--sm-open) var(--sm-out) both!important;pointer-events:none}
-  /* ... and comes forward again while the window closes. Its buttons do not re-animate. */
-  html body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:50% 50%;animation:smReturn var(--sm-close) var(--sm-out) backwards!important}
+  /* every window except the three base screens: rises / slides in */
+  html body .view-enter:not(#student-view):not(#admin-view):not(#login-view):not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apIn var(--ap-open) var(--ap-ease-open) backwards!important}
+  /* base screens (login, dashboards) appearing on their own: soft rise + fade */
+  html body #student-view.view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #login-view.view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apSoft var(--ap-soft) var(--ap-ease-open) backwards!important}
+  /* closing: the card goes back down / out to the right */
+  html body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apOut var(--ap-close) var(--ap-ease-close) both!important;pointer-events:none}
+  /* the dashboard steps back while a window opens (stays opaque: no flash) ... */
+  html body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:50% 0;animation:apUnder var(--ap-open) var(--ap-ease-open) both!important;pointer-events:none}
+  /* ... and comes forward again while it closes. Its tiles do not re-animate. */
+  html body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:50% 0;animation:apReturn var(--ap-close) var(--ap-ease-close) backwards!important}
   html body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
 }
-/* low phones: same zoom out of / into the button, without the rounded crop; the dashboard itself stays still */
-html.perf-low body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smOpenT var(--sm-open) var(--sm-out) backwards,smOpenO .14s linear backwards!important}
-html.perf-low body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smCloseT var(--sm-close) var(--sm-in) both,smCloseO var(--sm-close) linear both!important}
+/* low phones: same slide, without rounded crop / dimming; the dashboard stays still */
+html.perf-low body .view-enter:not(#student-view):not(#admin-view):not(#login-view):not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apInLite var(--ap-open) var(--ap-ease-open) backwards!important}
+html.perf-low body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apOutLite var(--ap-close) var(--ap-ease-close) both!important}
 html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
 /* reduced-motion setting: a short fade is all there is */
 @media (prefers-reduced-motion:reduce){
-  html body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smOpenO .15s linear both!important}
-  html body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smCloseO .12s linear both!important}
+  html body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apFade .15s linear both!important}
+  html body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:apFadeOut .12s linear both!important}
   html body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
 }
 </style>
-<script id="sm-motion-js">
+<script id="apple-motion-js">
 (function(){
-  var W=window,D=document,DASH='#student-view,#admin-view';
-  var VARS=['--ox','--oy','--s0','--ct','--cr','--cb','--cl','--rr'];
+  var W=window,R=document.documentElement;
+  var STYLE='sheet';   /* 'sheet' = rises from the bottom (default)   |   'push' = slides in from the right */
 
-  /* corner radius as the user sees it ("50%" on round buttons is turned into pixels) */
-  function radiusOf(el,w,h){
-    try{
-      var v=W.getComputedStyle(el).borderTopLeftRadius||'0',n=parseFloat(v)||0;
-      if(/%/.test(v))n=n/100*Math.min(w,h);
-      return Math.max(0,Math.min(n,Math.min(w,h)/2));
-    }catch(e){return 20}
+  /* damped spring 0 -> 1 as a CSS linear() easing + the time it needs to settle
+     (response = seconds per swing, zeta = damping: 1 = no overshoot, below 1 = a little bounce) */
+  function spring(response,zeta){
+    var w0=2*Math.PI/response,wd=w0*Math.sqrt(Math.max(1e-6,1-zeta*zeta));
+    function x(t){
+      if(zeta<1)return 1-Math.exp(-zeta*w0*t)*(Math.cos(wd*t)+(zeta*w0/wd)*Math.sin(wd*t));
+      return 1-Math.exp(-w0*t)*(1+w0*t);
+    }
+    var T=.1,step=.004,t;
+    for(t=0;t<3;t+=step){if(Math.abs(1-x(t))>.002)T=t+step}
+    var n=72,pts=[];
+    for(var i=0;i<=n;i++)pts.push(Math.round(x(T*i/n)*10000)/10000);
+    pts[0]=0;pts[n]=1;
+    return{css:'linear('+pts.join(',')+')',ms:Math.round(T*1000)};
   }
-  function rectOf(el){var r=el.getBoundingClientRect();return{l:r.left,t:r.top,w:r.width,h:r.height,r:radiusOf(el,r.width,r.height)}}
-  function onScreen(r){return !!r&&r.w>4&&r.h>4&&r.l<W.innerWidth&&r.l+r.w>0&&r.t<W.innerHeight&&r.t+r.h>0}
-
-  /* the window's own box (layout size, so a slide transform that may still be running does not matter) */
-  function winBox(win,base){
-    var p=win.offsetParent,b=base||(p?p.getBoundingClientRect():{left:0,top:0,width:W.innerWidth,height:W.innerHeight});
-    return{l:b.left+(p?win.offsetLeft:0),t:b.top+(p?win.offsetTop:0),w:win.offsetWidth||b.width,h:win.offsetHeight||b.height};
+  R.classList.add(STYLE==='push'?'ap-push':'ap-sheet');
+  var ok=false;try{ok=!!(W.CSS&&CSS.supports&&CSS.supports('animation-timing-function','linear(0,1)'))}catch(e){}
+  var open=ok?spring(.46,.92):{ms:500},close=ok?spring(.34,1):{ms:400};
+  if(ok){
+    var s=R.style;
+    s.setProperty('--ap-ease-open',open.css);s.setProperty('--ap-open',open.ms+'ms');s.setProperty('--ap-soft',Math.round(open.ms*.9)+'ms');
+    s.setProperty('--ap-ease-close',close.css);s.setProperty('--ap-close',close.ms+'ms');
   }
-  function clear(win){VARS.forEach(function(k){win.style.removeProperty(k)})}
+  /* the router hides a closing window / the dashboard under an opening window after these many ms: just after the spring has settled */
+  W.__vwHideMs=close.ms+90;W.__vwUnderMs=open.ms+120;
+  W.__apSprings={open:open,close:close};
 
-  /* Aim the window at a button. The window is scaled by s0 so that its CENTRE sits on the button centre (the scale origin ox,oy is worked
-     out for that), and the crop is the button's shape expressed in the window's own space: at the start exactly the button is visible. */
-  function aim(win,rc,wb){
-    var s=Math.max(.42,Math.min(.94,rc.w/wb.w));
-    var wcx=wb.w/2,wcy=wb.h/2;
-    var tcx=rc.l+rc.w/2-wb.l,tcy=rc.t+rc.h/2-wb.t;
-    var ox=(tcx-s*wcx)/(1-s),oy=(tcy-s*wcy)/(1-s);
-    var cx=wcx-rc.w/2/s,cy=wcy-rc.h/2/s,st=win.style;
-    function px(v){return (Math.round(v*10)/10)+'px'}
-    st.setProperty('--ox',px(ox));st.setProperty('--oy',px(oy));
-    st.setProperty('--s0',String(Math.round(s*1000)/1000));
-    st.setProperty('--ct',px(cy));st.setProperty('--cb',px(cy));
-    st.setProperty('--cl',px(cx));st.setProperty('--cr',px(cx));
-    st.setProperty('--rr',px(rc.r/s));
-  }
-
-  /* remember which button was tapped (tile, trophy, profile ...): the window opens out of it and closes back into it */
-  D.addEventListener('click',function(e){
-    var n=e.target;if(!n||!n.closest)return;
-    var el=n.closest('.xb,[data-href],[onclick*="location.hash"],[onclick*="open"],button,[role="button"]');
-    if(!el||!el.closest(DASH))return;
-    var rc=rectOf(el);
-    if(rc.w<8||rc.h<8||rc.w*rc.h>.55*W.innerWidth*W.innerHeight)return;   /* a wrapper, not a button */
-    W.__xbOrigin={x:rc.l+rc.w/2,y:rc.t+rc.h/2,t:Date.now(),rc:rc,el:el};
-  },true);
-
-  /* called by handleHashChange when a window opens out of a dashboard button */
-  W.__vwOpenRect=function(win,o,base){
-    var rc=o.rc||{l:o.x-24,t:o.y-24,w:48,h:48,r:24};
-    win.__vwSrc=o.el||null;win.__vwRc=rc;
-    aim(win,rc,winBox(win,base));
-  };
-  W.__vwClear=function(win){win.__vwSrc=null;win.__vwRc=null;clear(win)};
-
-  /* called by handleHashChange when windows go back to the dashboard: aim each one at its button as it is RIGHT NOW
-     (the dashboard was hidden meanwhile, its scroll position may have changed), then let it shrink into it */
-  W.__vwLeave=function(wins,dash){
-    try{
-      dash.classList.add('vw-measure');void dash.offsetWidth;
-      wins.forEach(function(win){
-        var rc=null,src=win.__vwSrc;
-        if(src&&src.isConnected&&dash.contains(src)){var r=rectOf(src);if(onScreen(r))rc=r}
-        if(!rc&&onScreen(win.__vwRc))rc=win.__vwRc;
-        if(rc)aim(win,rc,winBox(win));else clear(win);
-      });
-    }catch(err){wins.forEach(clear)}
-    dash.classList.remove('vw-measure');
-    wins.forEach(function(win){win.classList.add('view-leave')});
-  };
+  /* hooks the router calls; this look does not need to know which tile was tapped */
+  W.__vwOpenRect=function(){};
+  W.__vwClear=function(){};
+  W.__vwLeave=function(wins){wins.forEach(function(win){win.classList.add('view-leave')})};
 })();
 </script>
 <style id="ad-ov-css">
