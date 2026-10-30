@@ -17094,8 +17094,7 @@ window.__tpPaint = function () {
                 ];
 
                 // 1. Work out where we are going, then hide the other views.
-                //    iOS-style: opening a window from the dashboard keeps the dashboard alive underneath (it steps back and dims),
-                //    going back to the dashboard closes the window toward the button it came from and the dashboard steps forward again.
+                //    Going back to the dashboard: the open window zooms back into its button first, then hides.
                 const __reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
                 const __home = (hash === 'student' || hash === 'admin');
                 const __dash = ['login-view', 'student-view', 'admin-view'];
@@ -17119,11 +17118,10 @@ window.__tpPaint = function () {
                 }
 
                 const __toWin = !__home && hash !== 'login' && !!document.getElementById(targetViewId);
-                let __fromDash = false, __returning = false;
+                let __fromDash = false;
                 __iosD.forEach(id => {
                     const d = document.getElementById(id); if (!d) return;
                     if (!d.classList.contains('hidden-view')) __fromDash = true;
-                    if (d.classList.contains('ios-under') || d.classList.contains('ios-away')) __returning = true;
                 });
                 // run heavy screen set-up one moment later, so the open animation gets its first frames cleanly
                 const __defer = (fn) => {
@@ -17140,39 +17138,21 @@ window.__tpPaint = function () {
                     if (!el) return;
                     const wasOpen = !el.classList.contains('hidden-view');
                     el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave'); // Reset animation state
-                    if (__iosD.indexOf(v) > -1) {
-                        const parked = el.classList.contains('ios-under') || el.classList.contains('ios-away');
-                        if (!__reduce && __toWin && (wasOpen || parked)) {
-                            // the dashboard stays rendered under the window (logical state stays "hidden" for the rest of the app)
-                            el.classList.add('hidden-view');
-                            if (wasOpen) window.__iosPark(el);
-                            return;
-                        }
-                        const goingHome = __home || (hash === 'login' && window.currentRole);
-                        if (__reduce || !goingHome) { clearTimeout(el.__iosT); el.classList.remove('ios-under', 'ios-away'); }
-                    }
                     if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
                         el.classList.add('view-leave');
-                        setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 440);
+                        setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 360);
                     } else {
                         el.classList.add('hidden-view');
                     }
                 });
 
-                // 3. Apply the iOS-style transition
+                // 3. Apply the transition (window opens out of the tapped button / closes back into it; dashboard buttons pop back in)
                 const targetEl = document.getElementById(targetViewId);
                 if (targetEl) {
                     targetEl.classList.remove('hidden-view');
                     void targetEl.offsetWidth; // Force reflow to restart animation flawlessly
-                    if (__home && __returning && !__reduce && __iosD.indexOf(targetViewId) > -1) {
-                        // Back to the dashboard: it was kept alive under the window, so nothing is rebuilt or replayed.
-                        // It becomes visible at its stepped-back size, then eases up to full size while the window closes over it.
-                        clearTimeout(targetEl.__iosT);
-                        targetEl.classList.remove('ios-away');
-                        void targetEl.offsetWidth;
-                        targetEl.classList.remove('ios-under');
-                    } else {
+                    {
                         // Window opened from a dashboard button: zoom out of that button (measured against the parent, not the window,
                         // because the window is still carrying its own slide transform at this moment).
                         const __o = window.__xbOrigin;
@@ -17333,16 +17313,6 @@ window.__tpPaint = function () {
                 // Redirect / permission checks run at once. Everything that builds a screen waits two frames while a window opens from the dashboard.
                 const __NOW = ['login', 'student', 'admin', 'admin-profile', 'active-exam', 'alarms', 'motivation', 'auto-quotes', 'quotes', 'math-workout'];
                 if (__NOW.indexOf(hash) > -1) __run(); else __defer(__run);
-            };
-
-            // iOS-style parking of the dashboard: stays rendered under the window (steps back + dims), then is made invisible once the window has covered it.
-            // It keeps its scroll position and nothing in it re-animates when it comes back.
-            window.__iosPark = function (el) {
-                el.classList.add('ios-under');
-                clearTimeout(el.__iosT);
-                el.__iosT = setTimeout(function () {
-                    if (el.classList.contains('hidden-view') && el.classList.contains('ios-under')) el.classList.add('ios-away');
-                }, 640);
             };
 
             // Map original global function name to window scope so internal legacy buttons don't break
@@ -38331,43 +38301,19 @@ document.addEventListener('click',function(e){
 },true);
 </script>
 <style id="xb-window-motion">
-/* ===== iOS-style window open / close / back =====
-   open  : the window grows out of the button you tapped while the dashboard steps back and dims
-   close : the window shrinks back into that button while the dashboard steps forward again
-   Everything is transform + opacity only (compositor), so it stays smooth on low-end phones. */
-:root{--ios:cubic-bezier(.32,.72,0,1)}
-@keyframes iosWinOpen{from{transform:scale(.4)}to{transform:none}}
-@keyframes iosWinFadeIn{from{opacity:0}to{opacity:1}}
-@keyframes iosWinClose{from{transform:none}to{transform:scale(.5)}}
-@keyframes iosWinFadeOut{from{opacity:1}to{opacity:0}}
+/* ===== Window open / close (original look, made smoother) =====
+   open  : the window zooms out of the button you tapped
+   close : the window zooms back into that button, then the dashboard buttons pop back in one after another
+   transform + opacity only, so it runs on the GPU. */
+@keyframes xbZoomIn{0%{opacity:0;transform:scale(.78)}55%{opacity:1}100%{opacity:1;transform:none}}
+@keyframes xbZoomOut{0%{opacity:1;transform:none}100%{opacity:0;transform:scale(.8)}}
 @keyframes xbBack{0%{opacity:0;transform:translate3d(0,14px,0) scale(.86)}100%{opacity:1;transform:none}}
 @keyframes xbDashIn{from{opacity:0}to{opacity:1}}
-
-/* the dashboard: always eased, never rebuilt */
-html body #student-view:not(#_),html body #admin-view:not(#_){transition:transform .55s var(--ios)}
-html body #student-view:not(#_)::after,html body #admin-view:not(#_)::after{content:"";position:absolute;inset:0;z-index:50;pointer-events:none;background:rgba(15,23,42,.30);opacity:0;transition:opacity .55s var(--ios)}
-html body #student-view.ios-under:not(#_),html body #admin-view.ios-under:not(#_){transform:scale(.93);will-change:transform;pointer-events:none}
-html body #student-view.ios-under:not(#_)::after,html body #admin-view.ios-under:not(#_)::after{opacity:1}
-/* parked under a window: still laid out (keeps scroll position, nothing re-animates on return) but not painted, and the extra
-   "hidden-view" class that other code reads is kept as it was */
-html body #student-view.hidden-view.ios-under:not(#_),html body #student-view.hidden-view.ios-away:not(#_),
-html body #admin-view.hidden-view.ios-under:not(#_),html body #admin-view.hidden-view.ios-away:not(#_){display:flex!important}
-html body #student-view.ios-away:not(#_),html body #admin-view.ios-away:not(#_){visibility:hidden;pointer-events:none;transition:none}
-html body #student-view.ios-away:not(#_) *,html body #admin-view.ios-away:not(#_) *{animation-play-state:paused!important}
-html.perf-low body #student-view.ios-under:not(#_),html.perf-low body #admin-view.ios-under:not(#_){transform:none}
-html.perf-low body #student-view.ios-under:not(#_)::after,html.perf-low body #admin-view.ios-under:not(#_)::after{opacity:0}
-
 @media (prefers-reduced-motion:no-preference){
-  html body .view-enter.view-zoom:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);will-change:transform,opacity;
-    animation:iosWinOpen .56s var(--ios) both,iosWinFadeIn .26s ease-out both!important}
-  html body .view-leave:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);will-change:transform,opacity;pointer-events:none;
-    animation:iosWinClose .42s var(--ios) both,iosWinFadeOut .24s ease-in .14s both!important}
-  /* fallback only (dashboard was not kept underneath, e.g. opened from a notification): the old gentle fade + button pop-in */
+  html body .view-enter.view-zoom:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);will-change:transform,opacity;backface-visibility:hidden;animation:xbZoomIn .52s cubic-bezier(.32,.72,0,1) both!important}
+  html body .view-leave:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);will-change:transform,opacity;backface-visibility:hidden;animation:xbZoomOut .32s cubic-bezier(.4,0,.6,1) both!important;pointer-events:none}
   html body .view-enter.view-back:not(#_){animation:xbDashIn .3s ease both}
   html body #student-view.view-back .xb:not(#_),html body #admin-view.view-back .xb:not(#_){animation:xbBack .55s cubic-bezier(.22,1,.36,1) calc(var(--i,0)*30ms + 90ms) both}
-}
-@media (prefers-reduced-motion:reduce){
-  html body #student-view:not(#_),html body #admin-view:not(#_),html body #student-view:not(#_)::after,html body #admin-view:not(#_)::after{transition:none}
 }
 </style>
 <style id="lbx-css">
