@@ -17126,22 +17126,31 @@ window.__tpPaint = function () {
                 // run heavy screen set-up one moment later, so the open animation gets its first frames cleanly
                 const __defer = (fn) => {
                     if (__fromDash && __toWin && !__reduce) {
-                        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
+                        // Let the window finish opening on the GPU first; the heavy screen set-up runs right after,
+                        // so the main thread is never busy while the open animation is playing.
+                        setTimeout(() => {
                             if (window.location.hash.replace('#', '') === rawHash) fn();
-                        }, 0)));
+                        }, window.__vwSettle || 280);
                     } else fn();
                 };
 
                 let __leaving = false;
+                // Smooth windows: the dashboard stays painted UNDER the window while it opens (no blank flash between
+                // "dashboard gone" and "window visible"), then it is hidden once the window has covered it.
+                clearTimeout(window.__vwUnderT);
+                const __keepUnder = __fromDash && __toWin && !__reduce;
+                const __busy = (ms) => { const r = document.documentElement; r.classList.add('vw-busy'); clearTimeout(window.__vwBusyT); window.__vwBusyT = setTimeout(() => r.classList.remove('vw-busy'), ms); };
                 views.forEach(v => {
                     const el = document.getElementById(v);
                     if (!el) return;
                     const wasOpen = !el.classList.contains('hidden-view');
-                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave'); // Reset animation state
+                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'vw-under'); // Reset animation state
                     if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
                         el.classList.add('view-leave');
                         setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 360);
+                    } else if (__keepUnder && wasOpen && __iosD.indexOf(v) !== -1) {
+                        el.classList.add('vw-under');   // still visible, sits beneath the opening window
                     } else {
                         el.classList.add('hidden-view');
                     }
@@ -17169,6 +17178,14 @@ window.__tpPaint = function () {
                         }
                         targetEl.classList.add('view-enter');
                         if (__home && __leaving) targetEl.classList.add('view-back');
+                        if (!__reduce) {
+                            if (__keepUnder) __busy(560); else if (__home && __leaving) __busy(640);
+                        }
+                        if (__keepUnder) {
+                            window.__vwUnderT = setTimeout(() => {
+                                __iosD.forEach(id => { const d = document.getElementById(id); if (d && d.classList.contains('vw-under')) { d.classList.remove('vw-under'); d.classList.add('hidden-view'); } });
+                            }, 480);
+                        }
                     }
                 }
 
@@ -43062,6 +43079,220 @@ html.is-tablet.is-landscape .st-vid{aspect-ratio:16/9}
 })();
 </script>
 
+
+<style id="vw-smooth">
+/* ===== Smooth windows v2 - ONE motion system for dashboard <-> window =====
+   Before: five different .view-enter / .slide-left / .fade-in definitions fought each other, the dashboard vanished the instant
+   a button was tapped (dark flash), and on the way back both layers faded through half-opacity (another flash).
+   Now:
+   OPEN  - the window zooms out of the tapped button (original look); the dashboard stays fully painted underneath until it is covered.
+   CLOSE - the window zooms back into its button while the dashboard is already fully visible underneath; the buttons pop back in one after another (original look).
+   Only transform + opacity are animated (GPU), will-change is applied only while moving, heavy screen set-up waits until the window has settled. */
+:root{--vw-open:.52s;--vw-close:.32s;--vw-out:cubic-bezier(.32,.72,0,1);--vw-in:cubic-bezier(.4,0,.6,1);--vw-fade:cubic-bezier(.33,0,.2,1);--vw-pop:cubic-bezier(.22,1,.36,1)}
+@keyframes vwOpenT{from{transform:scale(.78)}to{transform:none}}
+@keyframes vwRise{from{transform:translate3d(0,22px,0) scale(.99)}to{transform:none}}
+@keyframes vwOpenO{from{opacity:0}to{opacity:1}}
+@keyframes vwCloseT{from{transform:none}to{transform:scale(.8)}}
+@keyframes vwCloseO{from{opacity:1}to{opacity:0}}
+@keyframes vwTile{from{opacity:0;transform:translate3d(0,14px,0) scale(.86)}to{opacity:1;transform:none}}
+
+/* no permanent GPU layers: every open window used to stay promoted forever (memory + blurry text on small phones) */
+html body .slide-up:not(#_):not(#__),html body .fade-in:not(#_):not(#__),html body .slide-left:not(#_):not(#__),html body .view-enter:not(#_):not(#__){will-change:auto;-webkit-backface-visibility:visible;backface-visibility:visible}
+html.vw-busy body .view-enter:not(#_):not(#__),html.vw-busy body .view-leave:not(#_):not(#__),html.vw-busy body .vw-under:not(#_):not(#__){will-change:transform,opacity;-webkit-backface-visibility:hidden;backface-visibility:hidden}
+html.vw-busy body #student-view.view-back:not(#_):not(#__),html.vw-busy body #admin-view.view-back:not(#_):not(#__){will-change:transform}
+
+/* windows overlay a dashboard that is still painted: keep them contained so their layout never reaches outside */
+html body .slide-left.absolute:not(#_):not(#__){contain:layout style}
+
+/* taps feel instant: no grey flash, no double-tap zoom delay */
+#student-view .xb,#admin-view .xb{-webkit-tap-highlight-color:transparent;touch-action:manipulation;-webkit-touch-callout:none}
+
+@media (prefers-reduced-motion:no-preference){
+  /* a window opens (no tapped button known, e.g. from a notification): soft rise + fade */
+  html body .view-enter:not(#_):not(#__):not(#___){animation:vwRise var(--vw-open) var(--vw-out) both,vwOpenO .28s var(--vw-fade) both!important}
+  /* a window opens out of the tapped dashboard button */
+  html body .view-enter.view-zoom:not(#_):not(#__):not(#___){transform-origin:var(--ox,50%) var(--oy,50%);animation:vwOpenT var(--vw-open) var(--vw-out) both,vwOpenO .3s var(--vw-fade) both!important}
+  /* closing: the window shrinks back into its button */
+  html body .view-leave:not(#_):not(#__):not(#___){transform-origin:var(--ox,50%) var(--oy,50%);animation:vwCloseT var(--vw-close) var(--vw-in) both,vwCloseO var(--vw-close) var(--vw-in) both!important;pointer-events:none}
+  /* dashboard stays fully opaque underneath: no half-transparent cross-fade, so no dark flash while the window zooms */
+  html body .vw-under:not(#_):not(#__):not(#___){animation:none!important;pointer-events:none}
+  html body .view-enter.view-back:not(#_):not(#__):not(#___){animation:none!important}
+  /* dashboard buttons pop back in one after another, exactly as before */
+  html body #student-view.view-back .xb:not(#_):not(#__):not(#___),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___){animation:vwTile .55s var(--vw-pop) calc(var(--i,0)*30ms + 90ms) both!important}
+}
+/* weaker phones: same zoom, but the dashboard buttons just appear (no stagger) */
+html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____),html.perf-low body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____),html.perf-low body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____){animation:none!important}
+/* reduced-motion setting: a short fade is all there is */
+@media (prefers-reduced-motion:reduce){
+  html body .view-enter:not(#_):not(#__):not(#___),html body .view-enter.view-zoom:not(#_):not(#__):not(#___),html body .view-enter.view-back:not(#_):not(#__):not(#___){animation:vwOpenO .15s linear both!important}
+  html body .view-leave:not(#_):not(#__):not(#___){animation:vwCloseO .12s linear both!important}
+  html body .vw-under:not(#_):not(#__):not(#___),html body #student-view.view-back .xb:not(#_):not(#__):not(#___),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___){animation:none!important}
+}
+/* mid / low phones: the big "Performance" card carried a 40px live blur (the most expensive thing on the dashboard while scrolling).
+   A 16px blur on a flat light sheet looks the same and costs far less. High-end phones are untouched. */
+html.perf-lite body #student-view:not(#_):not(#__) [style*="backdrop-filter"]{-webkit-backdrop-filter:blur(16px) saturate(160%)!important;backdrop-filter:blur(16px) saturate(160%)!important}
+</style>
+<script id="vw-smooth-js">
+(function(){
+  var d=document.documentElement;
+  /* how long the window gets to open before heavy screen set-up starts (lighter phones: a little sooner, they play a lighter animation) */
+  function tune(){var t=window.__perf||'high';window.__vwSettle=t==='low'?260:(t==='mid'?300:320);}
+  tune();window.addEventListener('exama:tier',tune);
+  /* iOS only shows :active (the press animation) once the page has any touch listener */
+  document.addEventListener('touchstart',function(){},{passive:true});
+  /* safety net: if the tab was hidden mid-animation the busy flag must never stay on */
+  document.addEventListener('visibilitychange',function(){if(document.hidden)d.classList.remove('vw-busy');});
+})();
+</script>
+
+<style id="ap-meta-theme">
+/* ===== Student profile (admin side): every widget keeps its ORIGINAL layout; only the colours follow the "Target Progress" panel:
+   flat white panel, hairline outline, teal accent, slate text. No glow, no coloured gradients, no coloured shadows. ===== */
+#admin-profile-view{--ap-ink:#0f172a;--ap-mute:#64748b;--ap-acc:#0f766e;--ap-hl:rgba(148,163,184,.3);--ap-soft:rgba(15,118,110,.1)}
+html #admin-profile-view:not(#_){background-image:none!important;background-color:#f1f5f9!important}
+
+/* the panel colour for the overview + every widget (shape, padding and inner layout are left as they were) */
+html #admin-profile-view .ap-top.ap-top:not(#_),html #admin-profile-view .apw:not(#_),html #admin-profile-view .apg:not(#_){
+  background:linear-gradient(160deg,rgba(255,255,255,.9),rgba(255,255,255,.66))!important;border:1px solid rgba(255,255,255,.95)!important;
+  box-shadow:0 0 0 1px rgba(148,163,184,.22)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;color:var(--ap-ink)}
+html #admin-profile-view .apw .shadow-sm:not(#_),html #admin-profile-view .apw .shadow-md:not(#_),html #admin-profile-view .apw .shadow-lg:not(#_),html #admin-profile-view .apw .shadow-inner:not(#_){box-shadow:none!important}
+
+/* orange / rose / blue tints -> teal + slate */
+html #admin-profile-view .apw [class*="border-orange-"]:not(#_),html #admin-profile-view .apw [class*="border-rose-"]:not(#_),html #admin-profile-view .apw [class*="border-blue-"]:not(#_){border-color:var(--ap-hl)!important}
+html #admin-profile-view .apw div.rounded-full[class*="bg-orange-"]:not(#_),html #admin-profile-view .apw div.rounded-full[class*="bg-rose-"]:not(#_),html #admin-profile-view .apw div.rounded-full[class*="bg-blue-"]:not(#_){background:var(--ap-soft)!important;color:var(--ap-acc)!important}
+html #admin-profile-view .apw [class*="text-orange-"]:not(#_),html #admin-profile-view .apw [class*="text-rose-"]:not(#_),html #admin-profile-view .apw [class*="text-red-"]:not(#_){color:var(--ap-ink)!important}
+html #admin-profile-view .apw div.rounded-full i:not(#_){color:var(--ap-acc)!important}
+
+/* focus + fitness: same boxes as before, recoloured */
+html #admin-profile-view .ap-focus .grid-cols-3>div:nth-child(2):not(#_){background:var(--ap-acc)!important;border:0!important;box-shadow:none!important}
+html #admin-profile-view .ap-focus .grid-cols-3>div:nth-child(2) *:not(#_){color:#fff!important}
+html #admin-profile-view #ap-fs-extra:not(#_){border-color:var(--ap-hl)!important}
+html #admin-profile-view #ap-fit-week:not(#_){border-top-color:var(--ap-hl)!important}
+html #admin-profile-view .fx-h:not(#_),html #admin-profile-view .fw-h:not(#_),html #admin-profile-view #ap-fs-lab:not(#_),html #admin-profile-view #ap-fit-cap:not(#_){color:var(--ap-mute)!important}
+html #admin-profile-view .fx-h span:not(#_),html #admin-profile-view .fw-h span:not(#_){background:var(--ap-soft)!important;color:var(--ap-acc)!important}
+html #admin-profile-view .fx-b:not(#_),html #admin-profile-view .fw-b:not(#_){background:#e2e8f0!important}
+html #admin-profile-view .fx-b i:not(#_),html #admin-profile-view .fw-b i:not(#_){background:var(--ap-acc)!important}
+html #admin-profile-view .fx-d i:not(#_),html #admin-profile-view .fw-d i:not(#_){background:rgba(15,118,110,.3)!important}
+html #admin-profile-view .fx-d .n i:not(#_),html #admin-profile-view .fw-d .n i:not(#_){background:var(--ap-acc)!important}
+html #admin-profile-view #ap-fit-week .fw-t div:not(#_){border-color:var(--ap-hl)!important}
+html #admin-profile-view #ap-fit-week .fw-t b:not(#_){color:var(--ap-ink)!important}
+html #admin-profile-view #ap-session-history>.ap-sess:not(#_){background:rgba(255,255,255,.7)!important;border:1px solid var(--ap-hl)!important;box-shadow:none!important}
+html #admin-profile-view #ap-session-history>.ap-sess>.ap-sh::after{color:var(--ap-mute)!important}
+
+/* course progress */
+html #admin-profile-view #ap-course .ap-ch i:not(#_){background:var(--ap-acc)!important;box-shadow:none!important;color:#fff}
+html #admin-profile-view #ap-course .ap-tabs:not(#_){background:#eef2f6}
+html #admin-profile-view #ap-course .ap-tabs button:not(#_){color:var(--ap-mute)}
+html #admin-profile-view #ap-course .ap-tabs button b:not(#_){background:var(--ap-soft)!important;color:var(--ap-acc)!important}
+html #admin-profile-view #ap-course .ap-tabs button.on:not(#_){background:#fff;color:var(--ap-ink);box-shadow:0 0 0 1px var(--ap-hl)}
+html #admin-profile-view #ap-course h4 i:not(#_),html #admin-profile-view #ap-course h5 i:not(#_){color:var(--ap-acc)!important}
+html #admin-profile-view #ap-course h5:not(#_){color:var(--ap-ink)!important}
+html #admin-profile-view #ap-course span.text-blue-600:not(#_){color:var(--ap-mute)!important}
+html #admin-profile-view #ap-vid-perc:not(#_){background:#f1f5f9!important;color:#475569!important}
+html #admin-profile-view #ap-course .overflow-hidden.rounded-full:not(#_){background:#e2e8f0!important}
+html #admin-profile-view #ap-course .h-full.rounded-full:not(#_),html #admin-profile-view #ap-course #ap-syl-bar:not(#_){background:var(--ap-acc)!important}
+html #admin-profile-view #ap-syl-breakdown>div:not(#_){background:rgba(255,255,255,.6)!important;border-color:var(--ap-hl)!important}
+html #admin-profile-view #ap-syl-breakdown span[title]:not(#_){background:#f1f5f9!important;color:#475569!important;border:0!important;box-shadow:none!important}
+html #admin-profile-view #ap-syl-breakdown span[title] i:not(#_){color:var(--ap-acc)!important}
+
+/* budget */
+html #admin-profile-view .apb-hi:not(#_){background:var(--ap-acc)!important;box-shadow:none!important}
+html #admin-profile-view .apb-pill:not(#_){background:var(--ap-soft);color:var(--ap-acc)}
+html #admin-profile-view .apb-hero:not(#_){background:var(--ap-acc)!important;box-shadow:none!important}
+html #admin-profile-view .apb-fbar i:not(#_){background:#10b981}
+html #admin-profile-view .apb-fbar b:not(#_){background:#ef4444}
+html #admin-profile-view .apb-empty:not(#_){border-color:var(--ap-hl)}
+
+/* goal planner card */
+html #admin-profile-view .apg-hi:not(#_){background:var(--ap-acc)!important;box-shadow:none!important}
+html #admin-profile-view .apg-sc:not(#_){background:var(--ap-soft);border:0;color:var(--ap-acc)}
+html #admin-profile-view .apg-i:not(#_){background:#fff;border:1px solid var(--ap-hl)}
+html #admin-profile-view .apg-n i:not(#_),html #admin-profile-view .apg-f i:not(#_){color:var(--ap-acc)}
+html #admin-profile-view .apg-bar:not(#_){background:#e2e8f0}
+html #admin-profile-view .apg-bar i:not(#_){background:var(--ap-acc)}
+html #admin-profile-view .apg-s em.ok:not(#_){background:var(--ap-soft);color:var(--ap-acc)}
+html #admin-profile-view .apg-f span:not(#_){background:#fff;border-color:var(--ap-hl)}
+
+/* exam log: original cards, just no shadow */
+html #admin-profile-view #ap-records-list>div:not(#_){box-shadow:none!important}
+
+/* ===== tablet landscape: floating side navigation, one widget at a time ===== */
+#ap-rail{display:none}
+html.is-tablet.is-landscape #admin-profile-view #ap-rail:not(#_){display:flex;position:absolute;left:14px;top:calc(var(--aph,104px) + 12px);bottom:14px;z-index:30;align-items:center;pointer-events:none}
+#ap-rail .ap-rail-in{pointer-events:auto;display:flex;flex-direction:column;gap:4px;padding:8px;max-height:100%;overflow-y:auto;scrollbar-width:none;border-radius:26px;background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.95);box-shadow:0 0 0 1px rgba(148,163,184,.25)}
+#ap-rail .ap-rail-in::-webkit-scrollbar{display:none}
+#ap-rail .ap-rb{width:68px;min-height:58px;padding:6px 2px;border:0;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:none;color:var(--ap-mute);font-size:11px;font-weight:700;line-height:1.1;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:background-color .2s ease,color .2s ease,transform .12s ease}
+#ap-rail .ap-rb i{font-size:17px}
+#ap-rail .ap-rb:active{transform:scale(.94)}
+#ap-rail .ap-rb.on{background:var(--ap-soft);color:var(--ap-acc)}
+#ap-rail .ap-rb:focus-visible{outline:2px solid var(--ap-acc);outline-offset:1px}
+@media(max-height:640px){#ap-rail .ap-rb{width:54px;min-height:46px}#ap-rail .ap-rb span{display:none}}
+/* room for the rail, and only the chosen widget is shown */
+html.is-tablet.is-landscape #admin-profile-view>div:nth-child(2):not(#_){padding-left:max(112px,calc((100% - 1120px)/2))!important}
+html.is-tablet.is-landscape #admin-profile-view .ap-off:not(#_){display:none!important}
+html.is-tablet.is-landscape #admin-profile-view #ap-cols:not(#_){grid-template-columns:minmax(0,1fr)!important}
+html.is-tablet.is-landscape #admin-profile-view .ap-col:not(#_){display:contents}
+@keyframes apSecIn{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:no-preference){html.is-tablet.is-landscape #admin-profile-view .ap-on:not(#_){animation:apSecIn .32s cubic-bezier(.22,1,.36,1) both}}
+</style>
+<script id="ap-meta-js">
+(function(){
+  var W=window,D=document,$=function(i){return D.getElementById(i)};
+  var SECS=[['overview','fa-bullseye','Overview'],['goals','fa-flag-checkered','Goals'],['focus','fa-stopwatch','Focus'],['fitness','fa-person-running','Fitness'],['course','fa-book-open','Course'],['budget','fa-wallet','Budget'],['curve','fa-chart-line','Curve'],['exams','fa-file-circle-check','Exams']];
+  var sec='overview';
+  function view(){return $('admin-profile-view')}
+  function host(v){return v&&v.children[1]||null}
+  function card(id){var e=$(id);return e&&e.closest('.glass-card')}
+  function roots(v){
+    var pc=card('ap-task-count');
+    return {overview:v.querySelector('.ap-top')||(pc&&pc.parentElement!==host(v)?pc.parentElement:null),goals:$('ap-gp-a'),focus:card('ap-session-today'),fitness:card('ap-fit-dist'),course:$('ap-course'),budget:$('ap-budget'),curve:card('adminProfileChart'),exams:($('ap-records-list')||{}).parentElement||null};
+  }
+  function apply(){
+    var v=view();if(!v)return;
+    v.dataset.sec=sec;
+    var cols=$('ap-cols');
+    if(cols)cols.classList.toggle('ap-off',!(sec==='focus'||sec==='fitness'||sec==='course'||sec==='budget'||sec==='goals'));
+    SECS.forEach(function(s){var e=v.querySelector('[data-apsec="'+s[0]+'"]');if(!e)return;var on=s[0]===sec;e.classList.toggle('ap-off',!on);e.classList.toggle('ap-on',on)});
+    var rail=$('ap-rail');
+    if(rail)Array.prototype.forEach.call(rail.querySelectorAll('.ap-rb'),function(b){var on=b.dataset.s===sec;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on?'true':'false')});
+  }
+  function tag(){
+    var v=view();if(!v)return;
+    var r=roots(v);
+    SECS.forEach(function(s){var e=r[s[0]];if(!e)return;e.dataset.apsec=s[0];if(s[0]==='exams')e.classList.add('apw-x');else if(s[0]!=='overview'&&s[0]!=='goals')e.classList.add('apw')});
+    var hd=v.firstElementChild;if(hd)v.style.setProperty('--aph',hd.offsetHeight+'px');
+    /* sections are only switched once the page has built its two-column area, so nothing is ever hidden by mistake while it is still loading */
+    if($('ap-cols'))apply();
+  }
+  function build(){
+    var v=view();if(!v||$('ap-rail'))return;
+    var n=D.createElement('nav');n.id='ap-rail';n.setAttribute('aria-label','Student sections');
+    n.innerHTML='<div class="ap-rail-in">'+SECS.map(function(s){return'<button type="button" class="ap-rb" data-s="'+s[0]+'" aria-label="'+s[2]+'"><i class="fa-solid '+s[1]+'" aria-hidden="true"></i><span>'+s[2]+'</span></button>'}).join('')+'</div>';
+    n.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.ap-rb');if(b)go(b.dataset.s)});
+    v.appendChild(n);
+  }
+  function go(s){
+    sec=s;apply();
+    var h=host(view());if(h)h.scrollTop=0;
+    if(s==='curve')setTimeout(function(){try{W.dispatchEvent(new Event('resize'))}catch(e){}},60);
+  }
+  function boot(){
+    var v=view();if(!v)return;
+    build();tag();
+    if(!v.__apMO&&W.MutationObserver){
+      v.__apMO=1;var was=!v.classList.contains('hidden-view');
+      new MutationObserver(function(){
+        var now=!v.classList.contains('hidden-view');
+        if(now&&!was){sec='overview';[0,120,450,900].forEach(function(t){setTimeout(function(){tag();apply()},t)})}
+        was=now;
+      }).observe(v,{attributes:true,attributeFilter:['class']});
+    }
+  }
+  if(D.readyState==='loading')D.addEventListener('DOMContentLoaded',boot);else boot();
+  setInterval(function(){if(D.hidden)return;var v=view();if(!v)return;if(!$('ap-rail'))build();if(v.offsetParent!==null)tag()},1200);
+  W.addEventListener('resize',function(){var v=view(),hd=v&&v.firstElementChild;if(hd)v.style.setProperty('--aph',hd.offsetHeight+'px')});
+})();
+</script>
 </body>
 
 </html>
