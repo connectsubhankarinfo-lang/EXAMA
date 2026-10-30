@@ -17157,6 +17157,7 @@ window.__tpPaint = function () {
                 };
 
                 let __leaving = false;
+                const __leaveEls = [];   // windows that zoom back into their button; 'view-leave' is added once the dashboard is back on screen, so the button can be measured
                 // Smooth windows: the dashboard stays painted UNDER the window while it opens (no blank flash between
                 // "dashboard gone" and "window visible"), then it is hidden once the window has covered it.
                 clearTimeout(window.__vwUnderT);
@@ -17169,7 +17170,7 @@ window.__tpPaint = function () {
                     el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'vw-under'); // Reset animation state
                     if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
-                        el.classList.add('view-leave');
+                        __leaveEls.push(el);
                         setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 580);
                     } else if (__keepUnder && wasOpen && __iosD.indexOf(v) !== -1) {
                         el.classList.add('vw-under');   // still visible, sits beneath the opening window
@@ -17183,6 +17184,7 @@ window.__tpPaint = function () {
                 if (targetEl) {
                     targetEl.classList.remove('hidden-view');
                     void targetEl.offsetWidth; // Force reflow to restart animation flawlessly
+                    if (__leaveEls.length) { if (window.__vwLeave) window.__vwLeave(__leaveEls, targetEl); else __leaveEls.forEach(w => w.classList.add('view-leave')); }
                     {
                         // Window opened from a dashboard button: zoom out of that button (measured against the parent, not the window,
                         // because the window is still carrying its own slide transform at this moment).
@@ -17190,12 +17192,12 @@ window.__tpPaint = function () {
                         if (!__home && !__reduce) {
                             if (__o && Date.now() - __o.t < 1500) {
                                 const base = (targetEl.offsetParent || document.getElementById('app') || document.documentElement).getBoundingClientRect();
-                                targetEl.style.setProperty('--ox', (__o.x - base.left) + 'px');
-                                targetEl.style.setProperty('--oy', (__o.y - base.top) + 'px');
+                                if (window.__vwOpenRect) window.__vwOpenRect(targetEl, __o, base);
+                                else { targetEl.style.setProperty('--ox', (__o.x - base.left) + 'px'); targetEl.style.setProperty('--oy', (__o.y - base.top) + 'px'); }
                                 targetEl.classList.add('view-zoom');
                                 window.__xbOrigin = null;
                             } else {
-                                targetEl.style.removeProperty('--ox'); targetEl.style.removeProperty('--oy');
+                                if (window.__vwClear) window.__vwClear(targetEl); else { targetEl.style.removeProperty('--ox'); targetEl.style.removeProperty('--oy'); }
                             }
                         }
                         targetEl.classList.add('view-enter');
@@ -17210,6 +17212,8 @@ window.__tpPaint = function () {
                         }
                     }
                 }
+
+                if (!targetEl && __leaveEls.length) __leaveEls.forEach(w => w.classList.add('view-leave'));
 
                 // 4. Run View-Specific Logic
                 const __run = () => { switch (hash) {
@@ -38330,31 +38334,6 @@ html body .xb:not(#_):not(#__):focus-visible{outline:2.5px solid var(--c);outlin
   });
 })();
 </script>
-<script>
-/* remember which dashboard button was tapped (tiles, trophy, profile ...), so the window can open out of it and close back into it */
-document.addEventListener('click',function(e){
-  var t=e.target&&e.target.closest?e.target.closest('.xb,[onclick*="location.hash"]'):null;
-  if(!t||!t.closest('#student-view,#admin-view'))return;
-  var r=t.getBoundingClientRect();
-  window.__xbOrigin={x:r.left+r.width/2,y:r.top+r.height/2,t:Date.now()};
-},true);
-</script>
-<style id="xb-window-motion">
-/* ===== Window open / close (original look, made smoother) =====
-   open  : the window zooms out of the button you tapped
-   close : the window zooms back into that button, then the dashboard buttons pop back in one after another
-   transform + opacity only, so it runs on the GPU. */
-@keyframes xbZoomIn{0%{opacity:0;transform:scale(.78)}55%{opacity:1}100%{opacity:1;transform:none}}
-@keyframes xbZoomOut{0%{opacity:1;transform:none}100%{opacity:0;transform:scale(.8)}}
-@keyframes xbBack{0%{opacity:0;transform:translate3d(0,14px,0) scale(.86)}100%{opacity:1;transform:none}}
-@keyframes xbDashIn{from{opacity:0}to{opacity:1}}
-@media (prefers-reduced-motion:no-preference){
-  html body .view-enter.view-zoom:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);will-change:transform,opacity;backface-visibility:hidden;animation:xbZoomIn .52s cubic-bezier(.32,.72,0,1) both!important}
-  html body .view-leave:not(#_){transform-origin:var(--ox,50%) var(--oy,50%);will-change:transform,opacity;backface-visibility:hidden;animation:xbZoomOut .32s cubic-bezier(.4,0,.6,1) both!important;pointer-events:none}
-  html body .view-enter.view-back:not(#_){animation:xbDashIn .3s ease both}
-  html body #student-view.view-back .xb:not(#_),html body #admin-view.view-back .xb:not(#_){animation:xbBack .55s cubic-bezier(.22,1,.36,1) calc(var(--i,0)*30ms + 90ms) both}
-}
-</style>
 <style id="lbx-css">
 /* ===== Leaderboard rank cards: same language as the dashboard button grid (xb) =====
    soft tinted tile, fully rounded, gradient icon disc, inset white ring, springy press, quick staggered pop-in */
@@ -43103,21 +43082,9 @@ html.is-tablet.is-landscape .st-vid{aspect-ratio:16/9}
 
 
 <style id="vw-smooth">
-/* ===== Smooth windows v2 - ONE motion system for dashboard <-> window =====
-   Before: five different .view-enter / .slide-left / .fade-in definitions fought each other, the dashboard vanished the instant
-   a button was tapped (dark flash), and on the way back both layers faded through half-opacity (another flash).
-   Now:
-   OPEN  - the window zooms out of the tapped button (original look); the dashboard stays fully painted underneath until it is covered.
-   CLOSE - the window zooms back into its button while the dashboard is already fully visible underneath; the buttons pop back in one after another (original look).
-   Only transform + opacity are animated (GPU), will-change is applied only while moving, heavy screen set-up waits until the window has settled. */
-:root{--vw-open:.52s;--vw-close:.32s;--vw-out:cubic-bezier(.32,.72,0,1);--vw-in:cubic-bezier(.4,0,.6,1);--vw-fade:cubic-bezier(.33,0,.2,1);--vw-pop:cubic-bezier(.22,1,.36,1)}
-@keyframes vwOpenT{from{transform:scale(.78)}to{transform:none}}
-@keyframes vwRise{from{transform:translate3d(0,22px,0) scale(.99)}to{transform:none}}
-@keyframes vwOpenO{from{opacity:0}to{opacity:1}}
-@keyframes vwCloseT{from{transform:none}to{transform:scale(.8)}}
-@keyframes vwCloseO{from{opacity:1}to{opacity:0}}
-@keyframes vwTile{from{opacity:0;transform:translate3d(0,14px,0) scale(.86)}to{opacity:1;transform:none}}
-
+/* ===== Smooth windows - support rules =====
+   The motion itself (window open / close, dashboard step-back) lives in the 'samsung-motion' style block further down.
+   This block only keeps the GPU / layout hints that go with it. */
 /* no permanent GPU layers: every open window used to stay promoted forever (memory + blurry text on small phones) */
 html body .slide-up:not(#_):not(#__),html body .fade-in:not(#_):not(#__),html body .slide-left:not(#_):not(#__),html body .view-enter:not(#_):not(#__){will-change:auto;-webkit-backface-visibility:visible;backface-visibility:visible}
 html.vw-busy body .view-enter:not(#_):not(#__),html.vw-busy body .view-leave:not(#_):not(#__),html.vw-busy body .vw-under:not(#_):not(#__){will-change:transform,opacity;-webkit-backface-visibility:hidden;backface-visibility:hidden}
@@ -43129,27 +43096,6 @@ html body .slide-left.absolute:not(#_):not(#__){contain:layout style}
 /* taps feel instant: no grey flash, no double-tap zoom delay */
 #student-view .xb,#admin-view .xb{-webkit-tap-highlight-color:transparent;touch-action:manipulation;-webkit-touch-callout:none}
 
-@media (prefers-reduced-motion:no-preference){
-  /* a window opens (no tapped button known, e.g. from a notification): soft rise + fade */
-  html body .view-enter:not(#_):not(#__):not(#___){animation:vwRise var(--vw-open) var(--vw-out) both,vwOpenO .28s var(--vw-fade) both!important}
-  /* a window opens out of the tapped dashboard button */
-  html body .view-enter.view-zoom:not(#_):not(#__):not(#___){transform-origin:var(--ox,50%) var(--oy,50%);animation:vwOpenT var(--vw-open) var(--vw-out) both,vwOpenO .3s var(--vw-fade) both!important}
-  /* closing: the window shrinks back into its button */
-  html body .view-leave:not(#_):not(#__):not(#___){transform-origin:var(--ox,50%) var(--oy,50%);animation:vwCloseT var(--vw-close) var(--vw-in) both,vwCloseO var(--vw-close) var(--vw-in) both!important;pointer-events:none}
-  /* dashboard stays fully opaque underneath: no half-transparent cross-fade, so no dark flash while the window zooms */
-  html body .vw-under:not(#_):not(#__):not(#___){animation:none!important;pointer-events:none}
-  html body .view-enter.view-back:not(#_):not(#__):not(#___){animation:none!important}
-  /* dashboard buttons pop back in one after another, exactly as before */
-  html body #student-view.view-back .xb:not(#_):not(#__):not(#___),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___){animation:vwTile .55s var(--vw-pop) calc(var(--i,0)*30ms + 90ms) both!important}
-}
-/* weaker phones: same zoom, but the dashboard buttons just appear (no stagger) */
-html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____),html.perf-low body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____),html.perf-low body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____){animation:none!important}
-/* reduced-motion setting: a short fade is all there is */
-@media (prefers-reduced-motion:reduce){
-  html body .view-enter:not(#_):not(#__):not(#___),html body .view-enter.view-zoom:not(#_):not(#__):not(#___),html body .view-enter.view-back:not(#_):not(#__):not(#___){animation:vwOpenO .15s linear both!important}
-  html body .view-leave:not(#_):not(#__):not(#___){animation:vwCloseO .12s linear both!important}
-  html body .vw-under:not(#_):not(#__):not(#___),html body #student-view.view-back .xb:not(#_):not(#__):not(#___),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___){animation:none!important}
-}
 /* mid / low phones: the big "Performance" card carried a 40px live blur (the most expensive thing on the dashboard while scrolling).
    A 16px blur on a flat light sheet looks the same and costs far less. High-end phones are untouched. */
 html.perf-lite body #student-view:not(#_):not(#__) [style*="backdrop-filter"]{-webkit-backdrop-filter:blur(16px) saturate(160%)!important;backdrop-filter:blur(16px) saturate(160%)!important}
@@ -43158,7 +43104,7 @@ html.perf-lite body #student-view:not(#_):not(#__) [style*="backdrop-filter"]{-w
 (function(){
   var d=document.documentElement;
   /* how long the window gets to open before heavy screen set-up starts (lighter phones: a little sooner, they play a lighter animation) */
-  function tune(){var t=window.__perf||'high';window.__vwSettle=t==='low'?260:(t==='mid'?300:320);}
+  function tune(){var t=window.__perf||'high';window.__vwSettle=t==='low'?300:(t==='mid'?400:380);}
   tune();window.addEventListener('exama:tier',tune);
   /* iOS only shows :active (the press animation) once the page has any touch listener */
   document.addEventListener('touchstart',function(){},{passive:true});
@@ -43167,40 +43113,130 @@ html.perf-lite body #student-view:not(#_):not(#__) [style*="backdrop-filter"]{-w
 })();
 </script>
 
-<style id="apple-zoom">
-/* ===== Apple-style window zoom (v3) =====
-   OPEN  : the window grows out of the tapped button (scale .3 -> 1, corners round -> square) while the dashboard softly recedes (1 -> .92).
-   CLOSE : the window shrinks back INTO that same button (1 -> .3, fades at the end) while the dashboard grows back to full size (.92 -> 1);
-           the tiles then pop back in with a short stagger.
-   Only transform + opacity are animated (clip-path for the rounded corners on fast phones only). Reduced-motion users keep the plain fade.
-   Tune here: --az-open / --az-close (duration). Window size at start/end = scale(.3) in azOpenT / azCloseT; dashboard recede = scale(.92) in azRecede / azReturn. */
-:root{--az-open:.58s;--az-close:.48s;--az-out:cubic-bezier(.32,.72,0,1);--az-in:cubic-bezier(.3,.5,.1,1)}
-@keyframes azOpenT{from{transform:scale(.3)}to{transform:none}}
-@keyframes azOpenO{from{opacity:0}to{opacity:1}}
-@keyframes azOpenR{from{clip-path:inset(0 round 44px)}to{clip-path:inset(0 round 0px)}}
-@keyframes azCloseT{from{transform:none}to{transform:scale(.3)}}
-@keyframes azCloseO{from{opacity:1}to{opacity:0}}
-@keyframes azCloseR{from{clip-path:inset(0 round 0px)}to{clip-path:inset(0 round 44px)}}
-@keyframes azRecede{from{transform:none}to{transform:scale(.92)}}
-@keyframes azReturn{from{transform:scale(.92)}to{transform:none}}
-@keyframes azTile{from{opacity:0;transform:translate3d(0,10px,0) scale(.9)}to{opacity:1;transform:none}}
+<style id="samsung-motion">
+/* ===== Window motion - One UI style =====
+   OPEN  : the window starts as a rounded rectangle with exactly the size and shape of the button you tapped, then grows to full
+           screen. Its content scales up together with it, and the dashboard behind it steps back a little (1 -> .95).
+   CLOSE : the window shrinks back into the same button (measured at that moment, so it lands exactly on it) and fades out only at
+           the very end; the dashboard comes forward again (.95 -> 1). The buttons themselves stay put, like launcher icons.
+   No button known (opened from a notification, after login ...): soft zoom from the centre (.94 -> 1) + fade.
+   transform + opacity run on the GPU. The rounded crop is clip-path (high / mid phones); low phones get the same zoom without the crop.
+   The 'sm-motion-js' script below measures the button and sets, on the window:
+     --ox --oy  scale origin (puts the window centre on the button centre)      --s0  scale of the content at the start
+     --ct --cr --cb --cl --rr  crop at the start (top / right / bottom / left inset + corner radius)
+   Tune here:  --sm-open / --sm-close (duration)   --sm-out / --sm-in (curve)   --sm-under (how far the dashboard steps back) */
+:root{--sm-open:.46s;--sm-close:.36s;--sm-out:cubic-bezier(.22,.88,.24,1);--sm-in:cubic-bezier(.3,.72,.2,1);--sm-under:.95}
+@keyframes smOpenT{from{transform:scale(var(--s0,.6))}to{transform:scale(1)}}
+@keyframes smOpenC{from{clip-path:inset(var(--ct,0px) var(--cr,0px) var(--cb,0px) var(--cl,0px) round var(--rr,0px))}to{clip-path:inset(0px 0px 0px 0px round 0px)}}
+@keyframes smOpenO{from{opacity:0}to{opacity:1}}
+@keyframes smCloseT{from{transform:scale(1)}to{transform:scale(var(--s0,.92))}}
+@keyframes smCloseC{from{clip-path:inset(0px 0px 0px 0px round 0px)}to{clip-path:inset(var(--ct,0px) var(--cr,0px) var(--cb,0px) var(--cl,0px) round var(--rr,0px))}}
+@keyframes smCloseO{0%,45%{opacity:1}100%{opacity:0}}
+@keyframes smSoft{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+@keyframes smUnder{from{transform:scale(1)}to{transform:scale(var(--sm-under))}}
+@keyframes smReturn{from{transform:scale(var(--sm-under))}to{transform:scale(1)}}
+
+/* while the closing window is being aimed at its button, the dashboard must be at rest (no tile entrance transforms) */
+html body .vw-measure:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .vw-measure *:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important;transition:none!important}
+
 @media (prefers-reduced-motion:no-preference){
-  /* window opens out of the tapped dashboard button */
-  html body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____){transform-origin:var(--ox,50%) var(--oy,50%);animation:azOpenT var(--az-open) var(--az-out) backwards,azOpenO .24s linear backwards!important}
-  html.perf-high body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____){animation:azOpenT var(--az-open) var(--az-out) backwards,azOpenO .24s linear backwards,azOpenR var(--az-open) var(--az-out) backwards!important}
-  /* window shrinks back into the same button, fading out only in the last part so the zoom stays visible */
-  html body .view-leave:not(#_):not(#__):not(#___):not(#____){transform-origin:var(--ox,50%) var(--oy,50%);animation:azCloseT var(--az-close) var(--az-in) both,azCloseO .3s ease-in .18s both!important;pointer-events:none}
-  html.perf-high body .view-leave:not(#_):not(#__):not(#___):not(#____){animation:azCloseT var(--az-close) var(--az-in) both,azCloseO .3s ease-in .18s both,azCloseR var(--az-close) var(--az-in) both!important}
-  /* dashboard: recedes while a window opens, grows back while it closes (still fully opaque, so no dark flash) */
-  html body .vw-under:not(#_):not(#__):not(#___):not(#____){transform-origin:50% 50%;animation:azRecede var(--az-open) var(--az-out) both!important;pointer-events:none}
-  html body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____),html body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____){transform-origin:50% 50%;animation:azReturn var(--az-close) var(--az-out) backwards!important}
-  /* tiles pop back in quickly, one after another (whole stagger is finished in well under a second) */
-  html body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____){animation:azTile .42s var(--az-out) calc(var(--i,0)*12ms + 40ms) backwards!important}
+  /* a window opens and no button is known (notification, login ...): soft zoom + fade */
+  html body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smSoft var(--sm-open) var(--sm-out) backwards!important}
+  /* a window opens out of the tapped button */
+  html body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:var(--ox,50%) var(--oy,50%);animation:smOpenT var(--sm-open) var(--sm-out) backwards,smOpenO .14s linear backwards,smOpenC var(--sm-open) var(--sm-out) backwards!important}
+  /* a window closes back into its button, fading only in the second half so the shrink stays visible */
+  html body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:var(--ox,50%) var(--oy,50%);animation:smCloseT var(--sm-close) var(--sm-in) both,smCloseO var(--sm-close) linear both,smCloseC var(--sm-close) var(--sm-in) both!important;pointer-events:none}
+  /* the dashboard steps back while a window opens (still fully opaque: no dark flash) ... */
+  html body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:50% 50%;animation:smUnder var(--sm-open) var(--sm-out) both!important;pointer-events:none}
+  /* ... and comes forward again while the window closes. Its buttons do not re-animate. */
+  html body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){transform-origin:50% 50%;animation:smReturn var(--sm-close) var(--sm-out) backwards!important}
+  html body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
 }
-/* low-end phones: window zoom stays, but the dashboard itself does not animate (no scaling of blurred glass tiles) */
-html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),
-html.perf-low body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
+/* low phones: same zoom out of / into the button, without the rounded crop; the dashboard itself stays still */
+html.perf-low body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smOpenT var(--sm-open) var(--sm-out) backwards,smOpenO .14s linear backwards!important}
+html.perf-low body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smCloseT var(--sm-close) var(--sm-in) both,smCloseO var(--sm-close) linear both!important}
+html.perf-low body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #student-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____),html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
+/* reduced-motion setting: a short fade is all there is */
+@media (prefers-reduced-motion:reduce){
+  html body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .view-enter.view-zoom:not(#_):not(#__):not(#___):not(#____):not(#_____),html body .view-enter.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smOpenO .15s linear both!important}
+  html body .view-leave:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:smCloseO .12s linear both!important}
+  html body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #student-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____),html body #admin-view.view-back .xb:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
+}
 </style>
+<script id="sm-motion-js">
+(function(){
+  var W=window,D=document,DASH='#student-view,#admin-view';
+  var VARS=['--ox','--oy','--s0','--ct','--cr','--cb','--cl','--rr'];
+
+  /* corner radius as the user sees it ("50%" on round buttons is turned into pixels) */
+  function radiusOf(el,w,h){
+    try{
+      var v=W.getComputedStyle(el).borderTopLeftRadius||'0',n=parseFloat(v)||0;
+      if(/%/.test(v))n=n/100*Math.min(w,h);
+      return Math.max(0,Math.min(n,Math.min(w,h)/2));
+    }catch(e){return 20}
+  }
+  function rectOf(el){var r=el.getBoundingClientRect();return{l:r.left,t:r.top,w:r.width,h:r.height,r:radiusOf(el,r.width,r.height)}}
+  function onScreen(r){return !!r&&r.w>4&&r.h>4&&r.l<W.innerWidth&&r.l+r.w>0&&r.t<W.innerHeight&&r.t+r.h>0}
+
+  /* the window's own box (layout size, so a slide transform that may still be running does not matter) */
+  function winBox(win,base){
+    var p=win.offsetParent,b=base||(p?p.getBoundingClientRect():{left:0,top:0,width:W.innerWidth,height:W.innerHeight});
+    return{l:b.left+(p?win.offsetLeft:0),t:b.top+(p?win.offsetTop:0),w:win.offsetWidth||b.width,h:win.offsetHeight||b.height};
+  }
+  function clear(win){VARS.forEach(function(k){win.style.removeProperty(k)})}
+
+  /* Aim the window at a button. The window is scaled by s0 so that its CENTRE sits on the button centre (the scale origin ox,oy is worked
+     out for that), and the crop is the button's shape expressed in the window's own space: at the start exactly the button is visible. */
+  function aim(win,rc,wb){
+    var s=Math.max(.42,Math.min(.94,rc.w/wb.w));
+    var wcx=wb.w/2,wcy=wb.h/2;
+    var tcx=rc.l+rc.w/2-wb.l,tcy=rc.t+rc.h/2-wb.t;
+    var ox=(tcx-s*wcx)/(1-s),oy=(tcy-s*wcy)/(1-s);
+    var cx=wcx-rc.w/2/s,cy=wcy-rc.h/2/s,st=win.style;
+    function px(v){return (Math.round(v*10)/10)+'px'}
+    st.setProperty('--ox',px(ox));st.setProperty('--oy',px(oy));
+    st.setProperty('--s0',String(Math.round(s*1000)/1000));
+    st.setProperty('--ct',px(cy));st.setProperty('--cb',px(cy));
+    st.setProperty('--cl',px(cx));st.setProperty('--cr',px(cx));
+    st.setProperty('--rr',px(rc.r/s));
+  }
+
+  /* remember which button was tapped (tile, trophy, profile ...): the window opens out of it and closes back into it */
+  D.addEventListener('click',function(e){
+    var n=e.target;if(!n||!n.closest)return;
+    var el=n.closest('.xb,[data-href],[onclick*="location.hash"],[onclick*="open"],button,[role="button"]');
+    if(!el||!el.closest(DASH))return;
+    var rc=rectOf(el);
+    if(rc.w<8||rc.h<8||rc.w*rc.h>.55*W.innerWidth*W.innerHeight)return;   /* a wrapper, not a button */
+    W.__xbOrigin={x:rc.l+rc.w/2,y:rc.t+rc.h/2,t:Date.now(),rc:rc,el:el};
+  },true);
+
+  /* called by handleHashChange when a window opens out of a dashboard button */
+  W.__vwOpenRect=function(win,o,base){
+    var rc=o.rc||{l:o.x-24,t:o.y-24,w:48,h:48,r:24};
+    win.__vwSrc=o.el||null;win.__vwRc=rc;
+    aim(win,rc,winBox(win,base));
+  };
+  W.__vwClear=function(win){win.__vwSrc=null;win.__vwRc=null;clear(win)};
+
+  /* called by handleHashChange when windows go back to the dashboard: aim each one at its button as it is RIGHT NOW
+     (the dashboard was hidden meanwhile, its scroll position may have changed), then let it shrink into it */
+  W.__vwLeave=function(wins,dash){
+    try{
+      dash.classList.add('vw-measure');void dash.offsetWidth;
+      wins.forEach(function(win){
+        var rc=null,src=win.__vwSrc;
+        if(src&&src.isConnected&&dash.contains(src)){var r=rectOf(src);if(onScreen(r))rc=r}
+        if(!rc&&onScreen(win.__vwRc))rc=win.__vwRc;
+        if(rc)aim(win,rc,winBox(win));else clear(win);
+      });
+    }catch(err){wins.forEach(clear)}
+    dash.classList.remove('vw-measure');
+    wins.forEach(function(win){win.classList.add('view-leave')});
+  };
+})();
+</script>
 <style id="ad-ov-css">
 /* ===== Admin dashboard: Students Overview widget (under the Student Directory tile) ===== */
 #ad-ov{container:adov / inline-size;padding:16px}
@@ -43262,12 +43298,9 @@ html.is-landscape body #admin-view>div:nth-child(2)>#admin-exams-list:not(#_):no
   #ad-ov .ad-chart.anim .l2{animation-delay:.28s}
   #ad-ov .ad-chart.anim .area{opacity:0;animation:adFade .9s ease .35s forwards}
   #ad-ov .ad-chart.anim .d1,#ad-ov .ad-chart.anim .d2{opacity:0;animation:adFade .4s ease forwards;animation-delay:calc(.25s + var(--k,0)*70ms)}
-  /* when you come back from a window, the widget pops in after the tiles */
-  html body #admin-view.view-back #ad-ov:not(#_):not(#__):not(#___):not(#____){animation:azTile .42s var(--az-out) .2s backwards!important}
 }
 @keyframes adDraw{to{stroke-dashoffset:0}}
 @keyframes adFade{to{opacity:1}}
-html.perf-low body #admin-view.view-back #ad-ov:not(#_):not(#__):not(#___):not(#____):not(#_____){animation:none!important}
 </style>
 <script id="ad-ov-js">
 (function(){
