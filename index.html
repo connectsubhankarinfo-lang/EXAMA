@@ -17053,11 +17053,13 @@ window.__tpPaint = function () {
                     const el = document.getElementById(v);
                     if (!el) return;
                     const wasOpen = !el.classList.contains('hidden-view');
-                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave'); // Reset animation state
+                    const __wz = el.classList.contains('view-zoom');   // opened by zooming out of a dashboard button?
+                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'view-leave-zoom'); // Reset animation state
                     if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
                         el.classList.add('view-leave');
-                        setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave'); el.classList.add('hidden-view'); } }, 340);
+                        if (__wz) el.classList.add('view-leave-zoom');
+                        setTimeout(() => { if (el.classList.contains('view-leave')) { el.classList.remove('view-leave', 'view-leave-zoom'); el.classList.add('hidden-view'); } }, 920);
                     } else {
                         el.classList.add('hidden-view');
                     }
@@ -42103,6 +42105,121 @@ html body #student-view .sd-tiles > div:nth-child(1){
   background:linear-gradient(150deg,color-mix(in srgb,var(--cat-c) 6%,rgba(255,255,255,.95)),rgba(255,255,255,.82))!important;
 }
 </style>
+<style id="window-motion">
+/* ===== Window motion v3: BACK = the OPEN animation played in reverse =====
+   Opened by tapping a dashboard button : the window zoomed out of that button  -> back: it zooms into the same button.
+   Opened any other way                 : the window rose + faded in            -> back: it sinks + fades out.
+   Popups / sheets: same idea, their own open animation reversed.
+   `animation-direction: reverse` also reverses the easing curve, so it is a true mirror of the opening. */
+:root{--mw-ease:cubic-bezier(.32,.72,0,1);--mw-in:cubic-bezier(.22,1,.36,1);--mw-out:cubic-bezier(.4,0,.2,1)}
+@keyframes mwPush{from{transform:translate3d(100%,0,0)}to{transform:translate3d(0,0,0)}}
+@keyframes mwFade{from{opacity:0}to{opacity:1}}
+
+@media (prefers-reduced-motion:no-preference){
+  /* back to the dashboard, window opened from a dashboard button: reverse of the zoom-out-of-the-button (same keyframes, 0.52s) */
+  html body .view-leave:not(#_):not(#__){transform-origin:var(--ox,50%) var(--oy,50%);animation:xbZoomIn .74s cubic-bezier(.32,.72,0,1) both reverse!important;pointer-events:none;will-change:transform,opacity}
+  /* window opened any other way: reverse of the normal open (rise + fade, .64s / .46s) */
+  html body .view-leave:not(.view-leave-zoom):not(#_):not(#__){transform-origin:50% 50%;animation:exViewMove .88s var(--ex-ease) both reverse,exViewFade .64s cubic-bezier(.33,0,.2,1) both reverse!important}
+}
+
+/* ---------- OPEN, a little slower so it is smooth and visible (back above is the exact mirror) ---------- */
+@media (prefers-reduced-motion:no-preference){
+  html body .view-enter:not(#_):not(#__){animation:exViewMove .88s var(--ex-ease) both,exViewFade .64s cubic-bezier(.33,0,.2,1) both}
+  html body .view-enter.view-zoom:not(#_):not(#__){transform-origin:var(--ox,50%) var(--oy,50%);animation:xbZoomIn .74s cubic-bezier(.32,.72,0,1) both}
+  html body .view-enter.view-back:not(#_):not(#__){animation:xbDashIn .42s ease both}
+  html body #student-view.view-back .xb:not(#_):not(#__),html body #admin-view.view-back .xb:not(#_):not(#__){animation:xbBack .76s cubic-bezier(.22,1,.36,1) calc(var(--i,0)*36ms + 120ms) both}
+}
+
+/* ---------- full screens opened without the router ---------- */
+.slide-left:not(.view-enter){animation:mwPush .62s var(--mw-ease) both}
+/* popups / dim backdrops: fade only (the old fade-up moved the dim backdrop up 12px and showed a bright strip at the bottom edge) */
+.fade-in.inset-0{animation:mwFade .4s var(--mw-in) both}
+
+/* ---------- close of popups / other windows: their open animation, reversed (class set by the script while the window leaves) ---------- */
+.hidden-view.mw-out{display:var(--mw-d,flex)!important;pointer-events:none!important;user-select:none;-webkit-user-select:none;will-change:transform,opacity}
+.hidden-view.mw-out.mw-right{animation:mwPush .62s var(--mw-ease) both reverse!important}
+.hidden-view.mw-out.mw-down{animation:apIn .66s var(--ap,var(--mw-ease)) both reverse!important}
+.hidden-view.mw-out.mw-fade{animation:exFadeUp .62s var(--ex-out,var(--mw-in)) both reverse!important}
+.hidden-view.mw-out.mw-modal{animation:mwFade .56s var(--mw-in) both reverse!important}
+.hidden-view.mw-out.mw-modal>*{animation:apIn .56s var(--ap,var(--mw-ease)) both reverse!important}
+.mw-still{animation:none!important}
+@media (prefers-reduced-motion:reduce){
+  .slide-left:not(.view-enter),.fade-in.inset-0{animation-duration:.01s!important}
+}
+</style>
+<script id="window-motion-js">
+(function () {
+    'use strict';
+    if (window.__mwMotion) return; window.__mwMotion = true;
+
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var WIN = '.slide-left,.slide-up,.fade-in,.view-enter';
+    var SKIP = { 'incoming-call-modal': 1, 'discus-video-modal': 1, 'global-loader': 1 };
+    var DUR = 950;
+
+    function isWindow(el) {
+        if (!el || el.nodeType !== 1 || SKIP[el.id] || !el.matches(WIN)) return false;
+        if (el.closest('.wac-root')) return false;
+        var p = getComputedStyle(el).position;
+        return p === 'absolute' || p === 'fixed';
+    }
+    function kind(el) {
+        if (el.classList.contains('slide-left')) return 'mw-right';
+        var cs = getComputedStyle(el);
+        if (cs.alignItems === 'center' && cs.justifyContent === 'center') return 'mw-modal';
+        if (el.classList.contains('slide-up')) return 'mw-down';
+        return 'mw-fade';
+    }
+    function clean(el) {
+        el.classList.remove('mw-out', 'mw-right', 'mw-down', 'mw-fade', 'mw-modal');
+        el.style.removeProperty('--mw-d');
+        if (el.__mwT) { clearTimeout(el.__mwT); el.__mwT = 0; }
+    }
+    function startExit(el) {
+        el.style.removeProperty('animation');
+        el.style.setProperty('--mw-d', el.__mwDisp || (el.classList.contains('flex') ? 'flex' : 'block'));
+        el.classList.add('mw-out', kind(el));
+        var done = function (e) {
+            if (e && e.target !== el) return;
+            el.removeEventListener('animationend', done);
+            if (el.classList.contains('hidden-view')) clean(el);
+        };
+        el.addEventListener('animationend', done);
+        el.__mwT = setTimeout(function () { el.removeEventListener('animationend', done); if (el.classList.contains('hidden-view')) clean(el); }, DUR);
+    }
+
+    var mo = new MutationObserver(function (records) {
+        var first = new Map();                          // element -> class value before this batch
+        for (var i = 0; i < records.length; i++) {
+            if (!first.has(records[i].target)) first.set(records[i].target, records[i].oldValue || '');
+        }
+        var closing = [], opening = [], bases = [];
+        first.forEach(function (old, el) {
+            var was = old.indexOf('hidden-view') > -1, now = el.classList.contains('hidden-view');
+            if (was === now) return;
+            if (now) {                                   // hidden-view ADDED = close
+                if (old.indexOf('view-leave') > -1) return;   // the app's own back animation (view-leave) already played
+                if (!reduce && !el.classList.contains('mw-out') && isWindow(el)) closing.push(el);
+            } else {                                     // hidden-view REMOVED = open
+                if (el.classList.contains('mw-out')) { clean(el); el.style.animation = 'none'; }   // re-opened while leaving: stay put
+                else el.style.removeProperty('animation');
+                if (isWindow(el)) { el.__mwDisp = getComputedStyle(el).display; opening.push(el); }
+                else bases.push(el);
+            }
+        });
+        if (opening.length) closing = [];                // one window replacing another: no exit, so they never overlap
+        if (!closing.length) return;
+        closing.forEach(startExit);
+        bases.forEach(function (b) {
+            if (b.classList.contains('view-back')) return;
+            b.classList.add('mw-still');
+            setTimeout(function () { b.classList.remove('mw-still'); }, 720);
+        });
+    });
+    function start() { mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true }); }
+    if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+})();
+</script>
 </body>
 
 </html>
