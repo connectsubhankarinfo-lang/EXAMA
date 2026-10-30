@@ -4520,27 +4520,6 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
                     </div>
                 </section>
 
-                <!-- GROUP · Voice Assistant (all roles) -->
-                <section data-sg class="hidden">
-                    <h4 class="flex items-center gap-2 px-1 mb-2 text-[12px] font-extrabold text-slate-700">
-                        <i class="fa-solid fa-microphone text-[11px] text-violet-500"></i>Voice Assistant
-                    </h4>
-                    <div class="bg-white/80 border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden">
-                        <div id="nv-wake-item" data-sg-item class="w-full flex items-center justify-between gap-3 p-3.5">
-                            <div class="flex items-center gap-3 min-w-0">
-                                <div class="w-9 h-9 rounded-xl overflow-hidden shrink-0 border border-violet-100 shadow-inner bg-white">
-                                    <img id="nv-wake-img" src="https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/NOVA%20Mentor.jpg" alt="Nova" decoding="async" referrerpolicy="no-referrer" class="w-full h-full object-cover">
-                                </div>
-                                <div class="text-left min-w-0">
-                                    <span id="nv-wake-title" class="block text-[13px] font-bold text-slate-900 leading-tight">Shake to talk to Nova</span>
-                                    <span id="nv-wake-desc" class="block text-[10px] font-medium text-slate-400 mt-0.5">Shake your device to talk hands-free</span>
-                                </div>
-                            </div>
-                            <button type="button" id="nv-wake-toggle" role="switch" aria-checked="true" aria-label="Shake to talk to Nova"></button>
-                        </div>
-                    </div>
-                </section>
-
                 <!-- GROUP · Security & Help (Student — admin has no items, so it stays hidden) -->
                 <section data-sg class="hidden">
                     <h4 class="flex items-center gap-2 px-1 mb-2 text-[12px] font-extrabold text-slate-700">
@@ -36783,7 +36762,7 @@ var LANG = window.NOVA_LANG || 'en-IN';
 var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 var $ = function (id) { return document.getElementById(id); };
 var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { } } };
-var wakeOn = store.get('nova_shake') !== '0';   /* "wakeOn" now means: shake-to-talk is switched on (the "Hey Nova" wake word is gone) */
+var wakeOn = true;   /* shake-to-talk is always on (the settings switch was removed) */   /* "wakeOn" now means: shake-to-talk is switched on (the "Hey Nova" wake word is gone) */
 /* touch devices: Android/Chrome plays a system beep every time speech recognition starts or stops, so an always-listening wake word beeps nonstop there. On phones and tablets Nova uses a tap-to-talk floating button instead. */
 var MOBILE = (function () { try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') || (window.matchMedia && matchMedia('(pointer:coarse)').matches && !matchMedia('(hover:hover)').matches); } catch (e) { return false; } })();
 var fabOn = false;   /* floating mic button removed: hands-free Nova opens only by shaking the device */
@@ -37245,7 +37224,7 @@ function fabTap() {
 }
 function typed(t) { gesture = true; audio(); openSheet(); stopSpeak(); killRec(); phase = 'cmd'; submitted = false; cur = t; showYou(t); submit(t); }
 function setWake(on, fromUser) {   /* settings switch: shake-to-talk on / off */
-    wakeOn = !!on; store.set('nova_shake', on ? '1' : '0');
+    wakeOn = true; on = true;   /* always on */
     SHAKE_ON = wakeOn; if (on) { gesture = true; audio(); startShake(); }
     updateOrb();
     if (fromUser && window.showToast) { try { window.showToast(on ? 'Shake to talk is on' : 'Shake to talk is off', on ? 'Shake your phone or tablet to talk to Nova hands-free.' : 'Nova will not open when you shake the device.', 'info'); } catch (e) { } }
@@ -37826,7 +37805,7 @@ setInterval(function () {
     if (Date.now() - stuckAt > 6000) { stuckAt = 0; phase = 'idle'; submitted = true; wakeUp(); }
 }, 2000);
 /* Shake the phone: wakes Nova up and starts listening (shake again while Nova talks to stop her). Never while a run is on (a run bounces the phone), never in an exam. Off with localStorage nova_shake=0 */
-var FLIP_ON = store.get('nova_flip') !== '0', LP_ON = store.get('nova_lp') !== '0', EDGE_ON = store.get('nova_edge') !== '0', SHAKE_ON = store.get('nova_shake') !== '0', shakeLast = 0, shakeHits = [], shakeAt = 0, lx = 0, ly = 0, lz = 0, shakeAsked = false;
+var FLIP_ON = store.get('nova_flip') !== '0', LP_ON = store.get('nova_lp') !== '0', EDGE_ON = store.get('nova_edge') !== '0', SHAKE_ON = true, shakeLast = 0, shakeHits = [], shakeAt = 0, lx = 0, ly = 0, lz = 0, shakeAsked = false;
 function runBusy() {   /* a run is counting down / waiting for GPS / running / paused, or the run screen is open */
     try { var r = window.__rt; if (r && r.st && r.st !== 'idle') return true; var t = $('run-tracker'); return !!(t && vis(t)); } catch (e) { return false; }
 }
@@ -44701,7 +44680,13 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
   window.supInboxSet = function (id, status) {
     try {
       var m = window.__apMobile; if (!m || !id) return;
-      load().then(function () { return FB.update(FB.ref(window.rtdb, pre() + 'support_inbox/' + m + '/' + id), { status: status }); }).catch(function (e) { console.warn('[support admin] set', e); });
+      var prev = ((window.supInboxDB[m] || {})[id]) || {}, was = prev.status;
+      load().then(function () { return FB.update(FB.ref(window.rtdb, pre() + 'support_inbox/' + m + '/' + id), { status: status }); }).then(function () {
+        // tell the student: push with the Notice Board sound ('exam' channel), only when the status really changed
+        if (was === status || (status !== 'processing' && status !== 'resolved')) return;
+        var tp = prev.topic || 'your request', body = status === 'resolved' ? 'Your support request (' + tp + ') has been resolved.' : 'Your support request (' + tp + ') is now under process.';
+        try { if (typeof window.sendOneSignalPush === 'function') window.sendOneSignalPush(status === 'resolved' ? 'Support: Resolved' : 'Support: Under process', body, null, { category: 'exam', data: { support: true, noNav: true, supportStatus: status } }, [String(m)]); } catch (e) { console.warn('[support admin] push', e); }
+      }).catch(function (e) { console.warn('[support admin] set', e); });
     } catch (e) { console.warn('[support admin] set', e); }
   };
   function stop() { try { if (unsub) unsub(); } catch (e) { } unsub = null; pfx = null; window.supInboxDB = {}; lastKey = ''; paintCounts(); }
