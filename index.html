@@ -14,8 +14,6 @@
   /* dark mode was removed from the control panel: make sure an old saved choice can never leave the app stuck inverted */
   try { localStorage.setItem('exama_dark', '0'); } catch (e) { }
   H.classList.remove('dm');
-  try { localStorage.removeItem('exama_rm'); } catch (e) { }   /* Reduce Motion option was removed */
-  H.classList.remove('qp-rm');
   /* KEEP AWAKE switch (control panel): while it is OFF the app never gets a screen wake lock - every request is refused and every lock already held is dropped */
   Q._locks = [];
   Q.releaseLocks = function () { var l = Q._locks.splice(0); l.forEach(function (x) { try { x.release(); } catch (e) { } }); };
@@ -38230,7 +38228,7 @@ function onShake() {
     tapMic();
 }
 function onMotion(e) {
-    if (!SHAKE_ON || runBusy()) { shakeHits = []; return; }
+    if (!SHAKE_ON || (window.__qp && window.__qp.shk === false) || runBusy()) { shakeHits = []; return; }
     var a = e.accelerationIncludingGravity || e.acceleration; if (!a) return;
     var x = a.x || 0, y = a.y || 0, z = a.z || 0, t = Date.now();
     var d = Math.abs(x - lx) + Math.abs(y - ly) + Math.abs(z - lz); lx = x; ly = y; lz = z;
@@ -38253,7 +38251,7 @@ function startShake() {
 var fdSince = 0, fdOn = false, upSince = 0, upSeen = false, flipManaged = false, flipBusy = false, flipLiftT = null;
 function toastG(a, b) { try { if (window.showToast) window.showToast(a, b || '', 'info'); } catch (e) { } }
 function buzz(p) { if (navigator.vibrate) { try { navigator.vibrate(p); } catch (e) { } } }
-function flipOk() { return FLIP_ON && isStudent() && !blocked() && !document.hidden && !flipBusy; }
+function flipOk() { return FLIP_ON && !(window.__qp && window.__qp.gst === false) && isStudent() && !blocked() && !document.hidden && !flipBusy; }
 /* just after the app opens, login / the first data sync is still running, so flipOk() would say no and the flip got used up for nothing.
    Instead keep the phone's face-down state and fire as soon as the app is ready (20s limit so it can never block forever). */
 function flipReady() { return !!role() && !!(window.__sessionsSynced || !window.rtdb || performance.now() > 20000); }
@@ -38300,7 +38298,7 @@ function awakeSync() {
 setInterval(awakeSync, 2500); document.addEventListener('visibilitychange', awakeSync);
 /* flip detection from gravity (more reliable than beta/gamma): Android reports z = +9.8 face-up, iOS the opposite */
 function onGrav(e) {
-    if (!FLIP_ON) return; var a = e.accelerationIncludingGravity; if (!a || a.z == null) return; gravSeen = true;
+    if (!FLIP_ON || (window.__qp && window.__qp.gst === false)) return; var a = e.accelerationIncludingGravity; if (!a || a.z == null) return; gravSeen = true;
     var z = ANDROID ? a.z : -a.z, flat = Math.abs(a.x || 0) < 4.5 && Math.abs(a.y || 0) < 4.5;
     flipStep(z < -7 && flat, z > -4);
 }
@@ -38359,7 +38357,7 @@ function flipUp() {
     buzz(25); Promise.resolve(window.toggleSessionState && window.toggleSessionState('BREAK')).then(function () { toastG('Break started', 'Put the phone face-down again to resume.'); });
 }
 function onOrient(e) {
-    if (!FLIP_ON || gravSeen || e.beta == null) return; var ab = Math.abs(e.beta), ag = Math.abs(e.gamma || 0);
+    if (!FLIP_ON || (window.__qp && window.__qp.gst === false) || gravSeen || e.beta == null) return; var ab = Math.abs(e.beta), ag = Math.abs(e.gamma || 0);
     flipStep(ab > 150 && ag < 40, ab < 135);
 }
 function flipStep(down, up) {
@@ -38378,10 +38376,10 @@ function flipStep(down, up) {
 function lpAttach(el, fn) {
     var tm = null, sx = 0, sy = 0;
     function clr() { clearTimeout(tm); tm = null; }
-    el.addEventListener('pointerdown', function (e) { el.__lp = 0; if (!LP_ON) return; sx = e.clientX; sy = e.clientY; clr(); tm = setTimeout(function () { tm = null; el.__lp = 1; buzz(20); fn(); }, 480); });
+    el.addEventListener('pointerdown', function (e) { el.__lp = 0; if (!LP_ON || (window.__qp && window.__qp.gst === false)) return; sx = e.clientX; sy = e.clientY; clr(); tm = setTimeout(function () { tm = null; el.__lp = 1; buzz(20); fn(); }, 480); });
     el.addEventListener('pointermove', function (e) { if (tm && Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) > 12) clr(); });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { el.addEventListener(ev, clr); });
-    el.addEventListener('contextmenu', function (e) { if (LP_ON) e.preventDefault(); });
+    el.addEventListener('contextmenu', function (e) { if (LP_ON && !(window.__qp && window.__qp.gst === false)) e.preventDefault(); });
 }
 var qm = null;
 function closeQM() { if (qm) { qm.remove(); qm = null; } document.removeEventListener('pointerdown', qmOut, true); }
@@ -38430,7 +38428,7 @@ function egShow(side, k) {
 }
 function egHide() { if (egEl) egEl.style.opacity = '0'; }
 function egBlocked(t) {
-    if (!EDGE_ON || !role() || blocked()) return true;
+    if (!EDGE_ON || (window.__qp && window.__qp.gst === false) || !role() || blocked()) return true;
     var a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
     if (document.fullscreenElement || document.webkitFullscreenElement) return true;
     if (t && t.closest && t.closest('[data-no-edge],canvas,input[type=range],.leaflet-container')) return true;
@@ -45153,33 +45151,22 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
 .qp-t small{font-size:10.5px;font-weight:500;color:#8e8e93;line-height:1}
 .qp-t.on .ic{background:var(--c);color:#fff}.qp-t.on small{color:var(--c);font-weight:600}
 .qp-t.off{opacity:.45;pointer-events:none}
-.qp-t[data-t="snd"]{--c:#007aff}.qp-t[data-t="hap"]{--c:#ff2d55}.qp-t[data-t="awk"]{--c:#34c759}.qp-t[data-t="dnd"]{--c:#5e5ce6}.qp-t[data-t="nsh"]{--c:#ff9500}
-.qp-t.wide.full{grid-column:span 3}
+.qp-t[data-t="snd"]{--c:#007aff}.qp-t[data-t="hap"]{--c:#ff2d55}.qp-t[data-t="awk"]{--c:#ff9500}.qp-t[data-t="dnd"]{--c:#5e5ce6}.qp-t[data-t="eye"]{--c:#34c759}
 .qp-t.wide{grid-column:span 2;flex-direction:row;justify-content:flex-start;gap:14px;padding:12px 18px;text-align:left}
 .qp-t.wide .tx{align-items:flex-start;gap:4px}.qp-t.wide b{font-size:14px}.qp-t.wide small{font-size:11.5px}
 .qp-t[data-t="calc"] .ic{background:#ff9500;color:#fff}
-.qp-sls{display:flex;gap:10px;margin-top:12px}
-.qp-sl{position:relative;flex:1;height:152px;border-radius:30px;background:#d2d2d8;overflow:hidden;touch-action:none;cursor:pointer;--p:100%;outline:none;box-shadow:inset 0 0 0 .5px rgba(60,60,67,.16);-webkit-user-select:none;user-select:none}
-.qp-sl::before{content:"";position:absolute;left:0;right:0;bottom:0;height:var(--p);background:#fff;box-shadow:0 -3px 10px rgba(0,0,0,.1)}
+.qp-sls{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.qp-sl{position:relative;height:52px;border-radius:26px;background:rgba(120,120,128,.16);overflow:hidden;touch-action:none;cursor:pointer;--p:100%;outline:none}
+.qp-sl::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p);background:var(--f,#007aff);border-radius:26px}
+#qp-bright,#qs-bright{--f:#ff9f0a}#qp-vol,#qs-vol{--f:#007aff}#qs-eye{--f:#34c759}
+.qp-sl.w i{color:#fff}.qp-sl.w2 span{color:#fff}
+@media (min-width:768px){#qp-panel{max-width:640px}}
+@media (orientation:landscape) and (max-height:520px){.qp-tiles{grid-template-columns:repeat(6,minmax(0,1fr));margin-top:10px}.qp-t{min-height:76px;padding:8px 4px;gap:5px}.qp-t .ic{width:34px;height:34px;font-size:15px}.qp-sls{flex-direction:row;margin-top:10px}.qp-sl{flex:1;height:44px}.qp-time b{font-size:24px}.qp-grab{padding:8px 0 4px}}
 .qp-sl:focus-visible{box-shadow:0 0 0 2px #007aff}
-.qp-sl .lb{position:absolute;left:17px;top:15px;z-index:1;font-size:12px;font-weight:600;color:#636366;pointer-events:none}
-.qp-sl .pc{position:absolute;left:17px;top:31px;z-index:1;font-size:27px;font-weight:700;letter-spacing:-.02em;color:#1c1c1e;pointer-events:none;font-variant-numeric:tabular-nums}
-.qp-sl i{position:absolute;left:0;right:0;bottom:17px;z-index:1;text-align:center;font-size:27px;color:#3c3c43;pointer-events:none}
+.qp-sl i{position:absolute;left:19px;top:50%;transform:translateY(-50%);z-index:1;font-size:17px;color:#3c3c43;pointer-events:none;width:22px;text-align:center}
+.qp-sl span{position:absolute;right:18px;top:50%;transform:translateY(-50%);z-index:1;font-size:12.5px;font-weight:600;color:#3c3c43;pointer-events:none;font-variant-numeric:tabular-nums}
 .qp-grab{display:flex;justify-content:center;padding:14px 0 6px}.qp-grab i{width:40px;height:5px;border-radius:3px;background:rgba(60,60,67,.3)}
 @media (prefers-reduced-motion:reduce){#qp-panel,#qp-scrim{transition:none}}
-/* short landscape phones: compact panel */
-@media (max-height:560px){
- #qp-panel{max-width:720px;padding-bottom:4px}
- .qp-time b{font-size:24px}
- .qp-tiles{grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:10px}
- .qp-t{min-height:76px;gap:6px;padding:8px 4px;border-radius:18px}.qp-t .ic{width:36px;height:36px;font-size:15px}
- .qp-t.wide,.qp-t.wide.full{grid-column:span 1;flex-direction:column;justify-content:center;gap:6px;padding:8px 4px;text-align:center}.qp-t.wide .tx{align-items:center}.qp-t.wide b{font-size:12px}.qp-t.wide small{font-size:10.5px}
- .qp-sls{margin-top:8px}.qp-sl{height:70px;border-radius:22px}.qp-sl .lb{top:9px;left:14px}.qp-sl .pc{top:24px;left:14px;font-size:20px}.qp-sl i{bottom:10px;font-size:20px}
- .qp-grab{padding:8px 0 4px}
-}
-/* Night Shift tint */
-#qp-night{position:fixed;inset:0;z-index:2147483400;pointer-events:none;background:rgba(255,146,38,.17);opacity:0;transition:opacity .4s}
-#qp-night.on{opacity:1}
 
 /* CALCULATOR - Apple style */
 #qp-calc{position:fixed;inset:0;z-index:2147483300;display:none;flex-direction:column;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",Arial,sans-serif;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;overscroll-behavior:none;opacity:0;transform:translateY(26px) scale(.985);transition:opacity .22s ease,transform .34s cubic-bezier(.32,.72,0,1);padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:border-box}
@@ -45210,6 +45197,37 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
 }
 @media (prefers-reduced-motion:reduce){#qp-calc{transition:none}}
 </style>
+<style id="qs-css">
+#qp-eye{position:fixed;inset:0;pointer-events:none;z-index:2147483090;background:#ffa028;mix-blend-mode:multiply;opacity:0;transition:opacity .25s}
+#qs{position:fixed;inset:0;z-index:2147483250;display:none;flex-direction:column;background:#f2f2f7;color:#1c1c1e;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;opacity:0;transform:translateY(18px);transition:opacity .22s,transform .32s cubic-bezier(.32,.72,0,1)}
+#qs.show{display:flex}#qs.in{opacity:1;transform:none}
+.qs-h{flex:none;display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top,0px)) max(14px,env(safe-area-inset-right,0px)) 10px max(14px,env(safe-area-inset-left,0px));background:rgba(242,242,247,.88);-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);border-bottom:.5px solid rgba(60,60,67,.18)}
+.qs-h h2{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em}
+.qs-x{width:38px;height:38px;border-radius:50%;border:0;background:rgba(120,120,128,.16);color:#3c3c43;font-size:15px;display:grid;place-items:center}
+.qs-x:active{background:rgba(120,120,128,.28)}
+.qs-b{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:16px max(14px,env(safe-area-inset-right,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px))}
+.qs-g{max-width:640px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+@media (min-width:820px){.qs-g{max-width:980px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}}
+.qs-c h3{margin:0 0 7px 14px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#8e8e93}
+.qs-l{background:#fff;border-radius:18px;overflow:hidden}
+.qs-r{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;padding:10px 14px;margin:0;border:0;border-top:.5px solid rgba(60,60,67,.14);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;box-sizing:border-box}
+.qs-r:first-child{border-top:0}button.qs-r:active{background:rgba(120,120,128,.1)}
+.qs-i{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:none;font-size:15px;color:#fff;background:var(--c,#8e8e93)}
+.qs-t{flex:1;min-width:0}.qs-t b{display:block;font-size:15px;font-weight:600}.qs-t small{display:block;margin-top:2px;font-size:12px;line-height:1.3;color:#8e8e93;font-weight:500}
+.qs-v{font-size:13.5px;color:#8e8e93;font-weight:500}.qs-ch{font-size:12px;color:#c7c7cc}
+.qs-s{position:relative;width:51px;height:31px;border-radius:16px;background:rgba(120,120,128,.3);flex:none;transition:background .2s}
+.qs-s::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}
+.qs-r.on .qs-s{background:#34c759}.qs-r.on .qs-s::after{transform:translateX(20px)}
+.qs-r.dis{opacity:.45;pointer-events:none}
+div.qs-r.qs-slr{cursor:default;padding:8px 14px}.qs-slr .qp-sl{width:100%}
+@media (prefers-reduced-motion:reduce){#qs,#qp-eye{transition:none}}
+</style>
+<div id="qp-eye" aria-hidden="true"></div>
+<div id="qs" role="dialog" aria-label="Control settings" aria-hidden="true">
+  <div class="qs-h"><button type="button" class="qs-x" id="qs-back" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button><h2>Control settings</h2></div>
+  <div class="qs-b" id="qs-body"></div>
+</div>
+
 <div id="qp-dim" aria-hidden="true"></div>
 <div id="qp-root" aria-hidden="true">
   <div id="qp-scrim"></div>
@@ -45218,8 +45236,8 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
       <div class="qp-acts"><button type="button" class="qp-ab" id="qp-gear" aria-label="Settings"><i class="fa-solid fa-gear"></i></button></div></div>
     <div class="qp-tiles" id="qp-tiles"></div>
     <div class="qp-sls">
-      <div class="qp-sl" id="qp-bright" role="slider" tabindex="0" aria-label="Screen brightness" aria-valuemin="40" aria-valuemax="100"><b class="lb">Brightness</b><span class="pc"></span><i class="fa-solid fa-sun"></i></div>
-      <div class="qp-sl" id="qp-vol" role="slider" tabindex="0" aria-label="App volume" aria-valuemin="0" aria-valuemax="100"><b class="lb">Volume</b><span class="pc"></span><i class="fa-solid fa-volume-high"></i></div>
+      <div class="qp-sl" id="qp-bright" role="slider" tabindex="0" aria-label="Screen brightness" aria-valuemin="40" aria-valuemax="100"><i class="fa-solid fa-sun"></i><span></span></div>
+      <div class="qp-sl" id="qp-vol" role="slider" tabindex="0" aria-label="App volume" aria-valuemin="0" aria-valuemax="100"><i class="fa-solid fa-volume-high"></i><span></span></div>
     </div>
     <div class="qp-grab"><i></i></div>
   </section>
@@ -45263,14 +45281,14 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
         prefsUnsub = FB.onValue(FB.ref(window.rtdb, k + 'notif_prefs'), function (sn) {
           try { window.__qpPrefs = sn.val() || {}; } catch (e) { window.__qpPrefs = {}; }
           prefsLoaded = true; var w = prefsWait; prefsWait = []; w.forEach(function (f) { f(); });
-        }, function () { prefsLoaded = true; var w = prefsWait; prefsWait = []; w.forEach(function (f) { f(); }); });
+        }, function () { prefsUnsub = null; prefsLoaded = true; var w = prefsWait; prefsWait = []; w.forEach(function (f) { f(); }); });
       }).catch(function () { });
     } catch (e) { }
   }
   /* used by sendOneSignalPush: resolves with { mobile: {dnd, snd} } (waits at most ~1.5 s) */
   window.__qpPrefsGet = function () {
     return new Promise(function (res) {
-      if (prefsLoaded) return res(window.__qpPrefs);
+      var fin0 = function (v) { res(v || window.__qpPrefs || {}); }; setTimeout(fin0, 2500); listenPrefs(); fbLoad().then(function () { return FB.get(FB.ref(window.rtdb, pre() + 'notif_prefs')); }).then(function (sn) { var v = sn.val() || {}; window.__qpPrefs = v; fin0(v); }).catch(function () { fin0(); }); return;
       var done = false, fin = function () { if (done) return; done = true; res(window.__qpPrefs || {}); };
       prefsWait.push(fin); setTimeout(fin, 1500); listenPrefs();
     });
@@ -45289,10 +45307,7 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
   function setSnd(v) { Q.snd = !!v; if (Q.snd && Q.vol < .05) Q.vol = .7; set('exama_snd', Q.snd ? '1' : '0'); set('exama_vol', Math.round(Q.vol * 100)); Q.apply(); pubPrefs(); }
   function setVol(v) { Q.vol = cl(v, 0, 1); Q.snd = Q.vol > 0; set('exama_vol', Math.round(Q.vol * 100)); set('exama_snd', Q.snd ? '1' : '0'); Q.apply(); }
   function setHap(v) { Q.hap = !!v; set('exama_hap', Q.hap ? '1' : '0'); if (!Q.hap && Q.rawVibrate) Q.rawVibrate(0); else vib(20); }
-  function setNight(v) { Q.ns = !!v; set('exama_ns', Q.ns ? '1' : '0'); nightEl.classList.toggle('on', Q.ns); }
-  var nightEl = D.createElement('div'); nightEl.id = 'qp-night'; D.body.appendChild(nightEl);
-  try { Q.ns = localStorage.getItem('exama_ns') === '1'; nightEl.classList.toggle('on', Q.ns); } catch (e) { Q.ns = false; }
-  function setDnd(v) { Q.dnd = !!v; set('exama_dnd', Q.dnd ? '1' : '0'); pubPrefs(); }
+  function setDnd(v) { Q.dnd = !!v; set('exama_dnd', Q.dnd ? '1' : '0'); pubPrefs(); try { if (window.showToast) window.showToast(Q.dnd ? 'Do Not Disturb on' : 'Do Not Disturb off', Q.dnd ? 'Push notifications are paused. SOS alerts still come through.' : 'Push notifications are back on.', 'info'); } catch (e) { } }
   function awkOk() { return !!(navigator.wakeLock && navigator.wakeLock.request) || !!(window.median && window.median.screen); }
   function medianScreen(on) {
     ['median', 'gonative'].forEach(function (k) {
@@ -45312,16 +45327,16 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
     { id: 'hap', ic: 'fa-wave-square', lb: 'Gesture', ok: function () { return !!Q.rawVibrate; }, on: function () { return Q.hap && !!Q.rawVibrate; }, st: function () { return !Q.rawVibrate ? 'Not supported' : Q.hap ? 'On' : 'Off'; }, act: function () { setHap(!Q.hap); } },
     { id: 'awk', ic: 'fa-mug-hot', lb: 'Keep awake', ok: awkOk, on: function () { return Q.awk && awkOk(); }, st: function () { return !awkOk() ? 'Not supported' : Q.awk ? 'On' : 'Off'; }, act: function () { setAwake(!Q.awk); } },
     { id: 'dnd', ic: 'fa-moon', lb: 'Do Not Disturb', on: function () { return Q.dnd; }, st: function () { return Q.dnd ? 'On' : 'Off'; }, act: function () { setDnd(!Q.dnd); } },
-    { id: 'nsh', ic: 'fa-circle-half-stroke', lb: 'Night Shift', on: function () { return !!Q.ns; }, st: function () { return Q.ns ? 'On' : 'Off'; }, act: function () { setNight(!Q.ns); } },
-    { id: 'calc', ic: 'fa-calculator', lb: 'Calculator', wide: true, full: true, on: function () { return false; }, st: function () { return 'Open'; }, act: function () { closePanel(); setTimeout(openCalc, 230); } }
+    { id: 'eye', ic: 'fa-eye', lb: 'Eye care', on: function () { return Q.eye; }, st: function () { return Q.eye ? 'On' : 'Off'; }, act: function () { setEye(!Q.eye); } },
+    { id: 'calc', ic: 'fa-calculator', lb: 'Calculator', on: function () { return false; }, st: function () { return 'Open'; }, act: function () { closePanel(); setTimeout(openCalc, 230); } }
   ];
-  tilesEl.innerHTML = TILES.map(function (t) { return '<button type="button" class="qp-t' + (t.wide ? ' wide' : '') + (t.full ? ' full' : '') + '" data-t="' + t.id + '"><span class="ic"><i class="fa-solid"></i></span><span class="tx"><b>' + t.lb + '</b><small></small></span></button>'; }).join('');
+  tilesEl.innerHTML = TILES.map(function (t) { return '<button type="button" class="qp-t' + (t.wide ? ' wide' : '') + '" data-t="' + t.id + '"><span class="ic"><i class="fa-solid"></i></span><span class="tx"><b>' + t.lb + '</b><small></small></span></button>'; }).join('');
   tilesEl.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('.qp-t'); if (!b) return;
     var t = TILES.filter(function (x) { return x.id === b.dataset.t; })[0]; if (!t || (t.ok && !t.ok())) return;
     t.act(); refresh(); if (t.id !== 'hap' && t.id !== 'calc') vib(10);
   });
-  function setSl(el, f, txt) { el.style.setProperty('--p', (f * 100) + '%'); el.querySelector('.pc').textContent = txt; el.setAttribute('aria-valuenow', Math.round(f * 100)); }
+  function setSl(el, f, txt) { el.style.setProperty('--p', (f * 100) + '%'); el.classList.toggle('w', f > .14); el.classList.toggle('w2', f > .88); el.querySelector('span').textContent = txt; el.setAttribute('aria-valuenow', Math.round(f * 100)); }
   function refresh() {
     TILES.forEach(function (t) {
       var b = tilesEl.querySelector('[data-t="' + t.id + '"]'); if (!b) return;
@@ -45336,7 +45351,7 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
 
   /* ---------- sliders (touch + mouse + keyboard) ---------- */
   function slider(el, get, put, done) {
-    function at(e) { var r = el.getBoundingClientRect(); return cl(1 - (e.clientY - r.top) / r.height, 0, 1); }
+    function at(e) { var r = el.getBoundingClientRect(); return cl((e.clientX - r.left) / r.width, 0, 1); }
     var down = false;
     el.addEventListener('pointerdown', function (e) { down = true; try { el.setPointerCapture(e.pointerId); } catch (x) { } put(at(e)); refresh(); });
     el.addEventListener('pointermove', function (e) { if (down) { put(at(e)); refresh(); } });
@@ -45376,7 +45391,7 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
   }
   window.QuickPanel = { open: openPanel, close: closePanel, toggle: function () { openState ? closePanel() : openPanel(); } };
   scrim.addEventListener('click', closePanel);
-  D.getElementById('qp-gear').addEventListener('click', function () { closePanel(); setTimeout(function () { try { if (window.openSettingsMenu) window.openSettingsMenu(); } catch (e) { } }, 260); });
+  D.getElementById('qp-gear').addEventListener('click', function () { closePanel(); setTimeout(function () { try { openQs(); } catch (e) { } }, 260); });
   D.addEventListener('keydown', function (e) { if (e.key === 'Escape' && openState) closePanel(); });
 
   /* ---------- the pull-down gesture ---------- */
@@ -45594,6 +45609,91 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
     else if (k === 'Escape') { closeCalc(); e.preventDefault(); return; }
     if (m) { e.preventDefault(); press(m); paint(); }
   });
+
+  /* =====================================================================
+     EYE CARE + CONTROL SETTINGS SCREEN (opened from the gear in the control panel)
+     ===================================================================== */
+  function gv(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+  Q.eye = gv('exama_eye', '0') === '1'; Q.eyi = cl(+gv('exama_eyi', '35') || 35, 10, 60); Q.gst = gv('exama_gst', '1') !== '0'; Q.shk = gv('exama_shk', '1') !== '0';
+  var eyeEl = D.getElementById('qp-eye');
+  function applyEye() { eyeEl.style.opacity = Q.eye ? (Q.eyi / 100).toFixed(2) : 0; }
+  function setEye(v) { Q.eye = !!v; set('exama_eye', Q.eye ? '1' : '0'); applyEye(); }
+  function setEyeLv(f) { Q.eyi = Math.round(10 + cl(f, 0, 1) * 50); set('exama_eyi', Q.eyi); if (!Q.eye) { Q.eye = true; set('exama_eye', '1'); } applyEye(); }
+  function setGst(v) { Q.gst = !!v; set('exama_gst', Q.gst ? '1' : '0'); }
+  function setShk(v) { Q.shk = !!v; set('exama_shk', Q.shk ? '1' : '0'); }
+  applyEye();
+
+  var qs = D.getElementById('qs'), qsB = D.getElementById('qs-body'), qsOpen = false, qsRows = [];
+  var SLD = {
+    vol: { ic: 'fa-volume-high', lb: 'App volume', get: function () { return Q.snd ? Q.vol : 0; }, put: setVol, done: tick, txt: function (f) { return Math.round(f * 100) + '%'; } },
+    bright: { ic: 'fa-sun', lb: 'Screen brightness', get: function () { return 1 - Q.dim / .6; }, put: function (f) { setDim((1 - cl(f, 0, 1)) * .6); }, txt: function (f) { return Math.round(40 + f * 60) + '%'; } },
+    eye: { ic: 'fa-eye', lb: 'Eye care strength', get: function () { return (Q.eyi - 10) / 50; }, put: setEyeLv, txt: function (f) { return Math.round(f * 100) + '%'; } }
+  };
+  function SW(id, ic, c, lb, sub, get, put, ok) { return { k: 'sw', id: id, ic: ic, c: c, lb: lb, sub: sub, get: get, put: put, ok: ok }; }
+  function qsGo(fn) { closeQs(); setTimeout(function () { try { fn(); } catch (e) { } }, 290); }
+  function qsReset() {
+    setSnd(true); setVol(1); setHap(true); setDim(0); setEye(false); Q.eyi = 35; set('exama_eyi', 35); setGst(true); setShk(true); setDnd(false); if (!Q.awk) setAwake(true); refresh();
+  }
+  function notifVal() { try { return { granted: 'Allowed', denied: 'Blocked', 'default': 'Ask' }[Notification.permission] || ''; } catch (e) { return ''; } }
+  function qsData() {
+    var role = window.currentRole, stu = role === 'student', W = window;
+    var notif = ('Notification' in W) ? [{ k: 'ac', ic: 'fa-bell', c: '#ff3b30', lb: 'Notification permission', val: notifVal, act: function () {
+      try { if (Notification.permission === 'default') Notification.requestPermission().then(refresh); else if (W.showToast) W.showToast('Notifications', 'Change this in your phone or browser app settings.', 'info'); } catch (e) { } } }] : [];
+    return [
+      ['Sound & vibration', [SW('snd', 'fa-volume-high', '#007aff', 'Sound', 'App sounds and notification sound', function () { return Q.snd; }, setSnd), { k: 'sl', id: 'vol' },
+        SW('hap', 'fa-wave-square', '#ff2d55', 'Vibration', 'Haptic feedback on taps and alerts', function () { return Q.hap && !!Q.rawVibrate; }, setHap, function () { return !!Q.rawVibrate; })]],
+      ['Display & comfort', [{ k: 'sl', id: 'bright' }, SW('eye', 'fa-eye', '#34c759', 'Eye care', 'Warm, soft screen tint for night reading', function () { return Q.eye; }, setEye), { k: 'sl', id: 'eye' },
+        SW('awk', 'fa-mug-hot', '#ff9500', 'Keep screen awake', 'Stops the screen sleeping while the app is open', function () { return Q.awk && awkOk(); }, setAwake, awkOk)]],
+      ['Gestures', [SW('gst', 'fa-hand-pointer', '#5856d6', 'Gestures', 'Flip face-down to focus, long-press and edge swipe', function () { return Q.gst; }, setGst),
+        SW('shk', 'fa-mobile-screen-button', '#af52de', 'Shake to talk', 'Shake the phone to talk to Nova hands-free', function () { return Q.shk; }, setShk, function () { return typeof W.DeviceMotionEvent !== 'undefined'; })]],
+      ['Notifications', [SW('dnd', 'fa-moon', '#5e5ce6', 'Do Not Disturb', 'Pauses push notifications. SOS alerts always come through.', function () { return Q.dnd; }, setDnd)].concat(notif)],
+      role ? ['Account', [
+        stu ? { k: 'ac', ic: 'fa-user', c: '#007aff', lb: 'My profile', act: function () { qsGo(function () { W.openMyProfileFromMenu && W.openMyProfileFromMenu(); }); } } : null,
+        stu ? { k: 'ac', ic: 'fa-key', c: '#ff9500', lb: 'Change password', act: function () { qsGo(function () { var m = D.getElementById('change-password-modal'); if (m) m.classList.remove('hidden-view'); }); } } : null,
+        stu ? { k: 'ac', ic: 'fa-headset', c: '#34c759', lb: 'Help & support', act: function () { qsGo(function () { W.supInOpen && W.supInOpen(); }); } } : null,
+        { k: 'ac', ic: 'fa-sliders', c: '#8e8e93', lb: 'All app settings', act: function () { qsGo(function () { W.openSettingsMenu && W.openSettingsMenu(); }); } },
+        { k: 'ac', ic: 'fa-right-from-bracket', c: '#ff3b30', lb: 'Log out', act: function () { qsGo(function () { (W.handleMenuLogout || W.logout)(); }); } }].filter(Boolean)] : null,
+      ['Reset', [{ k: 'ac', ic: 'fa-rotate-left', c: '#8e8e93', lb: 'Reset control settings', sub: 'Sound, vibration, display, gestures and Do Not Disturb', act: qsReset }]]
+    ].filter(Boolean);
+  }
+  function qsBuild() {
+    qsRows = []; var h = '<div class="qs-g">';
+    qsData().forEach(function (sec) {
+      h += '<section class="qs-c"><h3>' + sec[0] + '</h3><div class="qs-l">';
+      sec[1].forEach(function (r) {
+        var i = qsRows.push(r) - 1;
+        if (r.k === 'sl') h += '<div class="qs-r qs-slr"><div class="qp-sl" id="qs-' + r.id + '" role="slider" tabindex="0" aria-label="' + SLD[r.id].lb + '" aria-valuemin="0" aria-valuemax="100"><i class="fa-solid ' + SLD[r.id].ic + '"></i><span></span></div></div>';
+        else if (r.k === 'sw') h += '<button type="button" class="qs-r" data-i="' + i + '" role="switch"><span class="qs-i" style="--c:' + r.c + '"><i class="fa-solid ' + r.ic + '"></i></span><span class="qs-t"><b>' + r.lb + '</b><small>' + r.sub + '</small></span><span class="qs-s"></span></button>';
+        else h += '<button type="button" class="qs-r" data-i="' + i + '"><span class="qs-i" style="--c:' + r.c + '"><i class="fa-solid ' + r.ic + '"></i></span><span class="qs-t"><b>' + r.lb + '</b>' + (r.sub ? '<small>' + r.sub + '</small>' : '') + '</span>' + (r.val ? '<span class="qs-v"></span>' : '') + '<i class="fa-solid fa-chevron-right qs-ch"></i></button>';
+      });
+      h += '</div></section>';
+    });
+    qsB.innerHTML = h + '</div>';
+    Object.keys(SLD).forEach(function (k) { var el = D.getElementById('qs-' + k); if (el) slider(el, SLD[k].get, SLD[k].put, SLD[k].done); });
+  }
+  function qsPaint() {
+    if (!qsOpen) return;
+    Array.prototype.forEach.call(qsB.querySelectorAll('button.qs-r'), function (b) {
+      var r = qsRows[+b.getAttribute('data-i')]; if (!r) return;
+      if (r.k === 'sw') { var on = !!r.get(); b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); b.classList.toggle('dis', !!(r.ok && !r.ok())); }
+      else if (r.val) { var v = b.querySelector('.qs-v'); if (v) v.textContent = r.val(); }
+    });
+    Object.keys(SLD).forEach(function (k) {
+      var el = D.getElementById('qs-' + k); if (!el) return; var f = cl(SLD[k].get(), 0, 1); setSl(el, f, SLD[k].txt(f));
+      if (k === 'vol') el.querySelector('i').className = 'fa-solid ' + (f === 0 ? 'fa-volume-xmark' : f < .5 ? 'fa-volume-low' : 'fa-volume-high');
+    });
+  }
+  var refresh0 = refresh; refresh = function () { refresh0(); try { qsPaint(); } catch (e) { } };
+  qsB.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button.qs-r'); if (!b) return;
+    var r = qsRows[+b.getAttribute('data-i')]; if (!r) return;
+    if (r.k === 'sw') { if (r.ok && !r.ok()) return; r.put(!r.get()); if (r.id !== 'hap') vib(10); refresh(); } else if (r.act) r.act();
+  });
+  function openQs() { qsOpen = true; qsBuild(); qs.classList.add('show'); qs.setAttribute('aria-hidden', 'false'); void qs.offsetHeight; qs.classList.add('in'); qsB.scrollTop = 0; qsPaint(); }
+  function closeQs() { qsOpen = false; qs.classList.remove('in'); qs.setAttribute('aria-hidden', 'true'); setTimeout(function () { if (!qsOpen) qs.classList.remove('show'); }, 320); }
+  D.getElementById('qs-back').addEventListener('click', closeQs);
+  D.addEventListener('keydown', function (e) { if (e.key === 'Escape' && qsOpen) closeQs(); });
+  window.QuickSettings = { open: openQs, close: closeQs };
 
   /* ---------- start-up ---------- */
   setDim(Q.dim); Q.apply(); refresh();
