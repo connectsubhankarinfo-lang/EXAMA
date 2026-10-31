@@ -36,14 +36,15 @@
   /* ---- <audio> / <video> / new Audio(): scale .volume by the app volume ---- */
   var HM = window.HTMLMediaElement && HTMLMediaElement.prototype, vd = HM && Object.getOwnPropertyDescriptor(HM, 'volume'), els = [];
   function live() { var out = []; els = els.filter(function (r) { var e = r.deref ? r.deref() : r; if (e) out.push(e); return !!e; }); return out; }
-  function one(el) { var r = el.__qr === undefined ? vd.get.call(el) : el.__qr; if (el.__qr === undefined) el.__qr = r; try { vd.set.call(el, cl(r * Q.eff())); } catch (e) { } }
+  function ex(el) { try { return !!(el.closest && el.closest('#native-player-container')); } catch (e) { return false; } }
+  function one(el) { var r = el.__qr === undefined ? vd.get.call(el) : el.__qr; if (el.__qr === undefined) el.__qr = r; try { vd.set.call(el, cl(r * (ex(el) ? 1 : Q.eff()))); } catch (e) { } }
   function reg(el) {
     if (el.__qreg) return; el.__qreg = 1; els.push(window.WeakRef ? new WeakRef(el) : el);
-    el.addEventListener('volumechange', function () { var e = Q.eff(); if (e > 0) { var exp = (el.__qr === undefined ? 1 : el.__qr) * e, cur = vd.get.call(el); if (Math.abs(cur - exp) > .01) el.__qr = cl(cur / e); } });
+    el.addEventListener('volumechange', function () { var e = Q.eff(); if (e > 0 && !ex(el)) { var exp = (el.__qr === undefined ? 1 : el.__qr) * e, cur = vd.get.call(el); if (Math.abs(cur - exp) > .01) el.__qr = cl(cur / e); } });
   }
   if (vd && vd.set && vd.get) {
     try {
-      Object.defineProperty(HM, 'volume', { configurable: true, enumerable: vd.enumerable, get: function () { return this.__qr === undefined ? vd.get.call(this) : this.__qr; }, set: function (v) { this.__qr = +v; reg(this); vd.set.call(this, cl(v * Q.eff())); } });
+      Object.defineProperty(HM, 'volume', { configurable: true, enumerable: vd.enumerable, get: function () { return this.__qr === undefined ? vd.get.call(this) : this.__qr; }, set: function (v) { this.__qr = +v; reg(this); vd.set.call(this, cl(v * (ex(this) ? 1 : Q.eff()))); } });
       var op = HM.play; HM.play = function () { try { if (Q.eff() < 1 || this.__qreg) { reg(this); one(this); } } catch (e) { } return op.apply(this, arguments); };
     } catch (e) { }
   }
@@ -70,11 +71,114 @@
     if (navigator.vibrate) { var ov = navigator.vibrate.bind(navigator); Object.defineProperty(navigator, 'vibrate', { configurable: true, writable: true, value: function (p) { return (Q.hap || Q.crit()) ? ov(p) : false; } }); Q.rawVibrate = ov; }
   } catch (e) { }
 
+  /* PRIVACY MODE (control panel). While ON the app can never use the camera or the microphone:
+     getUserMedia (and the old prefixed versions), speech recognition, camera-capture file inputs, call / proctoring / walkie-talkie video (Jitsi)
+     and the camera / microphone Permissions API are all refused, and anything already using them is shut down the moment it is switched on.
+     Saved on this device (exama_prv) so it stays on after a restart. */
+  Q.prv = g('exama_prv', '0') === '1';
+  var pvStreams = [], pvRecs = [], pvJitsi = [], pvToastAt = 0;
+  function pvErr() { return new DOMException('Privacy Mode is on', 'NotAllowedError'); }
+  function pvStop(s) { try { s.getTracks().forEach(function (t) { try { t.stop(); } catch (e) { } }); } catch (e) { } }
+  function pvNote() {
+    var n = Date.now(); if (n - pvToastAt < 3000) return; pvToastAt = n;
+    try { if (window.showToast) window.showToast('Privacy Mode is on', 'Camera and microphone are blocked. Turn it off in the control panel to use them.', 'info'); } catch (e) { }
+  }
+  /* camera / microphone streams */
+  try {
+    var pmd = navigator.mediaDevices;
+    if (pmd && pmd.getUserMedia) {
+      var pgum = pmd.getUserMedia.bind(pmd);
+      Object.defineProperty(pmd, 'getUserMedia', {
+        configurable: true, writable: true, value: function (c) {
+          if (Q.prv) { pvNote(); return Promise.reject(pvErr()); }
+          return pgum(c).then(function (s) {
+            if (Q.prv) { pvStop(s); throw pvErr(); }          /* switched on while the permission prompt was open */
+            pvStreams = pvStreams.filter(function (x) { return x.active; }); pvStreams.push(s); return s;
+          });
+        }
+      });
+    }
+  } catch (e) { }
+  try {
+    ['getUserMedia', 'webkitGetUserMedia', 'mozGetUserMedia'].forEach(function (k) {
+      if (typeof navigator[k] !== 'function') return;
+      var o = navigator[k].bind(navigator);
+      Object.defineProperty(navigator, k, {
+        configurable: true, writable: true, value: function (c, ok, bad) {
+          if (Q.prv) { pvNote(); if (typeof bad === 'function') setTimeout(function () { bad(pvErr()); }, 0); return; }
+          return o(c, function (s) { if (Q.prv) { pvStop(s); if (typeof bad === 'function') bad(pvErr()); return; } pvStreams.push(s); if (typeof ok === 'function') ok(s); }, bad);
+        }
+      });
+    });
+  } catch (e) { }
+  /* voice recognition (Nova, voice answers): behaves exactly like a denied microphone permission */
+  try {
+    [window.SpeechRecognition, window.webkitSpeechRecognition].forEach(function (C) {
+      var P = C && C.prototype; if (!P || !P.start || P.__pv) return;
+      var os = P.start; P.__pv = 1;
+      P.start = function () {
+        if (Q.prv) {
+          var me = this;
+          setTimeout(function () { try { var e = new Event('error'); e.error = 'not-allowed'; e.message = 'Privacy Mode is on'; me.dispatchEvent(e); me.dispatchEvent(new Event('end')); } catch (x) { } }, 0);
+          return;
+        }
+        pvRecs.push(this); if (pvRecs.length > 20) pvRecs.shift();
+        return os.apply(this, arguments);
+      };
+    });
+  } catch (e) { }
+  /* the browser's own camera / microphone permission state reads as "denied" while Privacy Mode is on */
+  try {
+    var ppm = navigator.permissions;
+    if (ppm && ppm.query) {
+      var pq = ppm.query.bind(ppm);
+      Object.defineProperty(ppm, 'query', {
+        configurable: true, writable: true, value: function (d) {
+          var n = d && d.name;
+          if (Q.prv && (n === 'camera' || n === 'microphone')) return Promise.resolve({ name: n, state: 'denied', onchange: null, addEventListener: function () { }, removeEventListener: function () { }, dispatchEvent: function () { return false; } });
+          return pq(d);
+        }
+      });
+    }
+  } catch (e) { }
+  /* calls, exam proctoring and the run walkie-talkie all use the Jitsi iframe, which asks the phone for camera / mic itself */
+  try {
+    var pjw = null;
+    var pjWrap = function (C) {
+      if (typeof C !== 'function' || C.__pv) return C;
+      var G = class extends C { constructor() { if (Q.prv) { pvNote(); throw pvErr(); } super(...arguments); pvJitsi.push(this); } };
+      G.__pv = 1; return G;
+    };
+    var pj0 = window.JitsiMeetExternalAPI; if (pj0) pjw = pjWrap(pj0);
+    Object.defineProperty(window, 'JitsiMeetExternalAPI', { configurable: true, enumerable: true, get: function () { return pjw; }, set: function (v) { pjw = pjWrap(v); } });
+  } catch (e) { }
+  /* "take a photo" file inputs open the camera app */
+  try {
+    D.addEventListener('click', function (e) {
+      var t = e.target;
+      if (Q.prv && t && t.tagName === 'INPUT' && t.type === 'file' && t.hasAttribute('capture')) { e.preventDefault(); e.stopImmediatePropagation(); pvNote(); }
+    }, true);
+  } catch (e) { }
+  /* the switch: turning it ON cuts off everything that is already using the camera or microphone */
+  Q.setPrv = function (v) {
+    v = !!v; if (v === Q.prv) return; Q.prv = v;
+    try { localStorage.setItem('exama_prv', v ? '1' : '0'); } catch (e) { }
+    if (v) {
+      try { if (window.WAC && window.WAC.st && !window.WAC.closing && window.WAC.end) window.WAC.end('privacy'); } catch (e) { }   /* hang up an active community call */
+      pvStreams.splice(0).forEach(pvStop);
+      pvRecs.splice(0).forEach(function (r) { try { r.abort(); } catch (e) { } });
+      pvJitsi.splice(0).forEach(function (a) { try { a.dispose(); } catch (e) { } });
+    } else {
+      try { window.dispatchEvent(new Event('resume')); } catch (e) { }   /* wakes Nova's "Hey Nova" listener, which had been told the mic was denied */
+    }
+  };
+
   var last = -1;
   Q.apply = function () {
     var e = Q.eff(); last = e;
     masters.forEach(function (gn) { try { var t = gn.context.currentTime; gn.gain.cancelScheduledValues(t); gn.gain.setTargetAtTime(e, t, .015); } catch (x) { try { gn.gain.value = e; } catch (y) { } } });
     if (vd) { try { D.querySelectorAll('audio,video').forEach(function (m) { if (e < 1 || m.__qreg) { reg(m); one(m); } }); } catch (x) { } live().forEach(one); }
+    try { if (Q.onApply) Q.onApply(); } catch (x) { }
   };
   setInterval(function () { if (Q.eff() !== last) Q.apply(); }, 400);   /* picks up alarm / SOS screens opening or closing */
 })();
@@ -323,7 +427,7 @@ html.dm .ns{background-color:rgba(255,255,255,0.55)!important}
 html.dm .sup-ov{background-color:rgba(255,255,255,0.6)!important}
 html.dm .sup-ds{background-color:rgba(255,255,255,0.55)!important}
 html.dm #sin-ov{background-color:rgba(255,255,255,0.5)!important}
-#qp-dim{position:fixed;inset:0;pointer-events:none;background:#000;opacity:0;z-index:2147483100;transition:opacity .2s}
+#qp-dim{position:fixed;inset:0;pointer-events:none;background:#000;opacity:0;z-index:2147483360;transition:opacity .2s}
 html.dm #qp-dim{background:#fff}
 </style>
 <script id="perf-tier">
@@ -37575,7 +37679,7 @@ function startRec(m) {
 function resumeWake(ms) { clearTimeout(timers.wake); timers.wake = setTimeout(function () { if (wantWake() && !rec) startRec('wake'); engSync(); updateOrb(); }, ms || 300); }
 function onErr(e) {
     var er = e && e.error;
-    if (er === 'not-allowed' || er === 'service-not-allowed') { denied = true; killRec(); updateOrb(); if (sheetOpen || pillOn()) { openSheet(); setState('idle', 'Mic blocked'); showAns('Microphone access is blocked. Allow it in your browser, or just type to Nova below.'); } return; }
+    if (er === 'not-allowed' || er === 'service-not-allowed') { denied = true; killRec(); updateOrb(); if (sheetOpen || pillOn()) { openSheet(); setState('idle', 'Mic blocked'); showAns(window.__qp && window.__qp.prv ? 'Privacy Mode is on, so the microphone is off. Turn it off in the control panel to talk, or just type to Nova below.' : 'Microphone access is blocked. Allow it in your browser, or just type to Nova below.'); } return; }
     if (er === 'language-not-supported' && LANG !== 'en-US') LANG = 'en-US';
 }
 function onEnd() {
@@ -45129,6 +45233,7 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
 </script>
 <style id="qp-css">
 /* CONTROL PANEL - Apple light (frosted glass, rounded modules, iOS colours) */
+/* brightness (#qp-dim) and eye-care tint (#qp-eye) sit ABOVE the panel (…200), the settings sheet (…250) and the calculator (…300) so they dim / warm those screens too */
 #qp-root{position:fixed;inset:0;z-index:2147483200;visibility:hidden;pointer-events:none;-webkit-tap-highlight-color:transparent;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 #qp-root.qp-vis{visibility:visible}#qp-root.qp-on{pointer-events:auto}
 #qp-scrim{position:absolute;inset:0;background:rgba(0,0,0,.26);opacity:0;transition:opacity .32s}
@@ -45198,7 +45303,7 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
 @media (prefers-reduced-motion:reduce){#qp-calc{transition:none}}
 </style>
 <style id="qs-css">
-#qp-eye{position:fixed;inset:0;pointer-events:none;z-index:2147483090;background:#ffa028;mix-blend-mode:multiply;opacity:0;transition:opacity .25s}
+#qp-eye{position:fixed;inset:0;pointer-events:none;z-index:2147483350;background:#ffa028;mix-blend-mode:multiply;opacity:0;transition:opacity .25s}
 #qs{position:fixed;inset:0;z-index:2147483250;display:none;flex-direction:column;background:#f2f2f7;color:#1c1c1e;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;opacity:0;transform:translateY(18px);transition:opacity .22s,transform .32s cubic-bezier(.32,.72,0,1)}
 #qs.show{display:flex}#qs.in{opacity:1;transform:none}
 .qs-h{flex:none;display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top,0px)) max(14px,env(safe-area-inset-right,0px)) 10px max(14px,env(safe-area-inset-left,0px));background:rgba(242,242,247,.88);-webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);border-bottom:.5px solid rgba(60,60,67,.18)}
@@ -45313,6 +45418,11 @@ div.qs-r.qs-slr{cursor:default;padding:10px 14px 12px;flex-direction:column;alig
   function setSnd(v) { Q.snd = !!v; if (Q.snd && Q.vol < .05) Q.vol = .7; set('exama_snd', Q.snd ? '1' : '0'); set('exama_vol', Math.round(Q.vol * 100)); Q.apply(); pubPrefs(); }
   function setVol(v) { Q.vol = cl(v, 0, 1); Q.snd = Q.vol > 0; set('exama_vol', Math.round(Q.vol * 100)); set('exama_snd', Q.snd ? '1' : '0'); Q.apply(); }
   function setHap(v) { Q.hap = !!v; set('exama_hap', Q.hap ? '1' : '0'); if (!Q.hap && Q.rawVibrate) Q.rawVibrate(0); else vib(20); }
+  function setPrv(v) {
+    Q.setPrv(v);
+    try { if (window.showToast) window.showToast(Q.prv ? 'Privacy Mode on' : 'Privacy Mode off', Q.prv ? 'Camera and microphone are blocked for the whole app.' : 'Camera and microphone can be used again.', 'info'); } catch (e) { }
+    refresh();
+  }
   function setDnd(v) { Q.dnd = !!v; set('exama_dnd', Q.dnd ? '1' : '0'); pubPrefs(); try { if (window.showToast) window.showToast(Q.dnd ? 'Do Not Disturb on' : 'Do Not Disturb off', Q.dnd ? 'Push notifications are paused. SOS alerts still come through.' : 'Push notifications are back on.', 'info'); } catch (e) { } }
   function awkOk() { return !!(navigator.wakeLock && navigator.wakeLock.request) || !!(window.median && window.median.screen); }
   function medianScreen(on) {
@@ -45330,7 +45440,7 @@ div.qs-r.qs-slr{cursor:default;padding:10px 14px 12px;flex-direction:column;alig
 
   var TILES = [
     { id: 'snd', ic: function () { return Q.snd ? 'fa-volume-high' : 'fa-volume-xmark'; }, lb: 'Sound', on: function () { return Q.snd; }, st: function () { return Q.snd ? 'On' : 'Muted'; }, act: function () { setSnd(!Q.snd); } },
-    { id: 'hap', ic: 'fa-wave-square', lb: 'Gesture', ok: function () { return !!Q.rawVibrate; }, on: function () { return Q.hap && !!Q.rawVibrate; }, st: function () { return !Q.rawVibrate ? 'Not supported' : Q.hap ? 'On' : 'Off'; }, act: function () { setHap(!Q.hap); } },
+    { id: 'prv', ic: function () { return Q.prv ? 'fa-user-shield' : 'fa-shield-halved'; }, lb: 'Privacy mode', on: function () { return Q.prv; }, st: function () { return Q.prv ? 'Cam & mic blocked' : 'Off'; }, act: function () { setPrv(!Q.prv); } },
     { id: 'awk', ic: 'fa-mug-hot', lb: 'Keep awake', ok: awkOk, on: function () { return Q.awk && awkOk(); }, st: function () { return !awkOk() ? 'Not supported' : Q.awk ? 'On' : 'Off'; }, act: function () { setAwake(!Q.awk); } },
     { id: 'dnd', ic: 'fa-moon', lb: 'Do Not Disturb', on: function () { return Q.dnd; }, st: function () { return Q.dnd ? 'On' : 'Off'; }, act: function () { setDnd(!Q.dnd); } },
     { id: 'eye', ic: 'fa-eye', lb: 'Eye care', on: function () { return Q.eye; }, st: function () { return Q.eye ? 'On' : 'Off'; }, act: function () { setEye(!Q.eye); } },
@@ -45692,6 +45802,7 @@ div.qs-r.qs-slr{cursor:default;padding:10px 14px 12px;flex-direction:column;alig
       ['Sound & vibration', [SW('snd', 'fa-volume-high', '#007aff', 'Sound', 'App sounds and notification sound', function () { return Q.snd; }, setSnd), SW('hap', 'fa-wave-square', '#ff2d55', 'Vibration', 'Haptic feedback on taps and alerts', function () { return Q.hap && !!Q.rawVibrate; }, setHap, function () { return !!Q.rawVibrate; })]],
       ['Display & comfort', [SW('eye', 'fa-eye', '#34c759', 'Eye care', 'Warm, soft screen tint for night reading', function () { return Q.eye; }, setEye), { k: 'seg', id: 'tint' },
         SW('awk', 'fa-mug-hot', '#ff9500', 'Keep screen awake', 'Stops the screen sleeping while the app is open', function () { return Q.awk && awkOk(); }, setAwake, awkOk)]],
+      ['Privacy', [SW('prv', 'fa-shield-halved', '#30b0c7', 'Privacy mode', 'Blocks the camera and microphone for the whole app', function () { return Q.prv; }, setPrv)]],
       ['Gestures', [SW('gst', 'fa-hand-pointer', '#5856d6', 'Gestures', 'Flip face-down to focus, long-press and edge swipe', function () { return Q.gst; }, setGst),
         SW('shk', 'fa-mobile-screen-button', '#af52de', 'Shake to talk', 'Shake the phone to talk to Nova hands-free', function () { return Q.shk; }, setShk, function () { return typeof W.DeviceMotionEvent !== 'undefined'; })]],
       ['Notifications', [SW('dnd', 'fa-moon', '#5e5ce6', 'Do Not Disturb', 'Pauses push notifications. SOS alerts always come through.', function () { return Q.dnd; }, setDnd)].concat(notif)],
@@ -45744,6 +45855,33 @@ div.qs-r.qs-slr{cursor:default;padding:10px 14px 12px;flex-direction:column;alig
   D.getElementById('qs-back').addEventListener('click', closeQs);
   D.addEventListener('keydown', function (e) { if (e.key === 'Escape' && qsOpen) closeQs(); });
   window.QuickSettings = { open: openQs, close: closeQs };
+
+  /* =====================================================================
+     LECTURE HUB: the player volume and the app volume are one and the same (two-way)
+     ===================================================================== */
+  var lhBusy = false, lhT = 0, lhSeen = null, lhSettle = 0;
+  function lhPlayer() { var p = window.vjsPlayer; if (!p) return null; try { if (p.isDisposed && p.isDisposed()) return null; } catch (e) { return null; } return p; }
+  function lhPush() {
+    var p = lhPlayer(); if (!p) return; var f = Q.snd ? Q.vol : 0;
+    try { var cur = p.muted() ? 0 : p.volume(); if (Math.abs(cur - f) < .01) return; } catch (e) { }
+    lhBusy = true; clearTimeout(lhT); lhT = setTimeout(function () { lhBusy = false; }, 150);
+    try { p.volume(f); if (f === 0) p.muted(true); else if (p.muted()) p.muted(false); } catch (e) { }
+  }
+  function lhPull() {
+    if (lhBusy) return; var p = lhPlayer(); if (!p) return; var v;
+    try { v = p.muted() ? 0 : p.volume(); } catch (e) { return; }
+    v = cl(+v || 0, 0, 1); if (Math.abs(v - (Q.snd ? Q.vol : 0)) < .02) return; setVol(v); refresh();
+  }
+  function lhAttach(p) {
+    lhSeen = p; lhSettle = Date.now() + 3500;
+    try {
+      p.on('volumechange', function () { if (p === lhSeen && Date.now() > lhSettle) lhPull(); });
+      p.on(['loadedmetadata', 'playing', 'ready'], function () { if (p === lhSeen && Date.now() < lhSettle + 1500) lhPush(); });
+    } catch (e) { }
+    lhPush();
+  }
+  Q.onApply = lhPush;
+  setInterval(function () { try { var p = lhPlayer(); if (p && p !== lhSeen) lhAttach(p); else if (!p) lhSeen = null; } catch (e) { } }, 500);
 
   /* ---------- start-up ---------- */
   setDim(Q.dim); Q.apply(); refresh();
