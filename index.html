@@ -2,6 +2,317 @@
 <html lang="en">
 
 <head>
+<script id="qp-boot">
+(function () {
+  var D = document, H = D.documentElement;
+  function g(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+  var Q = window.__qp = {
+    dark: g('exama_dark', '0') === '1', snd: g('exama_snd', '1') !== '0', vol: Math.max(0, Math.min(1, (+g('exama_vol', '100')) / 100)),
+    hap: g('exama_hap', '1') !== '0', dim: Math.max(0, Math.min(.6, (+g('exama_dim', '0')) / 100)), hooks: []
+  };
+  if (Q.dark) H.classList.add('dm');
+  /* alarms and SOS sirens must always be heard and felt, whatever the quick panel says */
+  Q.crit = function () {
+    var a = ['alarm-ring', 'sos-popup'];
+    for (var i = 0; i < a.length; i++) { var e = D.getElementById(a[i]); if (e && !e.classList.contains('hidden') && e.getClientRects().length) return true; }
+    return false;
+  };
+  Q.eff = function () { return Q.crit() ? 1 : (Q.snd ? Q.vol : 0); };
+  function cl(v) { return Math.max(0, Math.min(1, v)); }
+
+  /* ---- <audio> / <video> / new Audio(): scale .volume by the app volume ---- */
+  var HM = window.HTMLMediaElement && HTMLMediaElement.prototype, vd = HM && Object.getOwnPropertyDescriptor(HM, 'volume'), els = [];
+  function live() { var out = []; els = els.filter(function (r) { var e = r.deref ? r.deref() : r; if (e) out.push(e); return !!e; }); return out; }
+  function one(el) { var r = el.__qr === undefined ? vd.get.call(el) : el.__qr; if (el.__qr === undefined) el.__qr = r; try { vd.set.call(el, cl(r * Q.eff())); } catch (e) { } }
+  function reg(el) {
+    if (el.__qreg) return; el.__qreg = 1; els.push(window.WeakRef ? new WeakRef(el) : el);
+    el.addEventListener('volumechange', function () { var e = Q.eff(); if (e > 0) { var exp = (el.__qr === undefined ? 1 : el.__qr) * e, cur = vd.get.call(el); if (Math.abs(cur - exp) > .01) el.__qr = cl(cur / e); } });
+  }
+  if (vd && vd.set && vd.get) {
+    try {
+      Object.defineProperty(HM, 'volume', { configurable: true, enumerable: vd.enumerable, get: function () { return this.__qr === undefined ? vd.get.call(this) : this.__qr; }, set: function (v) { this.__qr = +v; reg(this); vd.set.call(this, cl(v * Q.eff())); } });
+      var op = HM.play; HM.play = function () { try { if (Q.eff() < 1 || this.__qreg) { reg(this); one(this); } } catch (e) { } return op.apply(this, arguments); };
+    } catch (e) { }
+  }
+  /* ---- Web Audio: every context gets one master gain in front of the speakers ---- */
+  var masters = [], BA = window.BaseAudioContext || window.AudioContext || window.webkitAudioContext;
+  try {
+    var dd = BA && Object.getOwnPropertyDescriptor(BA.prototype, 'destination');
+    if (dd && dd.get) Object.defineProperty(BA.prototype, 'destination', {
+      configurable: true, enumerable: dd.enumerable, get: function () {
+        var real = dd.get.call(this);
+        if (window.OfflineAudioContext && this instanceof OfflineAudioContext) return real;
+        if (!this.__qm) { try { var gn = this.createGain(); gn.gain.value = Q.eff(); gn.connect(real); this.__qm = gn; masters.push(gn); } catch (e) { return real; } }
+        return this.__qm;
+      }
+    });
+  } catch (e) { }
+  /* ---- speech (Nova voice fallback) ---- */
+  try {
+    var SS = window.SpeechSynthesis && SpeechSynthesis.prototype;
+    if (SS && SS.speak) { var os = SS.speak; SS.speak = function (u) { try { if (u && u.volume !== undefined) { if (u.__qv === undefined) u.__qv = u.volume; u.volume = cl(u.__qv * Q.eff()); } } catch (e) { } return os.call(this, u); }; }
+  } catch (e) { }
+  /* ---- vibration ---- */
+  try {
+    if (navigator.vibrate) { var ov = navigator.vibrate.bind(navigator); Object.defineProperty(navigator, 'vibrate', { configurable: true, writable: true, value: function (p) { return (Q.hap || Q.crit()) ? ov(p) : false; } }); Q.rawVibrate = ov; }
+  } catch (e) { }
+
+  var last = -1;
+  Q.apply = function () {
+    var e = Q.eff(); last = e;
+    masters.forEach(function (gn) { try { var t = gn.context.currentTime; gn.gain.cancelScheduledValues(t); gn.gain.setTargetAtTime(e, t, .015); } catch (x) { try { gn.gain.value = e; } catch (y) { } } });
+    if (vd) { try { D.querySelectorAll('audio,video').forEach(function (m) { if (e < 1 || m.__qreg) { reg(m); one(m); } }); } catch (x) { } live().forEach(one); }
+  };
+  setInterval(function () { if (Q.eff() !== last) Q.apply(); }, 400);   /* picks up alarm / SOS screens opening or closing */
+})();
+</script>
+<style id="qp-dark-css">
+/* DARK MODE: the whole page is flipped (invert + hue-rotate keeps colours recognisable), then photos, video, QR codes,
+   PDFs, strongly coloured headers / buttons and screens that are already dark are flipped back so they look as designed. */
+html.dm{filter:invert(1) hue-rotate(180deg);background:#eef2f7}
+html.dm body{background-color:#eef2f7!important}
+html.dm .sd-hdr,
+html.dm .tp2-hero,
+html.dm .gd-hero,
+html.dm .as-hero,
+html.dm .apt-hero,
+html.dm .apb-hero,
+html.dm .sg-hero,
+html.dm .st-hero,
+html.dm .nq-hero,
+html.dm .mw-hdr,
+html.dm .dk-hdr,
+html.dm .rm-hero,
+html.dm .ae-ov,
+html.dm .nc-ld,
+html.dm #ig-pop,
+html.dm #rt-map-hint,
+html.dm [data-dm-keep],
+html.dm [class~="bg-red-500"],
+html.dm [class~="from-red-500"],
+html.dm [class~="bg-red-600"],
+html.dm [class~="from-red-600"],
+html.dm [class~="bg-red-700"],
+html.dm [class~="from-red-700"],
+html.dm [class~="bg-red-800"],
+html.dm [class~="from-red-800"],
+html.dm [class~="bg-red-900"],
+html.dm [class~="from-red-900"],
+html.dm [class~="bg-orange-500"],
+html.dm [class~="from-orange-500"],
+html.dm [class~="bg-orange-600"],
+html.dm [class~="from-orange-600"],
+html.dm [class~="bg-orange-700"],
+html.dm [class~="from-orange-700"],
+html.dm [class~="bg-orange-800"],
+html.dm [class~="from-orange-800"],
+html.dm [class~="bg-orange-900"],
+html.dm [class~="from-orange-900"],
+html.dm [class~="bg-amber-500"],
+html.dm [class~="from-amber-500"],
+html.dm [class~="bg-amber-600"],
+html.dm [class~="from-amber-600"],
+html.dm [class~="bg-amber-700"],
+html.dm [class~="from-amber-700"],
+html.dm [class~="bg-amber-800"],
+html.dm [class~="from-amber-800"],
+html.dm [class~="bg-amber-900"],
+html.dm [class~="from-amber-900"],
+html.dm [class~="bg-yellow-500"],
+html.dm [class~="from-yellow-500"],
+html.dm [class~="bg-yellow-600"],
+html.dm [class~="from-yellow-600"],
+html.dm [class~="bg-yellow-700"],
+html.dm [class~="from-yellow-700"],
+html.dm [class~="bg-yellow-800"],
+html.dm [class~="from-yellow-800"],
+html.dm [class~="bg-yellow-900"],
+html.dm [class~="from-yellow-900"],
+html.dm [class~="bg-lime-500"],
+html.dm [class~="from-lime-500"],
+html.dm [class~="bg-lime-600"],
+html.dm [class~="from-lime-600"],
+html.dm [class~="bg-lime-700"],
+html.dm [class~="from-lime-700"],
+html.dm [class~="bg-lime-800"],
+html.dm [class~="from-lime-800"],
+html.dm [class~="bg-lime-900"],
+html.dm [class~="from-lime-900"],
+html.dm [class~="bg-green-500"],
+html.dm [class~="from-green-500"],
+html.dm [class~="bg-green-600"],
+html.dm [class~="from-green-600"],
+html.dm [class~="bg-green-700"],
+html.dm [class~="from-green-700"],
+html.dm [class~="bg-green-800"],
+html.dm [class~="from-green-800"],
+html.dm [class~="bg-green-900"],
+html.dm [class~="from-green-900"],
+html.dm [class~="bg-emerald-500"],
+html.dm [class~="from-emerald-500"],
+html.dm [class~="bg-emerald-600"],
+html.dm [class~="from-emerald-600"],
+html.dm [class~="bg-emerald-700"],
+html.dm [class~="from-emerald-700"],
+html.dm [class~="bg-emerald-800"],
+html.dm [class~="from-emerald-800"],
+html.dm [class~="bg-emerald-900"],
+html.dm [class~="from-emerald-900"],
+html.dm [class~="bg-teal-500"],
+html.dm [class~="from-teal-500"],
+html.dm [class~="bg-teal-600"],
+html.dm [class~="from-teal-600"],
+html.dm [class~="bg-teal-700"],
+html.dm [class~="from-teal-700"],
+html.dm [class~="bg-teal-800"],
+html.dm [class~="from-teal-800"],
+html.dm [class~="bg-teal-900"],
+html.dm [class~="from-teal-900"],
+html.dm [class~="bg-cyan-500"],
+html.dm [class~="from-cyan-500"],
+html.dm [class~="bg-cyan-600"],
+html.dm [class~="from-cyan-600"],
+html.dm [class~="bg-cyan-700"],
+html.dm [class~="from-cyan-700"],
+html.dm [class~="bg-cyan-800"],
+html.dm [class~="from-cyan-800"],
+html.dm [class~="bg-cyan-900"],
+html.dm [class~="from-cyan-900"],
+html.dm [class~="bg-sky-500"],
+html.dm [class~="from-sky-500"],
+html.dm [class~="bg-sky-600"],
+html.dm [class~="from-sky-600"],
+html.dm [class~="bg-sky-700"],
+html.dm [class~="from-sky-700"],
+html.dm [class~="bg-sky-800"],
+html.dm [class~="from-sky-800"],
+html.dm [class~="bg-sky-900"],
+html.dm [class~="from-sky-900"],
+html.dm [class~="bg-blue-500"],
+html.dm [class~="from-blue-500"],
+html.dm [class~="bg-blue-600"],
+html.dm [class~="from-blue-600"],
+html.dm [class~="bg-blue-700"],
+html.dm [class~="from-blue-700"],
+html.dm [class~="bg-blue-800"],
+html.dm [class~="from-blue-800"],
+html.dm [class~="bg-blue-900"],
+html.dm [class~="from-blue-900"],
+html.dm [class~="bg-indigo-500"],
+html.dm [class~="from-indigo-500"],
+html.dm [class~="bg-indigo-600"],
+html.dm [class~="from-indigo-600"],
+html.dm [class~="bg-indigo-700"],
+html.dm [class~="from-indigo-700"],
+html.dm [class~="bg-indigo-800"],
+html.dm [class~="from-indigo-800"],
+html.dm [class~="bg-indigo-900"],
+html.dm [class~="from-indigo-900"],
+html.dm [class~="bg-violet-500"],
+html.dm [class~="from-violet-500"],
+html.dm [class~="bg-violet-600"],
+html.dm [class~="from-violet-600"],
+html.dm [class~="bg-violet-700"],
+html.dm [class~="from-violet-700"],
+html.dm [class~="bg-violet-800"],
+html.dm [class~="from-violet-800"],
+html.dm [class~="bg-violet-900"],
+html.dm [class~="from-violet-900"],
+html.dm [class~="bg-purple-500"],
+html.dm [class~="from-purple-500"],
+html.dm [class~="bg-purple-600"],
+html.dm [class~="from-purple-600"],
+html.dm [class~="bg-purple-700"],
+html.dm [class~="from-purple-700"],
+html.dm [class~="bg-purple-800"],
+html.dm [class~="from-purple-800"],
+html.dm [class~="bg-purple-900"],
+html.dm [class~="from-purple-900"],
+html.dm [class~="bg-fuchsia-500"],
+html.dm [class~="from-fuchsia-500"],
+html.dm [class~="bg-fuchsia-600"],
+html.dm [class~="from-fuchsia-600"],
+html.dm [class~="bg-fuchsia-700"],
+html.dm [class~="from-fuchsia-700"],
+html.dm [class~="bg-fuchsia-800"],
+html.dm [class~="from-fuchsia-800"],
+html.dm [class~="bg-fuchsia-900"],
+html.dm [class~="from-fuchsia-900"],
+html.dm [class~="bg-pink-500"],
+html.dm [class~="from-pink-500"],
+html.dm [class~="bg-pink-600"],
+html.dm [class~="from-pink-600"],
+html.dm [class~="bg-pink-700"],
+html.dm [class~="from-pink-700"],
+html.dm [class~="bg-pink-800"],
+html.dm [class~="from-pink-800"],
+html.dm [class~="bg-pink-900"],
+html.dm [class~="from-pink-900"],
+html.dm [class~="bg-rose-500"],
+html.dm [class~="from-rose-500"],
+html.dm [class~="bg-rose-600"],
+html.dm [class~="from-rose-600"],
+html.dm [class~="bg-rose-700"],
+html.dm [class~="from-rose-700"],
+html.dm [class~="bg-rose-800"],
+html.dm [class~="from-rose-800"],
+html.dm [class~="bg-rose-900"],
+html.dm [class~="from-rose-900"],
+html.dm [class~="bg-black/5"],
+html.dm [class~="bg-black/10"],
+html.dm [class~="bg-black/20"],
+html.dm [class~="bg-black/30"],
+html.dm [class~="bg-black/40"],
+html.dm [class~="bg-black/50"],
+html.dm [class~="bg-black/60"],
+html.dm [class~="bg-black/70"],
+html.dm [class~="bg-black/80"],
+html.dm [class~="bg-black/90"],
+html.dm [class~="bg-black/95"],
+html.dm [class~="bg-gray-900/40"],
+html.dm [class~="bg-gray-900/50"],
+html.dm [class~="bg-gray-900/60"],
+html.dm [class~="bg-gray-900/70"],
+html.dm [class~="bg-gray-900/80"],
+html.dm [class~="bg-gray-900/90"],
+html.dm [class~="bg-gray-900/95"],
+html.dm [class~="bg-slate-900/35"],
+html.dm [class~="bg-slate-900/40"],
+html.dm [class~="bg-slate-900/50"],
+html.dm [class~="bg-slate-900/60"],
+html.dm [class~="bg-slate-900/70"],
+html.dm [class~="bg-slate-900/80"],
+html.dm [class~="bg-slate-900/90"],
+html.dm .wl-qr,
+html.dm #qp-root,
+html.dm [style*="url("],
+html.dm [style*="background-image"],
+html.dm img,
+html.dm video,
+html.dm picture,
+html.dm iframe,
+html.dm embed,
+html.dm object,
+html.dm #red-pen-canvas,
+html.dm #rtc-img,
+html.dm #ae-v-canvas,
+html.dm [id*="pdf"] canvas,
+html.dm [class*="pdf"] canvas{filter:invert(1) hue-rotate(180deg)}
+html.dm :is(.sd-hdr,.tp2-hero,.gd-hero,.as-hero,.apt-hero,.apb-hero,.sg-hero,.st-hero,.nq-hero,.mw-hdr,.dk-hdr,.rm-hero,.ae-ov,.nc-ld,#ig-pop,#rt-map-hint,[data-dm-keep],[class~="bg-red-500"],[class~="from-red-500"],[class~="bg-red-600"],[class~="from-red-600"],[class~="bg-red-700"],[class~="from-red-700"],[class~="bg-red-800"],[class~="from-red-800"],[class~="bg-red-900"],[class~="from-red-900"],[class~="bg-orange-500"],[class~="from-orange-500"],[class~="bg-orange-600"],[class~="from-orange-600"],[class~="bg-orange-700"],[class~="from-orange-700"],[class~="bg-orange-800"],[class~="from-orange-800"],[class~="bg-orange-900"],[class~="from-orange-900"],[class~="bg-amber-500"],[class~="from-amber-500"],[class~="bg-amber-600"],[class~="from-amber-600"],[class~="bg-amber-700"],[class~="from-amber-700"],[class~="bg-amber-800"],[class~="from-amber-800"],[class~="bg-amber-900"],[class~="from-amber-900"],[class~="bg-yellow-500"],[class~="from-yellow-500"],[class~="bg-yellow-600"],[class~="from-yellow-600"],[class~="bg-yellow-700"],[class~="from-yellow-700"],[class~="bg-yellow-800"],[class~="from-yellow-800"],[class~="bg-yellow-900"],[class~="from-yellow-900"],[class~="bg-lime-500"],[class~="from-lime-500"],[class~="bg-lime-600"],[class~="from-lime-600"],[class~="bg-lime-700"],[class~="from-lime-700"],[class~="bg-lime-800"],[class~="from-lime-800"],[class~="bg-lime-900"],[class~="from-lime-900"],[class~="bg-green-500"],[class~="from-green-500"],[class~="bg-green-600"],[class~="from-green-600"],[class~="bg-green-700"],[class~="from-green-700"],[class~="bg-green-800"],[class~="from-green-800"],[class~="bg-green-900"],[class~="from-green-900"],[class~="bg-emerald-500"],[class~="from-emerald-500"],[class~="bg-emerald-600"],[class~="from-emerald-600"],[class~="bg-emerald-700"],[class~="from-emerald-700"],[class~="bg-emerald-800"],[class~="from-emerald-800"],[class~="bg-emerald-900"],[class~="from-emerald-900"],[class~="bg-teal-500"],[class~="from-teal-500"],[class~="bg-teal-600"],[class~="from-teal-600"],[class~="bg-teal-700"],[class~="from-teal-700"],[class~="bg-teal-800"],[class~="from-teal-800"],[class~="bg-teal-900"],[class~="from-teal-900"],[class~="bg-cyan-500"],[class~="from-cyan-500"],[class~="bg-cyan-600"],[class~="from-cyan-600"],[class~="bg-cyan-700"],[class~="from-cyan-700"],[class~="bg-cyan-800"],[class~="from-cyan-800"],[class~="bg-cyan-900"],[class~="from-cyan-900"],[class~="bg-sky-500"],[class~="from-sky-500"],[class~="bg-sky-600"],[class~="from-sky-600"],[class~="bg-sky-700"],[class~="from-sky-700"],[class~="bg-sky-800"],[class~="from-sky-800"],[class~="bg-sky-900"],[class~="from-sky-900"],[class~="bg-blue-500"],[class~="from-blue-500"],[class~="bg-blue-600"],[class~="from-blue-600"],[class~="bg-blue-700"],[class~="from-blue-700"],[class~="bg-blue-800"],[class~="from-blue-800"],[class~="bg-blue-900"],[class~="from-blue-900"],[class~="bg-indigo-500"],[class~="from-indigo-500"],[class~="bg-indigo-600"],[class~="from-indigo-600"],[class~="bg-indigo-700"],[class~="from-indigo-700"],[class~="bg-indigo-800"],[class~="from-indigo-800"],[class~="bg-indigo-900"],[class~="from-indigo-900"],[class~="bg-violet-500"],[class~="from-violet-500"],[class~="bg-violet-600"],[class~="from-violet-600"],[class~="bg-violet-700"],[class~="from-violet-700"],[class~="bg-violet-800"],[class~="from-violet-800"],[class~="bg-violet-900"],[class~="from-violet-900"],[class~="bg-purple-500"],[class~="from-purple-500"],[class~="bg-purple-600"],[class~="from-purple-600"],[class~="bg-purple-700"],[class~="from-purple-700"],[class~="bg-purple-800"],[class~="from-purple-800"],[class~="bg-purple-900"],[class~="from-purple-900"],[class~="bg-fuchsia-500"],[class~="from-fuchsia-500"],[class~="bg-fuchsia-600"],[class~="from-fuchsia-600"],[class~="bg-fuchsia-700"],[class~="from-fuchsia-700"],[class~="bg-fuchsia-800"],[class~="from-fuchsia-800"],[class~="bg-fuchsia-900"],[class~="from-fuchsia-900"],[class~="bg-pink-500"],[class~="from-pink-500"],[class~="bg-pink-600"],[class~="from-pink-600"],[class~="bg-pink-700"],[class~="from-pink-700"],[class~="bg-pink-800"],[class~="from-pink-800"],[class~="bg-pink-900"],[class~="from-pink-900"],[class~="bg-rose-500"],[class~="from-rose-500"],[class~="bg-rose-600"],[class~="from-rose-600"],[class~="bg-rose-700"],[class~="from-rose-700"],[class~="bg-rose-800"],[class~="from-rose-800"],[class~="bg-rose-900"],[class~="from-rose-900"],[class~="bg-black/5"],[class~="bg-black/10"],[class~="bg-black/20"],[class~="bg-black/30"],[class~="bg-black/40"],[class~="bg-black/50"],[class~="bg-black/60"],[class~="bg-black/70"],[class~="bg-black/80"],[class~="bg-black/90"],[class~="bg-black/95"],[class~="bg-gray-900/40"],[class~="bg-gray-900/50"],[class~="bg-gray-900/60"],[class~="bg-gray-900/70"],[class~="bg-gray-900/80"],[class~="bg-gray-900/90"],[class~="bg-gray-900/95"],[class~="bg-slate-900/35"],[class~="bg-slate-900/40"],[class~="bg-slate-900/50"],[class~="bg-slate-900/60"],[class~="bg-slate-900/70"],[class~="bg-slate-900/80"],[class~="bg-slate-900/90"],.wl-qr,#qp-root,[style*="url("],[style*="background-image"]) :is(.sd-hdr,.tp2-hero,.gd-hero,.as-hero,.apt-hero,.apb-hero,.sg-hero,.st-hero,.nq-hero,.mw-hdr,.dk-hdr,.rm-hero,.ae-ov,.nc-ld,#ig-pop,#rt-map-hint,[data-dm-keep],[class~="bg-red-500"],[class~="from-red-500"],[class~="bg-red-600"],[class~="from-red-600"],[class~="bg-red-700"],[class~="from-red-700"],[class~="bg-red-800"],[class~="from-red-800"],[class~="bg-red-900"],[class~="from-red-900"],[class~="bg-orange-500"],[class~="from-orange-500"],[class~="bg-orange-600"],[class~="from-orange-600"],[class~="bg-orange-700"],[class~="from-orange-700"],[class~="bg-orange-800"],[class~="from-orange-800"],[class~="bg-orange-900"],[class~="from-orange-900"],[class~="bg-amber-500"],[class~="from-amber-500"],[class~="bg-amber-600"],[class~="from-amber-600"],[class~="bg-amber-700"],[class~="from-amber-700"],[class~="bg-amber-800"],[class~="from-amber-800"],[class~="bg-amber-900"],[class~="from-amber-900"],[class~="bg-yellow-500"],[class~="from-yellow-500"],[class~="bg-yellow-600"],[class~="from-yellow-600"],[class~="bg-yellow-700"],[class~="from-yellow-700"],[class~="bg-yellow-800"],[class~="from-yellow-800"],[class~="bg-yellow-900"],[class~="from-yellow-900"],[class~="bg-lime-500"],[class~="from-lime-500"],[class~="bg-lime-600"],[class~="from-lime-600"],[class~="bg-lime-700"],[class~="from-lime-700"],[class~="bg-lime-800"],[class~="from-lime-800"],[class~="bg-lime-900"],[class~="from-lime-900"],[class~="bg-green-500"],[class~="from-green-500"],[class~="bg-green-600"],[class~="from-green-600"],[class~="bg-green-700"],[class~="from-green-700"],[class~="bg-green-800"],[class~="from-green-800"],[class~="bg-green-900"],[class~="from-green-900"],[class~="bg-emerald-500"],[class~="from-emerald-500"],[class~="bg-emerald-600"],[class~="from-emerald-600"],[class~="bg-emerald-700"],[class~="from-emerald-700"],[class~="bg-emerald-800"],[class~="from-emerald-800"],[class~="bg-emerald-900"],[class~="from-emerald-900"],[class~="bg-teal-500"],[class~="from-teal-500"],[class~="bg-teal-600"],[class~="from-teal-600"],[class~="bg-teal-700"],[class~="from-teal-700"],[class~="bg-teal-800"],[class~="from-teal-800"],[class~="bg-teal-900"],[class~="from-teal-900"],[class~="bg-cyan-500"],[class~="from-cyan-500"],[class~="bg-cyan-600"],[class~="from-cyan-600"],[class~="bg-cyan-700"],[class~="from-cyan-700"],[class~="bg-cyan-800"],[class~="from-cyan-800"],[class~="bg-cyan-900"],[class~="from-cyan-900"],[class~="bg-sky-500"],[class~="from-sky-500"],[class~="bg-sky-600"],[class~="from-sky-600"],[class~="bg-sky-700"],[class~="from-sky-700"],[class~="bg-sky-800"],[class~="from-sky-800"],[class~="bg-sky-900"],[class~="from-sky-900"],[class~="bg-blue-500"],[class~="from-blue-500"],[class~="bg-blue-600"],[class~="from-blue-600"],[class~="bg-blue-700"],[class~="from-blue-700"],[class~="bg-blue-800"],[class~="from-blue-800"],[class~="bg-blue-900"],[class~="from-blue-900"],[class~="bg-indigo-500"],[class~="from-indigo-500"],[class~="bg-indigo-600"],[class~="from-indigo-600"],[class~="bg-indigo-700"],[class~="from-indigo-700"],[class~="bg-indigo-800"],[class~="from-indigo-800"],[class~="bg-indigo-900"],[class~="from-indigo-900"],[class~="bg-violet-500"],[class~="from-violet-500"],[class~="bg-violet-600"],[class~="from-violet-600"],[class~="bg-violet-700"],[class~="from-violet-700"],[class~="bg-violet-800"],[class~="from-violet-800"],[class~="bg-violet-900"],[class~="from-violet-900"],[class~="bg-purple-500"],[class~="from-purple-500"],[class~="bg-purple-600"],[class~="from-purple-600"],[class~="bg-purple-700"],[class~="from-purple-700"],[class~="bg-purple-800"],[class~="from-purple-800"],[class~="bg-purple-900"],[class~="from-purple-900"],[class~="bg-fuchsia-500"],[class~="from-fuchsia-500"],[class~="bg-fuchsia-600"],[class~="from-fuchsia-600"],[class~="bg-fuchsia-700"],[class~="from-fuchsia-700"],[class~="bg-fuchsia-800"],[class~="from-fuchsia-800"],[class~="bg-fuchsia-900"],[class~="from-fuchsia-900"],[class~="bg-pink-500"],[class~="from-pink-500"],[class~="bg-pink-600"],[class~="from-pink-600"],[class~="bg-pink-700"],[class~="from-pink-700"],[class~="bg-pink-800"],[class~="from-pink-800"],[class~="bg-pink-900"],[class~="from-pink-900"],[class~="bg-rose-500"],[class~="from-rose-500"],[class~="bg-rose-600"],[class~="from-rose-600"],[class~="bg-rose-700"],[class~="from-rose-700"],[class~="bg-rose-800"],[class~="from-rose-800"],[class~="bg-rose-900"],[class~="from-rose-900"],[class~="bg-black/5"],[class~="bg-black/10"],[class~="bg-black/20"],[class~="bg-black/30"],[class~="bg-black/40"],[class~="bg-black/50"],[class~="bg-black/60"],[class~="bg-black/70"],[class~="bg-black/80"],[class~="bg-black/90"],[class~="bg-black/95"],[class~="bg-gray-900/40"],[class~="bg-gray-900/50"],[class~="bg-gray-900/60"],[class~="bg-gray-900/70"],[class~="bg-gray-900/80"],[class~="bg-gray-900/90"],[class~="bg-gray-900/95"],[class~="bg-slate-900/35"],[class~="bg-slate-900/40"],[class~="bg-slate-900/50"],[class~="bg-slate-900/60"],[class~="bg-slate-900/70"],[class~="bg-slate-900/80"],[class~="bg-slate-900/90"],.wl-qr,#qp-root,[style*="url("],[style*="background-image"],img,video,picture,iframe,embed,object,canvas){filter:none}
+/* dim popup backdrops: a dark scrim becomes a light one before the flip, so it ends up dark */
+html.dm .dl-overlay{background-color:rgba(255,255,255,0.5)!important}
+html.dm #tp-overlay{background-color:rgba(255,255,255,0.35)!important}
+html.dm .pop-ov{background-color:rgba(255,255,255,0.38)!important}
+html.dm .exm-ov{background-color:rgba(255,255,255,0.5)!important}
+html.dm #forgot-pass-modal{background-color:rgba(255,255,255,0.42)!important}
+html.dm #nova-sheet .nv-scrim{background-color:rgba(255,255,255,0.28)!important}
+html.dm .ns{background-color:rgba(255,255,255,0.55)!important}
+html.dm .sup-ov{background-color:rgba(255,255,255,0.6)!important}
+html.dm .sup-ds{background-color:rgba(255,255,255,0.55)!important}
+html.dm #sin-ov{background-color:rgba(255,255,255,0.5)!important}
+#qp-dim{position:fixed;inset:0;pointer-events:none;background:#000;opacity:0;z-index:2147483100;transition:opacity .2s}
+html.dm #qp-dim{background:#fff}
+</style>
 <script id="perf-tier">
 /* Adaptive performance: picks high / mid / low from the device, then keeps watching real scroll smoothness and steps DOWN if the phone struggles.
    Override: add ?perf=low | mid | high to the address (?perf=auto resets). */
@@ -29861,6 +30172,8 @@ YOUR DIRECTIVES:
 
             document.getElementById('app').addEventListener('touchstart', (e) => {
                 if (isRefreshing || tpIsOpen() || (window.gestureLocked && window.gestureLocked())) return;
+                // header strip of the dashboards belongs to the quick-settings panel, not to pull-to-refresh
+                if (window.qpHeaderTouch && window.qpHeaderTouch(e)) return;
 
                 // --- NEW UX FIX: DISABLE PULL-TO-REFRESH IN SPECIFIC VIEWS ---
                 const isStudentActive = !document.getElementById('student-view').classList.contains('hidden-view');
@@ -44780,6 +45093,256 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
       if (window.rtdb && key !== m + pre()) start(m);
     } catch (e) { }
   }, 3000);
+})();
+</script>
+<style id="qp-css">
+#qp-root{position:fixed;inset:0;z-index:2147483200;visibility:hidden;pointer-events:none;-webkit-tap-highlight-color:transparent;font-family:inherit}
+#qp-root.qp-vis{visibility:visible}#qp-root.qp-on{pointer-events:auto}
+#qp-scrim{position:absolute;inset:0;background:rgba(2,6,23,.58);opacity:0;transition:opacity .32s}
+#qp-panel{position:absolute;left:0;right:0;top:0;margin:0 auto;width:100%;max-width:560px;box-sizing:border-box;color:#fff;touch-action:none;will-change:transform;
+ padding:calc(16px + env(safe-area-inset-top,0px)) 16px 10px;border-radius:0 0 30px 30px;background:rgba(15,23,42,.97);border:1px solid rgba(255,255,255,.08);border-top:0;
+ box-shadow:0 30px 60px -24px rgba(0,0,0,.7);transform:translateY(-110%);transition:transform .34s cubic-bezier(.32,.72,0,1)}
+#qp-root.qp-drag #qp-panel,#qp-root.qp-drag #qp-scrim{transition:none}
+.qp-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.qp-time{display:flex;flex-direction:column;line-height:1.1}.qp-time b{font-size:30px;font-weight:800;letter-spacing:-.02em}.qp-time span{font-size:12px;font-weight:700;color:#94a3b8;margin-top:3px}
+.qp-acts{display:flex;gap:8px}
+.qp-ab{width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.1);color:#fff;font-size:15px;display:grid;place-items:center;transition:transform .15s,background .2s}
+.qp-ab:active{transform:scale(.88)}.qp-ab:hover{background:rgba(255,255,255,.16)}
+.qp-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}
+.qp-t{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:92px;padding:12px 4px;border-radius:24px;border:1px solid transparent;background:rgba(255,255,255,.07);color:#fff;font:inherit;text-align:center;transition:background .2s,border-color .2s,transform .15s}
+.qp-t:active{transform:scale(.94)}
+.qp-t .ic{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-size:17px;background:rgba(255,255,255,.12);transition:background .2s}
+.qp-t b{font-size:12px;font-weight:800;line-height:1.1}.qp-t small{font-size:10px;font-weight:700;color:#94a3b8;line-height:1}
+.qp-t.on{background:rgba(99,102,241,.2);border-color:rgba(129,140,248,.55)}.qp-t.on .ic{background:#6366f1}.qp-t.on small{color:#c7d2fe}
+.qp-t.off{opacity:.45;pointer-events:none}
+.qp-sls{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.qp-sl{position:relative;height:48px;border-radius:24px;background:rgba(255,255,255,.1);overflow:hidden;touch-action:none;cursor:pointer;--p:100%;outline:none}
+.qp-sl::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p);background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:24px}
+.qp-sl:focus-visible{box-shadow:0 0 0 2px #a5b4fc}
+.qp-sl i{position:absolute;left:17px;top:50%;transform:translateY(-50%);z-index:1;font-size:16px;color:#fff;pointer-events:none}
+.qp-sl span{position:absolute;right:16px;top:50%;transform:translateY(-50%);z-index:1;font-size:12px;font-weight:800;color:#fff;pointer-events:none}
+.qp-grab{display:flex;justify-content:center;padding:14px 0 6px}.qp-grab i{width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.3)}
+html.dm #qp-root{filter:invert(1) hue-rotate(180deg)}
+@media (prefers-reduced-motion:reduce){#qp-panel,#qp-scrim{transition:none}}
+</style>
+<div id="qp-dim" aria-hidden="true"></div>
+<div id="qp-root" aria-hidden="true">
+  <div id="qp-scrim"></div>
+  <section id="qp-panel" role="dialog" aria-label="Quick settings">
+    <div class="qp-top"><div class="qp-time"><b id="qp-clock"></b><span id="qp-date"></span></div>
+      <div class="qp-acts"><button type="button" class="qp-ab" id="qp-gear" aria-label="Settings"><i class="fa-solid fa-gear"></i></button></div></div>
+    <div class="qp-tiles" id="qp-tiles"></div>
+    <div class="qp-sls">
+      <div class="qp-sl" id="qp-bright" role="slider" tabindex="0" aria-label="Screen brightness" aria-valuemin="40" aria-valuemax="100"><i class="fa-solid fa-sun"></i><span></span></div>
+      <div class="qp-sl" id="qp-vol" role="slider" tabindex="0" aria-label="App volume" aria-valuemin="0" aria-valuemax="100"><i class="fa-solid fa-volume-high"></i><span></span></div>
+    </div>
+    <div class="qp-grab"><i></i></div>
+  </section>
+</div>
+<script id="qp-js">
+(function () {
+  var D = document, H = D.documentElement, Q = window.__qp; if (!Q) return;
+  var root = D.getElementById('qp-root'), panel = D.getElementById('qp-panel'), scrim = D.getElementById('qp-scrim'), dim = D.getElementById('qp-dim');
+  var tilesEl = D.getElementById('qp-tiles'), bright = D.getElementById('qp-bright'), vol = D.getElementById('qp-vol');
+  function set(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+  function cl(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function vib(n) { try { if (Q.hap && navigator.vibrate) navigator.vibrate(n); } catch (e) { } }
+  var openState = false, H0 = 0, hideT = 0, awake = false, wl = null;
+
+  /* ---------- state ---------- */
+  /* screens that are ALREADY dark (e.g. run tracker, video popups) are marked so dark mode leaves them as designed */
+  var FLIPSEL = '.dl-overlay,#tp-overlay,.pop-ov,.exm-ov,#forgot-pass-modal,#nova-sheet .nv-scrim,.ns,.sup-ov,.sup-ds,#sin-ov';
+  function rgbaOf(c) {
+    var m = /rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)/.exec(c), al;
+    if (m) { al = m[4] === undefined ? 1 : (m[4].indexOf('%') > 0 ? parseFloat(m[4]) / 100 : parseFloat(m[4])); return [+m[1], +m[2], +m[3], al]; }
+    m = /color\(\s*srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)/.exec(c);
+    if (m) { al = m[4] === undefined ? 1 : (m[4].indexOf('%') > 0 ? parseFloat(m[4]) / 100 : parseFloat(m[4])); return [m[1] * 255, m[2] * 255, m[3] * 255, al]; }
+    return null;
+  }
+  function lumOf(cs) {
+    var cols = [], bc = rgbaOf(cs.backgroundColor || ''); if (bc && bc[3] >= .8) cols.push(bc);
+    var bi = cs.backgroundImage || ''; if (bi !== 'none') (bi.match(/rgba?\([^)]*\)|color\([^)]*\)/g) || []).forEach(function (c) { var x = rgbaOf(c); if (x && x[3] >= .8) cols.push(x); });
+    if (!cols.length) return 1; var s = 0; cols.forEach(function (c) { s += (.2126 * c[0] + .7152 * c[1] + .0722 * c[2]) / 255; }); return s / cols.length;
+  }
+  function dmScan() {
+    if (!Q.dark) return;
+    var c = D.querySelectorAll('#app > *, body > *, [id$="-modal"], [id$="-view"], [id$="-overlay"], .sos-ov, .ae-ov, .exm-ov');
+    for (var i = 0; i < c.length; i++) {
+      var e = c[i], k = false; if (e.tagName === 'SCRIPT' || e.tagName === 'STYLE' || (e.id && e.id.indexOf('qp-') === 0)) continue;
+      if (e.getClientRects().length && !(e.matches && e.matches(FLIPSEL))) { var cs = getComputedStyle(e); k = lumOf(cs) < .22 && (cs.position === 'fixed' || cs.position === 'absolute' || e.parentElement === D.body || (e.parentElement && e.parentElement.id === 'app')); }
+      if (k) { if (!e.hasAttribute('data-dm-keep')) e.setAttribute('data-dm-keep', ''); } else if (e.hasAttribute('data-dm-keep')) e.removeAttribute('data-dm-keep');
+    }
+  }
+  var dmo = null, dmt = 0, dmi = 0;
+  function dmOn() {
+    dmScan(); if (dmo || !D.body) return;
+    dmo = new MutationObserver(function () { if (!dmt) dmt = setTimeout(function () { dmt = 0; dmScan(); }, 200); });
+    dmo.observe(D.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden'] });
+    dmi = setInterval(dmScan, 2500);
+  }
+  function dmOff() { if (dmo) { dmo.disconnect(); dmo = null; } clearInterval(dmi); D.querySelectorAll('[data-dm-keep]').forEach(function (e) { e.removeAttribute('data-dm-keep'); }); }
+  function setDark(v) { Q.dark = !!v; H.classList.toggle('dm', Q.dark); set('exama_dark', Q.dark ? '1' : '0'); if (Q.dark) dmOn(); else dmOff(); }
+  function setDim(d) { Q.dim = cl(d, 0, .6); dim.style.opacity = Q.dim; set('exama_dim', Math.round(Q.dim * 100)); }
+  function setSnd(v) { Q.snd = !!v; if (Q.snd && Q.vol < .05) Q.vol = .7; set('exama_snd', Q.snd ? '1' : '0'); set('exama_vol', Math.round(Q.vol * 100)); Q.apply(); }
+  function setVol(v) { Q.vol = cl(v, 0, 1); Q.snd = Q.vol > 0; set('exama_vol', Math.round(Q.vol * 100)); set('exama_snd', Q.snd ? '1' : '0'); Q.apply(); }
+  function setHap(v) { Q.hap = !!v; set('exama_hap', Q.hap ? '1' : '0'); if (!Q.hap && Q.rawVibrate) Q.rawVibrate(0); else vib(20); }
+  async function setAwake(v) {
+    try {
+      if (v) { wl = await navigator.wakeLock.request('screen'); awake = true; wl.addEventListener('release', function () { if (wl === this) { wl = null; } }); }
+      else { awake = false; if (wl) { await wl.release(); } wl = null; }
+    } catch (e) { awake = false; wl = null; }
+    refresh();
+  }
+  D.addEventListener('visibilitychange', function () { if (awake && !wl && D.visibilityState === 'visible') setAwake(true); });
+  function fsOn() { return !!(D.fullscreenElement || D.webkitFullscreenElement); }
+  function toggleFs() {
+    try { if (fsOn()) (D.exitFullscreen || D.webkitExitFullscreen).call(D); else (H.requestFullscreen || H.webkitRequestFullscreen).call(H); } catch (e) { }
+  }
+  D.addEventListener('fullscreenchange', refresh);
+
+  var TILES = [
+    { id: 'dark', ic: 'fa-moon', lb: 'Dark mode', on: function () { return Q.dark; }, st: function () { return Q.dark ? 'On' : 'Off'; }, act: function () { setDark(!Q.dark); } },
+    { id: 'snd', ic: function () { return Q.snd ? 'fa-volume-high' : 'fa-volume-xmark'; }, lb: 'Sound', on: function () { return Q.snd; }, st: function () { return Q.snd ? 'On' : 'Muted'; }, act: function () { setSnd(!Q.snd); } },
+    { id: 'hap', ic: 'fa-wave-square', lb: 'Vibration', ok: function () { return !!Q.rawVibrate; }, on: function () { return Q.hap && !!Q.rawVibrate; }, st: function () { return !Q.rawVibrate ? 'Not supported' : Q.hap ? 'On' : 'Off'; }, act: function () { setHap(!Q.hap); } },
+    { id: 'awk', ic: 'fa-mug-hot', lb: 'Keep awake', ok: function () { return !!(navigator.wakeLock && navigator.wakeLock.request); }, on: function () { return awake; }, st: function () { return !(navigator.wakeLock && navigator.wakeLock.request) ? 'Not supported' : awake ? 'On' : 'Off'; }, act: function () { setAwake(!awake); } },
+    { id: 'fs', ic: function () { return fsOn() ? 'fa-compress' : 'fa-expand'; }, lb: 'Full screen', ok: function () { return !!(H.requestFullscreen || H.webkitRequestFullscreen); }, on: fsOn, st: function () { return !(H.requestFullscreen || H.webkitRequestFullscreen) ? 'Not supported' : fsOn() ? 'On' : 'Off'; }, act: toggleFs },
+    { id: 'rld', ic: 'fa-rotate-right', lb: 'Refresh app', on: function () { return false; }, st: function () { return 'Reload'; }, act: function () { vib(30); setTimeout(function () { location.reload(); }, 150); } }
+  ];
+  tilesEl.innerHTML = TILES.map(function (t) { return '<button type="button" class="qp-t" data-t="' + t.id + '"><span class="ic"><i class="fa-solid"></i></span><b>' + t.lb + '</b><small></small></button>'; }).join('');
+  tilesEl.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('.qp-t'); if (!b) return;
+    var t = TILES.filter(function (x) { return x.id === b.dataset.t; })[0]; if (!t || (t.ok && !t.ok())) return;
+    t.act(); refresh(); if (t.id !== 'rld' && t.id !== 'hap') vib(10);
+  });
+  function setSl(el, f, txt) { el.style.setProperty('--p', (f * 100) + '%'); el.querySelector('span').textContent = txt; el.setAttribute('aria-valuenow', Math.round(f * 100)); }
+  function refresh() {
+    TILES.forEach(function (t) {
+      var b = tilesEl.querySelector('[data-t="' + t.id + '"]'); if (!b) return;
+      var on = t.on(), ic = typeof t.ic === 'function' ? t.ic() : t.ic;
+      b.classList.toggle('on', !!on); b.classList.toggle('off', !!(t.ok && !t.ok()));
+      b.querySelector('i').className = 'fa-solid ' + ic; b.querySelector('small').textContent = t.st(); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var bf = 1 - Q.dim / .6; setSl(bright, bf, Math.round(40 + bf * 60) + '%');
+    var vf = Q.snd ? Q.vol : 0; setSl(vol, vf, Math.round(vf * 100) + '%');
+    vol.querySelector('i').className = 'fa-solid ' + (vf === 0 ? 'fa-volume-xmark' : vf < .5 ? 'fa-volume-low' : 'fa-volume-high');
+  }
+
+  /* ---------- sliders (touch + mouse + keyboard) ---------- */
+  function slider(el, get, put, done) {
+    function at(e) { var r = el.getBoundingClientRect(); return cl((e.clientX - r.left) / r.width, 0, 1); }
+    var down = false;
+    el.addEventListener('pointerdown', function (e) { down = true; try { el.setPointerCapture(e.pointerId); } catch (x) { } put(at(e)); refresh(); });
+    el.addEventListener('pointermove', function (e) { if (down) { put(at(e)); refresh(); } });
+    function up() { if (!down) return; down = false; if (done) done(); }
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    el.addEventListener('keydown', function (e) { var d = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? .05 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -.05 : 0; if (d) { e.preventDefault(); put(cl(get() + d, 0, 1)); refresh(); if (done) done(); } });
+  }
+  slider(bright, function () { return 1 - Q.dim / .6; }, function (f) { setDim((1 - cl(f, 0, 1)) * .6); });
+  var AC = null;
+  function tick() {
+    try { if (!Q.snd || Q.vol <= 0) return; AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume();
+      var o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime; o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.12, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + .16);
+      o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + .18); } catch (e) { }
+  }
+  slider(vol, function () { return Q.snd ? Q.vol : 0; }, function (f) { setVol(f); }, tick);
+
+  /* ---------- panel open / close ---------- */
+  function clock() {
+    var n = new Date();
+    D.getElementById('qp-clock').textContent = n.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    D.getElementById('qp-date').textContent = n.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
+  }
+  var clk = 0;
+  function measure() { H0 = panel.getBoundingClientRect().height || 360; }
+  function show(on) { root.classList.toggle('qp-vis', on); root.setAttribute('aria-hidden', on ? 'false' : 'true'); }
+  function reveal(px) { px = cl(px, 0, H0); panel.style.transform = 'translateY(' + (px - H0 - 2) + 'px)'; scrim.style.opacity = (px / H0).toFixed(3); return px; }
+  function openPanel() {
+    clearTimeout(hideT); measure(); refresh(); clock(); clearInterval(clk); clk = setInterval(clock, 15000);
+    var g = D.getElementById('qp-gear'); g.style.display = window.currentRole ? '' : 'none';
+    show(true); root.classList.remove('qp-drag'); root.classList.add('qp-on');
+    void panel.offsetHeight; panel.style.transform = 'translateY(0)'; scrim.style.opacity = 1; openState = true; vib(12);
+  }
+  function closePanel() {
+    openState = false; clearInterval(clk); root.classList.remove('qp-on', 'qp-drag');
+    panel.style.transform = 'translateY(' + (-H0 - 2) + 'px)'; scrim.style.opacity = 0;
+    clearTimeout(hideT); hideT = setTimeout(function () { if (!openState) show(false); }, 380);
+  }
+  window.QuickPanel = { open: openPanel, close: closePanel, toggle: function () { openState ? closePanel() : openPanel(); } };
+  scrim.addEventListener('click', closePanel);
+  D.getElementById('qp-gear').addEventListener('click', function () { closePanel(); setTimeout(function () { try { if (window.openSettingsMenu) window.openSettingsMenu(); } catch (e) { } }, 260); });
+  D.addEventListener('keydown', function (e) { if (e.key === 'Escape' && openState) closePanel(); });
+
+  /* ---------- the pull-down gesture ---------- */
+  var BLOCK = /chat|math-workout|session-timer|video-watch|active-exam|peer|wallet|quiz/;
+  function atTop(el, stop) {
+    for (var n = el; n && n !== D.body && n !== H; n = n.parentElement) {
+      var oy = getComputedStyle(n).overflowY;
+      if ((oy === 'auto' || oy === 'scroll' || oy === 'overlay') && n.scrollHeight > n.clientHeight + 1 && n.scrollTop > 1) return false;
+      if (n === stop) break;
+    }
+    return true;
+  }
+  /* dashboards: only the header starts it (the rest of the dashboard keeps pull-to-refresh).  other screens: anywhere, like pull-to-refresh */
+  function allowed(tg) {
+    if (!tg || !tg.closest || openState) return false;
+    if (window.gestureLocked && window.gestureLocked()) return false;
+    if (tg.closest('input,textarea,select,[contenteditable="true"],video,iframe,#qp-root')) return false;
+    if (tg.closest('.pop-ov,[id$="-modal"],[role="dialog"],#action-sheet,#settings-menu,#tp-sheet,.dl-overlay,.da-sheet,.sos-ov,#alarm-ring')) return false;
+    var v = tg.closest('#app > [id$="-view"]'); if (!v) return false;
+    if (v.id === 'student-view' || v.id === 'admin-view') return !!tg.closest('.sd-hdr');
+    if (BLOCK.test(v.id)) return false;
+    return atTop(tg, v);
+  }
+  window.qpHeaderTouch = function (e) { try { return !!(e.target.closest && e.target.closest('#student-view .sd-hdr,#admin-view .sd-hdr')); } catch (x) { return false; } };
+
+  var T = null;
+  D.addEventListener('touchstart', function (e) {
+    T = null; if (e.touches.length !== 1 || !allowed(e.target)) return;
+    var t = e.touches[0]; T = { x: t.clientX, y: t.clientY, t0: Date.now(), on: false, dead: false, d: 0 };
+  }, { capture: true, passive: true });
+  D.addEventListener('touchmove', function (e) {
+    if (!T || T.dead) return;
+    if (e.touches.length !== 1) { T.dead = true; if (T.on) closePanel(); return; }
+    var t = e.touches[0], dy = t.clientY - T.y, dx = t.clientX - T.x;
+    if (!T.on) {
+      if ((Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) || dy < -8) { T.dead = true; return; }
+      if (!(dy > 14 && dy > Math.abs(dx) * 1.2)) return;
+      T.on = true; measure(); refresh(); clock(); clearTimeout(hideT); show(true); root.classList.add('qp-drag');
+    }
+    if (e.cancelable) e.preventDefault();
+    T.d = dy; reveal((dy - 14) * .95);
+  }, { capture: true, passive: false });
+  function end() {
+    if (!T) return; var s = T; T = null; if (!s.on) return;
+    var px = (s.d - 14) * .95, v = s.d / Math.max(1, Date.now() - s.t0);
+    if (px > H0 * .28 || v > .6) openPanel(); else closePanel();
+  }
+  D.addEventListener('touchend', end, { capture: true, passive: true });
+  D.addEventListener('touchcancel', function () { if (T && T.on) closePanel(); T = null; }, { capture: true, passive: true });
+
+  /* drag the open panel back up to close it */
+  var C = null;
+  root.addEventListener('touchstart', function (e) {
+    C = null; if (!openState || e.touches.length !== 1 || (e.target.closest && e.target.closest('.qp-sl'))) return;
+    var t = e.touches[0]; C = { y: t.clientY, t0: Date.now(), on: false, d: 0 };
+  }, { passive: true });
+  root.addEventListener('touchmove', function (e) {
+    if (!C || e.touches.length !== 1) return; var dy = e.touches[0].clientY - C.y;
+    if (!C.on) { if (dy > 8) { C = null; return; } if (dy > -10) return; C.on = true; root.classList.add('qp-drag'); }
+    if (e.cancelable) e.preventDefault(); C.d = dy; reveal(H0 + dy);
+  }, { passive: false });
+  function endC() { if (!C) return; var s = C; C = null; if (!s.on) return; var v = -s.d / Math.max(1, Date.now() - s.t0); root.classList.remove('qp-drag'); if (-s.d > H0 * .22 || v > .5) closePanel(); else { panel.style.transform = 'translateY(0)'; scrim.style.opacity = 1; } }
+  root.addEventListener('touchend', endC, { passive: true }); root.addEventListener('touchcancel', endC, { passive: true });
+
+  /* ---------- start-up ---------- */
+  setDim(Q.dim); Q.apply(); refresh(); if (Q.dark) dmOn();
+  var hinted = false, ht = setInterval(function () {
+    try {
+      var d = D.getElementById('student-view'), a = D.getElementById('admin-view'), up = (d && !d.classList.contains('hidden-view')) || (a && !a.classList.contains('hidden-view'));
+      if (!up) return; clearInterval(ht); if (hinted || localStorage.getItem('exama_qp_hint')) return; hinted = true; localStorage.setItem('exama_qp_hint', '1');
+      setTimeout(function () { if (window.showToast) window.showToast('Quick settings', 'Pull down from the top header to open dark mode, volume and more.', 'info'); }, 2500);
+    } catch (e) { }
+  }, 2000);
 })();
 </script>
 </body>
