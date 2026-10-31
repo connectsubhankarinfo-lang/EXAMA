@@ -22337,8 +22337,11 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                                 const lpAttr = (!isAdmin && task.createdBy === window.loggedInMobile) ? `data-lp="${task.id}" ` : ''; const delBtn = isAdmin ? `<button onclick="deleteWeeklyTask('${task.id}')" class="ml-auto text-red-400 hover:text-white hover:bg-red-500 w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center transition-all shrink-0"><i class="fa-solid fa-trash text-[9px] sm:text-[10px]"></i></button>` : '';
                                 let assignBadge = '';
                                 if (isAdmin && task.assignedTo && !task.assignedTo.includes('All')) {
-                                    const studentNames = task.assignedTo.map(mob => { const s = window.studentsDB.find(stu => stu.mobile === mob); return s ? s.name : mob; });
-                                    assignBadge = `<span class="bg-indigo-100 text-indigo-700 border border-indigo-200 text-[7px] sm:text-[9px] px-1.5 sm:px-2 py-0.5 rounded font-black tracking-wide uppercase ml-1 sm:ml-2 shadow-sm whitespace-normal sm:whitespace-nowrap break-words inline-block mt-0.5" title="Assigned to: ${studentNames.join(', ')}">👤 ${studentNames.join(', ')}</span>`;
+                                    const dpEsc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+                                    const dpAll = task.assignedTo.map(mob => { const s = (window.studentsDB || []).find(stu => stu.mobile === mob); const nm = s ? s.name : mob; let src = ''; try { src = window.getStudentAvatar ? window.getStudentAvatar(mob, nm) : ''; } catch (e) { } return { nm, src }; });
+                                    const dpShow = dpAll.slice(0, 4).map((d, i) => `<img src="${dpEsc(d.src)}" alt="" title="${dpEsc(d.nm)}" loading="lazy" decoding="async" class="wt-dp${i ? ' wt-dp-ov' : ''}" onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name='+encodeURIComponent(this.title||'S')+'&background=4f46e5&color=fff&bold=true'">`).join('');
+                                    const dpMore = dpAll.length > 4 ? `<span class="wt-dp wt-dp-ov wt-dp-more">+${dpAll.length - 4}</span>` : '';
+                                    assignBadge = `<span class="wt-dps">${dpShow}${dpMore}</span>`;
                                 }
                                 tasksHtml += `<div ${lpAttr}class="wt-row flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all ${task.isCompleted ? 'bg-emerald-50/70 border-emerald-100' : 'bg-gray-50/70 border-transparent hover:border-teal-200'}"><div onclick="toggleTaskCompletion('${task.id}')" class="w-6 h-6 rounded-full flex items-center justify-center border-2 shrink-0 transition-all cursor-pointer ${task.isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-300 text-transparent'} ${isAdmin ? 'pointer-events-none opacity-50' : 'active:scale-90 hover:border-teal-400'}"><i class="fa-solid fa-check text-[10px]"></i></div><span class="text-[12px] sm:text-[13px] font-bold ${textClass} cursor-pointer select-none leading-snug flex flex-wrap items-center gap-1 break-words flex-1 min-w-0" onclick="toggleTaskCompletion('${task.id}')"><span class="break-words">${task.taskDesc}</span> ${assignBadge}</span>${delBtn}</div>`;
                             });
@@ -34751,6 +34754,13 @@ window.initCustomSelects();
     watch();
 })();
 </script>
+<style id="wt-dp-css">
+/* Weekly Targets (admin): students a target is assigned to are shown as DPs only - no names */
+.wt-dps{display:inline-flex;align-items:center;flex:none;margin-left:6px;vertical-align:middle}
+.wt-dp{width:22px;height:22px;border-radius:50%;object-fit:cover;border:2px solid #fff;background:#e0e7ff;box-shadow:0 1px 3px rgba(15,23,42,.28);flex:none;box-sizing:content-box}
+.wt-dp-ov{margin-left:-8px}
+.wt-dp-more{display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#4338ca;background:#e0e7ff;line-height:1}
+</style>
 <style id="wt-lp-css">
 .wt-hint{text-align:center;font-size:11px;font-weight:700;color:#94a3b8;margin-top:6px}.wt-hint i{margin-right:5px}
 .wt-row[data-lp]{transition:transform .18s,background .18s,border-color .18s;-webkit-touch-callout:none}
@@ -43228,10 +43238,58 @@ html .nc.th-una .l-cover::after{left:60px}
         }
         sc.addEventListener('scroll', function () { if (Date.now() >= lock) update(); }, { passive: true });
     }
-    function init() { setup('syllabus-view', ['.tp2-score', '.hx-chips']); setup('weekly-targets-view', ['.hx-week', '.tp2-score']); }
+    function init() { setup('syllabus-view', ['.tp2-score', '.hx-chips']); }   /* Weekly Targets now uses wtc-js below */
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 </script>
+
+<style id="wtc-css">
+/* Weekly Targets: header shrinks in step with the finger (no layout jumps, no scroll fighting).
+   The header is an overlay; the list is the only thing that scrolls, so nothing resizes while you scroll. */
+#weekly-targets-view.wtc>.tp2-hero{position:absolute;top:0;left:0;right:0;overflow:hidden;z-index:12;box-sizing:border-box}
+#weekly-targets-view.wtc>.tp2-hero .hx-week,#weekly-targets-view.wtc>.tp2-hero .tp2-score{will-change:opacity}
+#weekly-targets-view.wtc>div:nth-child(2){position:absolute!important;top:0;right:0;bottom:0;left:0;margin-top:0!important;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
+</style>
+<script id="wtc-js">
+(function () {
+    var V, hero, sc, els, full = 0, D = 0, raf = 0, mraf = 0, ready = false;
+    function visible() { return V && V.offsetParent !== null && hero.offsetHeight > 0; }
+    function apply() {
+        raf = 0; if (!ready) return;
+        var s = Math.max(0, sc.scrollTop), c = Math.min(s, D), p = D ? c / D : 0;
+        hero.style.height = (full - c) + 'px';
+        var o = String(Math.max(0, 1 - p * 1.7));
+        els.forEach(function (e) { e.style.opacity = o; e.style.visibility = p >= 0.98 ? 'hidden' : ''; });
+    }
+    function measure() {
+        mraf = 0; if (!visible()) { ready = false; return; }
+        var tr = hero.style.transition; hero.style.transition = 'none';      /* the old header CSS animates padding: measure without it */
+        hero.style.height = ''; els.forEach(function (e) { e.style.opacity = ''; e.style.visibility = ''; });
+        var keep = els.map(function (e) { return e.style.display; });
+        els.forEach(function (e) { e.style.display = 'none'; }); hero.classList.add('hx-compact');
+        var comp = hero.offsetHeight;
+        els.forEach(function (e, i) { e.style.display = keep[i]; }); hero.classList.remove('hx-compact');
+        full = hero.offsetHeight; hero.style.transition = tr; D = Math.max(0, full - comp); ready = true;
+        sc.style.setProperty('padding-top', (full + 12) + 'px', 'important');
+        apply();
+    }
+    function queue() { if (!mraf) mraf = requestAnimationFrame(measure); }
+    function init() {
+        V = document.getElementById('weekly-targets-view'); if (!V) return;
+        hero = V.querySelector('.tp2-hero'); sc = V.children[1]; if (!hero || !sc) return;
+        els = ['.hx-week', '.tp2-score'].map(function (q) { return hero.querySelector(q); }).filter(Boolean); if (!els.length) return;
+        V.classList.add('wtc');
+        sc.addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(apply); }, { passive: true });
+        new MutationObserver(queue).observe(V, { attributes: true, attributeFilter: ['class'] });
+        window.addEventListener('resize', queue); window.addEventListener('orientationchange', function () { setTimeout(queue, 250); });
+        if (window.ResizeObserver) { var ro = new ResizeObserver(queue); ro.observe(hero.querySelector('.tp2-bar')); els.forEach(function (e) { ro.observe(e); }); }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(queue);
+        queue();
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+
 
 <style id="vw-smooth">
 /* ===== Smooth windows - support rules =====
