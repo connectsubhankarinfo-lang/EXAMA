@@ -7,10 +7,23 @@
   var D = document, H = D.documentElement;
   function g(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
   var Q = window.__qp = {
-    dark: g('exama_dark', '0') === '1', snd: g('exama_snd', '1') !== '0', vol: Math.max(0, Math.min(1, (+g('exama_vol', '100')) / 100)),
+    dark: false, awk: g('exama_awk', '1') !== '0', dnd: g('exama_dnd', '0') === '1', snd: g('exama_snd', '1') !== '0', vol: Math.max(0, Math.min(1, (+g('exama_vol', '100')) / 100)),
     hap: g('exama_hap', '1') !== '0', dim: Math.max(0, Math.min(.6, (+g('exama_dim', '0')) / 100)), hooks: []
   };
   if (Q.dark) H.classList.add('dm');
+  /* dark mode was removed from the control panel: make sure an old saved choice can never leave the app stuck inverted */
+  try { localStorage.setItem('exama_dark', '0'); } catch (e) { }
+  H.classList.remove('dm');
+  /* KEEP AWAKE switch (control panel): while it is OFF the app never gets a screen wake lock - every request is refused and every lock already held is dropped */
+  Q._locks = [];
+  Q.releaseLocks = function () { var l = Q._locks.splice(0); l.forEach(function (x) { try { x.release(); } catch (e) { } }); };
+  try {
+    var WLP = window.WakeLock && WakeLock.prototype, owl = WLP && WLP.request;
+    if (owl) WLP.request = function () {
+      if (!Q.awk) return Promise.reject(new DOMException('Keep awake is off', 'NotAllowedError'));
+      return owl.apply(this, arguments).then(function (sen) { Q._locks.push(sen); return sen; });
+    };
+  } catch (e) { }
   /* alarms and SOS sirens must always be heard and felt, whatever the quick panel says */
   Q.crit = function () {
     var a = ['alarm-ring', 'sos-popup'];
@@ -2296,6 +2309,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
         OneSignalDeferred.push(async function (OneSignal) {
             try {
                 await OneSignal.init({ appId: "2c76bdaa-7269-4596-8151-603bff040106" });
+                try { OneSignal.Notifications.addEventListener('foregroundWillDisplay', function (ev) { try { var q = window.__qp, d = ev && ev.notification && ev.notification.additionalData; if (q && q.dnd && !(d && d.pushCategory === 'sos')) ev.preventDefault(); } catch (e) { } }); } catch (e) { }
                 if (!OneSignal.Notifications.permission) await OneSignal.Slidedown.promptPush({ force: true });
             } catch (e) {
                 console.warn("OneSignal init failed:", e && e.message ? e.message : e);
@@ -17827,6 +17841,10 @@ window.__tpPaint = function () {
                 discus: { iosSound: 'custom_sound_5.caf', androidChannelId: 'a06cd842-62aa-4781-bc0a-c7d99098ecff' }
             };
 
+            // Android only: create ONE channel with NO sound in the OneSignal Dashboard (Settings > Push & In-App > Android Notification Channels)
+            // and paste its ID here. It is used for people who switched App sound OFF in the control panel. (iOS needs nothing.)
+            const PUSH_SILENT_ANDROID_CHANNEL = 'REPLACE_WITH_SILENT_CHANNEL_ID';
+
             async function sendOneSignalPush(title, message, imageUrl = null, extra = {}, targetUsers = null) {
                   if (window.isGlobalTestMode) { console.log('[TEST MODE] Push suppressed:', title, message); return; }
                   const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106";
@@ -17857,22 +17875,22 @@ window.__tpPaint = function () {
                       if (str) finalTargets.push(str);
                   }
 
-                  if (finalTargets.length > 0 && !finalTargets.includes('All')) {
-                      // NOTE: OneSignal's current REST API rejects a request that combines
-                      // "filters" with alias/segment targeting in the same call - only ONE
-                      // targeting method is allowed per message. This used to send BOTH
-                      // filters (tags) AND include_external_user_ids together, which OneSignal
-                      // would reject outright, meaning every targeted push (call/discus/session
-                      // categories) was very likely failing at the API level, silently, every
-                      // single time. include_external_user_ids is also the old/deprecated field
-                      // name; the current one is include_aliases.external_id.
-                      payload.include_aliases = { external_id: finalTargets };
-                 } else {
-    // Logged-out devices become guest_ users, so never use the "All" segment
-    const everyone = (window.studentsDB || []).map(s => String(s.mobile)).filter(Boolean);
-    everyone.push('9475757821'); // admin mobile
-    payload.include_aliases = { external_id: [...new Set(everyone)] };
-}
+                  const everyoneList = (finalTargets.length > 0 && !finalTargets.includes('All'))
+                      ? finalTargets
+                      // Logged-out devices become guest_ users, so never use the "All" segment
+                      : [...new Set([...(window.studentsDB || []).map(s => String(s.mobile)).filter(Boolean), '9475757821'])];   // 9475757821 = admin mobile
+                  // CONTROL PANEL: a user with Do Not Disturb ON gets no push at all (SOS is sent by the SOS server and never passes here),
+                  // a user with App sound OFF gets the push silently.
+                  let recips = everyoneList, quietRecips = [];
+                  if (category !== 'sos' && typeof window.__qpPrefsGet === 'function') {
+                      try {
+                          const P = await window.__qpPrefsGet();
+                          recips = [];
+                          everyoneList.forEach(u => { const p = P && P[u]; if (p && p.dnd) return; if (p && p.snd === false) quietRecips.push(u); else recips.push(u); });
+                      } catch (e) { recips = everyoneList; quietRecips = []; }
+                  }
+                  if (!recips.length && !quietRecips.length) return;
+                  payload.include_aliases = { external_id: recips.length ? recips : quietRecips };
 
                   if (imageUrl) {
                       payload.big_picture = imageUrl;
@@ -17937,19 +17955,31 @@ window.__tpPaint = function () {
                   }
 
                   const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
-                  console.log('[OneSignal Request]', JSON.stringify(payload));
-                  try {
-                      const response = await fetch(secureProxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-                      const responseText = await response.text();
-                      console.log('[OneSignal Response]', response.status, responseText);
-                      // TEMP DEBUG: show why OneSignal/proxy refused the push (remove this block when push works)
+                  const postPush = async (pl) => {
+                      console.log('[OneSignal Request]', JSON.stringify(pl));
                       try {
-                          let j = {}; try { j = JSON.parse(responseText); } catch (e) {}
-                          if ((!response.ok || !j.id) && !/not subscribed|no subscribers|no recipients|invalid_aliases|invalid_external_user_ids/i.test(responseText)) window.showToast("Push not created (" + response.status + ")", String(responseText).slice(0, 220), "error");
-                      } catch (e) {}
-                      if (!response.ok) throw new Error("Push blocked or failed: " + responseText);
+                          const response = await fetch(secureProxyUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pl) });
+                          const responseText = await response.text();
+                          console.log('[OneSignal Response]', response.status, responseText);
+                          // TEMP DEBUG: show why OneSignal/proxy refused the push (remove this block when push works)
+                          try {
+                              let j = {}; try { j = JSON.parse(responseText); } catch (e) {}
+                              if ((!response.ok || !j.id) && !/not subscribed|no subscribers|no recipients|invalid_aliases|invalid_external_user_ids/i.test(responseText)) window.showToast("Push not created (" + response.status + ")", String(responseText).slice(0, 220), "error");
+                          } catch (e) {}
+                          if (!response.ok) throw new Error("Push blocked or failed: " + responseText);
+                      }
+                      catch (e) { console.warn("API Push Failed:", e.message); if (typeof sendPushNotification === 'function') sendPushNotification(title, message); }
+                  };
+                  if (recips.length) { payload.include_aliases = { external_id: recips }; await postPush(payload); }
+                  if (quietRecips.length) {
+                      // people whose App sound is OFF: same push, no sound
+                      const q = JSON.parse(JSON.stringify(payload));
+                      q.include_aliases = { external_id: quietRecips };
+                      q.ios_sound = 'nil';
+                      delete q.android_channel_id;
+                      if (PUSH_SILENT_ANDROID_CHANNEL && PUSH_SILENT_ANDROID_CHANNEL.indexOf('REPLACE_WITH_') !== 0) q.android_channel_id = PUSH_SILENT_ANDROID_CHANNEL;
+                      await postPush(q);
                   }
-                  catch (e) { console.warn("API Push Failed:", e.message); if (typeof sendPushNotification === 'function') sendPushNotification(title, message); }
               }
 
             // ==========================================
@@ -18397,7 +18427,8 @@ window.__tpPaint = function () {
             function sendPushNotification(title, body) {
                 // TEST MODE GUARD: Skip browser popup notifications when test mode is active
                 if (window.isGlobalTestMode) { console.log('[TEST MODE] Browser notification suppressed:', title, body); return; }
-                if ("Notification" in window && Notification.permission === "granted") { if (document.hidden) { new Notification(title, { body: body, icon: "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" }); } }
+                if (window.__qp && window.__qp.dnd) return;   // Do Not Disturb (control panel)
+                if ("Notification" in window && Notification.permission === "granted") { if (document.hidden) { new Notification(title, { body: body, silent: !!(window.__qp && !window.__qp.snd), icon: "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhATVmHV4ZVfZThMBfGefVtynvYItWS4E3z3jgrOkg47tujBiNxvyCtri1rYkFmawHRBzSTrhefBAMuwc7vK43jmQiLoQISuTDAT4zhSxMuHtZ88nifw8DNHsWACHBzNCLmsu6du2kIRljeo141TcZKjEbaCH750q-egZhlqfP62Z3HHL3Zpt83DxdU-OC-/s1600/1000032727.jpg" }); } }
             }
 
             // ==========================================
@@ -20679,7 +20710,7 @@ window.__tpPaint = function () {
                     if ($('rt-time')) $('rt-time').textContent = mmss(sec);
                     if ($('rt-pace')) $('rt-pace').textContent = km >= 0.05 ? mmss(sec / km) : '--:--';
                 };
-                const lock = async () => { try { if (window.median && median.screen && median.screen.keepScreenOn && S.st !== 'idle') median.screen.keepScreenOn(); } catch (e) { } try { if (navigator.wakeLock && !S.wake && S.st !== 'idle') { S.wake = await navigator.wakeLock.request('screen'); S.wake.addEventListener('release', () => { S.wake = null; }); } } catch (e) { } };
+                const lock = async () => { try { if (window.median && median.screen && median.screen.keepScreenOn && S.st !== 'idle' && !(window.__qp && !window.__qp.awk)) median.screen.keepScreenOn(); } catch (e) { } try { if (navigator.wakeLock && !S.wake && S.st !== 'idle' && !(window.__qp && !window.__qp.awk)) { S.wake = await navigator.wakeLock.request('screen'); S.wake.addEventListener('release', () => { S.wake = null; }); } } catch (e) { } };
                 const unlock = () => { try { if (S.wake) S.wake.release(); } catch (e) { } S.wake = null; try { if (window.median && median.screen && median.screen.keepScreenNormal) median.screen.keepScreenNormal(); } catch (e) { } };
                 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.st !== 'idle') lock(); });
 
@@ -28496,7 +28527,7 @@ function mpDrawTab(tab, body) {
             };
             // audio call switches to the video layout while ANOTHER person shares their screen, so it can be seen
             WAC.applyView = function () { const st = WAC.st, m = $w('discus-video-modal'); if (st && m) m.dataset.mode = (st.mode === 'video' || st.remoteShare) ? 'video' : 'audio'; };
-            WAC.lockScreen = async function () { try { if ('wakeLock' in navigator) WAC.wakeLockObj = await navigator.wakeLock.request('screen'); } catch (e) { } };
+            WAC.lockScreen = async function () { try { if ('wakeLock' in navigator && !(window.__qp && !window.__qp.awk)) WAC.wakeLockObj = await navigator.wakeLock.request('screen'); } catch (e) { } };
             WAC.unlockScreen = function () { try { WAC.wakeLockObj && WAC.wakeLockObj.release(); } catch (e) { } WAC.wakeLockObj = null; };
             document.addEventListener('visibilitychange', () => { if (WAC.active && document.visibilityState === 'visible') WAC.lockScreen(); });
             WAC.startRingback = function () {
@@ -38235,6 +38266,7 @@ function durWords(ms) { var m = Math.round(ms / 60000), h = Math.floor(m / 60); 
    Lift / tap      -> keep-screen-on ON  + brightness back to default
    Every bridge variant that exists is called (median / gonative, .screen / .android.screen); the result is returned as text for the on-screen readout. */
 function medianKeepAwake(on) {
+    if (on && window.__qp && !window.__qp.awk) on = false;   /* Keep awake OFF in the control panel */
     var fn = on ? 'keepScreenOn' : 'keepScreenNormal', used = [];
     ['median', 'gonative'].forEach(function (k) {
         try {
@@ -38261,7 +38293,7 @@ function awakeAcquire() { try { if (navigator.wakeLock && !awakeLock) { awakeLoc
 function awakeRelease() { try { if (awakeLock && awakeLock.release) awakeLock.release(); } catch (e) { } awakeLock = null; }
 function awakeSync() {
     /* ALWAYS AWAKE on every screen (dashboard included). Only exception: flip face-down / black-cover sleep mode, or app in background. */
-    var keep = true;
+    var keep = !(window.__qp && !window.__qp.awk);   /* control panel: Keep awake OFF = do not run the wake function at all */
     if (keep && !sleepMode && !document.hidden) awakeAcquire(); else awakeRelease(); }
 setInterval(awakeSync, 2500); document.addEventListener('visibilitychange', awakeSync);
 /* flip detection from gravity (more reliable than beta/gamma): Android reports z = +9.8 face-up, iOS the opposite */
@@ -45096,39 +45128,75 @@ html body .xb #admin-support-badge:not(#_):not(#__){top:9px;right:10px;left:auto
 })();
 </script>
 <style id="qp-css">
-#qp-root{position:fixed;inset:0;z-index:2147483200;visibility:hidden;pointer-events:none;-webkit-tap-highlight-color:transparent;font-family:inherit}
+/* CONTROL PANEL - Apple light (frosted glass, rounded modules, iOS colours) */
+#qp-root{position:fixed;inset:0;z-index:2147483200;visibility:hidden;pointer-events:none;-webkit-tap-highlight-color:transparent;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 #qp-root.qp-vis{visibility:visible}#qp-root.qp-on{pointer-events:auto}
-#qp-scrim{position:absolute;inset:0;background:rgba(2,6,23,.58);opacity:0;transition:opacity .32s}
-#qp-panel{position:absolute;left:0;right:0;top:0;margin:0 auto;width:100%;max-width:560px;box-sizing:border-box;color:#fff;touch-action:none;will-change:transform;
- padding:calc(16px + env(safe-area-inset-top,0px)) 16px 10px;border-radius:0 0 30px 30px;background:rgba(15,23,42,.97);border:1px solid rgba(255,255,255,.08);border-top:0;
- box-shadow:0 30px 60px -24px rgba(0,0,0,.7);transform:translateY(-110%);transition:transform .34s cubic-bezier(.32,.72,0,1)}
+#qp-scrim{position:absolute;inset:0;background:rgba(0,0,0,.26);opacity:0;transition:opacity .32s}
+#qp-panel{position:absolute;left:0;right:0;top:0;margin:0 auto;width:100%;max-width:540px;box-sizing:border-box;color:#1c1c1e;touch-action:none;will-change:transform;
+ padding:calc(16px + env(safe-area-inset-top,0px)) 16px 8px;border-radius:0 0 36px 36px;background:rgba(242,242,247,.9);-webkit-backdrop-filter:saturate(180%) blur(28px);backdrop-filter:saturate(180%) blur(28px);border:.5px solid rgba(60,60,67,.14);border-top:0;
+ box-shadow:0 28px 60px -22px rgba(0,0,0,.32);transform:translateY(-110%);transition:transform .38s cubic-bezier(.32,.72,0,1)}
 #qp-root.qp-drag #qp-panel,#qp-root.qp-drag #qp-scrim{transition:none}
-.qp-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.qp-time{display:flex;flex-direction:column;line-height:1.1}.qp-time b{font-size:30px;font-weight:800;letter-spacing:-.02em}.qp-time span{font-size:12px;font-weight:700;color:#94a3b8;margin-top:3px}
+.qp-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 4px}
+.qp-time{display:flex;flex-direction:column;line-height:1.1}.qp-time b{font-size:30px;font-weight:700;letter-spacing:-.02em;color:#1c1c1e}.qp-time span{font-size:12.5px;font-weight:500;color:#8e8e93;margin-top:3px}
 .qp-acts{display:flex;gap:8px}
-.qp-ab{width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.1);color:#fff;font-size:15px;display:grid;place-items:center;transition:transform .15s,background .2s}
-.qp-ab:active{transform:scale(.88)}.qp-ab:hover{background:rgba(255,255,255,.16)}
+.qp-ab{width:38px;height:38px;border-radius:50%;border:0;background:rgba(120,120,128,.16);color:#3c3c43;font-size:15px;display:grid;place-items:center;transition:transform .15s,background .2s}
+.qp-ab:active{transform:scale(.9);background:rgba(120,120,128,.26)}
 .qp-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}
-.qp-t{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:92px;padding:12px 4px;border-radius:24px;border:1px solid transparent;background:rgba(255,255,255,.07);color:#fff;font:inherit;text-align:center;transition:background .2s,border-color .2s,transform .15s}
-.qp-t:active{transform:scale(.94)}
-.qp-t .ic{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-size:17px;background:rgba(255,255,255,.12);transition:background .2s}
-.qp-t b{font-size:12px;font-weight:800;line-height:1.1}.qp-t small{font-size:10px;font-weight:700;color:#94a3b8;line-height:1}
-.qp-t.on{background:rgba(99,102,241,.2);border-color:rgba(129,140,248,.55)}.qp-t.on .ic{background:#6366f1}.qp-t.on small{color:#c7d2fe}
+.qp-t{--c:#007aff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:96px;padding:12px 6px;border-radius:22px;border:0;background:rgba(255,255,255,.82);box-shadow:0 1px 2px rgba(0,0,0,.05);color:#1c1c1e;font:inherit;text-align:center;transition:transform .16s cubic-bezier(.32,.72,0,1),background .2s}
+.qp-t:active{transform:scale(.95);background:#fff}
+.qp-t:focus-visible{outline:2px solid var(--c);outline-offset:2px}
+.qp-t .ic{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:18px;background:rgba(120,120,128,.14);color:#3c3c43;flex:none;transition:background .22s,color .22s}
+.qp-t .tx{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.qp-t b{font-size:12px;font-weight:600;line-height:1.15;letter-spacing:-.005em;color:#1c1c1e}
+.qp-t small{font-size:10.5px;font-weight:500;color:#8e8e93;line-height:1}
+.qp-t.on .ic{background:var(--c);color:#fff}.qp-t.on small{color:var(--c);font-weight:600}
 .qp-t.off{opacity:.45;pointer-events:none}
-.qp-sls{display:flex;flex-direction:column;gap:10px;margin-top:14px}
-.qp-sl{position:relative;height:48px;border-radius:24px;background:rgba(255,255,255,.1);overflow:hidden;touch-action:none;cursor:pointer;--p:100%;outline:none}
-.qp-sl::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p);background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:24px}
-.qp-sl:focus-visible{box-shadow:0 0 0 2px #a5b4fc}
-.qp-sl i{position:absolute;left:17px;top:50%;transform:translateY(-50%);z-index:1;font-size:16px;color:#fff;pointer-events:none}
-.qp-sl span{position:absolute;right:16px;top:50%;transform:translateY(-50%);z-index:1;font-size:12px;font-weight:800;color:#fff;pointer-events:none}
-.qp-grab{display:flex;justify-content:center;padding:14px 0 6px}.qp-grab i{width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.3)}
-html.dm #qp-root{filter:invert(1) hue-rotate(180deg)}
+.qp-t[data-t="snd"]{--c:#007aff}.qp-t[data-t="hap"]{--c:#ff2d55}.qp-t[data-t="awk"]{--c:#ff9500}.qp-t[data-t="dnd"]{--c:#5e5ce6}
+.qp-t.wide{grid-column:span 2;flex-direction:row;justify-content:flex-start;gap:14px;padding:12px 18px;text-align:left}
+.qp-t.wide .tx{align-items:flex-start;gap:4px}.qp-t.wide b{font-size:14px}.qp-t.wide small{font-size:11.5px}
+.qp-t[data-t="calc"] .ic{background:#ff9500;color:#fff}
+.qp-sls{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.qp-sl{position:relative;height:52px;border-radius:26px;background:rgba(120,120,128,.16);overflow:hidden;touch-action:none;cursor:pointer;--p:100%;outline:none}
+.qp-sl::before{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--p);background:#fff;border-radius:26px;box-shadow:0 0 6px rgba(0,0,0,.1)}
+.qp-sl:focus-visible{box-shadow:0 0 0 2px #007aff}
+.qp-sl i{position:absolute;left:19px;top:50%;transform:translateY(-50%);z-index:1;font-size:17px;color:#3c3c43;pointer-events:none;width:22px;text-align:center}
+.qp-sl span{position:absolute;right:18px;top:50%;transform:translateY(-50%);z-index:1;font-size:12.5px;font-weight:600;color:#3c3c43;pointer-events:none;font-variant-numeric:tabular-nums}
+.qp-grab{display:flex;justify-content:center;padding:14px 0 6px}.qp-grab i{width:40px;height:5px;border-radius:3px;background:rgba(60,60,67,.3)}
 @media (prefers-reduced-motion:reduce){#qp-panel,#qp-scrim{transition:none}}
+
+/* CALCULATOR - Apple style */
+#qp-calc{position:fixed;inset:0;z-index:2147483300;display:none;flex-direction:column;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",Arial,sans-serif;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation;overscroll-behavior:none;opacity:0;transform:translateY(26px) scale(.985);transition:opacity .22s ease,transform .34s cubic-bezier(.32,.72,0,1);padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);box-sizing:border-box}
+#qp-calc.show{display:flex}#qp-calc.in{opacity:1;transform:none}
+.qc-x{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:14px;width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#e5e5ea;font-size:14px;display:grid;place-items:center;z-index:2}
+.qc-x:active{background:rgba(255,255,255,.26)}
+.qc-wrap{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;width:100%;max-width:520px;margin:0 auto;padding:54px 16px 16px;box-sizing:border-box}
+.qc-disp{display:flex;align-items:flex-end;justify-content:flex-end;min-height:104px;padding:0 8px 10px;overflow:hidden;white-space:nowrap}
+.qc-out{font-size:88px;font-weight:300;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+.qc-pad{display:flex;gap:12px;align-items:stretch;justify-content:center;width:100%;margin:0 auto}
+.qc-main{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;flex:1 1 auto;max-width:min(100%,calc((100vh - 190px) * .8))}
+.qc-sci{display:none;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;flex:0 0 auto}
+.qc-b{display:flex;align-items:center;justify-content:center;border:0;border-radius:50%;aspect-ratio:1;padding:0;font:inherit;font-size:clamp(26px,8vw,36px);font-weight:400;line-height:1;color:#fff;background:#333;cursor:pointer;transition:background-color .38s ease,color .2s}
+.qc-b:active{transition:none}
+.qc-b.d:active{background:#737373}
+.qc-b.f{background:#a5a5a5;color:#000;font-size:clamp(24px,7vw,32px)}.qc-b.f:active{background:#d9d9d9}
+.qc-b.o{background:#ff9f0a;font-size:clamp(32px,9vw,42px)}.qc-b.o:active{background:#fcc78d}
+.qc-b.o.on{background:#fff;color:#ff9f0a}
+.qc-b.z{grid-column:span 2;aspect-ratio:auto;border-radius:999px;justify-content:flex-start;padding-left:clamp(26px,8vw,34px)}
+.qc-b.s{background:#1c1c1e;font-size:clamp(15px,4vw,19px);font-weight:500}.qc-b.s:active{background:#4a4a4c}
+@media (orientation:landscape) and (min-width:560px){
+ .qc-wrap{max-width:940px;padding-top:12px;padding-bottom:10px}
+ .qc-disp{min-height:56px;padding-bottom:6px}.qc-out{font-size:52px}
+ .qc-pad{gap:14px}.qc-sci{display:grid;flex:1 1 38%}.qc-main{flex:1 1 62%;max-width:none;gap:10px}
+ .qc-b,.qc-b.z{aspect-ratio:auto;border-radius:999px;height:clamp(34px,calc((100vh - 128px) / 5 - 10px),64px)}
+ .qc-b{font-size:clamp(18px,5.2vh,28px)}.qc-b.o{font-size:clamp(22px,6.4vh,34px)}.qc-b.s{font-size:clamp(13px,3.6vh,18px)}
+ .qc-b.z{padding-left:7%}
+}
+@media (prefers-reduced-motion:reduce){#qp-calc{transition:none}}
 </style>
 <div id="qp-dim" aria-hidden="true"></div>
 <div id="qp-root" aria-hidden="true">
   <div id="qp-scrim"></div>
-  <section id="qp-panel" role="dialog" aria-label="Quick settings">
+  <section id="qp-panel" role="dialog" aria-label="Control panel">
     <div class="qp-top"><div class="qp-time"><b id="qp-clock"></b><span id="qp-date"></span></div>
       <div class="qp-acts"><button type="button" class="qp-ab" id="qp-gear" aria-label="Settings"><i class="fa-solid fa-gear"></i></button></div></div>
     <div class="qp-tiles" id="qp-tiles"></div>
@@ -45139,6 +45207,13 @@ html.dm #qp-root{filter:invert(1) hue-rotate(180deg)}
     <div class="qp-grab"><i></i></div>
   </section>
 </div>
+<div id="qp-calc" role="dialog" aria-label="Calculator" aria-hidden="true">
+  <button type="button" class="qc-x" id="qc-x" aria-label="Close calculator"><i class="fa-solid fa-xmark"></i></button>
+  <div class="qc-wrap">
+    <div class="qc-disp" id="qc-disp"><span class="qc-out" id="qc-out">0</span></div>
+    <div class="qc-pad"><div class="qc-sci" id="qc-sci"></div><div class="qc-main" id="qc-main"></div></div>
+  </div>
+</div>
 <script id="qp-js">
 (function () {
   var D = document, H = D.documentElement, Q = window.__qp; if (!Q) return;
@@ -45147,72 +45222,83 @@ html.dm #qp-root{filter:invert(1) hue-rotate(180deg)}
   function set(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
   function cl(v, a, b) { return Math.max(a, Math.min(b, v)); }
   function vib(n) { try { if (Q.hap && navigator.vibrate) navigator.vibrate(n); } catch (e) { } }
-  var openState = false, H0 = 0, hideT = 0, awake = false, wl = null;
+  var openState = false, H0 = 0, hideT = 0, wl = null;
+
+  /* ---------- notification preferences (shared so that senders can respect Do Not Disturb / sound off) ---------- */
+  var FB = null, prefsUnsub = null, prefsKey = '', prefsLoaded = false, prefsWait = [], pubKey = '';
+  window.__qpPrefs = {};
+  function pre() { return window.isGlobalTestMode ? 'test_' : ''; }
+  function fbLoad() { return FB ? Promise.resolve(FB) : import('https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js').then(function (x) { return (FB = x); }); }
+  function pubPrefs() {
+    try {
+      var m = window.loggedInMobile; if (!m || !window.rtdb) return;
+      fbLoad().then(function () { return FB.set(FB.ref(window.rtdb, pre() + 'notif_prefs/' + m), { dnd: !!Q.dnd, snd: !!Q.snd, ts: Date.now() }); }).then(function () { pubKey = m + pre(); }).catch(function () { });
+    } catch (e) { }
+  }
+  function listenPrefs() {
+    try {
+      if (!window.rtdb) return; var k = pre();
+      if (prefsUnsub && prefsKey === k) return;
+      if (prefsUnsub) { try { prefsUnsub(); } catch (e) { } prefsUnsub = null; }
+      prefsKey = k; prefsLoaded = false;
+      fbLoad().then(function () {
+        if (prefsKey !== k) return;
+        prefsUnsub = FB.onValue(FB.ref(window.rtdb, k + 'notif_prefs'), function (sn) {
+          try { window.__qpPrefs = sn.val() || {}; } catch (e) { window.__qpPrefs = {}; }
+          prefsLoaded = true; var w = prefsWait; prefsWait = []; w.forEach(function (f) { f(); });
+        }, function () { prefsLoaded = true; var w = prefsWait; prefsWait = []; w.forEach(function (f) { f(); }); });
+      }).catch(function () { });
+    } catch (e) { }
+  }
+  /* used by sendOneSignalPush: resolves with { mobile: {dnd, snd} } (waits at most ~1.5 s) */
+  window.__qpPrefsGet = function () {
+    return new Promise(function (res) {
+      if (prefsLoaded) return res(window.__qpPrefs);
+      var done = false, fin = function () { if (done) return; done = true; res(window.__qpPrefs || {}); };
+      prefsWait.push(fin); setTimeout(fin, 1500); listenPrefs();
+    });
+  };
+  setInterval(function () {
+    try {
+      var m = window.loggedInMobile;
+      if (!m || !window.rtdb) { pubKey = ''; return; }
+      listenPrefs();
+      if (pubKey !== m + pre()) pubPrefs();
+    } catch (e) { }
+  }, 3000);
 
   /* ---------- state ---------- */
-  /* screens that are ALREADY dark (e.g. run tracker, video popups) are marked so dark mode leaves them as designed */
-  var FLIPSEL = '.dl-overlay,#tp-overlay,.pop-ov,.exm-ov,#forgot-pass-modal,#nova-sheet .nv-scrim,.ns,.sup-ov,.sup-ds,#sin-ov';
-  function rgbaOf(c) {
-    var m = /rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)/.exec(c), al;
-    if (m) { al = m[4] === undefined ? 1 : (m[4].indexOf('%') > 0 ? parseFloat(m[4]) / 100 : parseFloat(m[4])); return [+m[1], +m[2], +m[3], al]; }
-    m = /color\(\s*srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)/.exec(c);
-    if (m) { al = m[4] === undefined ? 1 : (m[4].indexOf('%') > 0 ? parseFloat(m[4]) / 100 : parseFloat(m[4])); return [m[1] * 255, m[2] * 255, m[3] * 255, al]; }
-    return null;
-  }
-  function lumOf(cs) {
-    var cols = [], bc = rgbaOf(cs.backgroundColor || ''); if (bc && bc[3] >= .8) cols.push(bc);
-    var bi = cs.backgroundImage || ''; if (bi !== 'none') (bi.match(/rgba?\([^)]*\)|color\([^)]*\)/g) || []).forEach(function (c) { var x = rgbaOf(c); if (x && x[3] >= .8) cols.push(x); });
-    if (!cols.length) return 1; var s = 0; cols.forEach(function (c) { s += (.2126 * c[0] + .7152 * c[1] + .0722 * c[2]) / 255; }); return s / cols.length;
-  }
-  function dmScan() {
-    if (!Q.dark) return;
-    var c = D.querySelectorAll('#app > *, body > *, [id$="-modal"], [id$="-view"], [id$="-overlay"], .sos-ov, .ae-ov, .exm-ov');
-    for (var i = 0; i < c.length; i++) {
-      var e = c[i], k = false; if (e.tagName === 'SCRIPT' || e.tagName === 'STYLE' || (e.id && e.id.indexOf('qp-') === 0)) continue;
-      if (e.getClientRects().length && !(e.matches && e.matches(FLIPSEL))) { var cs = getComputedStyle(e); k = lumOf(cs) < .22 && (cs.position === 'fixed' || cs.position === 'absolute' || e.parentElement === D.body || (e.parentElement && e.parentElement.id === 'app')); }
-      if (k) { if (!e.hasAttribute('data-dm-keep')) e.setAttribute('data-dm-keep', ''); } else if (e.hasAttribute('data-dm-keep')) e.removeAttribute('data-dm-keep');
-    }
-  }
-  var dmo = null, dmt = 0, dmi = 0;
-  function dmOn() {
-    dmScan(); if (dmo || !D.body) return;
-    dmo = new MutationObserver(function () { if (!dmt) dmt = setTimeout(function () { dmt = 0; dmScan(); }, 200); });
-    dmo.observe(D.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden'] });
-    dmi = setInterval(dmScan, 2500);
-  }
-  function dmOff() { if (dmo) { dmo.disconnect(); dmo = null; } clearInterval(dmi); D.querySelectorAll('[data-dm-keep]').forEach(function (e) { e.removeAttribute('data-dm-keep'); }); }
-  function setDark(v) { Q.dark = !!v; H.classList.toggle('dm', Q.dark); set('exama_dark', Q.dark ? '1' : '0'); if (Q.dark) dmOn(); else dmOff(); }
   function setDim(d) { Q.dim = cl(d, 0, .6); dim.style.opacity = Q.dim; set('exama_dim', Math.round(Q.dim * 100)); }
-  function setSnd(v) { Q.snd = !!v; if (Q.snd && Q.vol < .05) Q.vol = .7; set('exama_snd', Q.snd ? '1' : '0'); set('exama_vol', Math.round(Q.vol * 100)); Q.apply(); }
+  function setSnd(v) { Q.snd = !!v; if (Q.snd && Q.vol < .05) Q.vol = .7; set('exama_snd', Q.snd ? '1' : '0'); set('exama_vol', Math.round(Q.vol * 100)); Q.apply(); pubPrefs(); }
   function setVol(v) { Q.vol = cl(v, 0, 1); Q.snd = Q.vol > 0; set('exama_vol', Math.round(Q.vol * 100)); set('exama_snd', Q.snd ? '1' : '0'); Q.apply(); }
   function setHap(v) { Q.hap = !!v; set('exama_hap', Q.hap ? '1' : '0'); if (!Q.hap && Q.rawVibrate) Q.rawVibrate(0); else vib(20); }
+  function setDnd(v) { Q.dnd = !!v; set('exama_dnd', Q.dnd ? '1' : '0'); pubPrefs(); }
+  function awkOk() { return !!(navigator.wakeLock && navigator.wakeLock.request) || !!(window.median && window.median.screen); }
+  function medianScreen(on) {
+    ['median', 'gonative'].forEach(function (k) {
+      try { var m = window[k], fn = on ? 'keepScreenOn' : 'keepScreenNormal'; if (m && m.screen && typeof m.screen[fn] === 'function') m.screen[fn](); } catch (e) { }
+    });
+  }
+  /* KEEP AWAKE: OFF = the app never asks for a wake lock (the wrapper in qp-boot refuses every request) and every lock it holds is dropped */
   async function setAwake(v) {
-    try {
-      if (v) { wl = await navigator.wakeLock.request('screen'); awake = true; wl.addEventListener('release', function () { if (wl === this) { wl = null; } }); }
-      else { awake = false; if (wl) { await wl.release(); } wl = null; }
-    } catch (e) { awake = false; wl = null; }
+    Q.awk = !!v; set('exama_awk', Q.awk ? '1' : '0');
+    if (!Q.awk) { try { if (Q.releaseLocks) Q.releaseLocks(); } catch (e) { } try { if (wl) wl.release(); } catch (e) { } wl = null; medianScreen(false); }
+    else { medianScreen(true); try { if (navigator.wakeLock) wl = await navigator.wakeLock.request('screen'); } catch (e) { wl = null; } }
     refresh();
   }
-  D.addEventListener('visibilitychange', function () { if (awake && !wl && D.visibilityState === 'visible') setAwake(true); });
-  function fsOn() { return !!(D.fullscreenElement || D.webkitFullscreenElement); }
-  function toggleFs() {
-    try { if (fsOn()) (D.exitFullscreen || D.webkitExitFullscreen).call(D); else (H.requestFullscreen || H.webkitRequestFullscreen).call(H); } catch (e) { }
-  }
-  D.addEventListener('fullscreenchange', refresh);
 
   var TILES = [
-    { id: 'dark', ic: 'fa-moon', lb: 'Dark mode', on: function () { return Q.dark; }, st: function () { return Q.dark ? 'On' : 'Off'; }, act: function () { setDark(!Q.dark); } },
     { id: 'snd', ic: function () { return Q.snd ? 'fa-volume-high' : 'fa-volume-xmark'; }, lb: 'Sound', on: function () { return Q.snd; }, st: function () { return Q.snd ? 'On' : 'Muted'; }, act: function () { setSnd(!Q.snd); } },
     { id: 'hap', ic: 'fa-wave-square', lb: 'Vibration', ok: function () { return !!Q.rawVibrate; }, on: function () { return Q.hap && !!Q.rawVibrate; }, st: function () { return !Q.rawVibrate ? 'Not supported' : Q.hap ? 'On' : 'Off'; }, act: function () { setHap(!Q.hap); } },
-    { id: 'awk', ic: 'fa-mug-hot', lb: 'Keep awake', ok: function () { return !!(navigator.wakeLock && navigator.wakeLock.request); }, on: function () { return awake; }, st: function () { return !(navigator.wakeLock && navigator.wakeLock.request) ? 'Not supported' : awake ? 'On' : 'Off'; }, act: function () { setAwake(!awake); } },
-    { id: 'fs', ic: function () { return fsOn() ? 'fa-compress' : 'fa-expand'; }, lb: 'Full screen', ok: function () { return !!(H.requestFullscreen || H.webkitRequestFullscreen); }, on: fsOn, st: function () { return !(H.requestFullscreen || H.webkitRequestFullscreen) ? 'Not supported' : fsOn() ? 'On' : 'Off'; }, act: toggleFs },
-    { id: 'rld', ic: 'fa-rotate-right', lb: 'Refresh app', on: function () { return false; }, st: function () { return 'Reload'; }, act: function () { vib(30); setTimeout(function () { location.reload(); }, 150); } }
+    { id: 'awk', ic: 'fa-mug-hot', lb: 'Keep awake', ok: awkOk, on: function () { return Q.awk && awkOk(); }, st: function () { return !awkOk() ? 'Not supported' : Q.awk ? 'On' : 'Off'; }, act: function () { setAwake(!Q.awk); } },
+    { id: 'dnd', ic: 'fa-moon', lb: 'Do Not Disturb', on: function () { return Q.dnd; }, st: function () { return Q.dnd ? 'On' : 'Off'; }, act: function () { setDnd(!Q.dnd); } },
+    { id: 'calc', ic: 'fa-calculator', lb: 'Calculator', wide: true, on: function () { return false; }, st: function () { return 'Open'; }, act: function () { closePanel(); setTimeout(openCalc, 230); } }
   ];
-  tilesEl.innerHTML = TILES.map(function (t) { return '<button type="button" class="qp-t" data-t="' + t.id + '"><span class="ic"><i class="fa-solid"></i></span><b>' + t.lb + '</b><small></small></button>'; }).join('');
+  tilesEl.innerHTML = TILES.map(function (t) { return '<button type="button" class="qp-t' + (t.wide ? ' wide' : '') + '" data-t="' + t.id + '"><span class="ic"><i class="fa-solid"></i></span><span class="tx"><b>' + t.lb + '</b><small></small></span></button>'; }).join('');
   tilesEl.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('.qp-t'); if (!b) return;
     var t = TILES.filter(function (x) { return x.id === b.dataset.t; })[0]; if (!t || (t.ok && !t.ok())) return;
-    t.act(); refresh(); if (t.id !== 'rld' && t.id !== 'hap') vib(10);
+    t.act(); refresh(); if (t.id !== 'hap' && t.id !== 'calc') vib(10);
   });
   function setSl(el, f, txt) { el.style.setProperty('--p', (f * 100) + '%'); el.querySelector('span').textContent = txt; el.setAttribute('aria-valuenow', Math.round(f * 100)); }
   function refresh() {
@@ -45240,7 +45326,7 @@ html.dm #qp-root{filter:invert(1) hue-rotate(180deg)}
   slider(bright, function () { return 1 - Q.dim / .6; }, function (f) { setDim((1 - cl(f, 0, 1)) * .6); });
   var AC = null;
   function tick() {
-    try { if (!Q.snd || Q.vol <= 0) return; AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume();
+    try { pubPrefs(); if (!Q.snd || Q.vol <= 0) return; AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume();
       var o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime; o.type = 'sine'; o.frequency.value = 880; g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.12, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + .16);
       o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t + .18); } catch (e) { }
   }
@@ -45265,7 +45351,7 @@ html.dm #qp-root{filter:invert(1) hue-rotate(180deg)}
   function closePanel() {
     openState = false; clearInterval(clk); root.classList.remove('qp-on', 'qp-drag');
     panel.style.transform = 'translateY(' + (-H0 - 2) + 'px)'; scrim.style.opacity = 0;
-    clearTimeout(hideT); hideT = setTimeout(function () { if (!openState) show(false); }, 380);
+    clearTimeout(hideT); hideT = setTimeout(function () { if (!openState) show(false); }, 400);
   }
   window.QuickPanel = { open: openPanel, close: closePanel, toggle: function () { openState ? closePanel() : openPanel(); } };
   scrim.addEventListener('click', closePanel);
@@ -45286,7 +45372,7 @@ html.dm #qp-root{filter:invert(1) hue-rotate(180deg)}
   function allowed(tg) {
     if (!tg || !tg.closest || openState) return false;
     if (window.gestureLocked && window.gestureLocked()) return false;
-    if (tg.closest('input,textarea,select,[contenteditable="true"],video,iframe,#qp-root')) return false;
+    if (tg.closest('input,textarea,select,[contenteditable="true"],video,iframe,#qp-root,#qp-calc')) return false;
     if (tg.closest('.pop-ov,[id$="-modal"],[role="dialog"],#action-sheet,#settings-menu,#tp-sheet,.dl-overlay,.da-sheet,.sos-ov,#alarm-ring')) return false;
     var v = tg.closest('#app > [id$="-view"]'); if (!v) return false;
     if (v.id === 'student-view' || v.id === 'admin-view') return !!tg.closest('.sd-hdr');
@@ -45334,13 +45420,167 @@ html.dm #qp-root{filter:invert(1) hue-rotate(180deg)}
   function endC() { if (!C) return; var s = C; C = null; if (!s.on) return; var v = -s.d / Math.max(1, Date.now() - s.t0); root.classList.remove('qp-drag'); if (-s.d > H0 * .22 || v > .5) closePanel(); else { panel.style.transform = 'translateY(0)'; scrim.style.opacity = 1; } }
   root.addEventListener('touchend', endC, { passive: true }); root.addEventListener('touchcancel', endC, { passive: true });
 
+  /* =====================================================================
+     CALCULATOR (Apple style): + - x / % +/-  AC/C, repeat "=", swipe the display to delete,
+     and in landscape the scientific keys (sin cos tan ln log x2 x3 xy 1/x sqrt x! pi e)
+     ===================================================================== */
+  var calc = D.getElementById('qp-calc'), cMain = D.getElementById('qc-main'), cSci = D.getElementById('qc-sci'), cDisp = D.getElementById('qc-disp'), cOut = D.getElementById('qc-out');
+  var calcOpen = false, clrBtn = null, degBtn = null;
+  var MAIN = [['ac', 'AC', 'f'], ['sign', '\u00B1', 'f'], ['pct', '%', 'f'], ['/', '\u00F7', 'o'],
+    ['7', '7', 'd'], ['8', '8', 'd'], ['9', '9', 'd'], ['*', '\u00D7', 'o'],
+    ['4', '4', 'd'], ['5', '5', 'd'], ['6', '6', 'd'], ['-', '\u2212', 'o'],
+    ['1', '1', 'd'], ['2', '2', 'd'], ['3', '3', 'd'], ['+', '+', 'o'],
+    ['0', '0', 'd z'], ['.', '.', 'd'], ['=', '=', 'o']];
+  var SCI = [['sq', 'x\u00B2'], ['cu', 'x\u00B3'], ['pow', 'x\u02B8'], ['inv', '1/x'], ['sqrt', '\u221A'], ['fact', 'x!'],
+    ['sin', 'sin'], ['cos', 'cos'], ['tan', 'tan'], ['ln', 'ln'], ['log', 'log'], ['exp', 'e\u02E3'],
+    ['deg', 'Deg'], ['pi', '\u03C0'], ['e', 'e']];
+  cMain.innerHTML = MAIN.map(function (b) { var isOp = b[2] === 'o' && b[0] !== '='; return '<button type="button" class="qc-b ' + b[2] + '" data-k="' + b[0] + '"' + (isOp ? ' data-o="' + b[0] + '"' : '') + '>' + b[1] + '</button>'; }).join('');
+  cSci.innerHTML = SCI.map(function (b) { return '<button type="button" class="qc-b s" data-k="' + b[0] + '"' + (b[0] === 'pow' ? ' data-o="^"' : '') + '>' + b[1] + '</button>'; }).join('');
+  clrBtn = cMain.querySelector('[data-k="ac"]'); degBtn = cSci.querySelector('[data-k="deg"]');
+
+  /*CALC-ENGINE-START*/
+  var K = { cur: '0', res: null, acc: null, op: null, fresh: true, entry: false, lastOp: null, lastB: 0, eq: false, deg: true, err: false };
+  function allClear() { K.cur = '0'; K.res = null; K.acc = null; K.op = null; K.fresh = true; K.entry = false; K.lastOp = null; K.lastB = 0; K.eq = false; K.err = false; }
+  function num() { return K.res !== null ? K.res : (parseFloat(K.cur) || 0); }
+  function fmtN(n) {
+    var a = Math.abs(n);
+    if (n !== 0 && (a >= 1e9 || a < 1e-6)) return n.toExponential(8).replace(/\.?0+e/, 'e').replace('e+', 'e');
+    return String(parseFloat(n.toPrecision(9)));
+  }
+  function setRes(n) {
+    if (typeof n !== 'number' || !isFinite(n)) { K.err = true; K.cur = 'Error'; K.res = null; }
+    else { n = parseFloat(n.toPrecision(12)); if (n === 0) n = 0; K.res = n; K.cur = fmtN(n); }
+    K.fresh = true; K.entry = false;
+  }
+  function calcOp(a, o, b) {
+    switch (o) { case '+': return a + b; case '-': return a - b; case '*': return a * b; case '/': return b === 0 ? NaN : a / b; case '^': return Math.pow(a, b); }
+    return b;
+  }
+  function newIfDone() { if (K.eq) { K.eq = false; K.acc = null; K.op = null; } }
+  function digit(d) {
+    if (K.err) allClear(); newIfDone();
+    if (K.fresh) { K.cur = d; K.fresh = false; }
+    else { if (K.cur.replace(/[-.]/g, '').length >= 9) return; K.cur = K.cur === '0' ? d : (K.cur === '-0' ? '-' + d : K.cur + d); }
+    K.res = null; K.entry = true;
+  }
+  function dot() {
+    if (K.err) allClear(); newIfDone();
+    if (K.fresh) { K.cur = '0.'; K.fresh = false; }
+    else if (K.cur.indexOf('.') < 0 && K.cur.indexOf('e') < 0) K.cur += '.';
+    K.res = null; K.entry = true;
+  }
+  function oper(o) {
+    if (K.err) return;
+    if (K.op && !K.fresh) { setRes(calcOp(K.acc, K.op, num())); if (K.err) return; K.acc = K.res; }
+    else if (!K.op) K.acc = num();
+    K.op = o; K.fresh = true; K.eq = false; K.entry = false;
+  }
+  function equals() {
+    if (K.err) return; var r;
+    if (K.op) { var b = num(); K.lastOp = K.op; K.lastB = b; r = calcOp(K.acc, K.op, b); K.acc = null; K.op = null; }
+    else if (K.lastOp) { r = calcOp(num(), K.lastOp, K.lastB); }
+    else return;
+    K.eq = true; setRes(r);
+  }
+  function pct() {
+    if (K.err) return; var v = num();
+    setRes((K.op && K.acc !== null && (K.op === '+' || K.op === '-')) ? K.acc * v / 100 : v / 100);
+  }
+  function sign() {
+    if (K.err) return;
+    if (K.res !== null) { K.res = -K.res; K.cur = fmtN(K.res); return; }
+    if (K.fresh) { K.cur = '-0'; K.fresh = false; K.entry = true; return; }
+    K.cur = K.cur.charAt(0) === '-' ? K.cur.slice(1) : '-' + K.cur;
+  }
+  function clearKey() {
+    if (K.entry && !K.err) { K.cur = '0'; K.res = null; K.entry = false; K.fresh = false; }
+    else allClear();
+  }
+  function back() {
+    if (K.err || K.fresh || K.res !== null) return;
+    K.cur = (K.cur.length > 1 && !(K.cur.length === 2 && K.cur.charAt(0) === '-')) ? K.cur.slice(0, -1) : '0';
+  }
+  function fact(n) { var r = 1; for (var i = 2; i <= n; i++) r *= i; return r; }
+  function unary(k) {
+    if (K.err) return; var v = num(), r, rad = K.deg ? Math.PI / 180 : 1;
+    switch (k) {
+      case 'sq': r = v * v; break; case 'cu': r = v * v * v; break;
+      case 'inv': r = v === 0 ? NaN : 1 / v; break; case 'sqrt': r = v < 0 ? NaN : Math.sqrt(v); break;
+      case 'fact': r = (v >= 0 && v <= 170 && Math.floor(v) === v) ? fact(v) : NaN; break;
+      case 'sin': r = Math.sin(v * rad); break; case 'cos': r = Math.cos(v * rad); break;
+      case 'tan': r = (K.deg ? Math.abs(v % 180) === 90 : Math.abs(Math.cos(v)) < 1e-15) ? NaN : Math.tan(v * rad); break;
+      case 'ln': r = v > 0 ? Math.log(v) : NaN; break; case 'log': r = v > 0 ? Math.log10(v) : NaN; break;
+      case 'exp': r = Math.exp(v); break;
+      case 'pi': r = Math.PI; break; case 'e': r = Math.E; break;
+      default: return;
+    }
+    if (typeof r === 'number' && Math.abs(r) < 1e-14 && (k === 'sin' || k === 'cos' || k === 'tan')) r = 0;
+    setRes(r);
+  }
+  function press(k) {
+    if (/^[0-9]$/.test(k)) digit(k);
+    else if (k === '.') dot();
+    else if (k === '+' || k === '-' || k === '*' || k === '/' || k === 'pow') oper(k === 'pow' ? '^' : k);
+    else if (k === '=') equals();
+    else if (k === 'ac') clearKey();
+    else if (k === 'sign') sign();
+    else if (k === 'pct') pct();
+    else if (k === 'deg') K.deg = !K.deg;
+    else if (k === 'back') back();
+    else unary(k);
+  }
+  function fmtDisp(s) {
+    if (s === 'Error' || s.indexOf('e') > -1) return s;
+    var neg = s.charAt(0) === '-'; if (neg) s = s.slice(1);
+    var i = s.indexOf('.'), ip = i < 0 ? s : s.slice(0, i), fp = i < 0 ? '' : s.slice(i);
+    return (neg ? '-' : '') + ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + fp;
+  }
+  /*CALC-ENGINE-END*/
+
+  function fit() {
+    try {
+      var land = window.matchMedia && matchMedia('(orientation:landscape) and (min-width:560px)').matches, base = land ? 52 : 88;
+      var w = cDisp.clientWidth - 16, len = Math.max(1, cOut.textContent.length), fs = Math.max(30, Math.min(base, Math.floor(w / (len * .56))));
+      cOut.style.fontSize = fs + 'px';
+    } catch (e) { }
+  }
+  function paint() {
+    cOut.textContent = fmtDisp(K.cur); fit();
+    if (clrBtn) clrBtn.textContent = (K.entry && !K.err) ? 'C' : 'AC';
+    Array.prototype.forEach.call(calc.querySelectorAll('[data-o]'), function (b) { b.classList.toggle('on', !!K.op && K.fresh && b.getAttribute('data-o') === K.op); });
+    if (degBtn) degBtn.textContent = K.deg ? 'Deg' : 'Rad';
+  }
+  function openCalc() { calc.classList.add('show'); calc.setAttribute('aria-hidden', 'false'); void calc.offsetHeight; calc.classList.add('in'); calcOpen = true; paint(); }
+  function closeCalc() { calcOpen = false; calc.classList.remove('in'); calc.setAttribute('aria-hidden', 'true'); setTimeout(function () { if (!calcOpen) calc.classList.remove('show'); }, 340); }
+  window.QuickCalc = { open: openCalc, close: closeCalc };
+  D.getElementById('qc-x').addEventListener('click', closeCalc);
+  calc.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('.qc-b'); if (!b) return;
+    press(b.getAttribute('data-k')); paint(); vib(6);
+  });
+  window.addEventListener('resize', function () { if (calcOpen) fit(); });
+  /* swipe the number sideways to delete the last digit (like the iPhone calculator) */
+  var sx = null;
+  cDisp.addEventListener('touchstart', function (e) { sx = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+  cDisp.addEventListener('touchend', function (e) { if (sx === null) return; var dx = (e.changedTouches[0] || {}).clientX - sx; sx = null; if (Math.abs(dx) > 36) { press('back'); paint(); } }, { passive: true });
+  calc.addEventListener('touchmove', function (e) { if (e.cancelable) e.preventDefault(); }, { passive: false });
+  D.addEventListener('keydown', function (e) {
+    if (!calcOpen || e.ctrlKey || e.metaKey || e.altKey) return;
+    var k = e.key, m = null;
+    if (/^[0-9]$/.test(k)) m = k; else if (k === '.' || k === ',') m = '.'; else if (k === '+' || k === '-' || k === '*' || k === '/') m = k;
+    else if (k === 'x' || k === 'X') m = '*'; else if (k === 'Enter' || k === '=') m = '='; else if (k === '%') m = 'pct';
+    else if (k === 'Backspace') m = 'back'; else if (k === 'Delete' || k === 'c' || k === 'C') m = 'ac';
+    else if (k === 'Escape') { closeCalc(); e.preventDefault(); return; }
+    if (m) { e.preventDefault(); press(m); paint(); }
+  });
+
   /* ---------- start-up ---------- */
-  setDim(Q.dim); Q.apply(); refresh(); if (Q.dark) dmOn();
+  setDim(Q.dim); Q.apply(); refresh();
   var hinted = false, ht = setInterval(function () {
     try {
       var d = D.getElementById('student-view'), a = D.getElementById('admin-view'), up = (d && !d.classList.contains('hidden-view')) || (a && !a.classList.contains('hidden-view'));
-      if (!up) return; clearInterval(ht); if (hinted || localStorage.getItem('exama_qp_hint')) return; hinted = true; localStorage.setItem('exama_qp_hint', '1');
-      setTimeout(function () { if (window.showToast) window.showToast('Quick settings', 'Pull down from the top header to open dark mode, volume and more.', 'info'); }, 2500);
+      if (!up) return; clearInterval(ht); if (hinted || localStorage.getItem('exama_qp_hint2')) return; hinted = true; localStorage.setItem('exama_qp_hint2', '1');
+      setTimeout(function () { if (window.showToast) window.showToast('Control panel', 'Pull down from the top header for sound, Do Not Disturb, calculator and more.', 'info'); }, 2500);
     } catch (e) { }
   }, 2000);
 })();
