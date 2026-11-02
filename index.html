@@ -10521,12 +10521,12 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             </div>
         </div>
 
-        <!-- DOUBT BOARD VIEW (renamed: Solve It) -->
+        <!-- DOUBT BOARD VIEW (renamed: Let's Ask It) -->
 <div id="doubt-board-view" class="hidden-view absolute inset-0 bg-[#fff8f3] z-[80] flex flex-col slide-left">
     <div class="hdr-r hdr-p db-hd">
         <div class="db-row">
             <button onclick="safeBack()" class="db-bk" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button>
-            <div class="db-ht"><h2>Solve It</h2><p>Ask · Solve · Earn coins</p></div>
+            <div class="db-ht"><h2>Let's Ask It</h2><p>Ask · Solve · Earn coins</p></div>
             <button type="button" class="db-lbb" data-db="stats" aria-label="My progress" title="My progress"><i class="fa-solid fa-ranking-star"></i></button>
         </div>
         <div class="db-sr"><i class="fa-solid fa-magnifying-glass"></i><input id="db-q" placeholder="Search doubts, subjects, names" autocomplete="off"></div>
@@ -10589,9 +10589,10 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             <div class="db-sh-h db-th-h"><span class="db-th-ic"><i class="fa-solid fa-pen-to-square"></i></span><b>Add your answer<small id="db-th-sub">Help a classmate and earn coins</small></b><button type="button" data-db="close-th" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
             <div id="db-th-body" class="db-th-body"></div>
             <div class="db-rp">
+                <div class="db-rp-prev" id="db-r-prev"><img id="db-r-thumb" alt="Answer photo preview"><span>Photo answer ready to send</span><button type="button" data-db="rep-rm" aria-label="Remove photo"><i class="fa-solid fa-xmark"></i></button></div>
                 <textarea id="db-r-text" maxlength="800" rows="2" placeholder="Type your answer here..."></textarea>
                 <div class="db-rp-r">
-                    <span id="db-r-img-n" hidden></span><input id="db-r-file" type="file" accept="image/*" hidden>
+                    <button type="button" class="db-rpb" data-db="snap-rep" aria-label="Snap your answer"><i class="fa-solid fa-camera"></i> Camera</button><span id="db-r-img-n" hidden></span><input id="db-r-file" type="file" accept="image/*" hidden>
                     <button type="button" class="db-b1" data-db="reply"><i class="fa-solid fa-paper-plane"></i> Send</button>
                 </div>
             </div>
@@ -11075,7 +11076,7 @@ import { ref, set, get, push, update, remove, onValue, query, limitToLast } from
    Coins: when an answer is marked "This helped" (by the asker or the teacher) its author gets COINS in the wallet (window.__wltGrant), once per answer. */
 const D = document, $ = id => D.getElementById(id), W = window;
 const esc = W.escHtml || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
-const NAME = 'Solve It', COINS = 10, ADMIN_MOBILE = '9475757821', DAILY_LIMIT = 5;
+const NAME = "Let's Ask It", COINS = 10, ADMIN_MOBILE = '9475757821', DAILY_LIMIT = 5;
 const S = { err: '', path: '', unsub: null, list: [], loaded: false, counts: {}, tab: 'feed', filter: 'all', subj: '', q: '', week: false, open: null, imgs: {}, pend: {}, askImg: null, repImg: null, busy: false };
 
 const me = () => String(W.loggedInMobile || '');
@@ -11096,6 +11097,7 @@ function av(mobile, name, role, big) {
     const u = s && s.dpUrl ? (W.imgCache ? W.imgCache.get('dp:' + mobile, s.dpUrl) : s.dpUrl) : '';
     return `<span class="sv-av ${role === 'admin' ? 't' : ''} ${big ? 'lg' : ''}"><b>${esc((name || '?').trim().charAt(0).toUpperCase())}</b>${u ? `<img src="${esc(u)}" alt="" onerror="this.remove()">` : ''}</span>`;
 }
+const everyone = () => [...new Set((W.studentsDB || []).map(s => String(s.mobile)).concat(ADMIN_MOBILE).filter(Boolean))];
 function pushTo(title, msg, to, id) {
     try {
         const list = (Array.isArray(to) ? to : [to]).map(String).filter(m => m && m !== me());
@@ -11150,6 +11152,7 @@ function visible() {
     const q = S.q.toLowerCase();
     return S.list.filter(d => {
         if (S.tab === 'mine' && String(d.mobile) !== me()) return false;
+        if (S.tab === 'feed' && d.status === 'resolved') return false;   // solved doubts leave the feed (still in the database + My doubts)
         if (['open', 'answered', 'resolved'].includes(S.filter) && d.status !== S.filter) return false;
         if (S.subj && d.subject !== S.subj) return false;
         if (q && !(d.text + ' ' + d.subject + ' ' + (d.chapter || '') + ' ' + d.name).toLowerCase().includes(q)) return false;
@@ -11178,7 +11181,7 @@ function closeStats() { S.stats = false; const e = $('db-stats'); if (e) e.class
 function paint() {
     const list = $('db-list'); if (!list) return;
     $('db-tabs').innerHTML = [['feed', 'Feed'], ['mine', 'My doubts']].map(t => `<button type="button" data-db="tab" data-v="${t[0]}" class="${S.tab === t[0] ? 'on' : ''}">${t[1]}</button>`).join('');
-    const subs = [...new Set(S.list.map(d => d.subject).filter(Boolean))].sort(), isTop = S.tab === 'top';
+    const subs = [...new Set(S.list.filter(d => S.tab !== 'feed' || d.status !== 'resolved').map(d => d.subject).filter(Boolean))].sort(), isTop = S.tab === 'top';
     if (S.subj && !subs.includes(S.subj)) S.subj = '';
     S.filter = 'all'; $('db-subjs').style.display = isTop ? 'none' : '';
     $('db-subjs').innerHTML = ['', ...subs].map(x => { const i = subIc(x); return `<button type="button" class="db-sb ${S.subj === x ? 'on' : ''}" style="--c:${i[2]}" data-db="subj" data-v="${esc(x)}"><i class="fa-solid ${x ? i[1] : 'fa-layer-group'}"></i><span>${x ? esc(x) : 'All'}</span></button>`; }).join('');
@@ -11215,12 +11218,10 @@ function thread() {
     const rh = r.map(x => {
         const t = x.role === 'admin', canH = canMod && String(x.mobile) !== String(d.mobile) && !x.helpful && !(own && String(x.mobile) === me());
         return `<div class="db-rep ${t ? 't' : ''} ${x.helpful ? 'h' : ''}"><div class="db-top">${av(x.mobile, x.name, x.role)}<div class="db-who"><b>${esc(x.name)}${t ? ' <span class="db-tv"><i class="fa-solid fa-circle-check"></i> Teacher verified</span>' : ''}${x.helpful ? ' <span class="db-gold">' + coinI(13) + ' Rewarded</span>' : ''}</b><small>${ago(x.ts)}${x.helpful ? ' · helped' : ''}</small></div></div>
-<p class="db-q">${esc(x.text)}</p>${x.hasImg ? imgBox(d.id, x.id) : ''}
+${x.text ? `<p class="db-q">${esc(x.text)}</p>` : ''}${x.hasImg ? imgBox(d.id, x.id) : ''}
 <div class="db-rep-a">${canH ? `<button type="button" data-db="helped" data-id="${esc(d.id)}" data-rid="${esc(x.id)}"><i class="fa-solid fa-thumbs-up"></i> This helped${t ? '' : ' (+' + COINS + ' coins to them)'}</button>` : ''}${isAdmin() ? `<button type="button" class="x" data-db="delrep" data-id="${esc(d.id)}" data-rid="${esc(x.id)}">Delete</button>` : ''}</div></div>`;
     }).join('');
-    const qic = subIc(d.subject);
-    const qh = `<div class="db-qbox" style="--c:${qic[2]}"><div class="db-top">${av(d.mobile, d.name, d.role)}<div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}${d.subject ? ` · <span class="db-sjn"><i class="fa-solid ${qic[1]}"></i>${esc(d.subject)}</span>` : ''}${d.chapter ? ' · ' + esc(d.chapter) : ''}</small></div></div><p class="db-q">${esc(d.text)}</p>${d.hasImg ? imgBox(d.id, '') : ''}</div>`;
-    body.innerHTML = qh + (acts.length ? `<div class="db-acts">${acts.join('')}</div>` : '') + `<div class="db-h">${r.length} ${r.length === 1 ? 'answer' : 'answers'}</div>${rh || '<div class="db-empty">No answers yet. Be the first to help and earn ' + COINS + ' coins.</div>'}`;
+    body.innerHTML = (acts.length ? `<div class="db-acts">${acts.join('')}</div>` : '') + `<div class="db-h">${r.length} ${r.length === 1 ? 'answer' : 'answers'}</div>${rh || '<div class="db-empty">No answers yet. Be the first to help and earn ' + COINS + ' coins.</div>'}`;
     body.querySelectorAll('.db-img[data-img]:not(.ok)').forEach(fillBox);
 }
 function loadImg(key) {
@@ -11370,7 +11371,7 @@ function dataToBlob(u) { const m = /^data:([^;]+);base64,(.*)$/.exec(u), bin = a
 async function vSave() {
     const it = V.items[V.i]; if (!V.src || !it) return;
     try {
-        const b = dataToBlob(V.src), name = 'solve-it-' + it.label.split(' ')[0].toLowerCase() + '.jpg', f = new File([b], name, { type: b.type || 'image/jpeg' });
+        const b = dataToBlob(V.src), name = 'lets-ask-it-' + it.label.split(' ')[0].toLowerCase() + '.jpg', f = new File([b], name, { type: b.type || 'image/jpeg' });
         if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f] }); return; }
         const a = D.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; D.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
     } catch (e) { if (e && e.name === 'AbortError') return; toast('Could not save', 'Try again.', 'error'); }
@@ -11408,7 +11409,7 @@ async function post() {
         const id = push(ref(W.rtdb, S.path)).key, img = S.askImg;
         if (img) await set(ref(W.rtdb, imgPath() + '/' + id), img);
         await set(ref(W.rtdb, S.path + '/' + id), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', subject: subject.slice(0, 40), chapter: chapter.slice(0, 60), text: text.slice(0, 800), hasImg: !!img, status: 'open', ts: Date.now() });
-        pushTo('New doubt: ' + subject, myName() + ': ' + text, ADMIN_MOBILE, id);
+        pushTo('New doubt: ' + subject, myName() + ': ' + text, everyone(), id);
         closeAsk(); toast('Doubt posted', 'You will get a notification when someone answers.', 'success');
     } catch (e) { console.warn(e); toast('Could not post', String((e && (e.code || e.message)) || 'Check your internet.').slice(0, 90), 'error'); }
     S.busy = false; $('db-post').disabled = false;
@@ -11422,7 +11423,7 @@ async function reply() {
         if (img) await set(ref(W.rtdb, imgPath() + '/' + d.id + '_' + rid), img);
         await set(ref(W.rtdb, S.path + '/' + d.id + '/replies/' + rid), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', text: text.slice(0, 800), hasImg: !!img, ts: Date.now() });
         if (d.status === 'open') await update(ref(W.rtdb, S.path + '/' + d.id), { status: 'answered' });
-        pushTo(isAdmin() ? 'Teacher answered your doubt' : 'New answer to your doubt', myName() + ': ' + text, d.mobile, d.id);
+        pushTo(isAdmin() ? 'Teacher answered your doubt' : 'New answer to your doubt', myName() + ': ' + (text || 'Sent a photo answer'), d.mobile, d.id);
         S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = ''; repPrev();
     } catch (e) { console.warn(e); toast('Could not send', String((e && (e.code || e.message)) || 'Try again.').slice(0, 90), 'error'); }
     S.busy = false;
@@ -11439,6 +11440,7 @@ async function helped(id, rid) {
     }
     pushTo('Your answer helped!' + (paid ? ' +' + COINS + ' coins' : ''), d.name + ' marked your answer as helpful', r.mobile, id);
     toast('Marked as helped', paid ? r.name + ' has been rewarded.' : 'The doubt is now solved.', 'success');
+    if (S.open === id) { $('db-th').classList.add('hidden-view'); S.open = null; }
 }
 async function del(id) {
     if (!confirm('Delete this doubt and all its answers?')) return;
