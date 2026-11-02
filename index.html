@@ -10461,8 +10461,10 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
         <div class="db-sr"><i class="fa-solid fa-magnifying-glass"></i><input id="db-q" placeholder="Search doubts, subjects, names" autocomplete="off"></div>
         <div class="db-tabs" id="db-tabs"></div>
     </div>
-    <div class="db-bar"><div class="db-subs" id="db-subjs"></div></div>
-    <div id="db-list" class="db-list no-scrollbar"></div>
+    <div class="db-body">
+        <div class="db-bar"><div class="db-subs" id="db-subjs"></div></div>
+        <div id="db-list" class="db-list no-scrollbar"></div>
+    </div>
     <button type="button" class="db-fab" data-db="snap"><i class="fa-solid fa-camera"></i> Snap your doubt</button>
     <input id="db-snap-file" type="file" accept="image/*" capture="environment" hidden>
 
@@ -10519,6 +10521,29 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
                 <textarea id="db-r-text" maxlength="800" rows="2" placeholder="Write an answer and earn 10 coins if it helps..."></textarea>
                 <div class="db-rp-r"><button type="button" class="db-ic" data-db="pick-rep" aria-label="Add photo"><i class="fa-solid fa-image"></i></button><span id="db-r-img-n"></span><input id="db-r-file" type="file" accept="image/*" hidden><button type="button" class="db-b1" data-db="reply">Send</button></div>
             </div>
+        </div>
+    </div>
+    <div id="db-vw" class="db-vw hidden-view" role="dialog" aria-label="Photo viewer">
+        <div class="db-vw-top">
+            <button type="button" data-db="vw-close" aria-label="Close photo"><i class="fa-solid fa-xmark"></i></button>
+            <div class="db-vw-t"><b id="db-vw-ti">Photo</b><small id="db-vw-sub"></small></div>
+            <span class="db-vw-n" id="db-vw-n"></span>
+        </div>
+        <div class="db-vw-stage" id="db-vw-stage">
+            <img id="db-vw-img" class="db-vw-img" alt="" draggable="false">
+            <div class="db-vw-ld" id="db-vw-ld"><span class="db-spin"></span></div>
+            <div class="db-vw-err" id="db-vw-err"><i class="fa-regular fa-image"></i><span>Photo unavailable</span></div>
+            <button type="button" class="db-vw-nav p" id="db-vw-pv" data-db="vw-prev" aria-label="Previous photo"><i class="fa-solid fa-chevron-left"></i></button>
+            <button type="button" class="db-vw-nav n" id="db-vw-nx" data-db="vw-next" aria-label="Next photo"><i class="fa-solid fa-chevron-right"></i></button>
+            <div class="db-vw-hint" id="db-vw-hint"><span>Pinch or double-tap to zoom</span></div>
+        </div>
+        <div class="db-vw-bar">
+            <button type="button" data-db="vw-out" aria-label="Zoom out"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+            <span id="db-vw-z">100%</span>
+            <button type="button" data-db="vw-in" aria-label="Zoom in"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+            <button type="button" data-db="vw-rot" aria-label="Rotate"><i class="fa-solid fa-rotate-right"></i></button>
+            <button type="button" data-db="vw-fit" aria-label="Reset view"><i class="fa-solid fa-expand"></i></button>
+            <button type="button" class="go" data-db="vw-save" aria-label="Save or share photo"><i class="fa-solid fa-download"></i></button>
         </div>
     </div>
 </div>
@@ -10851,6 +10876,80 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
 }
 </style>
 
+<style id="db-css-v3">
+/* Solve It v3: Facebook-style feed cards, pills that slide away on scroll, wallet coin, photo viewer */
+#doubt-board-view .db-body{position:relative;z-index:1;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+#doubt-board-view .db-body .db-list{flex:1;min-height:0}
+/* subject pills float over the feed and slide up when you scroll down (no layout change = no jitter) */
+#doubt-board-view .db-bar{position:absolute;top:0;left:0;right:0;z-index:3;max-height:none;padding-bottom:6px;background:linear-gradient(180deg,var(--cr) 80%,rgba(255,248,243,0));transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s ease}
+#doubt-board-view.db-fold .db-bar{max-height:none;margin:0;padding-top:8px;padding-bottom:6px;border-width:0;opacity:0;transform:translateY(-105%);pointer-events:none}
+
+/* feed card, post style */
+#doubt-board-view .db-card{--pd:16px;padding:0;gap:0;overflow:hidden}
+#doubt-board-view .db-card .db-top{padding:14px var(--pd) 0}
+#doubt-board-view .db-card .db-who small{display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden}
+#doubt-board-view .db-card .db-who .db-sjn{display:inline-flex;align-items:center;gap:5px;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--c);font-weight:800}
+#doubt-board-view .db-card .db-q{margin:11px var(--pd) 0}
+#doubt-board-view .db-card .db-tags{margin:10px var(--pd) 0}
+#doubt-board-view .db-pic{position:relative;margin-top:12px;background:#f3ebe5;overflow:hidden;cursor:zoom-in;border-top:1px solid #f1e4da;border-bottom:1px solid #f1e4da;min-height:60px}
+#doubt-board-view .db-pic img{display:block;width:100%;height:auto;max-height:440px;object-fit:cover;object-position:center top}
+#doubt-board-view .db-pic.sk{aspect-ratio:4/3;background:linear-gradient(100deg,#f3ebe5 30%,#fbf6f2 50%,#f3ebe5 70%);background-size:200% 100%;animation:dbSk 1.3s linear infinite}
+#doubt-board-view .db-pic>i{display:block;padding:26px;text-align:center;font-style:normal;font-size:12px;font-weight:700;color:var(--mut)}
+@keyframes dbSk{0%{background-position:120% 0}100%{background-position:-120% 0}}
+#doubt-board-view .db-zm{position:absolute;right:10px;bottom:10px;width:34px;height:34px;border-radius:12px;background:rgba(20,12,8,.55);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);pointer-events:none}
+#doubt-board-view .db-card .db-stat{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;margin:12px var(--pd) 0;padding-bottom:11px;font-size:12px;font-weight:700;color:var(--mut)}
+#doubt-board-view .db-card .db-stat .db-n{display:inline-flex;align-items:center;gap:6px}
+#doubt-board-view .db-card .db-stat .db-r{margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+#doubt-board-view .db-actb{display:flex;gap:4px;border-top:1px solid #f4e9e0;padding:4px 6px}
+#doubt-board-view .db-actb button{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;border:0;background:transparent;padding:11px 8px;border-radius:12px;font-size:13px;font-weight:800;color:#6f5a4d}
+#doubt-board-view .db-actb button.pri{color:var(--o1)}
+@media (hover:hover){#doubt-board-view .db-actb button:hover{background:#fff4ec}}
+@media (max-width:360px){#doubt-board-view .db-card{--pd:14px;padding:0}}
+
+/* photos inside the thread sheet */
+#doubt-board-view .db-img{position:relative;cursor:zoom-in}
+#doubt-board-view .db-img img{width:100%;height:auto;max-height:420px;object-fit:cover;object-position:center top}
+
+/* wallet coin */
+#doubt-board-view .db-gold{display:inline-flex;align-items:center;gap:5px}
+#doubt-board-view .db-gold>span{box-shadow:none!important}
+#doubt-board-view .db-hero b{display:flex;align-items:center;gap:12px}
+
+/* photo viewer */
+#doubt-board-view .db-vw{position:absolute;inset:0;z-index:12;display:flex;flex-direction:column;color:#fff;background:rgba(8,6,5,calc(.97 * var(--vo,1)));animation:dbUp .22s ease-out;-webkit-user-select:none;user-select:none}
+#doubt-board-view .db-vw.hidden-view{display:none!important}
+#doubt-board-view .db-vw-top{display:flex;align-items:center;gap:12px;flex-shrink:0;padding:max(12px,calc(env(safe-area-inset-top,0px) + 8px)) 14px 10px}
+#doubt-board-view .db-vw-top button{width:42px;height:42px;border-radius:14px;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:17px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#doubt-board-view .db-vw-t{flex:1;min-width:0}
+#doubt-board-view .db-vw-t b{display:block;font-size:15px;font-weight:900;color:#fff;max-width:none}
+#doubt-board-view .db-vw-t small{display:block;font-size:11.5px;font-weight:700;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#doubt-board-view .db-vw-n{font-size:12px;font-weight:800;background:rgba(255,255,255,.14);padding:6px 11px;border-radius:999px}
+#doubt-board-view .db-vw-n:empty{display:none}
+#doubt-board-view .db-vw-stage{position:relative;flex:1;min-height:0;overflow:hidden;touch-action:none;cursor:grab}
+#doubt-board-view .db-vw-img{position:absolute;left:50%;top:50%;max-width:none;max-height:none;transform-origin:50% 50%;will-change:transform;-webkit-user-drag:none;box-shadow:0 10px 40px rgba(0,0,0,.5);visibility:hidden}
+#doubt-board-view .db-vw-img.anim{transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s ease}
+#doubt-board-view .db-vw-ld{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+#doubt-board-view .db-spin{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;animation:dbSpin .8s linear infinite}
+@keyframes dbSpin{to{transform:rotate(360deg)}}
+#doubt-board-view .db-vw-err{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:14px;font-weight:700;opacity:.8;pointer-events:none}
+#doubt-board-view .db-vw-err i{font-size:34px}
+#doubt-board-view .db-vw-nav{position:absolute;top:50%;width:44px;height:44px;margin-top:-22px;border-radius:50%;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:16px;display:none;align-items:center;justify-content:center;z-index:2}
+#doubt-board-view .db-vw-nav.p{left:12px}
+#doubt-board-view .db-vw-nav.n{right:12px}
+#doubt-board-view .db-vw-nav:disabled{opacity:.25;pointer-events:none}
+#doubt-board-view .db-vw.multi .db-vw-nav{display:flex}
+@media (hover:none){#doubt-board-view .db-vw.multi .db-vw-nav{display:none}}
+#doubt-board-view .db-vw-hint{position:absolute;left:0;right:0;bottom:14px;text-align:center;pointer-events:none;opacity:0;z-index:2}
+#doubt-board-view .db-vw-hint span{display:inline-block;background:rgba(0,0,0,.55);padding:7px 14px;border-radius:999px;font-size:12px;font-weight:800}
+#doubt-board-view .db-vw-hint.on{animation:dbVH 3.4s ease forwards}
+@keyframes dbVH{0%{opacity:0}10%{opacity:1}75%{opacity:1}100%{opacity:0}}
+#doubt-board-view .db-vw-bar{display:flex;align-items:center;justify-content:center;gap:8px;flex-shrink:0;padding:10px 14px calc(14px + env(safe-area-inset-bottom,0px))}
+#doubt-board-view .db-vw-bar button{width:46px;height:46px;border-radius:15px;border:0;background:rgba(255,255,255,.14);color:#fff;font-size:17px;display:flex;align-items:center;justify-content:center}
+#doubt-board-view .db-vw-bar button.go{background:linear-gradient(135deg,var(--o1),var(--o2))}
+#doubt-board-view #db-vw-z{min-width:50px;text-align:center;font-size:12.5px;font-weight:800;opacity:.85}
+@media (max-height:480px){#doubt-board-view .db-vw-bar{padding-top:6px;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}#doubt-board-view .db-vw-bar button{width:40px;height:40px}}
+</style>
+
 <script type="module" id="doubt-board-js">
 import { ref, set, get, push, update, remove, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
 
@@ -10859,7 +10958,7 @@ import { ref, set, get, push, update, remove, onValue, query, limitToLast } from
 const D = document, $ = id => D.getElementById(id), W = window;
 const esc = W.escHtml || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
 const NAME = 'Solve It', COINS = 10, ADMIN_MOBILE = '9475757821', DAILY_LIMIT = 5;
-const S = { err: '', path: '', unsub: null, list: [], loaded: false, counts: {}, tab: 'feed', filter: 'all', subj: '', q: '', week: false, open: null, imgs: {}, askImg: null, repImg: null, busy: false };
+const S = { err: '', path: '', unsub: null, list: [], loaded: false, counts: {}, tab: 'feed', filter: 'all', subj: '', q: '', week: false, open: null, imgs: {}, pend: {}, askImg: null, repImg: null, busy: false };
 
 const me = () => String(W.loggedInMobile || '');
 const isAdmin = () => W.currentRole === 'admin';
@@ -10921,7 +11020,7 @@ function board() {
 }
 function top() {
     const b = board(), medal = ['🥇', '🥈', '🥉'];
-    const row = (x, i) => `<div class="db-lb ${String(x.mobile) === me() ? 'me' : ''}"><span class="db-rk">${i + 1}</span>${av(x.mobile, x.name)}<div class="db-who"><b>${esc(x.name)}</b><small>${x.ans} answers</small></div><span class="db-gold">${x.solved} solved · ${x.solved * COINS} coins</span></div>`;
+    const row = (x, i) => `<div class="db-lb ${String(x.mobile) === me() ? 'me' : ''}"><span class="db-rk">${i + 1}</span>${av(x.mobile, x.name)}<div class="db-who"><b>${esc(x.name)}</b><small>${x.ans} answers</small></div><span class="db-gold">${coinI(13)} ${x.solved} solved · ${x.solved * COINS} coins</span></div>`;
     const sw = `<div class="db-chips"><button type="button" data-db="wk" data-v="0" class="${S.week ? '' : 'on'}">All time</button><button type="button" data-db="wk" data-v="1" class="${S.week ? 'on' : ''}">This week</button></div>`;
     if (!b.length) return sw + '<div class="db-empty">No solvers yet.<br>Answer a doubt and get <b>' + COINS + ' coins</b> every time it helps.</div>';
     const p = [b[1], b[0], b[2]].map((x, k) => x ? `<div class="${k === 1 ? 'p1' : ''}"><span class="db-medal">${medal[[1, 0, 2][k]]}</span>${av(x.mobile, x.name, '', k === 1)}<b>${esc(x.name)}</b><small>${x.solved} solved</small></div>` : '<div></div>').join('');
@@ -10951,7 +11050,7 @@ function statsHtml() {
     const b = board(), rank = b.findIndex(x => String(x.mobile) === me()) + 1;
     const my = S.list.flatMap(d => reps(d).filter(r => String(r.mobile) === me() && r.role !== 'admin' && String(d.mobile) !== me()));
     const solved = my.filter(r => r.helpful).length, asked = S.list.filter(d => String(d.mobile) === me()).length;
-    const hero = isAdmin() ? '' : `<div class="db-hero"><span class="db-rkc"><small>Rank</small>${rank ? '#' + rank : '-'}</span><small>Coins earned</small><b><i>🪙</i>${solved * COINS}</b></div>
+    const hero = isAdmin() ? '' : `<div class="db-hero"><span class="db-rkc"><small>Rank</small>${rank ? '#' + rank : '-'}</span><small>Coins earned</small><b>${coinI(40)}<span>${solved * COINS}</span></b></div>
 <div class="db-grid"><div><b>${solved}</b><small>Solved</small></div><div><b>${my.length}</b><small>Answers</small></div><div><b>${asked}</b><small>Asked</small></div></div>`;
     return hero + `<div class="db-how"><i class="fa-solid fa-circle-info"></i><span>Answer a classmate's doubt. When they tap <b>This helped</b>, you earn <b>${COINS} coins</b>.</span></div><div class="db-h">Leaderboard</div>` + top();
 }
@@ -10969,6 +11068,7 @@ function paint() {
     const v = visible();
     list.innerHTML = S.err && !S.loaded ? '<div class="db-empty">Could not load doubts.<br><small>' + esc(S.err) + '</small></div>' : !S.loaded ? '<div class="db-empty">Loading doubts...</div>'
         : isTop ? top() : ((v.length ? v.map(card).join('') : '<div class="db-empty">No doubts here yet.<br>Tap <b>Snap your doubt</b> to ask the first one.</div>'));
+    observeImgs(); padList();
     if (S.open) thread();
     if (S.stats) statsPaint();
     const lv = $('db-list'), vw = $('doubt-board-view');
@@ -10976,10 +11076,12 @@ function paint() {
 }
 function card(d) {
     const r = reps(d), tv = r.some(x => x.role === 'admin'), win = r.some(x => x.helpful), ic = subIc(d.subject), done = d.status === 'resolved';
-    const tags = (d.subject ? `<em class="db-sj"><i class="fa-solid ${ic[1]}"></i>${esc(d.subject)}</em>` : '') + (d.chapter ? `<em class="db-ch">${esc(d.chapter)}</em>` : '');
-    return `<div class="db-card s-${esc(d.status)}" style="--c:${ic[2]}" data-db="open" data-id="${esc(d.id)}"><div class="db-top">${av(d.mobile, d.name, d.role)}<div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}</small></div><span class="db-st db-st-${esc(d.status)}">${done ? 'solved' : esc(d.status)}</span></div>
-${tags ? `<div class="db-tags">${tags}</div>` : ''}<p class="db-q">${esc(d.text)}</p>
-<div class="db-ft"><span><i class="fa-regular fa-comment"></i> ${r.length} ${r.length === 1 ? 'answer' : 'answers'}</span>${d.hasImg ? '<span><i class="fa-solid fa-image"></i> Photo</span>' : ''}${tv ? '<span class="db-tv"><i class="fa-solid fa-circle-check"></i> Teacher verified</span>' : ''}${win ? '<span class="db-gold">🪙 +' + COINS + ' paid</span>' : ''}<span class="db-go">${done ? 'View' : 'Answer'} <i class="fa-solid fa-arrow-right"></i></span></div></div>`;
+    const at = `data-db="view" data-id="${esc(d.id)}" data-rid="" data-img="${esc(d.id)}"`;
+    const pic = d.hasImg ? (S.imgs[d.id] ? `<div class="db-pic ok" ${at}>${picInner(S.imgs[d.id])}</div>` : `<div class="db-pic sk" ${at}></div>`) : '';
+    return `<div class="db-card s-${esc(d.status)}" style="--c:${ic[2]}" data-db="open" data-id="${esc(d.id)}"><div class="db-top">${av(d.mobile, d.name, d.role)}<div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}${d.subject ? ` · <span class="db-sjn"><i class="fa-solid ${ic[1]}"></i>${esc(d.subject)}</span>` : ''}</small></div><span class="db-st db-st-${esc(d.status)}">${done ? 'solved' : esc(d.status)}</span></div>
+<p class="db-q">${esc(d.text)}</p>${d.chapter ? `<div class="db-tags"><em class="db-ch">${esc(d.chapter)}</em></div>` : ''}${pic}
+<div class="db-stat"><span class="db-n"><i class="fa-regular fa-comment-dots"></i> ${r.length} ${r.length === 1 ? 'answer' : 'answers'}</span><span class="db-r">${tv ? '<span class="db-tv"><i class="fa-solid fa-circle-check"></i> Teacher verified</span>' : ''}${win ? `<span class="db-gold">${coinI(13)} +${COINS} paid</span>` : ''}</span></div>
+<div class="db-actb"><button type="button" class="pri" data-db="open" data-id="${esc(d.id)}"><i class="fa-regular fa-comment"></i> ${done ? 'View solution' : 'Answer'}</button>${d.hasImg ? `<button type="button" data-db="view" data-id="${esc(d.id)}" data-rid=""><i class="fa-regular fa-image"></i> View photo</button>` : ''}</div></div>`;
 }
 
 /* ---------- thread ---------- */
@@ -10994,20 +11096,180 @@ function thread() {
     const r = reps(d);
     const rh = r.map(x => {
         const t = x.role === 'admin', canH = canMod && String(x.mobile) !== String(d.mobile) && !x.helpful && !(own && String(x.mobile) === me());
-        return `<div class="db-rep ${t ? 't' : ''} ${x.helpful ? 'h' : ''}"><div class="db-top">${av(x.mobile, x.name, x.role)}<div class="db-who"><b>${esc(x.name)}${t ? ' <span class="db-tv"><i class="fa-solid fa-circle-check"></i> Teacher verified</span>' : ''}${x.helpful ? ' <span class="db-gold">🪙 +' + COINS + ' coins</span>' : ''}</b><small>${ago(x.ts)}${x.helpful ? ' · helped' : ''}</small></div></div>
-<p class="db-q">${esc(x.text)}</p>${x.hasImg ? `<div class="db-img" data-img="${esc(d.id + '_' + x.id)}"><i>Loading photo...</i></div>` : ''}
+        return `<div class="db-rep ${t ? 't' : ''} ${x.helpful ? 'h' : ''}"><div class="db-top">${av(x.mobile, x.name, x.role)}<div class="db-who"><b>${esc(x.name)}${t ? ' <span class="db-tv"><i class="fa-solid fa-circle-check"></i> Teacher verified</span>' : ''}${x.helpful ? ' <span class="db-gold">' + coinI(13) + ' +' + COINS + ' coins</span>' : ''}</b><small>${ago(x.ts)}${x.helpful ? ' · helped' : ''}</small></div></div>
+<p class="db-q">${esc(x.text)}</p>${x.hasImg ? imgBox(d.id, x.id) : ''}
 <div class="db-rep-a">${canH ? `<button type="button" data-db="helped" data-id="${esc(d.id)}" data-rid="${esc(x.id)}"><i class="fa-solid fa-thumbs-up"></i> This helped${t ? '' : ' (+' + COINS + ' coins to them)'}</button>` : ''}${isAdmin() ? `<button type="button" class="x" data-db="delrep" data-id="${esc(d.id)}" data-rid="${esc(x.id)}">Delete</button>` : ''}</div></div>`;
     }).join('');
     body.innerHTML = `<div class="db-top">${av(d.mobile, d.name, d.role, 1)}<div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}</small></div><span class="db-st db-st-${esc(d.status)}">${d.status === 'resolved' ? 'solved' : esc(d.status)}</span></div>
 <div class="db-tags">${[d.subject, d.chapter].filter(Boolean).map(t => `<span>${esc(t)}</span>`).join('')}</div>
-<p class="db-q">${esc(d.text)}</p>${d.hasImg ? `<div class="db-img" data-img="${esc(d.id)}"><i>Loading photo...</i></div>` : ''}
+<p class="db-q">${esc(d.text)}</p>${d.hasImg ? imgBox(d.id, '') : ''}
 <div class="db-acts">${acts.join('')}</div><div class="db-h">${r.length} ${r.length === 1 ? 'answer' : 'answers'}</div>${rh || '<div class="db-empty">No answers yet. Be the first to help and earn ' + COINS + ' coins.</div>'}`;
-    body.querySelectorAll('.db-img[data-img]').forEach(el => loadImg(el.getAttribute('data-img')).then(src => { el.innerHTML = src ? `<img src="${src}" alt="photo">` : '<i>Photo unavailable</i>'; }));
+    body.querySelectorAll('.db-img[data-img]:not(.ok)').forEach(fillBox);
 }
 function loadImg(key) {
     if (S.imgs[key]) return Promise.resolve(S.imgs[key]);
-    return get(ref(W.rtdb, imgPath() + '/' + key)).then(s => { const v = s.val(); if (v) S.imgs[key] = v; return v; }).catch(() => null);
+    if (S.pend[key]) return S.pend[key];
+    return S.pend[key] = get(ref(W.rtdb, imgPath() + '/' + key)).then(s => {
+        const v = s.val(), ok = typeof v === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(v);
+        if (ok) S.imgs[key] = v; delete S.pend[key]; return ok ? v : null;
+    }).catch(() => { delete S.pend[key]; return null; });
 }
+
+/* wallet coin (same coin as My Wallet; falls back to an identical copy until the wallet code has loaded) */
+const coinI = px => W.__wltCoin ? W.__wltCoin(px) : '<span style="display:inline-flex;width:' + px + 'px;height:' + px + 'px;border-radius:50%;align-items:center;justify-content:center;background:linear-gradient(145deg,#fde68a,#f59e0b);color:#78350f;font-weight:900;font-size:' + px * .6 + 'px;line-height:1;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18),0 4px 14px rgba(245,158,11,.4)">\u2618\uFE0E</span>';
+
+/* ---------- photos: lazy feed images + thread images ---------- */
+const picInner = src => `<img src="${src}" alt="Doubt photo" draggable="false"><span class="db-zm" aria-hidden="true"><i class="fa-solid fa-expand"></i></span>`;
+function imgBox(id, rid) {
+    const key = rid ? id + '_' + rid : id, c = S.imgs[key], at = `data-db="view" data-id="${esc(id)}" data-rid="${esc(rid || '')}" data-img="${esc(key)}"`;
+    return c ? `<div class="db-img ok" ${at}>${picInner(c)}</div>` : `<div class="db-img" ${at}><i>Loading photo...</i></div>`;
+}
+function fillBox(el) {
+    loadImg(el.getAttribute('data-img')).then(src => {
+        if (!el.isConnected) return;
+        el.classList.remove('sk');
+        if (src) { el.classList.add('ok'); el.innerHTML = picInner(src); } else el.innerHTML = '<i>Photo unavailable</i>';
+    });
+}
+let io = null;
+function observeImgs() {
+    const list = $('db-list'); if (io) { io.disconnect(); io = null; } if (!list) return;
+    const els = [...list.querySelectorAll('.db-pic[data-img]:not(.ok)')]; if (!els.length) return;
+    if (!('IntersectionObserver' in W)) { els.forEach(fillBox); return; }
+    io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { io.unobserve(e.target); fillBox(e.target); } }), { root: list, rootMargin: '500px 0px' });
+    els.forEach(e => io.observe(e));
+}
+/* the pills float over the feed, so the feed keeps room for them at the top */
+function padList() {
+    const l = $('db-list'), b = D.querySelector('#doubt-board-view .db-bar'); if (l && b) l.style.paddingTop = (b.offsetHeight + 6) + 'px';
+}
+(function () { const b = D.querySelector('#doubt-board-view .db-bar'); if (b && W.ResizeObserver) new ResizeObserver(padList).observe(b); W.addEventListener('resize', padList); })();
+
+/* ---------- photo viewer: question + answer photos, pinch / double-tap / wheel zoom, pan, rotate, swipe, save ---------- */
+const V = { on: false, items: [], i: 0, z: 1, x: 0, y: 0, ra: 0, rot: 0, nw: 0, nh: 0, fit: 1, ptr: new Map(), mode: '', g: null, tap: 0, tapx: 0, tapy: 0, src: '', tok: 0, hinted: false };
+const vStage = () => { const s = $('db-vw-stage'); return { w: s.clientWidth, h: s.clientHeight }; };
+const vDims = () => V.rot % 180 ? { w: V.nh, h: V.nw } : { w: V.nw, h: V.nh };
+function vFit() { const s = vStage(), d = vDims(); V.fit = (d.w && d.h && s.w && s.h) ? Math.min(s.w / d.w, s.h / d.h, 3) : 1; }
+function vClamp(x, y, z) {
+    const s = vStage(), d = vDims(), k = V.fit * z, mx = Math.max(0, (d.w * k - s.w) / 2), my = Math.max(0, (d.h * k - s.h) / 2);
+    return { x: Math.max(-mx, Math.min(mx, x)), y: Math.max(-my, Math.min(my, y)) };
+}
+function vApply(anim) {
+    const im = $('db-vw-img'); im.classList.toggle('anim', !!anim);
+    im.style.transform = 'translate(-50%,-50%) translate(' + V.x + 'px,' + V.y + 'px) rotate(' + V.ra + 'deg) scale(' + (V.fit * V.z) + ')';
+    $('db-vw-z').textContent = Math.round(V.z * 100) + '%';
+}
+function vZoomAt(cx, cy, nz, anim) {
+    nz = Math.max(1, Math.min(6, nz)); const r = nz / V.z, p = vClamp(cx - (cx - V.x) * r, cy - (cy - V.y) * r, nz);
+    V.z = nz; V.x = p.x; V.y = p.y; vApply(anim);
+}
+function vReset() { V.ra = 0; V.rot = 0; V.z = 1; V.x = V.y = 0; vFit(); vApply(true); }
+function vRot() { V.ra += 90; V.rot = ((V.ra % 360) + 360) % 360; V.z = 1; V.x = V.y = 0; vFit(); vApply(true); }
+function galleryFor(d) {
+    const items = []; if (d.hasImg) items.push({ key: d.id, label: 'Question', sub: d.name });
+    reps(d).forEach(r => { if (r.hasImg) items.push({ key: d.id + '_' + r.id, label: r.role === 'admin' ? 'Answer · Teacher' : 'Answer', sub: r.name }); });
+    return items;
+}
+function vShow(i, from) {
+    const it = V.items[i]; if (!it) return; V.i = i; const tok = ++V.tok, im = $('db-vw-img'), box = $('db-vw');
+    V.z = 1; V.x = V.y = 0; V.ra = 0; V.rot = 0; V.nw = V.nh = 0; V.src = ''; box.style.setProperty('--vo', 1);
+    im.removeAttribute('src'); im.style.visibility = 'hidden'; im.style.opacity = 1; $('db-vw-ld').style.display = 'flex'; $('db-vw-err').style.display = 'none';
+    $('db-vw-ti').textContent = it.label; $('db-vw-sub').textContent = it.sub || ''; $('db-vw-n').textContent = V.items.length > 1 ? (i + 1) + ' / ' + V.items.length : '';
+    box.classList.toggle('multi', V.items.length > 1); $('db-vw-pv').disabled = i === 0; $('db-vw-nx').disabled = i === V.items.length - 1;
+    const fail = () => { if (tok !== V.tok) return; $('db-vw-ld').style.display = 'none'; $('db-vw-err').style.display = 'flex'; };
+    loadImg(it.key).then(src => {
+        if (tok !== V.tok) return; if (!src) return fail();
+        V.src = src; im.onerror = fail;
+        im.onload = () => {
+            if (tok !== V.tok) return; V.nw = im.naturalWidth; V.nh = im.naturalHeight; im.style.width = V.nw + 'px'; im.style.height = V.nh + 'px';
+            vFit(); $('db-vw-ld').style.display = 'none'; im.style.visibility = 'visible';
+            if (from) { V.x = from * 70; im.style.opacity = 0; vApply(false); void im.offsetWidth; V.x = 0; im.style.opacity = 1; vApply(true); } else vApply(false);
+        };
+        im.src = src;
+    });
+    [V.items[i + 1], V.items[i - 1]].forEach(n => n && loadImg(n.key));
+}
+function vGo(dir) { const n = V.i + dir; if (n < 0 || n >= V.items.length) return; vShow(n, dir > 0 ? 1 : -1); }
+function openViewer(id, rid) {
+    const d = byId(id); if (!d) return; const items = galleryFor(d); if (!items.length) return;
+    const key = rid ? id + '_' + rid : id, at = items.findIndex(x => x.key === key);
+    V.items = items; V.on = true; V.ptr.clear(); V.g = null; V.mode = ''; $('db-vw').classList.remove('hidden-view'); vShow(at < 0 ? 0 : at, 0);
+    const h = $('db-vw-hint'); if (h && !V.hinted) { V.hinted = true; h.classList.remove('on'); void h.offsetWidth; h.classList.add('on'); }
+}
+function closeViewer() {
+    if (!V.on) return; V.on = false; V.tok++; V.ptr.clear(); V.g = null; V.mode = '';
+    const b = $('db-vw'); if (b) { b.classList.add('hidden-view'); b.style.setProperty('--vo', 1); }
+    const im = $('db-vw-img'); if (im) im.removeAttribute('src');
+}
+const vPos = e => { const r = $('db-vw-stage').getBoundingClientRect(); return { x: e.clientX - r.left - r.width / 2, y: e.clientY - r.top - r.height / 2 }; };
+function vDown(e) {
+    if (e.target.closest && e.target.closest('.db-vw-nav')) return;
+    try { $('db-vw-stage').setPointerCapture(e.pointerId); } catch (x) { }
+    const p = vPos(e); V.ptr.set(e.pointerId, p);
+    if (V.ptr.size === 1) { V.g = { sx: p.x, sy: p.y, ox: V.x, oy: V.y, t: e.timeStamp, moved: false, dx: 0, dy: 0 }; V.mode = ''; $('db-vw-img').classList.remove('anim'); }
+    else if (V.ptr.size === 2) { const [a, b] = [...V.ptr.values()]; V.g = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: V.z, ox: V.x, oy: V.y, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; V.mode = 'pinch'; $('db-vw-img').classList.remove('anim'); }
+}
+function vMove(e) {
+    if (!V.ptr.has(e.pointerId)) return; const p = vPos(e); V.ptr.set(e.pointerId, p); const g = V.g; if (!g) return;
+    if (V.mode === 'pinch') {
+        if (V.ptr.size < 2) return; const [a, b] = [...V.ptr.values()], d = Math.hypot(a.x - b.x, a.y - b.y), nz = Math.max(.8, Math.min(6, g.z0 * d / g.d0)), r = nz / g.z0;
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, c = vClamp(mx - (g.cx - g.ox) * r, my - (g.cy - g.oy) * r, nz);
+        V.z = nz; V.x = c.x; V.y = c.y; vApply(); return;
+    }
+    if (V.ptr.size !== 1) return;
+    const dx = p.x - g.sx, dy = p.y - g.sy; g.dx = dx; g.dy = dy;
+    if (!V.mode && Math.hypot(dx, dy) > 8) { g.moved = true; V.mode = V.z > 1.02 ? 'pan' : (Math.abs(dx) > Math.abs(dy) ? 'swx' : 'swy'); }
+    if (V.mode === 'pan') { const c = vClamp(g.ox + dx, g.oy + dy, V.z); V.x = c.x; V.y = c.y; vApply(); }
+    else if (V.mode === 'swx') { const edge = (dx > 0 && V.i === 0) || (dx < 0 && V.i === V.items.length - 1); V.x = g.ox + dx * (edge ? .25 : 1); vApply(); }
+    else if (V.mode === 'swy') { V.y = g.oy + dy; $('db-vw').style.setProperty('--vo', Math.max(.25, 1 - Math.abs(dy) / 420)); vApply(); }
+}
+function vUp(e) {
+    if (!V.ptr.has(e.pointerId)) return; V.ptr.delete(e.pointerId);
+    const g = V.g, mode = V.mode;
+    if (mode === 'pinch') {
+        if (V.ptr.size < 2) {
+            if (V.z < 1) { V.z = 1; const c = vClamp(V.x, V.y, 1); V.x = c.x; V.y = c.y; vApply(true); }
+            const rest = [...V.ptr.values()][0];
+            V.g = rest ? { sx: rest.x, sy: rest.y, ox: V.x, oy: V.y, moved: true, dx: 0, dy: 0, t: e.timeStamp } : null; V.mode = rest ? (V.z > 1.02 ? 'pan' : 'dead') : '';
+        }
+        return;
+    }
+    if (V.ptr.size) return; V.g = null; V.mode = ''; if (!g) return;
+    if (mode === 'swx') {
+        const th = vStage().w * .2, fast = Math.abs(g.dx) > 40 && (e.timeStamp - g.t) < 260;
+        if ((g.dx < -th || (fast && g.dx < 0)) && V.i < V.items.length - 1) return vGo(1);
+        if ((g.dx > th || (fast && g.dx > 0)) && V.i > 0) return vGo(-1);
+        V.x = 0; vApply(true);
+    } else if (mode === 'swy') {
+        if (Math.abs(g.dy) > 110) return closeViewer();
+        V.y = 0; $('db-vw').style.setProperty('--vo', 1); vApply(true);
+    } else if (!g.moved && !mode) {
+        if (e.timeStamp - V.tap < 320 && Math.hypot(g.sx - V.tapx, g.sy - V.tapy) < 30) { V.tap = 0; vZoomAt(g.sx, g.sy, V.z > 1.05 ? 1 : 2.5, true); }
+        else { V.tap = e.timeStamp; V.tapx = g.sx; V.tapy = g.sy; }
+    }
+}
+function vWheel(e) { e.preventDefault(); const p = vPos(e); vZoomAt(p.x, p.y, V.z * Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0018)), false); }
+function dataToBlob(u) { const m = /^data:([^;]+);base64,(.*)$/.exec(u), bin = atob(m[2]), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: m[1] }); }
+async function vSave() {
+    const it = V.items[V.i]; if (!V.src || !it) return;
+    try {
+        const b = dataToBlob(V.src), name = 'solve-it-' + it.label.split(' ')[0].toLowerCase() + '.jpg', f = new File([b], name, { type: b.type || 'image/jpeg' });
+        if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f] }); return; }
+        const a = D.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; D.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    } catch (e) { if (e && e.name === 'AbortError') return; toast('Could not save', 'Try again.', 'error'); }
+}
+(function () {
+    const st = $('db-vw-stage'); if (!st) return;
+    st.addEventListener('pointerdown', vDown); st.addEventListener('pointermove', vMove); st.addEventListener('pointerup', vUp); st.addEventListener('pointercancel', vUp);
+    st.addEventListener('wheel', vWheel, { passive: false });
+    W.addEventListener('resize', () => { if (!V.on || !V.nw) return; vFit(); const c = vClamp(V.x, V.y, V.z); V.x = c.x; V.y = c.y; vApply(false); });
+    W.addEventListener('hashchange', closeViewer);
+    D.addEventListener('keydown', e => {
+        if (!V.on) return; const k = e.key;
+        if (k === 'Escape') { e.preventDefault(); closeViewer(); } else if (k === 'ArrowRight') vGo(1); else if (k === 'ArrowLeft') vGo(-1);
+        else if (k === '+' || k === '=') vZoomAt(0, 0, V.z * 1.4, true); else if (k === '-') vZoomAt(0, 0, V.z / 1.4, true); else if (k === 'r' || k === 'R') vRot();
+    });
+})();
 function compress(file) {
     return new Promise((ok, no) => {
         const fr = new FileReader(); fr.onerror = () => no();
@@ -11130,6 +11392,8 @@ D.addEventListener('click', e => {
     else if (a === 'pick-ask') $('db-a-file').click(); else if (a === 'pick-rep') $('db-r-file').click();
     else if (a === 'resolve') setStatus(id, 'resolved'); else if (a === 'reopen') setStatus(id, reps(byId(id)).length ? 'answered' : 'open');
     else if (a === 'helped') helped(id, rid); else if (a === 'del') del(id); else if (a === 'delrep') delRep(id, rid);
+    else if (a === 'view') openViewer(id, rid); else if (a === 'vw-close') closeViewer(); else if (a === 'vw-prev') vGo(-1); else if (a === 'vw-next') vGo(1);
+    else if (a === 'vw-in') vZoomAt(0, 0, V.z * 1.5, true); else if (a === 'vw-out') vZoomAt(0, 0, V.z / 1.5, true); else if (a === 'vw-rot') vRot(); else if (a === 'vw-fit') vReset(); else if (a === 'vw-save') vSave();
 });
 D.addEventListener('input', e => { if (e.target.id === 'db-q') { S.q = e.target.value.trim(); paint(); } });
 D.addEventListener('change', e => {
@@ -11156,16 +11420,18 @@ function tileBadge() {
     D.querySelectorAll('.db-tb').forEach(b => { b.textContent = n > 99 ? '99+' : n; b.style.display = n ? 'flex' : 'none'; });
 }
 W.addEventListener('hashchange', () => { if (location.hash === '#doubt-board') { attach(); paint(); } else { closeStats(); const v = $('doubt-board-view'); if (v) v.classList.remove('db-fold'); } });
-/* tabs + subject/filter bars slide away when scrolling down, come back on scroll up */
+/* subject pills slide away while you scroll down the feed and come back when you scroll up */
 (function () {
     const l = $('db-list'), v = $('doubt-board-view'); if (!l || !v) return;
-    let last = 0, lock = 0;
+    const bar = v.querySelector('.db-bar'); let last = 0, busy = false;
     l.addEventListener('scroll', () => {
-        const y = l.scrollTop, d = y - last, folded = v.classList.contains('db-fold');
-        if (Date.now() < lock) { last = y; return; }
-        if (!folded && d > 8 && y > 90 && l.scrollHeight - l.clientHeight > 300) { v.classList.add('db-fold'); lock = Date.now() + 380; }
-        else if (folded && (d < -8 || y < 20)) { v.classList.remove('db-fold'); lock = Date.now() + 380; }
-        last = l.scrollTop;
+        if (busy) return; busy = true;
+        requestAnimationFrame(() => {
+            busy = false; const y = l.scrollTop, d = y - last, on = v.classList.contains('db-fold'), h = bar ? bar.offsetHeight : 60;
+            if (y <= 24) { if (on) v.classList.remove('db-fold'); last = y; }
+            else if (d > 6 && y > h + 20) { if (!on) v.classList.add('db-fold'); last = y; }
+            else if (d < -6) { if (on) v.classList.remove('db-fold'); last = y; }
+        });
     }, { passive: true });
 })();
 setInterval(() => { attach(); tiles(); }, 1500);
@@ -22587,6 +22853,7 @@ const hp = p => { const t = me() + ':' + p + ':exama-wlt'; let h1 = 0xdeadbeef, 
 async function phLoad() { try { const w = await getDoc(wRef()); ph = (w.exists() && w.data().pinHash) || ''; phOk = true; } catch (e) { phOk = false; } return phOk; }
 const SH = 'box-sizing:border-box;position:fixed;inset:0;z-index:150;display:flex;flex-direction:column;align-items:center;color:#fff;background:linear-gradient(160deg,#0b0f1a,#1b1033 60%,#2a0f1c);padding:var(--wl-top,max(3rem,env(safe-area-inset-top,0px))) max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));overflow:hidden';
 const coin = px => '<span style="display:inline-flex;width:' + px + 'px;height:' + px + 'px;border-radius:50%;align-items:center;justify-content:center;background:linear-gradient(145deg,#fde68a,#f59e0b);color:#78350f;font-weight:900;font-size:' + px * .6 + 'px;line-height:1;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18),0 4px 14px rgba(245,158,11,.4)">☘︎</span>';
+window.__wltCoin = coin;
 const rng=n=>Array.from({length:n},(_,i)=>i);
 function qrMatrix(text){
 const data=Array.from(new TextEncoder().encode(text)),ECC=[-1,10,16,26,18,24,16,18,22,22,26],NB=[-1,1,1,1,2,2,4,4,4,5,5];
