@@ -475,7 +475,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 <script>
 /* Notification deep link: remember where a tapped push wants to go, before the router rewrites the hash. */
 (function () {
-    var OK = ['chat', 'notices', 'materials', 'budget-room', 'student', 'admin', 'fitness'];
+    var OK = ['doubt-board', 'chat', 'notices', 'materials', 'budget-room', 'student', 'admin', 'fitness'];
     try { var h0 = (location.hash || '').replace('#', ''); if (OK.indexOf(h0) !== -1) window.__pendingOpen = h0; } catch (e) { }
     // go to a screen now if logged in, otherwise as soon as login has finished
     window.__goTo = function (h) {
@@ -10450,6 +10450,393 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             </div>
         </div>
 
+        <!-- DOUBT BOARD VIEW -->
+<div id="doubt-board-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left">
+    <div class="hdr-r hdr-p db-hd">
+        <button onclick="safeBack()" class="db-bk" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button>
+        <div class="db-ht"><h2>Doubt Board</h2><p>Ask · Answer · Resolve</p></div>
+        <button type="button" class="db-ask" data-db="ask"><i class="fa-solid fa-plus"></i> Ask</button>
+    </div>
+    <div class="db-bar">
+        <div class="db-chips" id="db-chips"></div>
+        <div class="db-chips db-chips2" id="db-subjs"></div>
+    </div>
+    <div id="db-list" class="db-list no-scrollbar"></div>
+
+    <!-- ask sheet -->
+    <div id="db-ask" class="db-ov hidden-view">
+        <div class="db-sh">
+            <div class="db-sh-h"><b>Ask a doubt</b><button type="button" data-db="close-ask" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+            <label>Subject</label>
+            <input id="db-a-subj" list="db-subj-list" maxlength="40" placeholder="e.g. Physics" autocomplete="off">
+            <datalist id="db-subj-list"></datalist>
+            <label>Chapter / topic <em>(optional)</em></label>
+            <input id="db-a-chap" maxlength="60" placeholder="e.g. Thermodynamics" autocomplete="off">
+            <label>Your question</label>
+            <textarea id="db-a-text" maxlength="800" rows="4" placeholder="Write what you are stuck on. Do not put phone numbers or personal details in photos."></textarea>
+            <div class="db-ph">
+                <button type="button" data-db="pick-ask"><i class="fa-solid fa-image"></i> Add photo</button>
+                <span id="db-a-img-n"></span>
+                <input id="db-a-file" type="file" accept="image/*" hidden>
+            </div>
+            <div class="db-act">
+                <button type="button" class="db-b2" data-db="nova-ask"><i class="fa-solid fa-robot"></i> Ask NOVA instead</button>
+                <button type="button" class="db-b1" data-db="post" id="db-post">Post doubt</button>
+            </div>
+            <p class="db-note" id="db-a-lim"></p>
+        </div>
+    </div>
+
+    <!-- thread sheet -->
+    <div id="db-th" class="db-ov hidden-view">
+        <div class="db-sh db-sh-t">
+            <div class="db-sh-h"><b>Doubt</b><button type="button" data-db="close-th" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+            <div id="db-th-body" class="db-th-body"></div>
+            <div class="db-rp">
+                <textarea id="db-r-text" maxlength="800" rows="2" placeholder="Write an answer..."></textarea>
+                <div class="db-rp-r">
+                    <button type="button" class="db-ic" data-db="pick-rep" aria-label="Add photo"><i class="fa-solid fa-image"></i></button>
+                    <span id="db-r-img-n"></span>
+                    <input id="db-r-file" type="file" accept="image/*" hidden>
+                    <button type="button" class="db-b1" data-db="reply">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style id="db-css">
+#doubt-board-view{position:absolute;top:0;right:0;bottom:0;left:0;z-index:80;display:flex;flex-direction:column;background:#f8fafc;font-family:inherit;overflow:hidden}
+#doubt-board-view.hidden-view{display:none!important}
+#doubt-board-view .db-hd{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;padding:40px 16px 12px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 20px -8px rgba(79,70,229,.5);flex-shrink:0;position:relative;z-index:2}
+#doubt-board-view .db-bk{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;border:0;color:#fff;flex-shrink:0}
+#doubt-board-view .db-ht{flex:1;min-width:0}
+#doubt-board-view .db-ht h2{font-size:19px;font-weight:900;line-height:1.1;margin:0}
+#doubt-board-view .db-ht p{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;opacity:.85;margin:3px 0 0}
+#doubt-board-view .db-ask{background:#fff;color:#4f46e5;border:0;border-radius:999px;font-weight:900;font-size:13px;padding:9px 14px;display:flex;align-items:center;gap:6px;flex-shrink:0}
+#doubt-board-view .db-ask:active,#doubt-board-view .db-card:active{transform:scale(.98)}
+#doubt-board-view .db-bar{display:flex;flex-direction:column;gap:6px;padding:10px 12px 4px;flex-shrink:0}
+#doubt-board-view .db-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+#doubt-board-view .db-chips::-webkit-scrollbar{display:none}
+#doubt-board-view .db-chips button{flex-shrink:0;white-space:nowrap;border:1px solid #e2e8f0;background:#fff;color:#475569;font-weight:800;font-size:12px;padding:7px 12px;border-radius:999px}
+#doubt-board-view .db-chips button.on{background:#4f46e5;border-color:#4f46e5;color:#fff}
+#doubt-board-view .db-chips2 button{background:#eef2ff;border-color:#e0e7ff;color:#4338ca;font-size:11px;padding:5px 10px}
+#doubt-board-view .db-chips2 button.on{background:#4338ca;border-color:#4338ca;color:#fff}
+#doubt-board-view .db-chips2:empty{display:none}
+#doubt-board-view .db-list{flex:1;overflow-y:auto;padding:8px 12px 90px;display:flex;flex-direction:column;gap:10px}
+#doubt-board-view .db-card{background:#fff;border:1px solid #e8ecf4;border-radius:18px;padding:12px 14px;box-shadow:0 4px 14px -8px rgba(15,23,42,.18);cursor:pointer;transition:transform .15s}
+#doubt-board-view .db-top{display:flex;align-items:center;gap:10px}
+#doubt-board-view .db-av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;font-weight:900;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#doubt-board-view .db-av.t{background:linear-gradient(135deg,#059669,#10b981)}
+#doubt-board-view .db-who{flex:1;min-width:0;display:flex;flex-direction:column}
+#doubt-board-view .db-who b{font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#doubt-board-view .db-who small{font-size:10px;color:#94a3b8;font-weight:700}
+#doubt-board-view .db-st{font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;padding:4px 9px;border-radius:999px;flex-shrink:0}
+#doubt-board-view .db-st-open{background:#fef3c7;color:#b45309}
+#doubt-board-view .db-st-answered{background:#dbeafe;color:#1d4ed8}
+#doubt-board-view .db-st-resolved{background:#dcfce7;color:#15803d}
+#doubt-board-view .db-tags{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0 2px}
+#doubt-board-view .db-tags span{font-size:10px;font-weight:800;background:#eef2ff;color:#4338ca;padding:3px 8px;border-radius:8px}
+#doubt-board-view .db-q{font-size:14px;line-height:1.45;color:#1e293b;margin:6px 0 0;white-space:pre-wrap;word-break:break-word}
+#doubt-board-view .db-card .db-q{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#doubt-board-view .db-ft{display:flex;align-items:center;gap:12px;margin-top:10px;font-size:11px;font-weight:800;color:#64748b}
+#doubt-board-view .db-tv{color:#047857;background:#d1fae5;padding:2px 8px;border-radius:8px}
+#doubt-board-view .db-empty{text-align:center;color:#94a3b8;font-weight:800;font-size:13px;padding:40px 20px;border:2px dashed #e2e8f0;border-radius:20px}
+#doubt-board-view .db-ov{position:absolute;inset:0;z-index:5;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center}
+#doubt-board-view .db-ov.hidden-view{display:none!important}
+#doubt-board-view .db-sh{background:#fff;width:100%;max-width:560px;border-radius:26px 26px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px));max-height:92%;overflow-y:auto;display:flex;flex-direction:column;gap:6px;animation:dbUp .25s ease-out}
+@keyframes dbUp{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+#doubt-board-view .db-sh-t{height:92%;padding-bottom:0}
+#doubt-board-view .db-sh-h{display:flex;justify-content:space-between;align-items:center;font-size:17px;color:#0f172a;margin-bottom:4px}
+#doubt-board-view .db-sh-h button{width:34px;height:34px;border-radius:50%;background:#f1f5f9;border:0;color:#475569}
+#doubt-board-view .db-sh label{font-size:11px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:.06em;margin-top:6px}
+#doubt-board-view .db-sh label em{font-weight:700;text-transform:none;color:#94a3b8}
+#doubt-board-view .db-sh input,#doubt-board-view .db-sh textarea{border:1.5px solid #e2e8f0;border-radius:14px;padding:11px 12px;font-size:14px;width:100%;background:#f8fafc;outline:none;resize:none;font-family:inherit}
+#doubt-board-view .db-sh input:focus,#doubt-board-view .db-sh textarea:focus{border-color:#6366f1;background:#fff}
+#doubt-board-view .db-ph{display:flex;align-items:center;gap:10px;margin-top:4px}
+#doubt-board-view .db-ph button{background:#eef2ff;color:#4338ca;border:0;border-radius:12px;font-weight:800;font-size:12px;padding:9px 12px}
+#doubt-board-view .db-ph span,#doubt-board-view .db-rp-r span{font-size:11px;color:#059669;font-weight:800}
+#doubt-board-view .db-act{display:flex;gap:8px;margin-top:10px}
+#doubt-board-view .db-b1{flex:1;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;border:0;border-radius:14px;font-weight:900;font-size:14px;padding:13px;box-shadow:0 8px 18px -8px rgba(79,70,229,.7)}
+#doubt-board-view .db-b1:disabled{opacity:.55}
+#doubt-board-view .db-b2{background:#f1f5f9;color:#334155;border:0;border-radius:14px;font-weight:800;font-size:12px;padding:13px 12px}
+#doubt-board-view .db-note{font-size:11px;color:#94a3b8;font-weight:700;text-align:center;margin:4px 0 0}
+#doubt-board-view .db-th-body{flex:1;overflow-y:auto;padding-bottom:8px}
+#doubt-board-view .db-img{margin-top:10px}
+#doubt-board-view .db-img img{max-width:100%;border-radius:14px;border:1px solid #e2e8f0;display:block}
+#doubt-board-view .db-img i{color:#94a3b8;font-size:12px;font-weight:700;font-style:normal}
+#doubt-board-view .db-acts{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+#doubt-board-view .db-acts button{border:0;border-radius:12px;font-size:12px;font-weight:800;padding:9px 12px;background:#f1f5f9;color:#334155}
+#doubt-board-view .db-acts .g{background:#dcfce7;color:#15803d}
+#doubt-board-view .db-acts .r{background:#fee2e2;color:#b91c1c}
+#doubt-board-view .db-acts .v{background:#ede9fe;color:#6d28d9}
+#doubt-board-view .db-h{font-size:11px;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px}
+#doubt-board-view .db-rep{border:1px solid #e8ecf4;border-radius:16px;padding:10px 12px;margin-bottom:8px;background:#fafbff}
+#doubt-board-view .db-rep.t{border-color:#a7f3d0;background:#f0fdf9}
+#doubt-board-view .db-rep.h{box-shadow:0 0 0 2px #86efac inset}
+#doubt-board-view .db-rep .db-q{margin-top:6px}
+#doubt-board-view .db-rep-a{display:flex;gap:8px;margin-top:8px}
+#doubt-board-view .db-rep-a button{border:0;border-radius:10px;font-size:11px;font-weight:800;padding:6px 10px;background:#dcfce7;color:#15803d}
+#doubt-board-view .db-rep-a button.x{background:#fee2e2;color:#b91c1c}
+#doubt-board-view .db-rp{border-top:1px solid #eef0f5;padding:10px 0 4px;background:#fff}
+#doubt-board-view .db-rp-r{display:flex;align-items:center;gap:8px;margin-top:8px}
+#doubt-board-view .db-ic{width:42px;height:42px;border-radius:12px;background:#eef2ff;color:#4338ca;border:0}
+#doubt-board-view .db-rp .db-b1{flex:1;margin-left:auto;max-width:120px;margin-left:auto}
+.db-tb{position:absolute;top:6px;right:6px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;font-size:10px;font-weight:900;display:none;align-items:center;justify-content:center}
+</style>
+
+<script type="module" id="doubt-board-js">
+import { ref, set, get, push, update, remove, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
+
+/* =====================================================================
+   DOUBT BOARD
+   Data:   doubts/{id}            question, status, replies/{rid}
+           doubts_img/{id|id_rid} photo as a small JPEG data URL (loaded only when a thread is opened)
+   Push:   category 'discus' => the same custom sound as Discus chat messages
+   ===================================================================== */
+const D = document, $ = id => D.getElementById(id), W = window;
+const esc = W.escHtml || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+const ADMIN_MOBILE = '9475757821', DAILY_LIMIT = 5;
+const S = { err: '', path: '', unsub: null, list: [], loaded: false, counts: {}, filter: 'all', subj: '', open: null, imgs: {}, askImg: null, repImg: null, busy: false };
+
+const me = () => String(W.loggedInMobile || '');
+const isAdmin = () => W.currentRole === 'admin';
+const myName = () => isAdmin() ? 'Teacher' : ((W.studentsDB || []).find(s => String(s.mobile) === me()) || {}).name || 'Student';
+const reps = d => Object.keys(d.replies || {}).map(k => Object.assign({ id: k }, d.replies[k])).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+const byId = id => S.list.find(d => d.id === id);
+const imgPath = () => S.path + '_img';
+
+function ago(ts) {
+    const s = Math.max(1, Math.round((Date.now() - (ts || 0)) / 1000));
+    if (s < 60) return 'just now'; const m = Math.round(s / 60); if (m < 60) return m + 'm ago';
+    const h = Math.round(m / 60); if (h < 24) return h + 'h ago'; return Math.round(h / 24) + 'd ago';
+}
+const toast = (a, b, t) => { try { W.showToast && W.showToast(a, b || '', t || 'info'); } catch (e) { } };
+/* every Doubt Board push uses category 'discus' = Discus chat sound. data.doubtId opens this screen when the notification is tapped */
+function pushTo(title, msg, to, id) {
+    try {
+        const list = (Array.isArray(to) ? to : [to]).map(String).filter(m => m && m !== me());
+        if (!list.length || typeof W.sendOneSignalPush !== 'function') return;
+        W.sendOneSignalPush(title, String(msg).slice(0, 120), null, { category: 'discus', data: { doubtId: id } }, list);
+    } catch (e) { console.warn('doubt push', e); }
+}
+
+/* ---------- live data ---------- */
+function attach() {
+    if (!W.rtdb || !W.currentRole) return;
+    const p = W.getCollectionName ? W.getCollectionName('doubts') : 'doubts';
+    if (S.path === p && S.unsub) return;
+    if (S.unsub) { try { S.unsub(); } catch (e) { } S.unsub = null; }
+    S.path = p; S.loaded = false; S.counts = {};
+    S.unsub = onValue(query(ref(W.rtdb, p), limitToLast(150)), snap => {
+        const arr = []; snap.forEach(c => { const v = c.val(); if (v) { v.id = c.key; arr.push(v); } });
+        arr.reverse(); notify(arr); S.list = arr; S.loaded = true; S.err = ''; paint(); tileBadge();
+    }, e => { console.warn('doubts listener', e); S.err = String((e && (e.code || e.message)) || 'error'); paint(); });
+}
+/* foreground alerts while the app is open (background alerts come from the push) */
+function notify(arr) {
+    if (!S.loaded) { arr.forEach(d => S.counts[d.id] = reps(d).length); return; }
+    arr.forEach(d => {
+        const n = reps(d).length, was = S.counts[d.id];
+        if (was === undefined) { S.counts[d.id] = n; if (isAdmin() && String(d.mobile) !== me()) toast('New doubt: ' + d.subject, d.name + ': ' + String(d.text).slice(0, 60)); return; }
+        if (n > was) {
+            const last = reps(d)[n - 1];
+            if (String(d.mobile) === me() && String(last.mobile) !== me()) { toast('New answer', last.name + ' answered your doubt'); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } }
+        }
+        S.counts[d.id] = n;
+    });
+}
+
+/* ---------- list ---------- */
+function visible() {
+    return S.list.filter(d => {
+        if (S.filter === 'mine' && String(d.mobile) !== me()) return false;
+        if (['open', 'answered', 'resolved'].includes(S.filter) && d.status !== S.filter) return false;
+        if (S.subj && d.subject !== S.subj) return false;
+        return true;
+    });
+}
+function paint() {
+    const chips = $('db-chips'), list = $('db-list'); if (!chips || !list) return;
+    const F = [['all', 'All'], ['open', 'Open'], ['answered', 'Answered'], ['resolved', 'Resolved'], ['mine', 'My doubts']];
+    chips.innerHTML = F.map(f => `<button type="button" data-db="chip" data-v="${f[0]}" class="${S.filter === f[0] ? 'on' : ''}">${f[1]}</button>`).join('');
+    const subs = [...new Set(S.list.map(d => d.subject).filter(Boolean))].sort();
+    if (S.subj && !subs.includes(S.subj)) S.subj = '';
+    $('db-subjs').innerHTML = subs.length ? ['']. concat(subs).map(x => `<button type="button" data-db="subj" data-v="${esc(x)}" class="${S.subj === x ? 'on' : ''}">${x ? esc(x) : 'All subjects'}</button>`).join('') : '';
+    const dl = $('db-subj-list'); if (dl) dl.innerHTML = subs.map(s => `<option value="${esc(s)}">`).join('') + [...new Set((W.syllabusTopicsDB || []).map(t => t && t.subject).filter(Boolean))].map(s => `<option value="${esc(s)}">`).join('');
+    const v = visible();
+    list.innerHTML = S.err && !S.loaded ? '<div class="db-empty">Could not load doubts.<br><small>' + esc(S.err) + '</small><br>If this says PERMISSION_DENIED, add the <b>doubts</b> and <b>doubts_img</b> rules in Firebase.</div>' : !S.loaded ? '<div class="db-empty">Loading doubts...</div>' : v.length ? v.map(card).join('') : '<div class="db-empty">No doubts here yet.<br>Tap <b>Ask</b> to post the first one.</div>';
+    if (S.open) thread();
+}
+function card(d) {
+    const r = reps(d), tv = r.some(x => x.role === 'admin');
+    const tags = [d.subject, d.chapter].filter(Boolean).map(t => `<span>${esc(t)}</span>`).join('');
+    return `<div class="db-card" data-db="open" data-id="${esc(d.id)}">
+<div class="db-top"><span class="db-av">${esc((d.name || '?').trim().charAt(0).toUpperCase())}</span><div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}</small></div><span class="db-st db-st-${esc(d.status)}">${esc(d.status)}</span></div>
+<div class="db-tags">${tags}</div><p class="db-q">${esc(d.text)}</p>
+<div class="db-ft"><span><i class="fa-regular fa-comment"></i> ${r.length} ${r.length === 1 ? 'answer' : 'answers'}</span>${d.hasImg ? '<span><i class="fa-solid fa-image"></i> Photo</span>' : ''}${tv ? '<span class="db-tv"><i class="fa-solid fa-circle-check"></i> Teacher verified</span>' : ''}</div></div>`;
+}
+
+/* ---------- thread ---------- */
+function openThread(id) {
+    S.open = id; S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = '';
+    $('db-th').classList.remove('hidden-view'); thread();
+}
+function thread() {
+    const d = byId(S.open), body = $('db-th-body');
+    if (!d) { $('db-th').classList.add('hidden-view'); S.open = null; return; }
+    const own = String(d.mobile) === me(), canMod = own || isAdmin();
+    const acts = [];
+    acts.push(`<button type="button" class="v" data-db="nova" data-id="${esc(d.id)}"><i class="fa-solid fa-robot"></i> Ask NOVA</button>`);
+    if (canMod && d.status !== 'resolved') acts.push(`<button type="button" class="g" data-db="resolve" data-id="${esc(d.id)}"><i class="fa-solid fa-check"></i> Mark resolved</button>`);
+    if (canMod && d.status === 'resolved') acts.push(`<button type="button" data-db="reopen" data-id="${esc(d.id)}"><i class="fa-solid fa-rotate-left"></i> Reopen</button>`);
+    if (canMod) acts.push(`<button type="button" class="r" data-db="del" data-id="${esc(d.id)}"><i class="fa-solid fa-trash"></i> Delete</button>`);
+    const r = reps(d);
+    const rh = r.map(x => {
+        const t = x.role === 'admin', canH = own && String(x.mobile) !== me();
+        return `<div class="db-rep ${t ? 't' : ''} ${x.helpful ? 'h' : ''}"><div class="db-top"><span class="db-av ${t ? 't' : ''}">${esc((x.name || '?').charAt(0).toUpperCase())}</span><div class="db-who"><b>${esc(x.name)}${t ? ' <span class="db-tv"><i class="fa-solid fa-circle-check"></i> Teacher verified</span>' : ''}</b><small>${ago(x.ts)}${x.helpful ? ' · marked helpful' : ''}</small></div></div>
+<p class="db-q">${esc(x.text)}</p>${x.hasImg ? `<div class="db-img" data-img="${esc(d.id + '_' + x.id)}"><i>Loading photo...</i></div>` : ''}
+<div class="db-rep-a">${canH && !x.helpful ? `<button type="button" data-db="helped" data-id="${esc(d.id)}" data-rid="${esc(x.id)}"><i class="fa-solid fa-thumbs-up"></i> This helped</button>` : ''}${isAdmin() ? `<button type="button" class="x" data-db="delrep" data-id="${esc(d.id)}" data-rid="${esc(x.id)}">Delete</button>` : ''}</div></div>`;
+    }).join('');
+    body.innerHTML = `<div class="db-top"><span class="db-av">${esc((d.name || '?').charAt(0).toUpperCase())}</span><div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}</small></div><span class="db-st db-st-${esc(d.status)}">${esc(d.status)}</span></div>
+<div class="db-tags">${[d.subject, d.chapter].filter(Boolean).map(t => `<span>${esc(t)}</span>`).join('')}</div>
+<p class="db-q">${esc(d.text)}</p>${d.hasImg ? `<div class="db-img" data-img="${esc(d.id)}"><i>Loading photo...</i></div>` : ''}
+<div class="db-acts">${acts.join('')}</div><div class="db-h">${r.length} ${r.length === 1 ? 'answer' : 'answers'}</div>${rh || '<div class="db-empty">No answers yet. Be the first to help.</div>'}`;
+    body.querySelectorAll('.db-img[data-img]').forEach(el => loadImg(el.getAttribute('data-img')).then(src => { el.innerHTML = src ? `<img src="${src}" alt="photo">` : '<i>Photo unavailable</i>'; }));
+}
+function loadImg(key) {
+    if (S.imgs[key]) return Promise.resolve(S.imgs[key]);
+    return get(ref(W.rtdb, imgPath() + '/' + key)).then(s => { const v = s.val(); if (v) S.imgs[key] = v; return v; }).catch(() => null);
+}
+
+/* ---------- photo helper: small JPEG, loaded only when a thread is opened ---------- */
+function compress(file) {
+    return new Promise((ok, no) => {
+        const fr = new FileReader();
+        fr.onerror = () => no(); fr.onload = () => {
+            const im = new Image(); im.onerror = () => no();
+            im.onload = () => {
+                const sc = Math.min(1, 720 / Math.max(im.width, im.height)), c = D.createElement('canvas');
+                c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
+                c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', .6));
+            }; im.src = fr.result;
+        }; fr.readAsDataURL(file);
+    });
+}
+
+/* ---------- actions ---------- */
+async function post() {
+    if (S.busy) return;
+    const subject = $('db-a-subj').value.trim(), chapter = $('db-a-chap').value.trim(), text = $('db-a-text').value.trim();
+    if (!subject) return toast('Subject needed', 'Type the subject of your doubt.', 'warning');
+    if (text.length < 8) return toast('Question too short', 'Write a little more so others can help.', 'warning');
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    if (!isAdmin() && S.list.filter(d => String(d.mobile) === me() && d.ts >= t0.getTime()).length >= DAILY_LIMIT) return toast('Daily limit reached', 'You can post ' + DAILY_LIMIT + ' doubts a day. Try again tomorrow.', 'warning');
+    S.busy = true; $('db-post').disabled = true;
+    try {
+        const id = push(ref(W.rtdb, S.path)).key, img = S.askImg;
+        if (img) await set(ref(W.rtdb, imgPath() + '/' + id), img);
+        await set(ref(W.rtdb, S.path + '/' + id), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', subject: subject.slice(0, 40), chapter: chapter.slice(0, 60), text: text.slice(0, 800), hasImg: !!img, status: 'open', ts: Date.now() });
+        pushTo('New doubt: ' + subject, myName() + ': ' + text, ADMIN_MOBILE, id);
+        closeAsk(); toast('Doubt posted', 'You will get a notification when someone answers.', 'success');
+    } catch (e) { console.warn(e); toast('Could not post', String((e && (e.code || e.message)) || 'Check your internet and try again.').slice(0, 90), 'error'); }
+    S.busy = false; $('db-post').disabled = false;
+}
+async function reply() {
+    const d = byId(S.open); if (!d || S.busy) return;
+    const text = $('db-r-text').value.trim(); if (text.length < 2 && !S.repImg) return toast('Write an answer first', '', 'warning');
+    S.busy = true;
+    try {
+        const rid = push(ref(W.rtdb, S.path + '/' + d.id + '/replies')).key, img = S.repImg;
+        if (img) await set(ref(W.rtdb, imgPath() + '/' + d.id + '_' + rid), img);
+        await set(ref(W.rtdb, S.path + '/' + d.id + '/replies/' + rid), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', text: text.slice(0, 800), hasImg: !!img, ts: Date.now() });
+        if (d.status === 'open') await update(ref(W.rtdb, S.path + '/' + d.id), { status: 'answered' });
+        pushTo(isAdmin() ? 'Teacher answered your doubt' : 'New answer to your doubt', myName() + ': ' + text, d.mobile, d.id);
+        S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = '';
+    } catch (e) { console.warn(e); toast('Could not send', String((e && (e.code || e.message)) || 'Try again.').slice(0, 90), 'error'); }
+    S.busy = false;
+}
+const setStatus = (id, status) => update(ref(W.rtdb, S.path + '/' + id), status === 'resolved' ? { status, resolvedTs: Date.now() } : { status });
+async function helped(id, rid) {
+    const d = byId(id), r = d && (d.replies || {})[rid]; if (!r) return;
+    await update(ref(W.rtdb, S.path + '/' + id + '/replies/' + rid), { helpful: true });
+    await setStatus(id, 'resolved');
+    pushTo('Your answer helped!', d.name + ' marked your answer as helpful', r.mobile, id);
+    toast('Marked as helped', 'The doubt is now resolved.', 'success');
+}
+async function del(id) {
+    if (!confirm('Delete this doubt and all its answers?')) return;
+    const d = byId(id); const keys = [id].concat(Object.keys((d && d.replies) || {}).map(k => id + '_' + k));
+    await remove(ref(W.rtdb, S.path + '/' + id));
+    keys.forEach(k => remove(ref(W.rtdb, imgPath() + '/' + k)).catch(() => { }));
+    $('db-th').classList.add('hidden-view'); S.open = null;
+}
+async function delRep(id, rid) {
+    if (!confirm('Delete this answer?')) return;
+    await remove(ref(W.rtdb, S.path + '/' + id + '/replies/' + rid)); remove(ref(W.rtdb, imgPath() + '/' + id + '_' + rid)).catch(() => { });
+}
+/* NOVA gives an instant first answer: opens NOVA chat with the question already typed */
+async function nova(text, subject, chapter) {
+    const prompt = 'Explain this doubt step by step in simple words. Subject: ' + subject + (chapter ? ', chapter: ' + chapter : '') + '. Question: ' + text;
+    try { $('db-th').classList.add('hidden-view'); closeAsk(); S.open = null; if (W.openNovaChat) await W.openNovaChat(); setTimeout(() => W.sendQuickNovaPrompt && W.sendQuickNovaPrompt(prompt), 600); } catch (e) { }
+}
+
+/* ---------- sheets + events ---------- */
+function openAsk() {
+    S.askImg = null; ['db-a-subj', 'db-a-chap', 'db-a-text'].forEach(i => $(i).value = ''); $('db-a-img-n').textContent = '';
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    const left = DAILY_LIMIT - S.list.filter(d => String(d.mobile) === me() && d.ts >= t0.getTime()).length;
+    $('db-a-lim').textContent = isAdmin() ? '' : Math.max(0, left) + ' of ' + DAILY_LIMIT + ' doubts left today';
+    $('db-ask').classList.remove('hidden-view'); paint();
+}
+function closeAsk() { const a = $('db-ask'); if (a) a.classList.add('hidden-view'); }
+async function pick(file, which) {
+    if (!file) return;
+    try { const u = await compress(file); if (which === 'ask') { S.askImg = u; $('db-a-img-n').textContent = 'Photo added'; } else { S.repImg = u; $('db-r-img-n').textContent = 'Photo added'; } }
+    catch (e) { toast('Photo failed', 'Choose a different image.', 'error'); }
+}
+D.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('#doubt-board-view [data-db]'); if (!b) return;
+    const a = b.getAttribute('data-db'), id = b.getAttribute('data-id'), rid = b.getAttribute('data-rid');
+    if (a === 'ask') openAsk(); else if (a === 'close-ask') closeAsk();
+    else if (a === 'close-th') { $('db-th').classList.add('hidden-view'); S.open = null; }
+    else if (a === 'chip') { S.filter = b.getAttribute('data-v'); paint(); }
+    else if (a === 'subj') { S.subj = b.getAttribute('data-v'); paint(); }
+    else if (a === 'open') openThread(id);
+    else if (a === 'post') post(); else if (a === 'reply') reply();
+    else if (a === 'pick-ask') $('db-a-file').click(); else if (a === 'pick-rep') $('db-r-file').click();
+    else if (a === 'resolve') setStatus(id, 'resolved'); else if (a === 'reopen') setStatus(id, (byId(id) && reps(byId(id)).length) ? 'answered' : 'open');
+    else if (a === 'helped') helped(id, rid); else if (a === 'del') del(id); else if (a === 'delrep') delRep(id, rid);
+    else if (a === 'nova') { const d = byId(id); if (d) nova(d.text, d.subject, d.chapter); }
+    else if (a === 'nova-ask') { const t = $('db-a-text').value.trim(); if (t.length < 8) return toast('Write your question first', '', 'warning'); nova(t, $('db-a-subj').value.trim() || 'General', $('db-a-chap').value.trim()); }
+});
+D.addEventListener('change', e => {
+    if (e.target.id === 'db-a-file') { pick(e.target.files[0], 'ask'); e.target.value = ''; }
+    else if (e.target.id === 'db-r-file') { pick(e.target.files[0], 'rep'); e.target.value = ''; }
+});
+
+/* ---------- dashboard tiles (cloned from a neighbouring tile so the style always matches) + badge ---------- */
+function tiles() {
+    if (!W.currentRole) return;
+    let tpl = null, host = null;
+    if (W.currentRole === 'student') { tpl = [...D.querySelectorAll('#student-view .xb')].find(e => /hash='notices'/.test(e.getAttribute('onclick') || '')); }
+    else { tpl = D.querySelector('#ax-tiles .xb'); }
+    if (!tpl || tpl.parentNode.querySelector('[data-db-tile]')) return;
+    const n = tpl.cloneNode(false);
+    ['id', 'data-ax'].forEach(a => n.removeAttribute(a));
+    n.className = [...tpl.classList].filter(c => !/^xb-f-/.test(c) && !/^xb-(sun|mint|teal|indigo|violet|red|blue|rose|amber|green)$/.test(c)).concat(['xb-f-chat', 'xb-mint']).join(' ');
+    n.setAttribute('data-db-tile', '1'); n.setAttribute('onclick', "window.location.hash='doubt-board'");
+    n.innerHTML = '<span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-chat"/></svg></span><span class="xb-tx"><span class="xb-t">Doubt Board</span><span class="xb-s">Ask &amp; Answer</span></span><span class="db-tb"></span>';
+    tpl.parentNode.insertBefore(n, W.currentRole === 'student' ? tpl.nextSibling : null); tileBadge();
+}
+function tileBadge() {
+    const n = isAdmin() ? S.list.filter(d => d.status === 'open').length : S.list.filter(d => String(d.mobile) === me() && d.status === 'answered').length;
+    D.querySelectorAll('.db-tb').forEach(b => { b.textContent = n > 99 ? '99+' : n; b.style.display = n ? 'flex' : 'none'; });
+}
+W.addEventListener('hashchange', () => { if (location.hash === '#doubt-board') { attach(); paint(); } });
+setInterval(() => { attach(); tiles(); }, 1500);
+</script>
+
         <!-- SESSION TIMER VIEW -->
         <div id="session-timer-view" class="hidden-view absolute inset-0 bg-[#f8fafc] z-[80] flex flex-col slide-left ">
             <div
@@ -11061,7 +11448,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             // ==========================================
             window.isGlobalTestMode = false;
             window.getCollectionName = function (name) {
-                const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments'];
+                const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments', 'doubts'];
                 if (window.isGlobalTestMode && sandboxed.includes(name)) {
                     return 'test_' + name;
                 }
@@ -11528,7 +11915,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             // ==========================================
             window.isGlobalTestMode = false;
             window.getCollectionName = function (name) {
-                const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments'];
+                const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments', 'doubts'];
                 if (window.isGlobalTestMode && sandboxed.includes(name)) {
                     return 'test_' + name;
                 }
@@ -17650,7 +18037,7 @@ window.__tpPaint = function () {
                     'student-directory-view', 'budget-manager-view', 'budget-track-view',
                     'budget-room-view', 'budget-room-detail-view', 'my-profile-view', 'exam-calendar-view',
                     'alarms-view', 'quotes-view', 'auto-quotes-view', 'motivation-view',
-                    'nova-mentor-view', 'nova-class-view', 'nova-quiz-view'
+                    'nova-mentor-view', 'nova-class-view', 'nova-quiz-view', 'doubt-board-view'
                 ];
 
                 // 1. Work out where we are going, then hide the other views.
@@ -17891,6 +18278,7 @@ window.__tpPaint = function () {
                     case 'nova-class':
                     case 'nova-quiz':
                     case 'watch-video':
+                    case 'doubt-board':
                     case 'budget-track':
                         // Simply opens the view, handled globally above.
                         break;
@@ -18013,6 +18401,7 @@ window.__tpPaint = function () {
                   // truthful - it just takes one extra tap instead of acting instantly from the tray.
                   let openHash = null;
                   if (data && data.runFeed) openHash = 'fitness';          // run like / comment (uses the Discus sound, but opens Run Monitor -> Feed)
+                  else if (data && data.doubtId) openHash = 'doubt-board';
                   else if (data && data.roomId) openHash = 'budget-room';
                   else if (data && data.materialId) openHash = 'materials';
                   else if (data && data.p2p) openHash = 'student';
@@ -18035,6 +18424,7 @@ window.__tpPaint = function () {
                   else if (data && data.p2p === 'question_set') pushButtons = [{ id: 'attempt', text: 'Attempt' }];
                   else if (data && data.p2p === 'answer_script') pushButtons = [{ id: 'evaluate', text: 'Evaluate' }];
                   else if (data && data.materialId) pushButtons = [{ id: 'review', text: 'Review' }];
+                  else if (data && data.doubtId) pushButtons = [{ id: 'open', text: 'Open' }];
                   else if (data && data.roomId) pushButtons = [{ id: 'open', text: 'Open' }];
                   else if (category === 'discus') pushButtons = [{ id: 'reply', text: 'Reply' }];
                   else if (category === 'exam' && !(data && data.noNav)) pushButtons = [{ id: 'view', text: 'View' }];
@@ -18105,7 +18495,8 @@ window.__tpPaint = function () {
                 // Fallback for any push that has no targetUrl: just open the matching screen.
                 try {
                     let h = null;
-                    if (data.roomId) h = 'budget-room';
+                    if (data.doubtId) h = 'doubt-board';
+                    else if (data.roomId) h = 'budget-room';
                     else if (data.materialId) h = 'materials';
                     else if (data.p2p) h = 'student';
                     else if (data.runner) h = 'fitness';
@@ -18577,7 +18968,7 @@ window.__tpPaint = function () {
                     window.showLoader("Cleaning up");
                     try {
                         // Cleanup logic
-                        const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments'];
+                        const sandboxed = ['chat', 'exams', 'results', 'peer_exams', 'syllabus_topics', 'student_syllabus_progress', 'peer_answer_scripts', 'materials', 'fitness_logs', 'weekly_tasks', 'student_tasks', 'sessions', 'videos', 'notices', 'run_likes', 'run_comments', 'doubts'];
                         for (let col of sandboxed) {
                             const testCol = collection(db, 'test_' + col);
                             const snap = await getDocs(testCol);
@@ -25565,7 +25956,7 @@ function mpDrawTab(tab, body) {
                     setTimeout(() => window.enforceFitnessAbsence(), 2500);
                 }
 
-                if (window.location.hash.replace('#', '') !== role && !['chat', 'notices', 'leaderboard', 'target-calc', 'exam-calendar', 'exam-analysis', 'materials', 'fitness', 'active-exam', 'budget-manager', 'budget-track', 'budget-room', 'budget-room-detail', 'alarms', 'quotes', 'auto-quotes', 'motivation'].includes(window.location.hash.replace('#', ''))) { window.location.hash = role; } else { handleHashChange(); }
+                if (window.location.hash.replace('#', '') !== role && !['chat', 'notices', 'leaderboard', 'target-calc', 'exam-calendar', 'exam-analysis', 'materials', 'fitness', 'active-exam', 'budget-manager', 'budget-track', 'budget-room', 'budget-room-detail', 'alarms', 'quotes', 'auto-quotes', 'motivation', 'doubt-board'].includes(window.location.hash.replace('#', ''))) { window.location.hash = role; } else { handleHashChange(); }
 
                 if (role === 'student') {
                     const curStu = window.studentsDB.find(s => s.mobile === mob);
