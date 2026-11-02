@@ -5536,34 +5536,50 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
             </div>
         </div>
 
-        <!-- FULL SCREEN IMAGE MODAL -->
-        <div id="fullscreen-image-modal"
-            class="hidden-view absolute inset-0 z-[110] bg-black/95 flex flex-col items-center justify-center transition-opacity fade-in">
-
-            <!-- NEW DOWNLOAD BUTTON (Top Left Corner) -->
-            <button onclick="window.downloadFullScreenImage()"
-                class="absolute top-4 left-4 sm:top-6 sm:left-6 w-10 h-10 bg-white/20 hover:bg-white/40 rounded-full flex items-center justify-center text-white active:scale-90 transition-all z-20 shadow-lg"
-                title="Download Image">
-                <i class="fa-solid fa-download text-lg"></i>
-            </button>
-
-            <!-- CLOSE BUTTON (Top Right Corner) -->
-            <button onclick="closeFullScreenImage()"
-                class="absolute top-4 right-4 sm:top-6 sm:right-6 w-10 h-10 bg-white/20 hover:bg-white/40 rounded-full flex items-center justify-center text-white active:scale-90 transition-all z-20 shadow-lg"
-                title="Close">
-                <i class="fa-solid fa-xmark text-xl"></i>
-            </button>
-
-            <div class="w-full h-full overflow-auto flex items-center justify-center p-2 sm:p-4"
-                id="img-zoom-container">
-                <img id="fullscreen-img-src" src=""
-                    class="max-w-full max-h-full object-contain transition-transform duration-300 transform origin-center">
-                <iframe id="fullscreen-pdf-src" src=""
-                    class="w-full h-full rounded-2xl hidden border-0 bg-white"></iframe>
+        <!-- FULL SCREEN IMAGE MODAL (same look + gestures as the Solve It photo viewer) -->
+        <style id="fx-vw-css">
+#fullscreen-image-modal{position:absolute;inset:0;z-index:110;display:flex;flex-direction:column;color:#fff;background:rgba(8,6,5,calc(.97 * var(--vo,1)));-webkit-user-select:none;user-select:none;animation:fxUp .22s ease-out}
+#fullscreen-image-modal.hidden-view{display:none!important}
+@keyframes fxUp{from{transform:translateY(60px);opacity:0}to{transform:none;opacity:1}}
+#fullscreen-image-modal .fx-top{display:flex;align-items:center;gap:12px;flex-shrink:0;padding:max(12px,calc(env(safe-area-inset-top,0px) + 8px)) 14px 10px}
+#fullscreen-image-modal .fx-top button,#fullscreen-image-modal .fx-bar button{border:0;color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:transform .15s,background .2s}
+#fullscreen-image-modal .fx-top button:active,#fullscreen-image-modal .fx-bar button:active{transform:scale(.94)}
+#fullscreen-image-modal .fx-top button{width:42px;height:42px;border-radius:14px;background:rgba(255,255,255,.16);font-size:17px}
+#fullscreen-image-modal .fx-t{flex:1;min-width:0}
+#fullscreen-image-modal .fx-t b{display:block;font-size:15px;font-weight:900;color:#fff}
+#fullscreen-image-modal .fx-stage{position:relative;flex:1;min-height:0;overflow:hidden;touch-action:none;cursor:grab}
+#fullscreen-image-modal .fx-img{position:absolute;left:50%;top:50%;max-width:none;max-height:none;transform-origin:50% 50%;will-change:transform;-webkit-user-drag:none;box-shadow:0 10px 40px rgba(0,0,0,.5);visibility:hidden}
+#fullscreen-image-modal .fx-img.anim{transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s ease}
+#fullscreen-image-modal .fx-pdf{position:absolute;inset:8px;width:calc(100% - 16px);height:calc(100% - 16px);border:0;border-radius:18px;background:#fff}
+#fullscreen-image-modal .fx-ld{position:absolute;inset:0;display:none;align-items:center;justify-content:center;pointer-events:none}
+#fullscreen-image-modal .fx-spin{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;animation:fxSpin .8s linear infinite}
+@keyframes fxSpin{to{transform:rotate(360deg)}}
+#fullscreen-image-modal .fx-err{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:14px;font-weight:700;opacity:.8;pointer-events:none}
+#fullscreen-image-modal .fx-err i{font-size:34px}
+#fullscreen-image-modal .fx-hint{position:absolute;left:0;right:0;bottom:14px;text-align:center;pointer-events:none;opacity:0;z-index:2}
+#fullscreen-image-modal .fx-hint span{display:inline-block;background:rgba(0,0,0,.55);padding:7px 14px;border-radius:999px;font-size:12px;font-weight:800}
+#fullscreen-image-modal .fx-hint.on{animation:fxVH 3.4s ease forwards}
+@keyframes fxVH{0%{opacity:0}10%{opacity:1}75%{opacity:1}100%{opacity:0}}
+#fullscreen-image-modal .fx-bar{display:flex;align-items:center;justify-content:center;gap:8px;flex-shrink:0;padding:10px 14px calc(14px + env(safe-area-inset-bottom,0px))}
+#fullscreen-image-modal .fx-bar.hidden{display:none}
+#fullscreen-image-modal .fx-bar button{width:46px;height:46px;border-radius:15px;background:rgba(255,255,255,.14);font-size:17px}
+@media (max-height:480px){#fullscreen-image-modal .fx-bar{padding-top:6px;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}#fullscreen-image-modal .fx-bar button{width:40px;height:40px}}
+        </style>
+        <div id="fullscreen-image-modal" class="hidden-view" role="dialog" aria-label="Photo viewer">
+            <div class="fx-top">
+                <button type="button" onclick="closeFullScreenImage()" aria-label="Close photo" title="Close"><i class="fa-solid fa-xmark"></i></button>
+                <div class="fx-t"><b id="fullscreen-img-title">Photo</b></div>
             </div>
-
-            <!-- Bottom controls (Left empty as requested) -->
-            <div class="absolute bottom-6 sm:bottom-10 flex gap-4 sm:gap-6 z-20" id="img-zoom-controls">
+            <div class="fx-stage" id="img-zoom-container">
+                <img id="fullscreen-img-src" class="fx-img" alt="" draggable="false">
+                <iframe id="fullscreen-pdf-src" src="" class="fx-pdf" style="display:none"></iframe>
+                <div class="fx-ld" id="fullscreen-img-ld"><span class="fx-spin"></span></div>
+                <div class="fx-err" id="fullscreen-img-err"><i class="fa-regular fa-image"></i><span>Photo unavailable</span></div>
+                <div class="fx-hint" id="fullscreen-img-hint"><span>Pinch or double-tap to zoom</span></div>
+            </div>
+            <div class="fx-bar" id="img-zoom-controls">
+                <button type="button" onclick="window.rotateFullScreenImage()" aria-label="Rotate" title="Rotate"><i class="fa-solid fa-rotate-right"></i></button>
+                <button type="button" onclick="window.downloadFullScreenImage()" aria-label="Save photo" title="Download Image"><i class="fa-solid fa-download"></i></button>
             </div>
         </div>
         <!-- CUSTOM PDF / MATERIAL READER MODAL (Glassmorphic Acrobat Theme) -->
@@ -10456,7 +10472,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
         <div class="db-row">
             <button onclick="safeBack()" class="db-bk" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button>
             <div class="db-ht"><h2>Solve It</h2><p>Ask · Solve · Earn coins</p></div>
-            <button type="button" class="db-lbb" data-db="stats" aria-label="My stats and leaderboard"><i class="fa-solid fa-trophy"></i></button>
+            <button type="button" class="db-lbb" data-db="stats" aria-label="My progress" title="My progress"><i class="fa-solid fa-ranking-star"></i></button>
         </div>
         <div class="db-sr"><i class="fa-solid fa-magnifying-glass"></i><input id="db-q" placeholder="Search doubts, subjects, names" autocomplete="off"></div>
         <div class="db-tabs" id="db-tabs"></div>
@@ -10465,7 +10481,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
         <div class="db-bar"><div class="db-subs" id="db-subjs"></div></div>
         <div id="db-list" class="db-list no-scrollbar"></div>
     </div>
-    <button type="button" class="db-fab" data-db="snap"><i class="fa-solid fa-camera"></i> Snap your doubt</button>
+    <button type="button" class="db-fab" data-db="snap" aria-label="Snap your doubt" title="Snap your doubt"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="13" r="8.6" stroke-width="2.7" fill="rgba(255,255,255,.16)"/><path d="M19.6 19.6 27 27" stroke-width="4.2"/><path d="M10.4 10.7c0-1.5 1.2-2.7 2.7-2.7s2.7 1.1 2.7 2.5c0 1.9-2.7 2-2.7 4" stroke-width="1.9"/><circle cx="13.1" cy="17.5" r="1.05" fill="currentColor" stroke="none"/></svg></button>
     <input id="db-snap-file" type="file" accept="image/*" capture="environment" hidden>
 
     <div id="db-cam" class="db-cam hidden-view" role="dialog" aria-label="Snap your doubt">
@@ -10492,7 +10508,7 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
     <div id="db-stats" class="db-sc hidden-view">
         <div class="db-sc-h">
             <button type="button" class="db-bk" data-db="close-stats" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button>
-            <div class="db-ht"><h2>My Stats</h2><p>Coins · Rank · Leaderboard</p></div>
+            <div class="db-ht"><h2>My Progress</h2><p>Coins · Rank · Solved</p></div>
         </div>
         <div id="db-st-body" class="db-sc-b no-scrollbar"></div>
     </div>
@@ -10515,11 +10531,17 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
 
     <div id="db-th" class="db-ov hidden-view">
         <div class="db-sh db-sh-t">
-            <div class="db-sh-h"><b>Doubt</b><button type="button" data-db="close-th" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
+            <div class="db-sh-h db-th-h"><span class="db-th-ic"><i class="fa-solid fa-pen-to-square"></i></span><b>Add your answer<small id="db-th-sub">Help a classmate and earn coins</small></b><button type="button" data-db="close-th" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
             <div id="db-th-body" class="db-th-body"></div>
             <div class="db-rp">
-                <textarea id="db-r-text" maxlength="800" rows="2" placeholder="Write an answer and earn 10 coins if it helps..."></textarea>
-                <div class="db-rp-r"><button type="button" class="db-ic" data-db="pick-rep" aria-label="Add photo"><i class="fa-solid fa-image"></i></button><span id="db-r-img-n"></span><input id="db-r-file" type="file" accept="image/*" hidden><button type="button" class="db-b1" data-db="reply">Send</button></div>
+                <div class="db-rp-prev" id="db-r-prev"><img id="db-r-thumb" alt="Answer photo"><span>Photo attached</span><button type="button" data-db="rep-rm" aria-label="Remove photo"><i class="fa-solid fa-xmark"></i></button></div>
+                <textarea id="db-r-text" maxlength="800" rows="2" placeholder="Type your answer here..."></textarea>
+                <div class="db-rp-r">
+                    <button type="button" class="db-rpb" data-db="pick-rep"><i class="fa-solid fa-image"></i> Gallery</button>
+                    <button type="button" class="db-rpb" data-db="snap-rep"><i class="fa-solid fa-camera"></i> Camera</button>
+                    <span id="db-r-img-n"></span><input id="db-r-file" type="file" accept="image/*" hidden>
+                    <button type="button" class="db-b1" data-db="reply"><i class="fa-solid fa-paper-plane"></i> Send</button>
+                </div>
             </div>
         </div>
     </div>
@@ -10538,12 +10560,8 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
             <div class="db-vw-hint" id="db-vw-hint"><span>Pinch or double-tap to zoom</span></div>
         </div>
         <div class="db-vw-bar">
-            <button type="button" data-db="vw-out" aria-label="Zoom out"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-            <span id="db-vw-z">100%</span>
-            <button type="button" data-db="vw-in" aria-label="Zoom in"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
             <button type="button" data-db="vw-rot" aria-label="Rotate"><i class="fa-solid fa-rotate-right"></i></button>
-            <button type="button" data-db="vw-fit" aria-label="Reset view"><i class="fa-solid fa-expand"></i></button>
-            <button type="button" class="go" data-db="vw-save" aria-label="Save or share photo"><i class="fa-solid fa-download"></i></button>
+            <button type="button" data-db="vw-save" aria-label="Save or share photo"><i class="fa-solid fa-download"></i></button>
         </div>
     </div>
 </div>
@@ -10883,6 +10901,9 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
 /* subject pills float over the feed and slide up when you scroll down (no layout change = no jitter) */
 #doubt-board-view .db-bar{position:absolute;top:0;left:0;right:0;z-index:3;max-height:none;padding-bottom:6px;background:linear-gradient(180deg,var(--cr) 80%,rgba(255,248,243,0));transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s ease}
 #doubt-board-view.db-fold .db-bar{max-height:none;margin:0;padding-top:8px;padding-bottom:6px;border-width:0;opacity:0;transform:translateY(-105%);pointer-events:none}
+/* Feed / My doubts switcher folds out of the header while you scroll down, and returns when you scroll up */
+#doubt-board-view .db-hd .db-tabs{max-height:56px;overflow:hidden;transition:max-height .28s cubic-bezier(.2,.8,.2,1),margin-top .28s cubic-bezier(.2,.8,.2,1),opacity .2s ease,padding .28s ease,border-width .28s ease}
+#doubt-board-view.db-fold .db-hd .db-tabs{max-height:0;margin-top:0;padding-top:0;padding-bottom:0;border-width:0;opacity:0;pointer-events:none}
 
 /* feed card, post style */
 #doubt-board-view .db-card{--pd:16px;padding:0;gap:0;overflow:hidden}
@@ -10949,6 +10970,51 @@ textarea.pf-in{resize:none;min-height:96px;line-height:1.4}
 #doubt-board-view #db-vw-z{min-width:50px;text-align:center;font-size:12.5px;font-weight:800;opacity:.85}
 @media (max-height:480px){#doubt-board-view .db-vw-bar{padding-top:6px;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}#doubt-board-view .db-vw-bar button{width:40px;height:40px}}
 </style>
+
+<style id="db-css-v4">
+/* Solve It v4: answer popup (answers + photo + typing only) */
+#doubt-board-view .db-th-h{align-items:center;gap:12px;margin-bottom:10px}
+#doubt-board-view .db-th-h b{flex:1;min-width:0;font-size:18px;line-height:1.2}
+#doubt-board-view .db-th-h b small{display:block;margin-top:3px;font-size:11.5px;font-weight:700;color:var(--mut);letter-spacing:0}
+#doubt-board-view .db-th-ic{width:42px;height:42px;border-radius:15px;background:linear-gradient(135deg,var(--o1),var(--o2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+#doubt-board-view .db-sh-t .db-th-body{padding:2px 2px 10px}
+#doubt-board-view .db-sh-t .db-th-body>.db-h:first-child{margin-top:4px}
+#doubt-board-view .db-rp{margin:0 -4px;padding:12px;border:1px solid var(--ln);border-radius:22px;background:#fffaf6;box-shadow:0 -6px 18px -14px rgba(80,40,10,.35);display:flex;flex-direction:column;gap:10px}
+#doubt-board-view .db-rp textarea{border:0;background:#fff;border-radius:16px;padding:12px 14px;min-height:64px;box-shadow:inset 0 0 0 1.5px #f0e2d8}
+#doubt-board-view .db-rp textarea:focus{box-shadow:inset 0 0 0 2px var(--o1)}
+#doubt-board-view .db-rp-r{margin:0;gap:8px;flex-wrap:nowrap}
+#doubt-board-view .db-rpb{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;border:0;border-radius:13px;background:#fff0e6;color:#c2410c;font-weight:800;font-size:12.5px;padding:11px 13px;flex-shrink:0}
+#doubt-board-view .db-rp-r #db-r-img-n{display:none}
+#doubt-board-view .db-rp .db-b1{flex:1;max-width:none;margin-left:auto;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 14px;font-size:14px;min-width:90px}
+#doubt-board-view .db-rp-prev{display:none;align-items:center;gap:10px;background:#fff;border:1px solid #f0e2d8;border-radius:16px;padding:6px 8px 6px 6px}
+#doubt-board-view .db-rp-prev.on{display:flex}
+#doubt-board-view .db-rp-prev img{width:48px;height:48px;border-radius:11px;object-fit:cover;flex-shrink:0}
+#doubt-board-view .db-rp-prev span{flex:1;font-size:12.5px;font-weight:800;color:#059669}
+#doubt-board-view .db-rp-prev button{width:32px;height:32px;border-radius:10px;border:0;background:#fee2e2;color:#b91c1c}
+@media (max-width:380px){#doubt-board-view .db-rpb{padding:11px 10px;font-size:12px}}
+</style>
+
+<style id="db-css-v5">
+/* Solve It v5: header progress button in theme, corner FAB, tablet-safe feed */
+#doubt-board-view .db-lbb{width:40px;height:40px;border-radius:14px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:17px;box-shadow:none}
+#doubt-board-view .db-fab{left:auto;right:max(18px,env(safe-area-inset-right,0px));bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:none;width:60px;height:60px;padding:0;gap:0;border-radius:50%;align-items:center;justify-content:center;font-size:0;box-shadow:0 12px 26px -8px rgba(242,73,27,.65),0 3px 8px rgba(60,20,0,.22)}
+#doubt-board-view .db-fab svg{width:30px;height:30px;display:block;flex-shrink:0}
+#doubt-board-view .db-fab:active{transform:scale(.92)}
+#doubt-board-view .db-fab:focus-visible,#doubt-board-view .db-lbb:focus-visible{outline:3px solid #fff;outline-offset:2px}
+/* feed: fluid columns that follow the real width (tablet portrait is narrower than 720px on high-DPR screens) */
+html.is-tablet #doubt-board-view .db-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));align-content:start;align-items:start;gap:16px;width:100%;max-width:1280px;margin-left:auto;margin-right:auto;box-sizing:border-box;padding-top:14px}
+html.is-tablet #doubt-board-view .db-bar{max-width:1280px;margin-left:auto;margin-right:auto;box-sizing:border-box}
+html.is-tablet #doubt-board-view .db-sc-b{width:100%;max-width:820px;margin:0 auto;box-sizing:border-box}
+html.is-tablet #doubt-board-view .db-fab{width:68px;height:68px;right:max(28px,env(safe-area-inset-right,0px));bottom:calc(28px + env(safe-area-inset-bottom,0px))}
+html.is-tablet #doubt-board-view .db-fab svg{width:34px;height:34px}
+html.is-tablet #doubt-board-view .db-ov{align-items:center;padding:24px}html.is-tablet #doubt-board-view .db-sh{border-radius:28px;max-height:min(92%,780px);max-width:600px;padding-top:22px}html.is-tablet #doubt-board-view .db-sh::before{display:none}html.is-tablet #doubt-board-view .db-sh-t{height:min(92%,860px);max-width:700px;padding-bottom:6px}
+@media (min-width:600px){
+  #doubt-board-view .db-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));align-content:start;align-items:start;gap:16px;width:100%;max-width:1280px;margin-left:auto;margin-right:auto;box-sizing:border-box;padding-top:14px}
+  #doubt-board-view .db-bar{max-width:1280px;margin-left:auto;margin-right:auto;box-sizing:border-box}
+}
+#doubt-board-view .db-list>.db-empty{grid-column:1/-1}
+</style>
+
 
 <script type="module" id="doubt-board-js">
 import { ref, set, get, push, update, remove, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
@@ -11052,7 +11118,7 @@ function statsHtml() {
     const solved = my.filter(r => r.helpful).length, asked = S.list.filter(d => String(d.mobile) === me()).length;
     const hero = isAdmin() ? '' : `<div class="db-hero"><span class="db-rkc"><small>Rank</small>${rank ? '#' + rank : '-'}</span><small>Coins earned</small><b>${coinI(40)}<span>${solved * COINS}</span></b></div>
 <div class="db-grid"><div><b>${solved}</b><small>Solved</small></div><div><b>${my.length}</b><small>Answers</small></div><div><b>${asked}</b><small>Asked</small></div></div>`;
-    return hero + `<div class="db-how"><i class="fa-solid fa-circle-info"></i><span>Answer a classmate's doubt. When they tap <b>This helped</b>, you earn <b>${COINS} coins</b>.</span></div><div class="db-h">Leaderboard</div>` + top();
+    return hero + `<div class="db-how"><i class="fa-solid fa-circle-info"></i><span>Answer a classmate's doubt. When they tap <b>This helped</b>, you earn <b>${COINS} coins</b>.</span></div>`;
 }
 function statsPaint() { const el = $('db-st-body'); if (!el) return; const y = el.scrollTop; el.innerHTML = statsHtml(); el.scrollTop = y; }
 function openStats() { S.stats = true; statsPaint(); $('db-stats').classList.remove('hidden-view'); }
@@ -11067,7 +11133,7 @@ function paint() {
     const dl = $('db-subj-list'); if (dl) dl.innerHTML = [...new Set(subs.concat((W.syllabusTopicsDB || []).map(t => t && t.subject).filter(Boolean)))].map(s => `<option value="${esc(s)}">`).join('');
     const v = visible();
     list.innerHTML = S.err && !S.loaded ? '<div class="db-empty">Could not load doubts.<br><small>' + esc(S.err) + '</small></div>' : !S.loaded ? '<div class="db-empty">Loading doubts...</div>'
-        : isTop ? top() : ((v.length ? v.map(card).join('') : '<div class="db-empty">No doubts here yet.<br>Tap <b>Snap your doubt</b> to ask the first one.</div>'));
+        : isTop ? top() : ((v.length ? v.map(card).join('') : '<div class="db-empty">No doubts here yet.<br>Tap the <b>magnifier</b> button to ask the first one.</div>'));
     observeImgs(); padList();
     if (S.open) thread();
     if (S.stats) statsPaint();
@@ -11077,15 +11143,15 @@ function paint() {
 function card(d) {
     const r = reps(d), tv = r.some(x => x.role === 'admin'), win = r.some(x => x.helpful), ic = subIc(d.subject), done = d.status === 'resolved';
     const at = `data-db="view" data-id="${esc(d.id)}" data-rid="" data-img="${esc(d.id)}"`;
-    const pic = d.hasImg ? (S.imgs[d.id] ? `<div class="db-pic ok" ${at}>${picInner(S.imgs[d.id])}</div>` : `<div class="db-pic sk" ${at}></div>`) : '';
+    const pic = d.hasImg ? (S.imgs[d.id] ? `<div class="db-pic ok" ${at}>${picInner(S.imgs[d.id], true)}</div>` : `<div class="db-pic sk" ${at}></div>`) : '';
     return `<div class="db-card s-${esc(d.status)}" style="--c:${ic[2]}" data-db="open" data-id="${esc(d.id)}"><div class="db-top">${av(d.mobile, d.name, d.role)}<div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}${d.subject ? ` · <span class="db-sjn"><i class="fa-solid ${ic[1]}"></i>${esc(d.subject)}</span>` : ''}</small></div><span class="db-st db-st-${esc(d.status)}">${done ? 'solved' : esc(d.status)}</span></div>
 <p class="db-q">${esc(d.text)}</p>${d.chapter ? `<div class="db-tags"><em class="db-ch">${esc(d.chapter)}</em></div>` : ''}${pic}
 <div class="db-stat"><span class="db-n"><i class="fa-regular fa-comment-dots"></i> ${r.length} ${r.length === 1 ? 'answer' : 'answers'}</span><span class="db-r">${tv ? '<span class="db-tv"><i class="fa-solid fa-circle-check"></i> Teacher verified</span>' : ''}${win ? `<span class="db-gold">${coinI(13)} +${COINS} paid</span>` : ''}</span></div>
-<div class="db-actb"><button type="button" class="pri" data-db="open" data-id="${esc(d.id)}"><i class="fa-regular fa-comment"></i> ${done ? 'View solution' : 'Answer'}</button>${d.hasImg ? `<button type="button" data-db="view" data-id="${esc(d.id)}" data-rid=""><i class="fa-regular fa-image"></i> View photo</button>` : ''}</div></div>`;
+<div class="db-actb"><button type="button" class="pri" data-db="open" data-id="${esc(d.id)}"><i class="fa-regular fa-comment"></i> ${done ? 'View solution' : 'Answer'}</button>${d.hasImg ? `<button type="button" data-db="view" data-id="${esc(d.id)}" data-rid=""><i class="fa-regular fa-circle-question"></i> View question</button>` : ''}</div></div>`;
 }
 
 /* ---------- thread ---------- */
-function openThread(id) { S.open = id; S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = ''; $('db-th').classList.remove('hidden-view'); thread(); }
+function openThread(id) { S.open = id; S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = ''; repPrev(); $('db-th').classList.remove('hidden-view'); thread(); }
 function thread() {
     const d = byId(S.open), body = $('db-th-body');
     if (!d) { $('db-th').classList.add('hidden-view'); S.open = null; return; }
@@ -11100,10 +11166,7 @@ function thread() {
 <p class="db-q">${esc(x.text)}</p>${x.hasImg ? imgBox(d.id, x.id) : ''}
 <div class="db-rep-a">${canH ? `<button type="button" data-db="helped" data-id="${esc(d.id)}" data-rid="${esc(x.id)}"><i class="fa-solid fa-thumbs-up"></i> This helped${t ? '' : ' (+' + COINS + ' coins to them)'}</button>` : ''}${isAdmin() ? `<button type="button" class="x" data-db="delrep" data-id="${esc(d.id)}" data-rid="${esc(x.id)}">Delete</button>` : ''}</div></div>`;
     }).join('');
-    body.innerHTML = `<div class="db-top">${av(d.mobile, d.name, d.role, 1)}<div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}</small></div><span class="db-st db-st-${esc(d.status)}">${d.status === 'resolved' ? 'solved' : esc(d.status)}</span></div>
-<div class="db-tags">${[d.subject, d.chapter].filter(Boolean).map(t => `<span>${esc(t)}</span>`).join('')}</div>
-<p class="db-q">${esc(d.text)}</p>${d.hasImg ? imgBox(d.id, '') : ''}
-<div class="db-acts">${acts.join('')}</div><div class="db-h">${r.length} ${r.length === 1 ? 'answer' : 'answers'}</div>${rh || '<div class="db-empty">No answers yet. Be the first to help and earn ' + COINS + ' coins.</div>'}`;
+    body.innerHTML = (acts.length ? `<div class="db-acts">${acts.join('')}</div>` : '') + `<div class="db-h">${r.length} ${r.length === 1 ? 'answer' : 'answers'}</div>${rh || '<div class="db-empty">No answers yet. Be the first to help and earn ' + COINS + ' coins.</div>'}`;
     body.querySelectorAll('.db-img[data-img]:not(.ok)').forEach(fillBox);
 }
 function loadImg(key) {
@@ -11119,7 +11182,7 @@ function loadImg(key) {
 const coinI = px => W.__wltCoin ? W.__wltCoin(px) : '<span style="display:inline-flex;width:' + px + 'px;height:' + px + 'px;border-radius:50%;align-items:center;justify-content:center;background:linear-gradient(145deg,#fde68a,#f59e0b);color:#78350f;font-weight:900;font-size:' + px * .6 + 'px;line-height:1;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18),0 4px 14px rgba(245,158,11,.4)">\u2618\uFE0E</span>';
 
 /* ---------- photos: lazy feed images + thread images ---------- */
-const picInner = src => `<img src="${src}" alt="Doubt photo" draggable="false"><span class="db-zm" aria-hidden="true"><i class="fa-solid fa-expand"></i></span>`;
+const picInner = (src, noZoom) => `<img src="${src}" alt="Doubt photo" draggable="false">${noZoom ? '' : '<span class="db-zm" aria-hidden="true"><i class="fa-solid fa-expand"></i></span>'}`;
 function imgBox(id, rid) {
     const key = rid ? id + '_' + rid : id, c = S.imgs[key], at = `data-db="view" data-id="${esc(id)}" data-rid="${esc(rid || '')}" data-img="${esc(key)}"`;
     return c ? `<div class="db-img ok" ${at}>${picInner(c)}</div>` : `<div class="db-img" ${at}><i>Loading photo...</i></div>`;
@@ -11128,7 +11191,7 @@ function fillBox(el) {
     loadImg(el.getAttribute('data-img')).then(src => {
         if (!el.isConnected) return;
         el.classList.remove('sk');
-        if (src) { el.classList.add('ok'); el.innerHTML = picInner(src); } else el.innerHTML = '<i>Photo unavailable</i>';
+        if (src) { el.classList.add('ok'); el.innerHTML = picInner(src, el.classList.contains('db-pic')); } else el.innerHTML = '<i>Photo unavailable</i>';
     });
 }
 let io = null;
@@ -11157,7 +11220,7 @@ function vClamp(x, y, z) {
 function vApply(anim) {
     const im = $('db-vw-img'); im.classList.toggle('anim', !!anim);
     im.style.transform = 'translate(-50%,-50%) translate(' + V.x + 'px,' + V.y + 'px) rotate(' + V.ra + 'deg) scale(' + (V.fit * V.z) + ')';
-    $('db-vw-z').textContent = Math.round(V.z * 100) + '%';
+    const zl = $('db-vw-z'); if (zl) zl.textContent = Math.round(V.z * 100) + '%';
 }
 function vZoomAt(cx, cy, nz, anim) {
     nz = Math.max(1, Math.min(6, nz)); const r = nz / V.z, p = vClamp(cx - (cx - V.x) * r, cy - (cy - V.y) * r, nz);
@@ -11306,7 +11369,7 @@ async function reply() {
         await set(ref(W.rtdb, S.path + '/' + d.id + '/replies/' + rid), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', text: text.slice(0, 800), hasImg: !!img, ts: Date.now() });
         if (d.status === 'open') await update(ref(W.rtdb, S.path + '/' + d.id), { status: 'answered' });
         pushTo(isAdmin() ? 'Teacher answered your doubt' : 'New answer to your doubt', myName() + ': ' + text, d.mobile, d.id);
-        S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = '';
+        S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = ''; repPrev();
     } catch (e) { console.warn(e); toast('Could not send', String((e && (e.code || e.message)) || 'Try again.').slice(0, 90), 'error'); }
     S.busy = false;
 }
@@ -11335,7 +11398,7 @@ async function delRep(id, rid) {
 }
 
 /* ---------- custom camera ("Snap your doubt") ---------- */
-const cam = { stream: null, face: 'environment', blob: null, url: '' };
+const cam = { stream: null, face: 'environment', blob: null, url: '', target: 'ask' };
 function camStop() { if (cam.stream) { try { cam.stream.getTracks().forEach(t => t.stop()); } catch (e) { } cam.stream = null; } const v = $('db-cam-v'); if (v) v.srcObject = null; }
 function camReview(on) {
     const c = $('db-cam'); c.classList.toggle('review', !!on);
@@ -11353,7 +11416,7 @@ async function startCam() {
         c.classList.add('err');
     }
 }
-function openCam() { camReview(false); $('db-cam').classList.remove('hidden-view'); startCam(); }
+function openCam(t) { cam.target = t === 'rep' ? 'rep' : 'ask'; const ti = D.querySelector('#db-cam .db-cam-top b'); if (ti) ti.innerHTML = (cam.target === 'rep' ? 'Snap your answer' : 'Snap your doubt') + '<small>' + (cam.target === 'rep' ? 'Keep your working inside the frame' : 'Keep the question inside the frame') + '</small>'; camReview(false); $('db-cam').classList.remove('hidden-view'); startCam(); }
 function closeCam() { const c = $('db-cam'); if (!c) return; camStop(); camReview(false); c.classList.add('hidden-view'); c.classList.remove('err'); }
 function camShot() {
     const v = $('db-cam-v'); if (!cam.stream || !v.videoWidth) return;
@@ -11364,7 +11427,7 @@ function camShot() {
         try { navigator.vibrate && navigator.vibrate(20); } catch (e) { }
     }, 'image/jpeg', 0.92);
 }
-function camUse() { const b = cam.blob; if (!b) return; const f = new File([b], 'doubt.jpg', { type: 'image/jpeg' }); closeCam(); pick(f, 'ask'); }
+function camUse() { const b = cam.blob; if (!b) return; const f = new File([b], 'doubt.jpg', { type: 'image/jpeg' }), t = cam.target; closeCam(); pick(f, t); }
 W.addEventListener('hashchange', closeCam); W.addEventListener('pagehide', camStop);
 
 /* ---------- sheets + events ---------- */
@@ -11376,9 +11439,11 @@ function openAsk(keep) {
     $('db-ask').classList.remove('hidden-view');
 }
 function closeAsk() { const a = $('db-ask'); if (a) a.classList.add('hidden-view'); }
+function repPrev() { const p = $('db-r-prev'), t = $('db-r-thumb'); if (!p) return; if (S.repImg) { t.src = S.repImg; p.classList.add('on'); } else { t.removeAttribute('src'); p.classList.remove('on'); } }
+function clearRep() { S.repImg = null; $('db-r-img-n').textContent = ''; repPrev(); }
 async function pick(file, which) {
     if (!file) return;
-    try { const u = await compress(file); if (which === 'ask') { S.askImg = u; $('db-a-img-n').textContent = 'Photo added'; openAsk(true); } else { S.repImg = u; $('db-r-img-n').textContent = 'Photo added'; } }
+    try { const u = await compress(file); if (which === 'ask') { S.askImg = u; $('db-a-img-n').textContent = 'Photo added'; openAsk(true); } else { S.repImg = u; repPrev(); } }
     catch (e) { toast('Photo failed', 'Choose a different image.', 'error'); }
 }
 D.addEventListener('click', e => {
@@ -11387,8 +11452,8 @@ D.addEventListener('click', e => {
     if (a === 'close-ask') closeAsk(); else if (a === 'stats') openStats(); else if (a === 'close-stats') closeStats(); else if (a === 'close-th') { $('db-th').classList.add('hidden-view'); S.open = null; }
     else if (a === 'tab') { S.tab = v; paint(); } else if (a === 'chip') { S.filter = v; paint(); } else if (a === 'subj') { S.subj = v; paint(); } else if (a === 'wk') { S.week = v === '1'; paint(); }
     else if (a === 'open') openThread(id); else if (a === 'post') post(); else if (a === 'reply') reply();
-    else if (a === 'snap') openCam(); else if (a === 'cam-close') closeCam(); else if (a === 'cam-shot') camShot(); else if (a === 'cam-flip') { cam.face = cam.face === 'environment' ? 'user' : 'environment'; startCam(); }
-    else if (a === 'cam-retake') { camReview(false); } else if (a === 'cam-use') camUse(); else if (a === 'cam-gallery') $('db-a-file').click(); else if (a === 'cam-native') $('db-snap-file').click();
+    else if (a === 'snap') openCam('ask'); else if (a === 'snap-rep') openCam('rep'); else if (a === 'rep-rm') clearRep(); else if (a === 'cam-close') closeCam(); else if (a === 'cam-shot') camShot(); else if (a === 'cam-flip') { cam.face = cam.face === 'environment' ? 'user' : 'environment'; startCam(); }
+    else if (a === 'cam-retake') { camReview(false); } else if (a === 'cam-use') camUse(); else if (a === 'cam-gallery') $(cam.target === 'rep' ? 'db-r-file' : 'db-a-file').click(); else if (a === 'cam-native') $('db-snap-file').click();
     else if (a === 'pick-ask') $('db-a-file').click(); else if (a === 'pick-rep') $('db-r-file').click();
     else if (a === 'resolve') setStatus(id, 'resolved'); else if (a === 'reopen') setStatus(id, reps(byId(id)).length ? 'answered' : 'open');
     else if (a === 'helped') helped(id, rid); else if (a === 'del') del(id); else if (a === 'delrep') delRep(id, rid);
@@ -11397,9 +11462,9 @@ D.addEventListener('click', e => {
 });
 D.addEventListener('input', e => { if (e.target.id === 'db-q') { S.q = e.target.value.trim(); paint(); } });
 D.addEventListener('change', e => {
-    if (e.target.id === 'db-snap-file') { closeCam(); pick(e.target.files[0], 'ask'); e.target.value = ''; }
+    if (e.target.id === 'db-snap-file') { const t = cam.target; closeCam(); pick(e.target.files[0], t); e.target.value = ''; }
     else if (e.target.id === 'db-a-file') { closeCam(); pick(e.target.files[0], 'ask'); e.target.value = ''; }
-    else if (e.target.id === 'db-r-file') { pick(e.target.files[0], 'rep'); e.target.value = ''; }
+    else if (e.target.id === 'db-r-file') { closeCam(); pick(e.target.files[0], 'rep'); e.target.value = ''; }
 });
 
 /* ---------- dashboard tile (cloned from a neighbouring tile) + badge ---------- */
@@ -19380,136 +19445,123 @@ window.__tpPaint = function () {
             };
 
             // ==========================================
-            // 📱 PINCH-TO-ZOOM & PAN GESTURE ENGINE
+            // 📱 FULL SCREEN PHOTO VIEWER ENGINE (same gestures as Solve It):
+            //    pinch / double-tap / wheel zoom, pan, rotate, swipe-down to close
             // ==========================================
-            window.currentImgScale = 1;
-            let imgTranslateX = 0;
-            let imgTranslateY = 0;
-            let isDraggingImg = false;
-            let startDragX = 0;
-            let startDragY = 0;
-            let initialPinchDistance = 0;
-            let initialPinchScale = 1;
+            (function () {
+                const $ = id => document.getElementById(id);
+                const G = { on: false, z: 1, x: 0, y: 0, ra: 0, rot: 0, nw: 0, nh: 0, fit: 1, ptr: new Map(), mode: '', g: null, tap: 0, tapx: 0, tapy: 0, tok: 0, hinted: false };
+                const stage = () => { const s = $('img-zoom-container'); return { w: s.clientWidth, h: s.clientHeight }; };
+                const dims = () => G.rot % 180 ? { w: G.nh, h: G.nw } : { w: G.nw, h: G.nh };
+                function fit() { const s = stage(), d = dims(); G.fit = (d.w && d.h && s.w && s.h) ? Math.min(s.w / d.w, s.h / d.h, 3) : 1; }
+                function clamp(x, y, z) {
+                    const s = stage(), d = dims(), k = G.fit * z, mx = Math.max(0, (d.w * k - s.w) / 2), my = Math.max(0, (d.h * k - s.h) / 2);
+                    return { x: Math.max(-mx, Math.min(mx, x)), y: Math.max(-my, Math.min(my, y)) };
+                }
+                function apply(anim) {
+                    const im = $('fullscreen-img-src'); im.classList.toggle('anim', !!anim);
+                    im.style.transform = 'translate(-50%,-50%) translate(' + G.x + 'px,' + G.y + 'px) rotate(' + G.ra + 'deg) scale(' + (G.fit * G.z) + ')';
+                }
+                function zoomAt(cx, cy, nz, anim) {
+                    nz = Math.max(1, Math.min(6, nz)); const r = nz / G.z, p = clamp(cx - (cx - G.x) * r, cy - (cy - G.y) * r, nz);
+                    G.z = nz; G.x = p.x; G.y = p.y; apply(anim);
+                }
+                const pos = e => { const r = $('img-zoom-container').getBoundingClientRect(); return { x: e.clientX - r.left - r.width / 2, y: e.clientY - r.top - r.height / 2 }; };
+                const setVo = v => $('fullscreen-image-modal').style.setProperty('--vo', v);
 
-            window.openFullScreenImage = function (src) {
-                const modal = document.getElementById('fullscreen-image-modal');
-                const img = document.getElementById('fullscreen-img-src');
-                const pdf = document.getElementById('fullscreen-pdf-src');
-                const controls = document.getElementById('img-zoom-controls');
-
-                // 🔥 FIX: Force the full-screen viewer to appear above ALL other modals
-                modal.style.zIndex = '9999';
-
-                if (src.toLowerCase().endsWith('.pdf') || src.includes('pdf')) {
-                    img.classList.add('hidden');
-                    pdf.classList.remove('hidden');
-                    pdf.src = src;
-                    controls.classList.add('hidden');
-                } else {
-                    pdf.classList.add('hidden');
-                    img.classList.remove('hidden');
-                    img.src = src;
-                    controls.classList.remove('hidden');
-
-                    // Reset Zoom & Pan
-                    window.currentImgScale = 1;
-                    if (typeof imgTranslateX !== 'undefined') {
-                        imgTranslateX = 0;
-                        imgTranslateY = 0;
-                    }
-                    if (typeof updateImageTransform === 'function') {
-                        updateImageTransform(img);
+                window.openFullScreenImage = function (src) {
+                    const modal = $('fullscreen-image-modal'), im = $('fullscreen-img-src'), pdf = $('fullscreen-pdf-src');
+                    const bar = $('img-zoom-controls'), ld = $('fullscreen-img-ld'), er = $('fullscreen-img-err'), tok = ++G.tok;
+                    modal.style.zIndex = '9999';   // above ALL other modals
+                    G.on = true; G.ptr.clear(); G.g = null; G.mode = ''; G.z = 1; G.x = G.y = 0; G.ra = 0; G.rot = 0; G.nw = G.nh = 0; setVo(1);
+                    er.style.display = 'none';
+                    if (src.toLowerCase().endsWith('.pdf') || src.includes('pdf')) {
+                        im.removeAttribute('src'); im.style.visibility = 'hidden'; ld.style.display = 'none';
+                        pdf.style.display = 'block'; pdf.src = src; bar.classList.add('hidden');
+                        $('fullscreen-img-title').textContent = 'Document';
                     } else {
-                        img.style.transform = `scale(1)`;
+                        pdf.style.display = 'none'; pdf.src = ''; bar.classList.remove('hidden');
+                        $('fullscreen-img-title').textContent = 'Photo';
+                        im.removeAttribute('src'); im.style.visibility = 'hidden'; im.style.opacity = 1; ld.style.display = 'flex';
+                        im.onerror = () => { if (tok !== G.tok) return; ld.style.display = 'none'; er.style.display = 'flex'; };
+                        im.onload = () => {
+                            if (tok !== G.tok) return;
+                            G.nw = im.naturalWidth; G.nh = im.naturalHeight; im.style.width = G.nw + 'px'; im.style.height = G.nh + 'px';
+                            fit(); ld.style.display = 'none'; im.style.visibility = 'visible'; apply(false);
+                        };
+                        im.src = src;
+                        const h = $('fullscreen-img-hint');
+                        if (h && !G.hinted) { G.hinted = true; h.classList.remove('on'); void h.offsetWidth; h.classList.add('on'); }
+                    }
+                    modal.classList.remove('hidden-view');
+                    if (window.AppFS) window.AppFS.request('image'); // hide status bar
+                };
+
+                window.closeFullScreenImage = function () {
+                    if (window.AppFS) window.AppFS.release('image'); // restore status bar
+                    G.on = false; G.tok++; G.ptr.clear(); G.g = null; G.mode = '';
+                    const modal = $('fullscreen-image-modal'); modal.classList.add('hidden-view'); setVo(1);
+                    $('fullscreen-img-src').removeAttribute('src');
+                    $('fullscreen-pdf-src').src = '';
+                };
+
+                window.rotateFullScreenImage = function () { G.ra += 90; G.rot = ((G.ra % 360) + 360) % 360; G.z = 1; G.x = G.y = 0; fit(); apply(true); };
+                window.zoomImg = function (dir) { zoomAt(0, 0, dir === 1 ? G.z * 1.5 : G.z / 1.5, true); };
+
+                function down(e) {
+                    try { $('img-zoom-container').setPointerCapture(e.pointerId); } catch (x) { }
+                    const p = pos(e); G.ptr.set(e.pointerId, p);
+                    if (G.ptr.size === 1) { G.g = { sx: p.x, sy: p.y, ox: G.x, oy: G.y, t: e.timeStamp, moved: false, dx: 0, dy: 0 }; G.mode = ''; $('fullscreen-img-src').classList.remove('anim'); }
+                    else if (G.ptr.size === 2) { const [a, b] = [...G.ptr.values()]; G.g = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: G.z, ox: G.x, oy: G.y, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; G.mode = 'pinch'; $('fullscreen-img-src').classList.remove('anim'); }
+                }
+                function move(e) {
+                    if (!G.ptr.has(e.pointerId)) return; const p = pos(e); G.ptr.set(e.pointerId, p); const g = G.g; if (!g) return;
+                    if (G.mode === 'pinch') {
+                        if (G.ptr.size < 2) return; const [a, b] = [...G.ptr.values()], d = Math.hypot(a.x - b.x, a.y - b.y), nz = Math.max(.8, Math.min(6, g.z0 * d / g.d0)), r = nz / g.z0;
+                        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, c = clamp(mx - (g.cx - g.ox) * r, my - (g.cy - g.oy) * r, nz);
+                        G.z = nz; G.x = c.x; G.y = c.y; apply(); return;
+                    }
+                    if (G.ptr.size !== 1) return;
+                    const dx = p.x - g.sx, dy = p.y - g.sy; g.dx = dx; g.dy = dy;
+                    if (!G.mode && Math.hypot(dx, dy) > 8) { g.moved = true; G.mode = G.z > 1.02 ? 'pan' : 'swy'; }
+                    if (G.mode === 'pan') { const c = clamp(g.ox + dx, g.oy + dy, G.z); G.x = c.x; G.y = c.y; apply(); }
+                    else if (G.mode === 'swy') { G.y = g.oy + dy; setVo(Math.max(.25, 1 - Math.abs(dy) / 420)); apply(); }
+                }
+                function up(e) {
+                    if (!G.ptr.has(e.pointerId)) return; G.ptr.delete(e.pointerId);
+                    const g = G.g, mode = G.mode;
+                    if (mode === 'pinch') {
+                        if (G.ptr.size < 2) {
+                            if (G.z < 1) { G.z = 1; const c = clamp(G.x, G.y, 1); G.x = c.x; G.y = c.y; apply(true); }
+                            const rest = [...G.ptr.values()][0];
+                            G.g = rest ? { sx: rest.x, sy: rest.y, ox: G.x, oy: G.y, moved: true, dx: 0, dy: 0, t: e.timeStamp } : null; G.mode = rest ? (G.z > 1.02 ? 'pan' : 'dead') : '';
+                        }
+                        return;
+                    }
+                    if (G.ptr.size) return; G.g = null; G.mode = ''; if (!g) return;
+                    if (mode === 'swy') {
+                        if (Math.abs(g.dy) > 110) return window.closeFullScreenImage();
+                        G.y = 0; setVo(1); apply(true);
+                    } else if (!g.moved && !mode) {
+                        if (e.timeStamp - G.tap < 320 && Math.hypot(g.sx - G.tapx, g.sy - G.tapy) < 30) { G.tap = 0; zoomAt(g.sx, g.sy, G.z > 1.05 ? 1 : 2.5, true); }
+                        else { G.tap = e.timeStamp; G.tapx = g.sx; G.tapy = g.sy; }
                     }
                 }
-                modal.classList.remove('hidden-view');
-                if (window.AppFS) window.AppFS.request('image'); // hide status bar
-            };
+                function wheel(e) { if (!$('fullscreen-img-src').getAttribute('src')) return; e.preventDefault(); const p = pos(e); zoomAt(p.x, p.y, G.z * Math.exp(-e.deltaY * (e.ctrlKey ? .01 : .0018)), false); }
 
-            window.zoomImg = function (dir) {
-                const img = document.getElementById('fullscreen-img-src');
-                if (dir === 1) window.currentImgScale = Math.min(5, window.currentImgScale + 0.5);
-                else window.currentImgScale = Math.max(1, window.currentImgScale - 0.5);
-
-                // Auto-center if zoomed all the way out
-                if (window.currentImgScale === 1) { imgTranslateX = 0; imgTranslateY = 0; }
-                updateImageTransform(img);
-            };
-
-            window.closeFullScreenImage = function () {
-                if (window.AppFS) window.AppFS.release('image'); // restore status bar
-                document.getElementById('fullscreen-image-modal').classList.add('hidden-view');
-                document.getElementById('fullscreen-img-src').src = '';
-                document.getElementById('fullscreen-pdf-src').src = '';
-            };
-
-            function updateImageTransform(imgEl) {
-                if (!imgEl) return;
-                imgEl.style.transform = `translate(${imgTranslateX}px, ${imgTranslateY}px) scale(${window.currentImgScale})`;
-            }
-
-            // Attach Touch Listeners for Pinch & Pan
-            setTimeout(() => {
-                const zoomContainer = document.getElementById('img-zoom-container');
-                const imgEl = document.getElementById('fullscreen-img-src');
-
-                if (zoomContainer && imgEl) {
-                    zoomContainer.addEventListener('touchstart', (e) => {
-                        if (e.touches.length === 2) {
-                            // Two fingers: Start Pinch Zoom
-                            isDraggingImg = false;
-                            initialPinchDistance = Math.hypot(
-                                e.touches[0].pageX - e.touches[1].pageX,
-                                e.touches[0].pageY - e.touches[1].pageY
-                            );
-                            initialPinchScale = window.currentImgScale;
-                            imgEl.classList.remove('transition-transform', 'duration-300'); // Remove animation for instant finger tracking
-                        } else if (e.touches.length === 1 && window.currentImgScale > 1) {
-                            // One finger: Start Drag/Pan (only if zoomed in)
-                            isDraggingImg = true;
-                            startDragX = e.touches[0].pageX - imgTranslateX;
-                            startDragY = e.touches[0].pageY - imgTranslateY;
-                            imgEl.classList.remove('transition-transform', 'duration-300');
-                        }
-                    }, { passive: false });
-
-                    zoomContainer.addEventListener('touchmove', (e) => {
-                        if (e.touches.length === 2) {
-                            // Handle Pinching
-                            const currentDistance = Math.hypot(
-                                e.touches[0].pageX - e.touches[1].pageX,
-                                e.touches[0].pageY - e.touches[1].pageY
-                            );
-                            const scaleChange = currentDistance / initialPinchDistance;
-                            window.currentImgScale = Math.min(Math.max(1, initialPinchScale * scaleChange), 5); // Max 5x Zoom
-
-                            // Recenter if completely zoomed out
-                            if (window.currentImgScale === 1) {
-                                imgTranslateX = 0; imgTranslateY = 0;
-                            }
-
-                            updateImageTransform(imgEl);
-                            e.preventDefault(); // Stop screen from scrolling natively
-                        } else if (e.touches.length === 1 && isDraggingImg && window.currentImgScale > 1) {
-                            // Handle Dragging
-                            imgTranslateX = e.touches[0].pageX - startDragX;
-                            imgTranslateY = e.touches[0].pageY - startDragY;
-
-                            updateImageTransform(imgEl);
-                            e.preventDefault(); // Stop screen from scrolling natively
-                        }
-                    }, { passive: false });
-
-                    zoomContainer.addEventListener('touchend', (e) => {
-                        // Re-enable smooth animations when fingers leave the screen
-                        imgEl.classList.add('transition-transform', 'duration-300');
-                        if (e.touches.length < 2) {
-                            isDraggingImg = false;
-                        }
+                function init() {
+                    const st = $('img-zoom-container'); if (!st) return;
+                    st.addEventListener('pointerdown', down); st.addEventListener('pointermove', move); st.addEventListener('pointerup', up); st.addEventListener('pointercancel', up);
+                    st.addEventListener('wheel', wheel, { passive: false });
+                    window.addEventListener('resize', () => { if (!G.on || !G.nw) return; fit(); const c = clamp(G.x, G.y, G.z); G.x = c.x; G.y = c.y; apply(false); });
+                    document.addEventListener('keydown', e => {
+                        if (!G.on) return; const k = e.key;
+                        if (k === 'Escape') { e.preventDefault(); window.closeFullScreenImage(); }
+                        else if (k === '+' || k === '=') zoomAt(0, 0, G.z * 1.4, true); else if (k === '-') zoomAt(0, 0, G.z / 1.4, true); else if (k === 'r' || k === 'R') window.rotateFullScreenImage();
                     });
                 }
-            }, 1000); // Give the DOM a second to load
+                if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+            })();
 
             function getGreeting() { const hr = new Date().getHours(); if (hr < 12) return "Good Morning,"; if (hr < 18) return "Good Afternoon,"; return "Good Evening,"; }
             function playChime() { if (typeof playRingPattern === 'function') playRingPattern(); }
