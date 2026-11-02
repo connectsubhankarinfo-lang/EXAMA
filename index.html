@@ -7125,7 +7125,7 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
                             <div class="xb xb-f-focus xb-h xb-violet cursor-pointer" role="button" tabindex="0" style="--i:4" onclick="window.location.hash='session-timer'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-focus"/></svg></span><span class="xb-tx"><span class="xb-t">Focus Sessions</span><span class="xb-s">Study Sessions</span></span></div>
                             <div class="xb xb-f-chat xb-h xb-indigo cursor-pointer" role="button" tabindex="0" style="--i:5" onclick="window.location.hash='chat'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-chat"/></svg></span><span class="xb-tx"><span class="xb-t">Discus</span><span class="xb-s">Community</span></span><span class="chat-unread-badge hidden absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full border border-white">0</span></div>
                             <div class="xb xb-f-run xb-h xb-red cursor-pointer" role="button" tabindex="0" style="--i:6" onclick="window.location.hash='fitness'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-run"/></svg></span><span class="xb-tx"><span class="xb-t">Run Monitor</span><span class="xb-s">Fitness Monitor</span></span></div>
-                            <div class="xb xb-f-notice xb-h xb-sun cursor-pointer" role="button" tabindex="0" style="--i:7" onclick="window.location.hash='notices'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-notice"/></svg></span><span class="xb-tx"><span class="xb-t">Notice Board</span><span class="xb-s">Notice &amp; Alerts</span></span><span id="dash-notice-badge" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span></div>
+                            <div class="xb xb-f-notice xb-w xb-center xb-sun cursor-pointer" role="button" tabindex="0" style="--i:7;grid-column:1 / -1" onclick="window.location.hash='notices'"><span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-notice"/></svg></span><span class="xb-tx"><span class="xb-t">Notice Board</span><span class="xb-s">Notice &amp; Alerts</span></span><span id="dash-notice-badge" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span></div>
                         </div>
                     </div>
 
@@ -11443,13 +11443,13 @@ async function helped(id, rid) {
     if (S.open === id) { $('db-th').classList.add('hidden-view'); S.open = null; }
 }
 async function del(id) {
-    if (!confirm('Delete this doubt and all its answers?')) return;
+    if (!(await W.showCustomConfirm('Delete Doubt', 'Delete this doubt and all its answers? This cannot be undone.', 'Delete', 'Cancel', 'danger'))) return;
     const d = byId(id), keys = [id].concat(Object.keys((d && d.replies) || {}).map(k => id + '_' + k));
     await remove(ref(W.rtdb, S.path + '/' + id)); keys.forEach(k => remove(ref(W.rtdb, imgPath() + '/' + k)).catch(() => { }));
     $('db-th').classList.add('hidden-view'); S.open = null;
 }
 async function delRep(id, rid) {
-    if (!confirm('Delete this answer?')) return;
+    if (!(await W.showCustomConfirm('Delete Answer', 'Are you sure you want to delete this answer?', 'Delete', 'Cancel', 'danger'))) return;
     await remove(ref(W.rtdb, S.path + '/' + id + '/replies/' + rid)); remove(ref(W.rtdb, imgPath() + '/' + id + '_' + rid)).catch(() => { });
 }
 
@@ -11487,8 +11487,15 @@ function camUse() { const b = cam.blob; if (!b) return; const f = new File([b], 
 W.addEventListener('hashchange', closeCam); W.addEventListener('pagehide', camStop);
 
 /* ---------- sheets + events ---------- */
-const SUBJ_DEFAULT = ['Physics', 'Chemistry', 'Maths', 'Biology', 'English'];
-function subjList() { return [...new Set(S.list.map(d => d.subject).concat((W.syllabusTopicsDB || []).map(t => t && t.subject)).concat(SUBJ_DEFAULT).map(x => String(x || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)); }
+/* Subject list = exactly the subjects Material Hub has (same list + any subject already used in materials).
+   Doubts posted by others / syllabus subjects are NOT added here; anything else goes through "+ Add yours…". */
+function subjList() {
+    const out = [], seen = new Set();
+    const add = x => { x = String(x || '').trim(); const k = x.toLowerCase(); if (x && !seen.has(k)) { seen.add(k); out.push(x); } };
+    (W.MAT_SUBJECTS || []).forEach(add);
+    (W.materialsDB || []).forEach(m => { try { add(W.mhNorm ? W.mhNorm(m).subject : (m && m.subject)); } catch (e) { } });
+    return out;
+}
 function fillSubjSel(want) {
     const sel = $('db-a-sel'); if (!sel) return;
     const prev = want !== undefined ? want : sel.value, list = subjList();
@@ -11553,11 +11560,11 @@ function tiles() {
     if (!tpl || tpl.parentNode.querySelector('[data-db-tile]')) return;
     const n = tpl.cloneNode(false); ['id', 'data-ax'].forEach(a => n.removeAttribute(a));
     const stu = W.currentRole === 'student';
-    n.className = [...tpl.classList].filter(c => !/^xb-f-/.test(c) && !/^xb-(sun|mint|teal|indigo|violet|red|blue|rose|amber|green)$/.test(c) && !(stu && c === 'xb-h')).concat(stu ? ['xb-w', 'xb-center', 'xb-f-solve', 'xb-peach'] : ['xb-f-solve', 'xb-peach']).join(' ');
-    if (stu) n.style.gridColumn = '1 / -1';
+    n.className = [...tpl.classList].filter(c => !/^xb-f-/.test(c) && !/^xb-(sun|mint|teal|indigo|violet|red|blue|rose|amber|green)$/.test(c) && !(stu && /^xb-(w|center|h)$/.test(c))).concat(stu ? ['xb-h', 'xb-f-solve', 'xb-peach'] : ['xb-f-solve', 'xb-peach']).join(' ');
+    if (stu) n.setAttribute('style', '--i:7');
     n.setAttribute('data-db-tile', '1'); n.setAttribute('onclick', "window.location.hash='doubt-board'");
     n.innerHTML = '<span class="xb-ic"><svg class="xb-svg" aria-hidden="true"><use href="#xi-solve"/></svg></span><span class="xb-tx"><span class="xb-t">' + NAME + '</span><span class="xb-s">Ask Your Doubt</span></span><span class="db-tb"></span>';
-    tpl.parentNode.insertBefore(n, W.currentRole === 'student' ? tpl.nextSibling : null); tileBadge();
+    tpl.parentNode.insertBefore(n, W.currentRole === 'student' ? tpl : null); tileBadge();
 }
 function tileBadge() {
     const n = isAdmin() ? S.list.filter(d => d.status === 'open').length : S.list.filter(d => String(d.mobile) === me() && d.status === 'answered').length;
@@ -40306,6 +40313,13 @@ html body #admin-view .ax-hdr .ax-ctitle .t .ax-l{
 /* Solve It tile: same orange as the Solve It header / floating button */
 html body .xb.xb-f-solve:not(#_):not(#__){--rgb:242,73,27;--c:#c2370f}
 html body .xb.xb-f-solve .xb-ic:not(#_):not(#__){background:linear-gradient(135deg,#f2491b,#ff8a3d)}
+</style>
+<style id="notice-theme-yr">
+/* Notice Board: yellow-red theme. Yellow leads, fading into orange and a touch of red. Used by the dashboard tile and the Notice Board header. */
+html body .xb.xb-f-notice:not(#_):not(#__):not(#___){--rgb:245,130,15;--c:color-mix(in srgb,rgb(245,130,15) 80%,#000)}
+html body .xb.xb-f-notice .xb-ic:not(#_):not(#__):not(#___){background:linear-gradient(135deg,#fde047 0%,#f59e0b 48%,#ef4444 100%)}
+html body #notice-board-view .nb-hdr:not(#_):not(#__){background:linear-gradient(135deg,#fde047 0%,#fbbf24 34%,#f97316 76%,#ef4444 100%)!important}
+html body #notice-board-view .nb-ic:not(#_):not(#__){color:#9a3412}
 </style>
 <style id="xb-grid-v8">
 /* ===== EXAMA button grid v8 =====
