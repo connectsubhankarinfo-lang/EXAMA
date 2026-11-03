@@ -11176,7 +11176,7 @@ function notify(arr) {
     if (!S.loaded) { arr.forEach(d => S.counts[d.id] = reps(d).length); return; }
     arr.forEach(d => {
         const n = reps(d).length, was = S.counts[d.id];
-        if (was === undefined) { S.counts[d.id] = n; if (isAdmin() && String(d.mobile) !== me()) toast('New doubt: ' + d.subject, d.name + ': ' + String(d.text).slice(0, 60)); return; }
+        if (was === undefined) { S.counts[d.id] = n; if (isAdmin() && String(d.mobile) !== me()) toast('New doubt in ' + d.subject, d.name + ' asked: ' + String(d.text).slice(0, 60)); return; }
         if (n > was) { const last = reps(d)[n - 1]; if (String(d.mobile) === me() && String(last.mobile) !== me()) { toast('New answer', last.name + ' answered your doubt'); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } } }
         S.counts[d.id] = n;
     });
@@ -11298,7 +11298,7 @@ async function like(id, rid) {
         else {
             await set(ref(W.rtdb, p), true);
             const after = Object.keys(x.likes || {}).filter(m => String(m) !== String(x.mobile)).length + 1;
-            if (after === APPROVE_AT) pushTo('Your answer was approved!', 'Classmates marked your answer as right', x.mobile, id);
+            if (after === APPROVE_AT) pushTo('Your answer was approved', 'Your classmates confirmed it is correct. Well done!', x.mobile, id);
         }
     } catch (e) { console.warn(e); toast('Could not save', 'Check your internet and try again.', 'error'); }
 }
@@ -11585,7 +11585,7 @@ async function post() {
         const id = push(ref(W.rtdb, S.path)).key, img = S.askImg;
         if (img) await set(ref(W.rtdb, imgPath() + '/' + id), img);
         await set(ref(W.rtdb, S.path + '/' + id), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', subject: subject.slice(0, 40), chapter: chapter.slice(0, 60), text: text.slice(0, 800), hasImg: !!img, status: 'open', ts: Date.now() });
-        pushTo('New doubt: ' + subject, myName() + ': ' + text, everyone(), id, { img: (W.PUSH_IMAGES || {}).newDoubt, sub: chapter ? subject + ' \u2022 ' + chapter : subject });
+        pushTo('New doubt in ' + subject, myName() + ' asked: ' + text, everyone(), id, { img: (W.PUSH_IMAGES || {}).newDoubt, sub: chapter ? subject + ' - ' + chapter : subject });
         closeAsk(); toast('Doubt posted', 'You will get a notification when someone answers.', 'success');
     } catch (e) { console.warn(e); toast('Could not post', String((e && (e.code || e.message)) || 'Check your internet.').slice(0, 90), 'error'); }
     S.busy = false; $('db-post').disabled = false;
@@ -11601,7 +11601,7 @@ async function reply() {
         let audUrl = ''; if (aud) { audUrl = await blobToDataUrl(aud.blob); if (!AUD_RE.test(audUrl) || audUrl.length > 1.5e6) throw new Error('Voice note is too long. Record a shorter one.'); }
         await set(ref(W.rtdb, S.path + '/' + d.id + '/replies/' + rid), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', text: text.slice(0, 800), hasImg: !!img, ...(aud ? { hasAud: true, audioUrl: audUrl, dur: aud.dur } : {}), ts: Date.now() });
         if (d.status === 'open') await update(ref(W.rtdb, S.path + '/' + d.id), { status: 'answered' });
-        pushTo(isAdmin() ? 'Teacher answered your doubt' : 'New answer to your doubt', myName() + ': ' + (text || (aud ? '🎤 Voice answer' : '📷 Photo answer')), d.mobile, d.id, { sub: 'Re: ' + d.subject, urgent: isAdmin() });
+        pushTo(isAdmin() ? 'Teacher answered your doubt' : myName() + ' answered your doubt', text || (aud ? 'Sent a voice answer. Tap to listen.' : 'Sent a photo answer. Tap to view.'), d.mobile, d.id, { sub: 'Re: ' + d.subject, urgent: isAdmin() });
         S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = ''; repPrev(); clearAud();
     } catch (e) { console.warn(e); toast('Could not send', String((e && (e.code || e.message)) || 'Try again.').slice(0, 90), 'error'); }
     S.busy = false;
@@ -11616,7 +11616,7 @@ async function helped(id, rid) {
     if (r.role !== 'admin' && String(r.mobile) !== String(d.mobile) && W.__wltGrant) {
         try { paid = !!(await W.__wltGrant(r.mobile, 'doubt_' + id + '_' + rid, COINS, 'Solved a doubt: ' + String(d.subject).slice(0, 30))); } catch (e) { console.warn('coin grant', e); }
     }
-    pushTo('Your answer helped!' + (paid ? ' +' + COINS + ' coins' : ''), d.name + ' marked your answer as helpful', r.mobile, id);
+    pushTo(paid ? 'Your answer helped, you earned ' + COINS + ' coins' : 'Your answer helped', d.name + ' marked your answer in ' + d.subject + ' as helpful and solved the doubt.', r.mobile, id);
     toast('Marked as helped', paid ? r.name + ' has been rewarded.' : 'The doubt is now solved.', 'success');
     if (S.open === id) { $('db-th').classList.add('hidden-view'); S.open = null; }
 }
@@ -18963,7 +18963,7 @@ window.__tpPaint = function () {
                             const incoming = fresh.filter(m => m.mobile !== window.loggedInMobile && (Date.now() - (m.timestamp || 0)) < 120000);
                             const latest = incoming[incoming.length - 1];
                             if (latest) {
-                                const msgText = latest.text || (latest.linkUrl ? 'Shared a Link' : latest.poll ? '📊 Created a poll' : latest.audioUrl ? 'Shared a Voice Message' : 'Shared a Performance Card/Photo');
+                                const msgText = latest.text || (latest.linkUrl ? 'Shared a Link' : latest.poll ? 'Created a poll' : latest.audioUrl ? 'Shared a Voice Message' : 'Shared a Performance Card/Photo');
                                 playChime();
                                 sendPushNotification(`${latest.name} in Discus`, msgText);
                                 const chatViewEl = document.getElementById('community-chat-view');
@@ -19375,8 +19375,8 @@ window.__tpPaint = function () {
             // ==========================================================================
             // Fixed pictures for specific pushes (change the links here only)
             window.PUSH_IMAGES = {
-                newDoubt: 'https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/file_00000000015482089c78e0462af7f60f.png',
-                newExam: 'https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/file_000000000c248208b1fc9910098aef94.png'
+                newDoubt: 'https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/file_0000000034748208875b45ef4f903efa.png?raw=true',
+                newExam: 'https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/file_00000000205c8208b41a149116d9d061.png?raw=true'
             };
             const PUSH_STYLE = {
                 _default: { accent: 'FF4F46E5', ttl: 259200 },
@@ -19411,6 +19411,24 @@ window.__tpPaint = function () {
                   if (window.isGlobalTestMode) { console.log('[TEST MODE] Push suppressed:', title, message); return; }
                   const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106";
                   const { category = null, data = null } = extra || {};
+                  // Discus push text: clear plain wording, no emoji or symbols added by the app
+                  if (category === 'discus') {
+                      try {
+                          const lead = /^[\u{1F300}-\u{1FAFF}\u2600-\u27BF][\uFE0F\u200D]*\s*/u;
+                          const unq = t => String(t).replace(/^"([\s\S]*)"$/, '$1');
+                          const media = t => String(t)
+                              .replace(/^\u{1F4F7} (\d+) photos$/u, 'Sent $1 photos')
+                              .replace(/^\u{1F4F7} Photo$/u, 'Sent a photo')
+                              .replace(/^\u{1F3A4} Voice message$/u, 'Sent a voice message')
+                              .replace(/^\u{1F517} Link$/u, 'Shared a link')
+                              .replace(/^\u{1F517} ([\s\S]+)$/u, 'Shared a link: $1')
+                              .replace(/^\u{1F4C4} ([\s\S]+)$/u, 'Shared a document: $1');
+                          let wm;
+                          if (/^.+ in Discus$/.test(String(title))) { message = media(message); }
+                          else if ((wm = String(title).match(/^(.+) reacted .+ to your message$/))) { title = wm[1] + ' reacted to your message'; message = unq(message).replace(lead, ''); }
+                          else if (/^.+ replied to your message$/.test(String(title))) { message = String(message).replace(lead, ''); }
+                      } catch (e) { }
+                  }
                   const wasExplicitTarget = !!targetUsers;
                   
                   if (!targetUsers && typeof window.getOtherStudentsMobiles === 'function') {
@@ -48058,6 +48076,49 @@ html.vw-busy body #notice-board-view:not(#_):not(#__) .fade-in{animation:none!im
 /* folders with unapproved material: flat amber marker instead of the glow */
 .mh-fold.unapproved-glow,#materials-view .mh-fold.unapproved-glow{background:#fffbeb!important;border:2px solid #f59e0b!important}
 .mh-fold.unapproved-glow .mh-pend,#materials-view .mh-fold.unapproved-glow .mh-pend{background:#f59e0b!important;color:#fff!important;font-size:10px!important;padding:3px 9px!important;border-color:#fff!important}
+</style>
+<style id="sd-app-tiles-v1">
+/* ===== Student dashboard buttons: clean "real app" tiles (like UPI / banking apps) =====
+   Style only. Grid, sizes, spacing, icons, text and badges stay exactly where they were.
+   White card, hairline ring, soft neutral shadow, round 3D icon, quick press feedback. No glass, no glow. */
+html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){
+  background:#fff;
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+  border-radius:26px;
+  box-shadow:inset 0 0 0 1px #e7ebf3,0 1px 2px rgba(15,23,42,.05),0 6px 14px -8px rgba(15,23,42,.14);
+  transform:none;will-change:auto;
+  transition:transform .12s ease,background-color .12s ease,box-shadow .12s ease;
+}
+html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______)::before,html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______)::after,
+html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):hover::after{display:none;content:none}
+html body #student-view .sd-tiles .xb-sec.xb-lg .xg:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){perspective:none}
+html body #student-view .sd-tiles .xb-sec.xb-lg .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){border-radius:30px}
+html body #student-view .sd-tiles .xb-sec.xb-lg .xg:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______)::before{display:none}
+
+/* icon: the original round 3D icon is kept (gradient, highlight and soft drop shadow) */
+
+/* text */
+html body #student-view .sd-tiles .xb .xb-t:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){color:#0f172a;font-weight:700;text-shadow:none;letter-spacing:-.01em}
+html body #student-view .sd-tiles .xb .xb-s:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){color:#64748b;font-weight:500;opacity:1;text-shadow:none}
+
+/* arrow on the wide tile */
+html body #student-view .sd-tiles .xb .xb-go:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){background:#f1f5f9;color:#475569;box-shadow:none}
+
+/* press: quick scale and a faint tint of the tile's own colour, like a native tap */
+html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):active{
+  transform:scale(.965);
+  background:color-mix(in srgb,rgb(var(--rgb)) 7%,#fff);
+  box-shadow:inset 0 0 0 1px #e7ebf3,0 1px 2px rgba(15,23,42,.04);
+  transition-duration:.06s;
+}
+html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):active .xb-ic{transform:scale(.9)}
+@media (hover:hover) and (pointer:fine){
+  html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):hover{transform:none;background:#fafbfd}
+  html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):active{transform:scale(.965);background:color-mix(in srgb,rgb(var(--rgb)) 7%,#fff)}
+}
+@media (prefers-reduced-motion:reduce){
+  html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):active{transform:none}
+}
 </style>
 </body>
 
