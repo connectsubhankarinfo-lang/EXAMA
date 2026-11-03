@@ -11119,14 +11119,14 @@ html.is-tablet #doubt-board-view .db-ov{align-items:center;padding:24px}html.is-
 
 
 <script type="module" id="doubt-board-js">
-import { ref, set, get, push, update, remove, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
+import { ref, set, get, push, update, remove, onValue, query, limitToLast, orderByKey, endBefore } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js";
 
 /* SOLVE IT (was Doubt Board). Data: doubts/{id} + replies/{rid}, doubts_img/{id|id_rid}.
    Coins: when an answer is marked "This helped" (by the asker or the teacher) its author gets COINS in the wallet (window.__wltGrant), once per answer. */
 const D = document, $ = id => D.getElementById(id), W = window;
 const esc = W.escHtml || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
 const NAME = "Let's Ask It", COINS = 10, ADMIN_MOBILE = '9475757821', DAILY_LIMIT = 5;
-const S = { err: '', path: '', unsub: null, list: [], loaded: false, counts: {}, tab: 'feed', filter: 'all', subj: '', q: '', week: false, open: null, imgs: {}, pend: {}, askImg: null, repImg: null, busy: false };
+const S = { err: '', path: '', unsub: null, list: [], loaded: false, counts: {}, tab: 'feed', filter: 'all', subj: '', q: '', week: false, open: null, imgs: {}, pend: {}, askImg: null, repImg: null, busy: false, gone: new Set() };
 
 const me = () => String(W.loggedInMobile || '');
 const isAdmin = () => W.currentRole === 'admin';
@@ -11134,6 +11134,38 @@ const myName = () => isAdmin() ? 'Teacher' : ((W.studentsDB || []).find(s => Str
 const reps = d => Object.keys(d.replies || {}).map(k => Object.assign({ id: k }, d.replies[k])).sort((a, b) => (a.ts || 0) - (b.ts || 0));
 const byId = id => S.list.find(d => d.id === id);
 const imgPath = () => S.path + '_img';
+/* Photos live for 30 days. After that they are deleted from the database and simply stop showing (no message). Text, voice notes and everything else stay. */
+const IMG_TTL = 30 * 24 * 60 * 60 * 1000;
+const imgLive = ts => (Date.now() - (ts || 0)) < IMG_TTL;
+const sweepTried = new Set();
+async function sweepDoubtImgs(docs) {
+    try {
+        const cut = Date.now() - IMG_TTL, ups = {}, keys = [];
+        docs.forEach(d => {
+            if (d.hasImg && (d.ts || 0) < cut && !sweepTried.has(d.id)) { ups[d.id + '/hasImg'] = null; keys.push(d.id); }
+            Object.keys(d.replies || {}).forEach(rid => { const r = d.replies[rid] || {}, k = d.id + '_' + rid; if (r.hasImg && (r.ts || 0) < cut && !sweepTried.has(k)) { ups[d.id + '/replies/' + rid + '/hasImg'] = null; keys.push(k); } });
+        });
+        if (!keys.length) return;
+        keys.forEach(k => sweepTried.add(k));
+        await update(ref(W.rtdb, S.path), ups);
+        keys.forEach(k => { delete S.imgs[k]; remove(ref(W.rtdb, imgPath() + '/' + k)).catch(() => { }); });
+    } catch (e) { }
+}
+/* teacher device, once a day: also clean the older doubts that are no longer in the live list */
+async function deepSweep() {
+    try {
+        if (!isAdmin() || !S.list.length) return;
+        const lk = 'doubtImgSweep:' + S.path; let last = 0; try { last = +(localStorage.getItem(lk) || 0); } catch (e) { }
+        if (Date.now() - last < 864e5) return; try { localStorage.setItem(lk, String(Date.now())); } catch (e) { }
+        let before = S.list[S.list.length - 1].id;
+        for (let i = 0; i < 6 && before; i++) {
+            const snap = await get(query(ref(W.rtdb, S.path), orderByKey(), endBefore(before), limitToLast(100)));
+            const arr = []; snap.forEach(c => { const v = c.val(); if (v) { v.id = c.key; arr.push(v); } });
+            if (!arr.length) break;
+            await sweepDoubtImgs(arr); before = arr[0].id;
+        }
+    } catch (e) { }
+}
 const toast = (a, b, t) => { try { W.showToast && W.showToast(a, b || '', t || 'info'); } catch (e) { } };
 function ago(ts) {
     const s = Math.max(1, Math.round((Date.now() - (ts || 0)) / 1000));
@@ -11169,7 +11201,7 @@ function attach() {
     S.path = p; S.loaded = false; S.counts = {};
     S.unsub = onValue(query(ref(W.rtdb, p), limitToLast(150)), snap => {
         const arr = []; snap.forEach(c => { const v = c.val(); if (v) { v.id = c.key; if (/^shorthadn$/i.test(String(v.subject || '').trim())) v.subject = 'Shorthand'; arr.push(v); } });
-        arr.reverse(); notify(arr); S.list = arr; S.loaded = true; S.err = ''; paint(); tileBadge();
+        const firstLoad = !S.loaded; arr.reverse(); notify(arr); S.list = arr; S.loaded = true; S.err = ''; paint(); tileBadge(); sweepDoubtImgs(arr); if (firstLoad) deepSweep();
     }, e => { console.warn('doubts listener', e); S.err = String((e && (e.code || e.message)) || 'error'); paint(); });
 }
 function notify(arr) {
@@ -11252,7 +11284,7 @@ function paint() {
 function card(d) {
     const r = reps(d), win = r.some(x => x.helpful), ic = subIc(d.subject), done = d.status === 'resolved';
     const at = `data-db="view" data-id="${esc(d.id)}" data-rid="" data-img="${esc(d.id)}"`;
-    const pic = d.hasImg ? (S.imgs[d.id] ? `<div class="db-pic ok" ${at}>${picInner(S.imgs[d.id], true)}</div>` : `<div class="db-pic sk" ${at}></div>`) : '';
+    const pic = d.hasImg && imgLive(d.ts) && !S.gone.has(d.id) ? (S.imgs[d.id] ? `<div class="db-pic ok" ${at}>${picInner(S.imgs[d.id], true)}</div>` : `<div class="db-pic sk" ${at}></div>`) : '';
     return `<div class="db-card s-${esc(d.status)}" style="--c:${ic[2]}" data-db="open" data-id="${esc(d.id)}"><div class="db-top">${av(d.mobile, d.name, d.role)}<div class="db-who"><b>${esc(d.name)}</b><small>${ago(d.ts)}${d.subject ? ` · <span class="db-sjn"><i class="fa-solid ${ic[1]}"></i>${esc(d.subject)}</span>` : ''}</small></div><span class="db-st db-st-${esc(d.status)}">${done ? 'solved' : esc(d.status)}</span></div>
 <p class="db-q">${esc(d.text)}</p>${d.chapter ? `<div class="db-tags"><em class="db-ch">${esc(d.chapter)}</em></div>` : ''}${pic}
 <div class="db-stat"><span class="db-n"><i class="fa-regular fa-comment-dots"></i> ${r.length} ${r.length === 1 ? 'answer' : 'answers'}</span></div>
@@ -11272,7 +11304,7 @@ function thread() {
     const rh = r.map(x => {
         const lk = likeInfo(x), t = lk.ok || !!x.helpful, canH = canMod && String(x.mobile) !== String(d.mobile) && !x.helpful && !(own && String(x.mobile) === me());
         return `<div class="db-rep ${t ? 't' : ''} ${x.helpful ? 'h' : ''}"><div class="db-top">${av(x.mobile, x.name, x.role)}<div class="db-who"><b>${esc(x.name)}${t ? ' <span class="db-tv"><i class="fa-solid fa-circle-check"></i> Approved</span>' : ''}${x.helpful ? ' <span class="db-gold">' + coinI(13) + ' Rewarded</span>' : ''}</b><small>${ago(x.ts)}${x.helpful ? ' · helped' : ''}</small></div></div>
-${x.text ? `<p class="db-q">${esc(x.text)}</p>` : ''}${x.hasImg ? imgBox(d.id, x.id) : ''}${x.hasAud ? audBox(d.id, x.id, x.dur) : ''}
+${x.text ? `<p class="db-q">${esc(x.text)}</p>` : ''}${x.hasImg && imgLive(x.ts) && !S.gone.has(d.id + '_' + x.id) ? imgBox(d.id, x.id) : ''}${x.hasAud ? audBox(d.id, x.id, x.dur) : ''}
 <div class="db-rep-a">${likeBtn(d, x, lk)}${canH ? `<button type="button" data-db="helped" data-id="${esc(d.id)}" data-rid="${esc(x.id)}"><i class="fa-solid fa-thumbs-up"></i> This helped${t ? '' : ' '}</button>` : ''}${isAdmin() ? `<button type="button" class="x" data-db="delrep" data-id="${esc(d.id)}" data-rid="${esc(x.id)}">Delete</button>` : ''}</div></div>`;
     }).join('');
     body.innerHTML = (acts.length ? `<div class="db-acts">${acts.join('')}</div>` : '') + `<div class="db-h">${r.length} ${r.length === 1 ? 'answer' : 'answers'}</div>${rh || '<div class="db-empty">No answers yet. Be the first to help and earn ' + COINS + ' coins.</div>'}`;
@@ -11405,7 +11437,7 @@ function loadImg(key) {
     if (S.pend[key]) return S.pend[key];
     return S.pend[key] = get(ref(W.rtdb, imgPath() + '/' + key)).then(s => {
         const v = s.val(), ok = typeof v === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+\/=]+$/.test(v);
-        if (ok) S.imgs[key] = v; delete S.pend[key]; return ok ? v : null;
+        if (ok) S.imgs[key] = v; else if (v == null) S.gone.add(key); delete S.pend[key]; return ok ? v : null;
     }).catch(() => { delete S.pend[key]; return null; });
 }
 
@@ -11422,7 +11454,7 @@ function fillBox(el) {
     loadImg(el.getAttribute('data-img')).then(src => {
         if (!el.isConnected) return;
         el.classList.remove('sk');
-        if (src) { el.classList.add('ok'); el.innerHTML = picInner(src, el.classList.contains('db-pic')); } else el.innerHTML = '<i>Photo unavailable</i>';
+        if (src) { el.classList.add('ok'); el.innerHTML = picInner(src, el.classList.contains('db-pic')); } else el.remove();
     });
 }
 let io = null;
@@ -11460,8 +11492,8 @@ function vZoomAt(cx, cy, nz, anim) {
 function vReset() { V.ra = 0; V.rot = 0; V.z = 1; V.x = V.y = 0; vFit(); vApply(true); }
 function vRot() { V.ra += 90; V.rot = ((V.ra % 360) + 360) % 360; V.z = 1; V.x = V.y = 0; vFit(); vApply(true); }
 function galleryFor(d) {
-    const items = []; if (d.hasImg) items.push({ key: d.id, label: 'Question', sub: d.name });
-    reps(d).forEach(r => { if (r.hasImg) items.push({ key: d.id + '_' + r.id, label: 'Answer', sub: r.name }); });
+    const items = []; if (d.hasImg && imgLive(d.ts) && !S.gone.has(d.id)) items.push({ key: d.id, label: 'Question', sub: d.name });
+    reps(d).forEach(r => { if (r.hasImg && imgLive(r.ts) && !S.gone.has(d.id + '_' + r.id)) items.push({ key: d.id + '_' + r.id, label: 'Answer', sub: r.name }); });
     return items;
 }
 function vShow(i, from) {
@@ -11470,7 +11502,7 @@ function vShow(i, from) {
     im.removeAttribute('src'); im.style.visibility = 'hidden'; im.style.opacity = 1; $('db-vw-ld').style.display = 'flex'; $('db-vw-err').style.display = 'none';
     $('db-vw-ti').textContent = it.label; $('db-vw-sub').textContent = it.sub || ''; $('db-vw-n').textContent = V.items.length > 1 ? (i + 1) + ' / ' + V.items.length : '';
     box.classList.toggle('multi', V.items.length > 1); $('db-vw-pv').disabled = i === 0; $('db-vw-nx').disabled = i === V.items.length - 1;
-    const fail = () => { if (tok !== V.tok) return; $('db-vw-ld').style.display = 'none'; $('db-vw-err').style.display = 'flex'; };
+    const fail = () => { if (tok !== V.tok) return; $('db-vw-ld').style.display = 'none'; closeViewer(); };
     loadImg(it.key).then(src => {
         if (tok !== V.tok) return; if (!src) return fail();
         V.src = src; im.onerror = fail;
@@ -11564,11 +11596,25 @@ async function vSave() {
         else if (k === '+' || k === '=') vZoomAt(0, 0, V.z * 1.4, true); else if (k === '-') vZoomAt(0, 0, V.z / 1.4, true); else if (k === 'r' || k === 'R') vRot();
     });
 })();
+/* No compression: the photo is stored exactly as it was taken or picked. Only a photo too large for one database value (about 7 MB) is re-saved at the highest quality that fits. */
 function compress(file) {
-    return new Promise((ok, no) => {
-        const fr = new FileReader(); fr.onerror = () => no();
-        fr.onload = () => { const im = new Image(); im.onerror = () => no(); im.onload = () => { const sc = Math.min(1, 720 / Math.max(im.width, im.height)), c = D.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', .6)); }; im.src = fr.result; };
-        fr.readAsDataURL(file);
+    const MAXB64 = 9.4e6;
+    return blobToDataUrl(file).then(u => {
+        if (/^data:image\/(jpeg|png|webp|gif);base64,/.test(u) && u.length <= MAXB64) return u;
+        return new Promise((ok, no) => {
+            const im = new Image(); im.onerror = () => no();
+            im.onload = () => {
+                let sc = 1, q = .97; const mx = Math.max(im.width, im.height); if (mx > 4800) sc = 4800 / mx;
+                for (let i = 0; i < 10; i++) {
+                    const c = D.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
+                    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+                    const out = c.toDataURL('image/jpeg', q); if (out.length <= MAXB64) return ok(out);
+                    if (q > .9) q -= .02; else sc *= .92;
+                }
+                no();
+            };
+            im.src = u;
+        });
     });
 }
 
@@ -11642,7 +11688,7 @@ async function startCam() {
     const c = $('db-cam'), v = $('db-cam-v'); camStop(); c.classList.remove('err');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('db-cam-msg').textContent = 'Live camera is not available here. Use your phone camera or pick from gallery.'; c.classList.add('err'); return; }
     try {
-        cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: cam.face }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+        cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: cam.face }, width: { ideal: 4096 }, height: { ideal: 2160 } }, audio: false });
         if (c.classList.contains('hidden-view')) { camStop(); return; }
         v.classList.toggle('mir', cam.face === 'user'); v.srcObject = cam.stream; await v.play().catch(() => { });
     } catch (e) {
@@ -11659,7 +11705,7 @@ function camShot() {
         if (!b) { toast('Photo failed', 'Try again.', 'error'); return; }
         cam.blob = b; cam.url = URL.createObjectURL(b); $('db-cam-shot').src = cam.url; v.pause(); camReview(true); $('db-cam').classList.add('review');
         try { navigator.vibrate && navigator.vibrate(20); } catch (e) { }
-    }, 'image/jpeg', 0.92);
+    }, 'image/jpeg', 0.98);
 }
 function camUse() { const b = cam.blob; if (!b) return; const f = new File([b], 'doubt.jpg', { type: 'image/jpeg' }), t = cam.target; closeCam(); pick(f, t); }
 W.addEventListener('hashchange', closeCam); W.addEventListener('pagehide', camStop);
