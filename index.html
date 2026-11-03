@@ -6994,7 +6994,7 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
                                 if (Math.abs(fT - fadeSet) > 0.004) { fadeSet = fT; bar.style.setProperty('--sd-fade', fT.toFixed(3)); }
                             }
                             if (tiles) {                                             // panel's top corners flatten as it reaches the header
-                                var tt = tilesTop, rr = Math.round(baseR * clamp(tt / baseR) / 2) * 2;
+                                var tt = tilesTop, rr = Math.round(baseR * clamp(tt / baseR) / 6) * 6;
                                 if (rr !== trSet) { trSet = rr; tiles.style.setProperty('border-top-left-radius', rr + 'px', 'important'); tiles.style.setProperty('border-top-right-radius', rr + 'px', 'important'); }
                             }
                             if (more) kick();
@@ -7032,9 +7032,10 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
                                 }
                                 e.preventDefault();
                                 setV(getV() + dy * 1.4);
-                                tVel = tVel * 0.6 + (dy / dt) * 0.4;                 // px per ms, + = scrolling down
+                                tVel = tVel * 0.6 + (dy * 1.4 / dt) * 0.4;                 // px per ms, + = scrolling down
                             }, { passive: false });
-                            function endTouch() {
+                            function endTouch(ev) {
+                                if (ev && ev.timeStamp - tLastT > 90) tVel = 0;   // finger rested before lifting: no phantom fling
                                 if (!tTracking || !tOwn) { tTracking = false; tOwn = false; return; }
                                 tTracking = false; tOwn = false; D = calcD();
                                 if (sc.scrollTop > 0.5) { if (Math.abs(tVel) > 0.05) fling(tVel); return; }
@@ -19144,7 +19145,7 @@ window.__tpPaint = function () {
                     if (!d.classList.contains('hidden-view')) __fromDash = true;
                 });
                 // heavy screen set-up now runs BEFORE the window starts to move (see __pre below), so the animation never competes with it
-                const __defer = (fn) => fn();
+                const __defer = (fn) => { let d = false; const go = () => { if (d) return; d = true; if (window.location.hash.replace('#', '') !== rawHash) return; fn(); }; requestAnimationFrame(() => setTimeout(go, 0)); setTimeout(go, 160); };   // screen build runs one frame AFTER the motion has started
 
                 let __leaving = false;
                 const __leaveEls = [];   // windows that zoom back into their button; 'view-leave' is added once the dashboard is back on screen, so the button can be measured
@@ -19362,7 +19363,8 @@ window.__tpPaint = function () {
                 // Redirect / permission checks run at once. Everything that builds a screen waits two frames while a window opens from the dashboard.
                 const __NOW = ['login', 'student', 'admin', 'admin-profile', 'active-exam', 'alarms', 'motivation', 'auto-quotes', 'quotes', 'math-workout'];
                 if (__pre) {
-                    try { __run(); } catch (e) { try { console.error(e); } catch (_) { } }
+                    if (__NOW.indexOf(hash) === -1) { targetEl.classList.remove('vw-prep'); void targetEl.offsetWidth; __open(); __defer(__run); }   // instant: motion first, build second
+                    else try { __run(); } catch (e) { try { console.error(e); } catch (_) { } }
                     if (window.location.hash.replace('#', '') === rawHash && targetEl.classList.contains('vw-prep') && __open) {
                         targetEl.classList.remove('vw-prep');
                         void targetEl.offsetWidth;   // the finished screen is laid out now, off the animation's clock
@@ -45444,6 +45446,10 @@ html body #student-view .xb:not(#_):not(#__){-webkit-backdrop-filter:none!import
   html body #student-view:not(.view-back) .xb:not(#_):not(#__){animation-duration:.2s;animation-delay:calc(var(--i,0)*9ms)}
 }
 </style>
+<style id="sd-smooth-v2">
+/* layers exist before the swipe starts, so nothing is created mid-gesture */
+#student-view .sd-grab:not(#_){will-change:transform}
+</style>
 <style id="xb-academics-soft">
 /* student dashboard, Academics (4 buttons): light glass with a gentle tint; the 3D edge shadow keeps its original colour. */
 html body #student-view .sd-tiles .xb-sec.xb-lg .xb:not(#_):not(#__):not(#___):not(#____):not(#_____){
@@ -45826,7 +45832,7 @@ html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):n
   }
   R.classList.add(STYLE==='push'?'ap-push':'ap-sheet');
   var ok=false;try{ok=!!(W.CSS&&CSS.supports&&CSS.supports('animation-timing-function','linear(0,1)'))}catch(e){}
-  var open=ok?spring(.44,.94):{ms:480,css:'cubic-bezier(.32,.72,0,1)'},close=ok?spring(.33,1):{ms:400,css:'cubic-bezier(.32,.72,0,1)'};
+  var open=ok?spring(.40,.95):{ms:480,css:'cubic-bezier(.32,.72,0,1)'},close=ok?spring(.30,1):{ms:400,css:'cubic-bezier(.32,.72,0,1)'};
   if(ok){
     var s=R.style;
     s.setProperty('--ap-ease-open',open.css);s.setProperty('--ap-open',open.ms+'ms');s.setProperty('--ap-soft',Math.round(open.ms*.9)+'ms');
