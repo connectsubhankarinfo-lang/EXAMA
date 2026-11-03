@@ -11147,11 +11147,16 @@ function av(mobile, name, role, big) {
     return `<span class="sv-av ${role === 'admin' ? 't' : ''} ${big ? 'lg' : ''}"><b>${esc((name || '?').trim().charAt(0).toUpperCase())}</b>${u ? `<img src="${esc(u)}" alt="" onerror="this.remove()">` : ''}</span>`;
 }
 const everyone = () => [...new Set((W.studentsDB || []).map(s => String(s.mobile)).filter(Boolean))];   // students only (Let's Ask It is not for admin)
-function pushTo(title, msg, to, id) {
+function pushTo(title, msg, to, id, opts) {
     try {
         const list = (Array.isArray(to) ? to : [to]).map(String).filter(m => m && m !== me());
         if (!list.length || typeof W.sendOneSignalPush !== 'function') return;
-        W.sendOneSignalPush(title, String(msg).slice(0, 120), null, { category: 'discus', data: { doubtId: id } }, list);
+        opts = opts || {};
+        const go = imgUrl => W.sendOneSignalPush(title, String(msg).slice(0, 160), imgUrl || null, {
+            category: 'discus', icon: 'me', subtitle: opts.sub, group: 'exama_doubts', groupMsg: "$[notif_count] updates in Let's Ask It",
+            interruption: opts.urgent ? 'time_sensitive' : undefined, relevance: opts.urgent ? 1 : undefined, data: { doubtId: id }
+        }, list);
+        go(opts.img || null);
     } catch (e) { console.warn('doubt push', e); }
 }
 
@@ -11580,7 +11585,7 @@ async function post() {
         const id = push(ref(W.rtdb, S.path)).key, img = S.askImg;
         if (img) await set(ref(W.rtdb, imgPath() + '/' + id), img);
         await set(ref(W.rtdb, S.path + '/' + id), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', subject: subject.slice(0, 40), chapter: chapter.slice(0, 60), text: text.slice(0, 800), hasImg: !!img, status: 'open', ts: Date.now() });
-        pushTo('New doubt: ' + subject, myName() + ': ' + text, everyone(), id);
+        pushTo('New doubt: ' + subject, myName() + ': ' + text, everyone(), id, { img: (W.PUSH_IMAGES || {}).newDoubt, sub: chapter ? subject + ' \u2022 ' + chapter : subject });
         closeAsk(); toast('Doubt posted', 'You will get a notification when someone answers.', 'success');
     } catch (e) { console.warn(e); toast('Could not post', String((e && (e.code || e.message)) || 'Check your internet.').slice(0, 90), 'error'); }
     S.busy = false; $('db-post').disabled = false;
@@ -11596,7 +11601,7 @@ async function reply() {
         let audUrl = ''; if (aud) { audUrl = await blobToDataUrl(aud.blob); if (!AUD_RE.test(audUrl) || audUrl.length > 1.5e6) throw new Error('Voice note is too long. Record a shorter one.'); }
         await set(ref(W.rtdb, S.path + '/' + d.id + '/replies/' + rid), { mobile: me(), name: myName(), role: isAdmin() ? 'admin' : 'student', text: text.slice(0, 800), hasImg: !!img, ...(aud ? { hasAud: true, audioUrl: audUrl, dur: aud.dur } : {}), ts: Date.now() });
         if (d.status === 'open') await update(ref(W.rtdb, S.path + '/' + d.id), { status: 'answered' });
-        pushTo(isAdmin() ? 'Teacher answered your doubt' : 'New answer to your doubt', myName() + ': ' + (text || (aud ? 'Sent a voice answer' : 'Sent a photo answer')), d.mobile, d.id);
+        pushTo(isAdmin() ? 'Teacher answered your doubt' : 'New answer to your doubt', myName() + ': ' + (text || (aud ? '🎤 Voice answer' : '📷 Photo answer')), d.mobile, d.id, { sub: 'Re: ' + d.subject, urgent: isAdmin() });
         S.repImg = null; $('db-r-text').value = ''; $('db-r-img-n').textContent = ''; repPrev(); clearAud();
     } catch (e) { console.warn(e); toast('Could not send', String((e && (e.code || e.message)) || 'Try again.').slice(0, 90), 'error'); }
     S.busy = false;
@@ -13265,7 +13270,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
                     const senderName = window.currentRole === 'student' ? ((me && me.name) || 'Student') : 'EXAMA';
                     const msgObj = { text: caption, linkUrl: u.href, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null };
                     await window.dbSendChat(msgObj);
-                    try { sendOneSignalPush(`${senderName} shared a link`, caption || u.hostname.replace(/^www\./, ''), null, { category: 'discus' }); } catch (e) { }
+                    try { sendOneSignalPush(`${senderName} in Discus`, '🔗 ' + (caption || u.hostname.replace(/^www\./, '')), null, { category: 'discus' }); } catch (e) { }
                     window.markChatAsRead();
                     if (typeof cancelChatReply === 'function') cancelChatReply();
                 };
@@ -13447,7 +13452,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
                     else chatPayload.docUrls = uploadedUrls;
 
                     await window.dbSendChat(chatPayload);
-                    if (typeof sendOneSignalPush === 'function') sendOneSignalPush(`${senderName} shared a ${isDoc ? 'document' : 'photo'}`, "Tap to view in Discus.", null, {
+                    if (typeof sendOneSignalPush === 'function') sendOneSignalPush(`${senderName} in Discus`, isDoc ? ('📄 ' + ((uploadedUrls[0] && uploadedUrls[0].name) || 'Document') + (uploadedUrls.length > 1 ? ` +${uploadedUrls.length - 1} more` : '')) : (uploadedUrls.length > 1 ? `📷 ${uploadedUrls.length} photos` : '📷 Photo'), (!isDoc && uploadedUrls[0]) ? uploadedUrls[0].url : null, {
                         category: 'discus'
                     });
                     if (typeof window.markChatAsRead === 'function') window.markChatAsRead();
@@ -15108,7 +15113,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
                         if (!window._reactPushAt[k] || Date.now() - window._reactPushAt[k] > 15000) {
                             window._reactPushAt[k] = Date.now();
                             const who = window.currentRole === 'student' ? ((window.studentsDB.find(s => s.mobile === mobile) || {}).name || 'Someone') : 'EXAMA';
-                            sendOneSignalPush(`${who} reacted ${emoji} to your message`, `"${window.chatMsgPreview(msg)}"`, null, { category: 'discus' }, [String(msg.mobile)]);
+                            sendOneSignalPush(`${who} reacted ${emoji} to your message`, `"${window.chatMsgPreview(msg)}"`, (msg.imgUrls && msg.imgUrls[0]) || null, { category: 'discus', collapseId: 'react_' + msgId }, [String(msg.mobile)]);
                         }
                     }
                 } catch (e) { console.warn('Reaction push failed:', e); }
@@ -15428,7 +15433,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
                     const base64Audio = reader.result;
                     const senderName = window.currentRole === 'student' ? window.studentsDB.find(s => s.mobile === window.loggedInMobile).name : 'EXAMA';
                     await window.dbSendChat({ text: '', audioUrl: base64Audio, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-                    sendOneSignalPush(`${senderName} sent a voice note`, "Tap to listen in Discus.", null, {
+                    sendOneSignalPush(`${senderName} in Discus`, '🎤 Voice message', null, {
                         category: 'discus'
                     });
                     window.markChatAsRead();
@@ -15554,7 +15559,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
                     if (urls.length > 0) {
                         const senderName = window.currentRole === 'student' ? window.studentsDB.find(s => s.mobile === window.loggedInMobile).name : 'EXAMA';
                         await window.dbSendChat({ text: '', imgUrls: urls, mobile: window.loggedInMobile, name: senderName, timestamp: Date.now(), replyTo: window.replyingTo ? window.replyingTo : null });
-                        sendOneSignalPush(`${senderName} sent a photo`, "Tap to view in Discus.", null, {
+                        sendOneSignalPush(`${senderName} in Discus`, urls.length > 1 ? `📷 ${urls.length} photos` : '📷 Photo', urls[0], {
                             category: 'discus'
                         }); window.markChatAsRead(); cancelChatReply();
                     }
@@ -18381,10 +18386,10 @@ window.__tpPaint = function () {
                 if (isFirebaseConfigured) { const sesPath = window.isGlobalTestMode ? 'test_sessions' : 'sessions'; await set(ref(window.rtdb, `${sesPath}/${id}`), existing); } else { window.sessionsDB = window.sessionsDB.filter(s => s.id !== id); window.sessionsDB.push(existing); }
 
                 const timeString = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); const sessionShortName = sessionType.split(' ')[0];
-                if (action === 'START') { let msg = `${existing.name} started their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session started', msg, null, { category: 'session' }); }
-                else if (action === 'BREAK') { let msg = `${existing.name} took a break at ${timeString}.`; sendOneSignalPush('On a break', msg, null, { category: 'session' }); }
-                else if (action === 'RESUME') { let msg = `${existing.name} resumed studying at ${timeString}.`; sendOneSignalPush('Session resumed', msg, null, { category: 'session' }); }
-                else if (action === 'STOP' || action === 'STOP_AT_LIMIT') { let msg = `${existing.name} ended their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session ended', msg, null, { category: 'session' }); }
+                if (action === 'START') { let msg = `${existing.name} started their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session started', msg, null, { category: 'session', icon: false, collapseId: 'session_' + String(existing.mobile || existing.name || '') }); }
+                else if (action === 'BREAK') { let msg = `${existing.name} took a break at ${timeString}.`; sendOneSignalPush('On a break', msg, null, { category: 'session', icon: false, collapseId: 'session_' + String(existing.mobile || existing.name || '') }); }
+                else if (action === 'RESUME') { let msg = `${existing.name} resumed studying at ${timeString}.`; sendOneSignalPush('Session resumed', msg, null, { category: 'session', icon: false, collapseId: 'session_' + String(existing.mobile || existing.name || '') }); }
+                else if (action === 'STOP' || action === 'STOP_AT_LIMIT') { let msg = `${existing.name} ended their ${sessionShortName} at ${timeString}.`; sendOneSignalPush('Session ended', msg, null, { category: 'session', icon: false, collapseId: 'session_' + String(existing.mobile || existing.name || '') }); }
 
                 hideLoader(); renderSessionTimer();
             };
@@ -19360,6 +19365,48 @@ window.__tpPaint = function () {
             // and paste its ID here. It is used for people who switched App sound OFF in the control panel. (iOS needs nothing.)
             const PUSH_SILENT_ANDROID_CHANNEL = 'REPLACE_WITH_SILENT_CHANNEL_ID';
 
+            // ==========================================================================
+            // RICH PUSH ENGINE - uses every free OneSignal feature:
+            //   big picture (Android/iOS/Web), sender photo as large icon, accent colour + LED,
+            //   iOS subtitle, grouping/stacking (Android group + iOS thread), collapse (update instead of pile up),
+            //   iOS interruption level + relevance score, per-type expiry (ttl), web click URL,
+            //   private lock-screen for wallet pushes, duplicate-send protection (idempotency key).
+            // Callers only pass: sendOneSignalPush(title, body, imageUrl, { category, data, subtitle, icon, collapseId, group, groupMsg, interruption, relevance, ttl, accent }, targets)
+            // ==========================================================================
+            // Fixed pictures for specific pushes (change the links here only)
+            window.PUSH_IMAGES = {
+                newDoubt: 'https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/file_00000000015482089c78e0462af7f60f.png',
+                newExam: 'https://raw.githubusercontent.com/connectsubhankarinfo-lang/EXAMA/main/file_000000000c248208b1fc9910098aef94.png'
+            };
+            const PUSH_STYLE = {
+                _default: { accent: 'FF4F46E5', ttl: 259200 },
+                call:    { accent: 'FF10B981', ttl: 60,     interruption: 'time_sensitive', relevance: 1 },
+                exam:    { accent: 'FFF59E0B', ttl: 259200, group: 'exama_updates',  groupMsg: '$[notif_count] new updates',          interruption: 'time_sensitive', relevance: 0.9 },
+                session: { accent: 'FF0EA5E9', ttl: 3600,   group: 'exama_sessions', groupMsg: '$[notif_count] study session updates', relevance: 0.3 },
+                discus:  { accent: 'FF6366F1', ttl: 172800, group: 'exama_discus',   groupMsg: '$[notif_count] new messages in Discus', relevance: 0.6 },
+                run:     { accent: 'FFF43F5E', ttl: 86400,  group: 'exama_run',      groupMsg: '$[notif_count] run updates',           relevance: 0.5 }
+            };
+            // Notification pictures must be a direct public https image. Google Drive links are converted to the image CDN link.
+            window.pushImageUrl = function (u, w) {
+                try {
+                    u = String(u || '').trim(); if (!u) return null;
+                    const dm = u.match(/(?:\/d\/|[?&]id=)([A-Za-z0-9_-]{20,})/);
+                    if (dm && /(drive\.google\.com|docs\.google\.com|googleusercontent\.com)/i.test(u)) return 'https://lh3.googleusercontent.com/d/' + dm[1] + '=w' + (w || 1024);
+                    return /^https:\/\//i.test(u) ? u : null;
+                } catch (e) { return null; }
+            };
+            // Profile photo of a student ('me' = the person using this phone). Returns null if they have no usable photo.
+            window.pushAvatarUrl = function (who) {
+                try {
+                    const m = (who === 'me' || who == null) ? String(window.loggedInMobile || '') : String(who);
+                    const st = (window.studentsDB || []).find(x => String(x.mobile) === m);
+                    return st && st.dpUrl ? window.pushImageUrl(st.dpUrl, 256) : null;
+                } catch (e) { return null; }
+            };
+            function pushHash53(str, seed) { let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed; for (let i = 0, ch; i < str.length; i++) { ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return 4294967296 * (2097151 & h2) + (h1 >>> 0); }
+            // Same content to the same people inside 10 seconds => same key => OneSignal sends it only once (double-tap / retry protection)
+            window.pushIdemKey = function (seed) { let hex = ''; for (let i = 1; i <= 4; i++) hex += pushHash53(String(seed), i).toString(16).padStart(14, '0').slice(-8); return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-8' + hex.slice(17, 20) + '-' + hex.slice(20, 32); };
+
             async function sendOneSignalPush(title, message, imageUrl = null, extra = {}, targetUsers = null) {
                   if (window.isGlobalTestMode) { console.log('[TEST MODE] Push suppressed:', title, message); return; }
                   const ONESIGNAL_APP_ID = "2c76bdaa-7269-4596-8151-603bff040106";
@@ -19407,11 +19454,7 @@ window.__tpPaint = function () {
                   if (!recips.length && !quietRecips.length) return;
                   payload.include_aliases = { external_id: recips.length ? recips : quietRecips };
 
-                  if (imageUrl) {
-                      payload.big_picture = imageUrl;
-                      payload.chrome_web_image = imageUrl;
-                      payload.ios_attachments = { "id1": imageUrl };
-                  }
+                  // (picture + all other rich fields are added in the "RICH LOOK" block just before the request is sent)
 
                   const soundCfg = category ? PUSH_CHANNEL_CONFIG[category] : null;
                   if (soundCfg) {
@@ -19471,6 +19514,52 @@ window.__tpPaint = function () {
                       if (targetUrl) payload.data.targetUrl = targetUrl;
                   }
 
+                  // ---- RICH LOOK ----
+                  let idemSeed = String(Date.now());
+                  try {
+                      const ex = extra || {};
+                      const st = Object.assign({}, PUSH_STYLE._default, (category && PUSH_STYLE[category]) || {});
+                      const img = window.pushImageUrl(imageUrl, 1024);
+                      let iconUrl = null;
+                      if (ex.icon === false) iconUrl = null;
+                      else if (typeof ex.icon === 'string' && /^(https?:|data:)/i.test(ex.icon)) iconUrl = window.pushImageUrl(ex.icon, 256);
+                      else if (ex.icon === 'me' || (ex.icon === undefined && category === 'discus')) iconUrl = window.pushAvatarUrl('me');
+                      else if (ex.icon) iconUrl = window.pushAvatarUrl(ex.icon);
+
+                      if (img) {
+                          payload.big_picture = img;                 // Android: big picture when expanded
+                          payload.chrome_web_image = img;            // Web push picture
+                          payload.ios_attachments = { id1: img };    // iOS picture
+                          payload.mutable_content = true;            // iOS needs this to attach the picture
+                      }
+                      if (img || iconUrl) payload.large_icon = img || iconUrl;      // Android: photo thumbnail (or sender's profile photo) on the right of the notification
+                      if (iconUrl) payload.chrome_web_icon = iconUrl;               // Web push: sender's profile photo
+                      if (ex.subtitle) payload.subtitle = { en: String(ex.subtitle).slice(0, 80) };   // iOS subtitle line
+
+                      payload.android_accent_color = ex.accent || st.accent;        // coloured app name/icon (Android)
+                      payload.android_led_color = ex.accent || st.accent;           // LED colour (Android)
+
+                      const grp = ex.group === false ? null : (ex.group || st.group);
+                      if (grp) {                                                    // stack related pushes into ONE expandable group
+                          payload.android_group = grp;
+                          payload.android_group_message = { en: ex.groupMsg || st.groupMsg || '$[notif_count] new notifications' };
+                          payload.thread_id = grp;                                  // iOS stack
+                      }
+                      if (ex.collapseId) {                                          // a newer push REPLACES the older one with the same id
+                          payload.collapse_id = String(ex.collapseId).slice(0, 64);
+                          payload.web_push_topic = String(ex.collapseId).slice(0, 32);
+                      }
+                      const lvl = ex.interruption || st.interruption;
+                      if (lvl) payload.ios_interruption_level = lvl;                // iOS: time_sensitive breaks through Focus
+                      const rel = (ex.relevance != null) ? ex.relevance : st.relevance;
+                      if (rel != null) payload.ios_relevance_score = rel;           // iOS: order inside the stack
+                      payload.ttl = ex.ttl || payload.ttl || st.ttl;                // old pushes expire instead of arriving hours late
+                      if (data && data.coin) payload.android_visibility = 0;        // wallet pushes: amount hidden on the lock screen
+                      if (targetUrl) payload.web_url = targetUrl;                   // browser push opens the right screen too
+                      idemSeed = [title, message, img || '', (recips.length ? recips : quietRecips).join(','), Math.floor(Date.now() / 10000)].join('|');
+                      payload.idempotency_key = window.pushIdemKey(idemSeed);
+                  } catch (e) { console.warn('rich push styling skipped:', e && e.message); }
+
                   const secureProxyUrl = "https://exama-push-proxy.connect-subhankar-info.workers.dev/";
                   const postPush = async (pl) => {
                       console.log('[OneSignal Request]', JSON.stringify(pl));
@@ -19492,6 +19581,7 @@ window.__tpPaint = function () {
                       // people whose App sound is OFF: same push, no sound
                       const q = JSON.parse(JSON.stringify(payload));
                       q.include_aliases = { external_id: quietRecips };
+                      if (window.pushIdemKey) q.idempotency_key = window.pushIdemKey(idemSeed + '|quiet');
                       q.ios_sound = 'nil';
                       delete q.android_channel_id;
                       if (PUSH_SILENT_ANDROID_CHANNEL && PUSH_SILENT_ANDROID_CHANNEL.indexOf('REPLACE_WITH_') !== 0) q.android_channel_id = PUSH_SILENT_ANDROID_CHANNEL;
@@ -20702,7 +20792,7 @@ window.__tpPaint = function () {
                     const target = orig && orig.mobile ? String(orig.mobile) : '';
                     if (!target || target === String(window.loggedInMobile)) return;
                     window._chatReplyNotified = { mobile: target, ts: Date.now() };
-                    sendOneSignalPush(`${obj.name || 'Someone'} replied to your message`, window.chatMsgPreview(obj), null, { category: 'discus' }, [target]);
+                    sendOneSignalPush(`${obj.name || 'Someone'} replied to your message`, window.chatMsgPreview(obj), (obj.imgUrls && obj.imgUrls[0]) || null, { category: 'discus' }, [target]);
                 } catch (e) { console.warn('Reply push failed:', e); }
             };
             (function () {
@@ -28441,7 +28531,7 @@ function mpDrawTab(tab, body) {
                 };
 
                 await window.dbSubmitExam(payload);
-                sendOneSignalPush("New exam scheduled", `${examName} is scheduled on ${examDate}${timeTxt}.`, null, { category: 'exam' }, typeof assignedTo !== 'undefined' ? assignedTo : null);
+                sendOneSignalPush("New exam scheduled", `${examName} is scheduled on ${examDate}${timeTxt}.`, (window.PUSH_IMAGES || {}).newExam, { category: 'exam' }, typeof assignedTo !== 'undefined' ? assignedTo : null);
                 await window.dbSendNotice({ title: `New Exam: ${examName}`, text: `A new exam has been scheduled for ${examDate}${timeTxt}.\n\nDuration: ${duration} mins\nMarks: ${totalMarks}\n\nPlease check your dashboard!`, date: window.formatDateDDMMYYYY(), type: 'new_exam', timestamp: Date.now(), assignedTo: assignedTo });
 
                 document.getElementById('admin-exam-info').value = '';
