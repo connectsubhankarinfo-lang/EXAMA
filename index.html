@@ -22824,6 +22824,33 @@ window.__tpPaint = function () {
                 Object.assign(M, { q: [], i: -1, bag: [], hist: [], shuf: !!M.shuf, errs: 0 });
                 const DRIVE = () => String(window.EXAMA_DRIVE_API || '');
                 const songUrl = id => 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(id);
+                // several Drive links for the same file: if the first one is refused by the browser, the next one is tried before giving up
+                // last resort: the Google script reads the file from Drive itself and sends it to the page, which plays it from memory
+                const blobCache = {}, blobKeys = [];
+                const loadViaScript = (id, alt, giveUp) => {
+                    mTitle('Loading song...');
+                    const apply = u => { if (au && au.__alt === alt) { au.src = u; doPlay(); } };
+                    if (blobCache[id]) return apply(blobCache[id]);
+                    fetchT(DRIVE() + '?action=song&id=' + encodeURIComponent(id), 180000).then(j => {
+                        if (!j || !j.success) throw new Error((j && j.error) || 'No file');
+                        const bin = atob(String(j.b64).replace(/^data:[^,]*,/, '').replace(/\s+/g, '')), n = bin.length, arr = new Uint8Array(n); for (let k = 0; k < n; k++) arr[k] = bin.charCodeAt(k);
+                        // look at the real bytes: Drive sometimes sends a web page (permission / quota / virus-scan) and the declared mime can be wrong; both give MEDIA error code 4
+                        const sn = (o, c) => String.fromCharCode.apply(null, arr.subarray(o, o + c));
+                        let ty = '';
+                        if (sn(0, 3) === 'ID3' || (arr[0] === 0xFF && (arr[1] & 0xE0) === 0xE0)) ty = 'audio/mpeg';
+                        else if (sn(4, 4) === 'ftyp') ty = sn(8, 4) === 'M4A ' ? 'audio/mp4' : 'video/mp4';
+                        else if (sn(0, 4) === 'OggS') ty = 'audio/ogg';
+                        else if (sn(0, 4) === 'RIFF' && sn(8, 4) === 'WAVE') ty = 'audio/wav';
+                        else if (sn(0, 4) === 'fLaC') ty = 'audio/flac';
+                        else if (/^\s*(<!doctype|<html|<\?xml|\{)/i.test(sn(0, 64))) throw new Error('Drive sent a web page, not a song (check sharing / file)');
+                        return new Blob([arr], { type: ty || j.mime || 'audio/mpeg' });
+                    }).then(b => {
+                        const u = URL.createObjectURL(b); alt.bi = Math.round(b.size / 1024) + 'KB ' + (b.type || '?'); blobCache[id] = u; blobKeys.push(id);
+                        while (blobKeys.length > 4) { const o = blobKeys.shift(); try { URL.revokeObjectURL(blobCache[o]); } catch (e) { } delete blobCache[o]; }
+                        apply(u);
+                    }).catch(e => { console.warn('[music] script load failed', e); giveUp(String((e && e.message) || 'failed')); });
+                };
+                const songUrls = id => { const e = encodeURIComponent(id); return ['https://drive.google.com/uc?export=download&id=' + e, 'https://drive.usercontent.google.com/download?id=' + e + '&export=download&confirm=t', 'https://docs.google.com/uc?export=open&id=' + e]; };
                 const cleanName = n => String(n || '').replace(/\.[^.]+$/, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim() || 'Song';
                 const rand = () => Math.floor(Math.random() * M.q.length);
                 const pEsc = x => window.escHtml ? window.escHtml(x) : String(x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22862,7 +22889,7 @@ window.__tpPaint = function () {
                 const nowInfo = () => {
                     const s = M.q[M.i], n = M.q.length; if (!s) return;
                     mTitle(s.title);
-                    setT('rt-mp-sub', ((n > 1 && M.i >= 0) ? (M.i + 1) + ' / ' + n + '   ' : '') + String(s.artist || 'FITNESS MONITOR').toUpperCase() + (M.shuf ? '   SHUFFLE' : ''));
+                    { const se = $('rt-mp-sub'); if (se) { se.style.whiteSpace = ''; se.style.overflow = ''; se.style.textOverflow = ''; } } setT('rt-mp-sub', ((n > 1 && M.i >= 0) ? (M.i + 1) + ' / ' + n + '   ' : '') + String(s.artist || 'FITNESS MONITOR').toUpperCase() + (M.shuf ? '   SHUFFLE' : ''));
                     mArt(s);
                     try { if (navigator.mediaSession && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: s.title, artist: s.artist || 'FITNESS MONITOR', artwork: s.art ? [{ src: s.art, sizes: '400x400', type: 'image/jpeg' }] : [] }); } catch (e) { }
                 };
@@ -22876,9 +22903,15 @@ window.__tpPaint = function () {
                     au.addEventListener('ended', () => { M.playing = false; window.runMusicNext(); });      // song finished: go to the next one (shuffle aware)
                     au.addEventListener('error', () => {                                                    // file missing / not playable: skip it
                         if (!au.getAttribute('src')) return;
-                        M.errs++; M.playing = false; mIco(false);
-                        if (M.q.length > 1 && M.errs <= M.q.length) { mTitle('Skipping...'); setTimeout(() => { if (M.active && M.want) window.runMusicNext(); }, 500); }
-                        else mTitle('Cannot play this song');
+                        try { console.warn('[music] audio error code', au.error && au.error.code, au.currentSrc || au.src); } catch (e) { }
+                        if (au.__alt && au.__alt.i < au.__alt.u.length - 1) { au.__alt.i++; au.src = au.__alt.u[au.__alt.i]; doPlay(); return; }   // try the next Drive link first
+                        const giveUp = why => {
+                            M.errs++; M.playing = false; mIco(false);
+                            if (M.q.length > 1 && M.errs <= M.q.length) { mTitle('Skipping...'); setTimeout(() => { if (M.active && M.want) window.runMusicNext(); }, 500); }
+                            else { mTitle('Cannot play this song'); if (why) { setT('rt-mp-sub', String(why).toUpperCase().slice(0, 110)); const se = $('rt-mp-sub'); if (se) { se.style.whiteSpace = 'normal'; se.style.overflow = 'visible'; se.style.textOverflow = 'clip'; } } }
+                        };
+                        if (au.__alt && !au.__alt.b) { au.__alt.b = 1; au.__alt.id = au.__alt.id || ''; if (au.__alt.id) { loadViaScript(au.__alt.id, au.__alt, giveUp); return; } }   // then let the Google script send the file
+                        giveUp((au.__alt && au.__alt.bi ? 'SCRIPT SENT ' + au.__alt.bi + ' BUT NOT PLAYABLE' : 'SCRIPT FAILED: ' + ((au.__alt && au.__alt.sw) || 'NO REPLY')) + ' / CODE ' + (au.error ? au.error.code : '?'));
                     });
                     // the old YouTube-style handle is kept on purpose: Nova (voice) and the walkie-talkie lower / pause the music through it
                     M.yt = {
@@ -22920,7 +22953,7 @@ window.__tpPaint = function () {
                     M.i = i; M.want = true; M.bag = M.bag.filter(x => x !== i);
                     nowInfo(); mAudio();
                     const b = $('rt-mp-bar'); if (b) b.style.width = '0';
-                    au.src = songUrl(M.q[i].id); doPlay();
+                    { const sid = M.q[i].id, alt = { u: songUrls(sid), i: -1, b: 1, id: sid }; au.__alt = alt; try { au.pause(); au.removeAttribute('src'); } catch (e) { } loadViaScript(sid, alt, why => { if (au.__alt !== alt) return; console.warn('[music] script failed, trying Drive links:', why); alt.sw = String(why || 'failed').slice(0, 40); alt.i = 0; au.src = alt.u[0]; doPlay(); }); }
                     if (document.getElementById('rt-pl')) pList();
                 };
                 const startPlay = () => {
@@ -23081,12 +23114,17 @@ window.__tpPaint = function () {
 
                 // ===== UPLOAD (several songs at once) =====
                 const fileB64 = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
+                // NOTE: never attach x.upload.* listeners here. A listener on x.upload forces a CORS preflight (OPTIONS),
+                // and Google Apps Script cannot answer OPTIONS, so the browser reports 'Network error'.
+                // Progress is simulated instead, which keeps this a CORS 'simple request'.
                 const xhrSend = (payload, onPct) => new Promise((res, rej) => {
                     const x = new XMLHttpRequest(); x.open('POST', DRIVE(), true); x.timeout = 300000;
                     x.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
-                    x.upload.onprogress = e => { if (e.lengthComputable && onPct) onPct(Math.round(e.loaded / e.total * 100)); };
-                    x.onload = () => { try { const j = JSON.parse(x.responseText); j.success ? res(j) : rej(new Error(j.error || 'Upload failed')); } catch (e) { rej(new Error('Bad answer from Google')); } };
-                    x.onerror = () => rej(new Error('Network error')); x.ontimeout = () => rej(new Error('Timed out'));
+                    let fake = 0, tm = null;
+                    if (onPct) tm = setInterval(() => { fake += (95 - fake) * 0.05; try { onPct(Math.round(fake)); } catch (e) { } }, 400);
+                    const stop = () => { if (tm) { clearInterval(tm); tm = null; } };
+                    x.onload = () => { stop(); try { const j = JSON.parse(x.responseText); j.success ? res(j) : rej(new Error(j.error || 'Upload failed')); } catch (e) { rej(new Error('Bad answer from Google')); } };
+                    x.onerror = () => { stop(); rej(new Error('Network error')); }; x.ontimeout = () => { stop(); rej(new Error('Timed out')); };
                     x.send(JSON.stringify(payload));
                 });
                 let upBusy = false, upText = '', upPct = 0;
