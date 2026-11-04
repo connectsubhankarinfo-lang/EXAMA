@@ -49540,11 +49540,16 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   }
 
   /* ---- store a fresh token behind the biometric prompt and prove the student can open it ---- */
+  var lastErr = '';
+  function why(x) { return (x && (x.error || (x.timeout ? 'timeout' : ''))) || 'no response'; }
   async function setup(promptText) {
-    var sv = await call('save', opts({ secret: rnd() }), 8000);
-    if (!sv.success) return false;
+    lastErr = '';
+    await call('delete', {}, 4000);   /* clear any leftover secret from an earlier try: save fails with duplicateItem otherwise */
+    var sv = await call('save', opts({ secret: rnd() }), 60000);
+    if (!sv.success) { lastErr = 'save: ' + why(sv); return false; }
     var g = await call('get', opts({ prompt: promptText, callbackOnCancel: 1 }));
     if (g.success && g.secret) return true;
+    lastErr = 'get: ' + why(g);
     await call('delete', {}, 4000); return false;
   }
   async function enable() {
@@ -49555,7 +49560,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       var st = await call('status', opts({}), 4000);
       if (!st.hasTouchId) return note('Set up fingerprint or Face ID', 'Add a fingerprint or face in your phone settings first, then turn on App Lock again.');
       if (!(await confirmPassword('Turn on App Lock'))) return;
-      if (!(await setup('Confirm to turn on App Lock'))) return note('App Lock not turned on', 'Fingerprint or Face ID was not confirmed. Please try again.');
+      if (!(await setup('Confirm to turn on App Lock'))) return note('App Lock not turned on', 'Fingerprint or Face ID was not confirmed. Please try again.' + (lastErr ? ' [' + lastErr + ']' : ''));
       localStorage.setItem(key(), '1'); lastOk = Date.now(); toast('App Lock is on', 'Exama will ask for your fingerprint or Face ID.');
     } finally { busy = false; changed(); }
   }
