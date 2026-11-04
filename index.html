@@ -13248,7 +13248,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
             // ==========================================
             // 🚀 UNIFIED GOOGLE DRIVE UPLOADER
             // ==========================================
-            window.EXAMA_DRIVE_API = "https://script.google.com/macros/s/AKfycbzHNdGUaNax927yUSDGXlmmMGxRdCEsZ01q49jfDygvLlzk9rm8ZAxuIxq8XfHxG5vt/exec"; // <--- PASTE IT HERE!
+            window.EXAMA_DRIVE_API = "https://script.google.com/macros/s/AKfycbzhEsx6EvwdNCK5ff55eCqQiAAOMMr8wvt12IgP2lsWUp9MbXChpugGKNjgwemAlxeOBQ/exec"; // <--- PASTE IT HERE!
 
             window.uploadFileToDrive = async function (file, folderType, isDocument = false, opts = {}) {
                 let base64Data = "";
@@ -17125,8 +17125,10 @@ window.__tpPaint = function () {
 
             window.deleteNotice = async function (id) {
                 if (!(await window.showCustomConfirm("Delete Notice", "Delete this notice?", "Delete", "Cancel", "danger"))) return;
+                const __dn = (window.noticesDB || []).find(n => n.id === id);   // grab the picture link before the notice disappears
                 if (isFirebaseConfigured) { const noticePath = window.isGlobalTestMode ? 'test_notices' : 'notices'; await remove(ref(window.rtdb, `${noticePath}/${id}`)); }
                 else { window.noticesDB = window.noticesDB.filter(n => n.id !== id); window.renderNotices(); checkUnreadNotices(); }
+                if (__dn && __dn.imageUrl && window.deleteDriveFiles) window.deleteDriveFiles([__dn.imageUrl]);   // notice picture is removed from Drive too
             };
 
             window.clearAllNotices = async function () {
@@ -17135,7 +17137,11 @@ window.__tpPaint = function () {
                 if (isFirebaseConfigured) {
                     try {
                         const noticePath = window.isGlobalTestMode ? 'test_notices' : 'notices';
+                        // collect every notice picture first (the whole list from the database, not just the 20 shown), then delete them from Drive after the notices are gone
+                        let __pics = (window.noticesDB || []).map(n => n && n.imageUrl).filter(Boolean);
+                        try { if (typeof get === 'function') { const __all = (await get(ref(window.rtdb, noticePath))).val() || {}; __pics = __pics.concat(Object.values(__all).map(n => n && n.imageUrl).filter(Boolean)); } } catch (__e) { }
                         await remove(ref(window.rtdb, noticePath));
+                        if (window.deleteDriveFiles) window.deleteDriveFiles(__pics);
                     } catch (e) {
                         console.error("Error clearing notices:", e);
                     }
@@ -21030,8 +21036,18 @@ window.__tpPaint = function () {
                         window.noticesDB = Object.entries(data).map(([key, val]) => ({ id: key, ...val }));
                         // Sort by timestamp descending (newest first)
                         window.noticesDB.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                        // Limit to 20 most recent
-                        if (window.noticesDB.length > 20) window.noticesDB = window.noticesDB.slice(0, 20);
+                        // Limit to 20 most recent. Notices older than that are never shown, so (admin only) their pictures are removed from Drive
+                        // and the picture link is cleared from the notice so it is only done once.
+                        if (window.noticesDB.length > 20) {
+                            const __old = window.noticesDB.slice(20);
+                            window.noticesDB = window.noticesDB.slice(0, 20);
+                            try {
+                                if (window.currentRole === 'admin' && window.deleteDriveFiles) {
+                                    const __np = window.isGlobalTestMode ? 'test_notices' : 'notices';
+                                    __old.forEach(n => { if (n && n.imageUrl) { window.deleteDriveFiles([n.imageUrl]); update(ref(window.rtdb, `${__np}/${n.id}`), { imageUrl: '' }).catch(() => { }); } });
+                                }
+                            } catch (__e) { }
+                        }
 
                         if (window.noticesDB.length > oldLen && oldLen > 0) {
                             const latest = window.noticesDB[0];
@@ -22817,7 +22833,7 @@ window.__tpPaint = function () {
                     const t = setTimeout(() => { try { c && c.abort(); } catch (e) { } }, ms || 15000);
                     return fetch(url, c ? { signal: c.signal } : {}).then(r => { clearTimeout(t); return r.ok ? r.json() : Promise.reject(new Error('http')); }, e => { clearTimeout(t); throw e; });
                 };
-                const normSong = x => ({ id: x.id, title: x.title || cleanName(x.name), artist: x.artist || '', art: x.art || '', mime: x.mime || '' });
+                const normSong = x => ({ id: x.id, title: x.title || cleanName(x.name), artist: x.artist || '', art: x.art || '', mime: x.mime || '', yt: x.yt || '' });
                 const CK = 'rtDriveSongs';
                 const loadCache = () => { try { const a = JSON.parse(localStorage.getItem(CK) || '[]'); return Array.isArray(a) ? a.filter(x => x && x.id) : []; } catch (e) { return []; } };
                 const saveCache = () => { try { localStorage.setItem(CK, JSON.stringify(M.q)); } catch (e) { } };
@@ -23145,19 +23161,98 @@ window.__tpPaint = function () {
                     toast('Song deleted', '', 'success');
                 };
 
-                // ----- Song sheet: tap the song title / thumbnail. Type to filter, "Add song" uploads MP3 / MP4, hold a song to delete it -----
+                // ----- Song sheet: tap the song title / thumbnail. Type to filter (nothing found = YouTube search with a + button), the + button pastes a YouTube link, hold a song to delete it -----
                 const pRow = (i, s, cur) => '<div data-i="' + i + '" data-id="' + pEsc(s.id) + '" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin-bottom:4px;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;' + (cur ? 'background:rgba(251,113,133,.16)' : '') + '">'
                     + '<span style="width:20px;text-align:center;font-size:11px;font-weight:900;color:' + (cur ? '#fb7185' : 'rgba(255,255,255,.35)') + '">' + (cur ? '<i class="fa-solid fa-volume-high"></i>' : (i + 1)) + '</span>'
                     + '<img loading="lazy" draggable="false" alt="" src="' + pEsc(s.art || PH) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;background:#18181b;flex:none;pointer-events:none">'
                     + '<div style="min-width:0;flex:1"><p class="pt truncate" style="font-size:12px;font-weight:900;color:#fff">' + pEsc(s.title) + '</p><p class="pa truncate" style="font-size:9px;font-weight:900;letter-spacing:.2em;margin-top:4px;color:rgba(255,255,255,.4);text-transform:uppercase">' + pEsc(s.artist || '') + '</p></div></div>';
                 const pMsg = t => '<p style="padding:18px 14px;text-align:center;font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">' + t + '</p>';
                 const pQuery = () => { const e = document.getElementById('rt-pl-q'); return e ? e.value.trim() : ''; };
+                // ===== YOUTUBE: paste a link, or search when a song is not in the list. The Google script downloads it and saves it in Drive (nothing is uploaded from the phone) =====
+                const YT = { q: '', items: [], loading: false, err: '', busy: {}, fmt: 'mp3' };
+                try { if (localStorage.getItem('rtYtFmt') === 'mp4') YT.fmt = 'mp4'; } catch (e) { }
+                const YT_MAX_SEC = 900;                                        // 15 minutes: longer videos are mixes / shows, not songs
+                let ytActive = 0, ytPct = 0, ytTimer = null, ytSearchT = null;
+                const ytIdFromText = t => {
+                    const m = String(t || '').trim().match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#\s]*&)?v=|shorts\/|embed\/|live\/|v\/)|music\.youtube\.com\/watch\?(?:[^#\s]*&)?v=)([\w-]{11})(?![\w-])/i);
+                    return m ? m[1] : '';
+                };
+                const hasLocal = ql => M.q.some(s => s.title.toLowerCase().indexOf(ql) >= 0 || (s.artist || '').toLowerCase().indexOf(ql) >= 0);
+                const fmtPill = () => '<button type="button" data-fmt-toggle="1" title="Save as MP3 or MP4" style="height:26px;padding:0 10px;border-radius:13px;background:rgba(255,255,255,.12);color:#fff;font-size:10px;font-weight:900;letter-spacing:.12em;border:1px solid rgba(255,255,255,.16);flex:none">' + YT.fmt.toUpperCase() + '</button>';
+                const ytPaintFmt = () => document.querySelectorAll('[data-fmt-toggle]').forEach(b => { b.textContent = YT.fmt.toUpperCase(); });
+                const ytProgPaint = () => {
+                    upBusy = ytActive > 0; upText = ytActive > 0 ? 'Downloading and saving to Drive' + (ytActive > 1 ? ' (' + ytActive + ' songs)' : '') + '...' : ''; upPct = Math.round(ytPct); upPaint();
+                };
+                const ytProgStart = () => {
+                    ytActive++; if (ytActive === 1) { ytPct = 6; ytTimer = setInterval(() => { ytPct += (92 - ytPct) * 0.035; ytProgPaint(); }, 400); }
+                    ytProgPaint();
+                };
+                const ytProgStop = () => {
+                    ytActive = Math.max(0, ytActive - 1);
+                    if (!ytActive) { clearInterval(ytTimer); ytTimer = null; ytPct = 0; }
+                    ytProgPaint();
+                };
+                const ytCircle = (id, sec) => {
+                    const have = M.q.some(s => s.yt === id), busy = !!YT.busy[id], long = sec > YT_MAX_SEC;
+                    const base = 'width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;';
+                    if (have) return '<span title="Already in your list" style="' + base + 'background:rgba(52,211,153,.2);color:#34d399"><i class="fa-solid fa-check"></i></span>';
+                    if (busy) return '<span style="' + base + 'background:rgba(255,255,255,.12)"><i class="fa-solid fa-spinner fa-spin"></i></span>';
+                    if (long) return '<span title="Too long" style="' + base + 'background:rgba(255,255,255,.06);color:rgba(255,255,255,.3)"><i class="fa-solid fa-ban"></i></span>';
+                    return '<button type="button" data-yt-add="' + pEsc(id) + '" aria-label="Add to playlist" style="' + base + 'background:linear-gradient(135deg,#f43f5e,#dc2626)"><i class="fa-solid fa-plus"></i></button>';
+                };
+                const ytRow = it => '<div style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin-bottom:4px">'
+                    + '<img loading="lazy" draggable="false" alt="" src="' + pEsc(it.thumb || PH) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;background:#18181b;flex:none">'
+                    + '<div style="min-width:0;flex:1"><p class="truncate" style="font-size:12px;font-weight:900;color:#fff">' + pEsc(it.title) + '</p><p class="truncate" style="font-size:9px;font-weight:900;letter-spacing:.2em;margin-top:4px;color:rgba(255,255,255,.4);text-transform:uppercase">' + pEsc(it.channel || '') + (it.dur ? ' &bull; ' + pEsc(it.dur) : '') + '</p></div>'
+                    + ytCircle(it.id, it.sec || 0) + '</div>';
+                const ytSection = ql => {
+                    let h = '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 10px 8px"><span style="font-size:10px;font-weight:900;letter-spacing:.3em;color:rgba(255,255,255,.45)"><i class="fa-brands fa-youtube" style="color:#f43f5e;margin-right:8px"></i>ON YOUTUBE</span>' + fmtPill() + '</div>';
+                    if (YT.q !== ql) return h + '<button type="button" data-yt-go="1" style="display:block;width:calc(100% - 20px);margin:0 10px;padding:12px;border-radius:14px;background:rgba(255,255,255,.08);color:#fff;font-size:12px;font-weight:800">Search YouTube for &ldquo;' + pEsc(ql) + '&rdquo;</button>';
+                    if (YT.loading) return h + pMsg('<i class="fa-solid fa-spinner fa-spin"></i>&nbsp; Searching YouTube...');
+                    if (YT.err) return h + pMsg(pEsc(YT.err)) + '<button type="button" data-yt-go="1" style="display:block;margin:0 auto;padding:8px 18px;border-radius:12px;background:rgba(255,255,255,.1);color:#fff;font-size:11px;font-weight:900">Try again</button>';
+                    if (!YT.items.length) return h + pMsg('Nothing found on YouTube.');
+                    return h + YT.items.map(ytRow).join('');
+                };
+                const ytSearch = async (q, force) => {
+                    const key = q.toLowerCase(); if (!key) return;
+                    if (!force && YT.q === key && (YT.loading || YT.items.length || YT.err)) return;
+                    if (!DRIVE()) { YT.q = key; YT.err = 'Music is not set up.'; return pList(); }
+                    YT.q = key; YT.loading = true; YT.err = ''; YT.items = []; pList();
+                    try {
+                        const j = await fetchT(DRIVE() + '?action=ytsearch&q=' + encodeURIComponent(q), 30000);
+                        if (YT.q !== key) return;
+                        if (!j || !j.success) throw new Error((j && j.error) || 'Search failed');
+                        YT.items = j.items || [];
+                    } catch (e) {
+                        if (YT.q !== key) return;
+                        YT.err = (e && e.message && e.message !== 'http') ? e.message : 'Could not search YouTube. Check your internet.';
+                    }
+                    YT.loading = false; pList();
+                };
+                const ytAdd = async (id, hint) => {
+                    hint = hint || {};
+                    if (!/^[\w-]{11}$/.test(id)) return toast('Wrong link', 'Paste a YouTube video link.', 'error');
+                    if (!DRIVE()) return toast('Music is not set up', 'Drive link is missing.', 'error');
+                    if (YT.busy[id]) return;
+                    if (M.q.some(s => s.yt === id)) return toast('Already in your list', '', 'info');
+                    YT.busy[id] = 1; ytProgStart(); if (document.getElementById('rt-pl')) pList();
+                    try {
+                        const j = await xhrSend({ action: 'ytImport', videoId: id, format: YT.fmt, title: hint.title || '', artist: hint.artist || '' });
+                        if (!M.q.some(s => s.id === j.id)) { M.q.unshift(normSong({ id: j.id, title: j.title, artist: j.artist, art: j.art || '', mime: j.mime, yt: id })); shiftIdx(1); saveCache(); }
+                        toast(j.already ? 'Already in your list' : 'Song added', (j.title || '') + (j.already ? '' : ' is saved in Drive.'), 'success');
+                    } catch (e) {
+                        console.warn('[music] youtube import failed', e);
+                        if (window.showCustomAlert) window.showCustomAlert('Could not add song', String((e && e.message) || 'Failed').replace(/^Error:\s*/, '').slice(0, 220), 'error');
+                    }
+                    delete YT.busy[id]; ytProgStop(); if (document.getElementById('rt-pl')) pList();
+                };
+                window.__rtYtAdd = ytAdd;
+
                 const pList = () => {
                     const box = document.getElementById('rt-pl-list'); if (!box) return;
                     const ql = pQuery().toLowerCase(), cur = M.i, rows = [];
                     M.q.forEach((s, i) => { if (!ql || s.title.toLowerCase().indexOf(ql) >= 0 || (s.artist || '').toLowerCase().indexOf(ql) >= 0) rows.push(pRow(i, s, i === cur)); });
-                    if (!M.q.length) box.innerHTML = pMsg('No songs yet.<br>Tap <b>Add song</b> and choose MP3 or MP4 files.');
-                    else if (!rows.length) box.innerHTML = pMsg('No song with that name.');
+                    if (!M.q.length && !ql) box.innerHTML = pMsg('No songs yet.<br>Tap <b>+</b> and paste a YouTube link, or search for a song.');
+                    else if (!rows.length) box.innerHTML = pMsg('Not in your list.') + ytSection(ql);
                     else box.innerHTML = rows.join('');
                     if (!ql) { const c = box.querySelector('[data-i="' + cur + '"]'); if (c && c.scrollIntoView && !box.__seen) { box.__seen = 1; c.scrollIntoView({ block: 'center' }); } }
                 };
@@ -23172,18 +23267,24 @@ window.__tpPaint = function () {
                         + '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px"><span style="font-size:11px;font-weight:900;letter-spacing:.35em">CHOOSE A SONG</span><button type="button" id="rt-pl-x" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
                         + '<div style="display:flex;gap:8px;padding:0 14px 6px"><input id="rt-pl-q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search a song" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
                         + '<button type="button" id="rt-pl-go" aria-label="Search" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-magnifying-glass"></i></button>'
-                        + '<button type="button" id="rt-pl-add" aria-label="Add your song" style="height:42px;padding:0 13px;border-radius:14px;background:rgba(255,255,255,.12);color:#fff;flex:none;display:flex;align-items:center;gap:7px;font-size:11px;font-weight:900;letter-spacing:.04em;white-space:nowrap;border:1px solid rgba(255,255,255,.14)"><i class="fa-solid fa-cloud-arrow-up" style="color:#fb7185"></i>Add song</button></div>'
-                        + '<p style="padding:0 18px 8px;font-size:9px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.35);text-transform:uppercase">MP3 / MP4 &bull; select many &bull; hold a song to delete it</p>'
+                        + '<button type="button" id="rt-pl-add" aria-label="Add a song from YouTube" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-plus"></i></button></div>'
+                        + '<div id="rt-yt-box" style="display:none;gap:8px;padding:0 14px 8px;align-items:center"><input id="rt-yt-url" type="url" inputmode="url" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste YouTube link" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
+                        + '<button type="button" data-fmt-toggle="1" title="Save as MP3 or MP4" style="height:42px;padding:0 12px;border-radius:14px;background:rgba(255,255,255,.12);color:#fff;font-size:11px;font-weight:900;letter-spacing:.1em;border:1px solid rgba(255,255,255,.14);flex:none">' + YT.fmt.toUpperCase() + '</button>'
+                        + '<button type="button" id="rt-yt-go" aria-label="Download and save" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-arrow-down"></i></button></div>'
+                        + '<p style="padding:0 18px 8px;font-size:9px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.35);text-transform:uppercase">Hold a song to delete it</p>'
                         + '<div id="rt-pl-up" style="display:none;margin:0 14px 8px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.08)"><p id="rt-pl-up-t" class="truncate" style="font-size:11px;font-weight:800;color:#fff"></p><div style="height:4px;border-radius:4px;background:rgba(255,255,255,.12);margin-top:8px;overflow:hidden"><div id="rt-pl-up-b" style="height:100%;width:0;background:linear-gradient(90deg,#f43f5e,#fb7185);transition:width .25s"></div></div></div>'
-                        + '<input id="rt-pl-file" type="file" multiple accept=".mp3,.mp4,audio/mpeg,video/mp4,audio/mp4" style="display:none">'
                         + '<div id="rt-pl-list" style="flex:1;overflow-y:auto;padding:4px 10px 14px;-webkit-overflow-scrolling:touch"></div></div>';
                     let lpT = null, lpFired = false, lpX = 0, lpY = 0;
                     const lpStop = () => { clearTimeout(lpT); lpT = null; };
                     p.addEventListener('click', e => {
                         if (lpFired) { lpFired = false; return; }
                         if (e.target === p || e.target.closest('#rt-pl-x')) return window.closeRunPlaylist();
-                        if (e.target.closest('#rt-pl-go')) { const q = document.getElementById('rt-pl-q'); if (q) q.blur(); return pList(); }
-                        if (e.target.closest('#rt-pl-add')) { const fi = document.getElementById('rt-pl-file'); if (fi) fi.click(); return; }
+                        if (e.target.closest('#rt-pl-go')) { const q = document.getElementById('rt-pl-q'); if (q) q.blur(); pList(); const t = pQuery(); if (t && !hasLocal(t.toLowerCase())) ytSearch(t, true); return; }
+                        if (e.target.closest('#rt-pl-add')) { const b = document.getElementById('rt-yt-box'); if (b) { const open = b.style.display === 'none'; b.style.display = open ? 'flex' : 'none'; if (open) { const u = document.getElementById('rt-yt-url'); if (u) u.focus(); } } return; }
+                        if (e.target.closest('#rt-yt-go')) { const u = document.getElementById('rt-yt-url'); const id = ytIdFromText(u && u.value); if (!id) return toast('Wrong link', 'Paste a YouTube video link.', 'error'); if (u) { u.value = ''; u.blur(); } const b = document.getElementById('rt-yt-box'); if (b) b.style.display = 'none'; ytAdd(id); return; }
+                        if (e.target.closest('[data-fmt-toggle]')) { YT.fmt = YT.fmt === 'mp3' ? 'mp4' : 'mp3'; try { localStorage.setItem('rtYtFmt', YT.fmt); } catch (x) { } ytPaintFmt(); return; }
+                        const ya = e.target.closest('[data-yt-add]'); if (ya) { const id = ya.getAttribute('data-yt-add'), it = YT.items.find(x => x.id === id) || {}; ytAdd(id, { title: it.title, artist: it.channel }); return; }
+                        if (e.target.closest('[data-yt-go]')) { const t = pQuery(); if (t) ytSearch(t, true); return; }
                         const r = e.target.closest('[data-i]'); if (!r) return;
                         const i = parseInt(r.getAttribute('data-i'), 10);
                         if (i === M.i && M.playing) { window.closeRunPlaylist(); return; }
@@ -23198,12 +23299,17 @@ window.__tpPaint = function () {
                     ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => p.addEventListener(n, lpStop));
                     p.addEventListener('contextmenu', e => e.preventDefault());
                     p.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.getAttribute('src') !== PH) t.src = PH; }, true);
-                    p.addEventListener('change', e => { if (e.target && e.target.id === 'rt-pl-file') { const fl = Array.from(e.target.files || []); e.target.value = ''; uploadSongs(fl); } });
                     document.body.appendChild(p); pList(); upPaint();
                     const qi = document.getElementById('rt-pl-q');
                     if (qi) {
-                        qi.addEventListener('input', pList);
-                        qi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); qi.blur(); } });
+                        qi.addEventListener('input', () => {
+                            pList(); clearTimeout(ytSearchT);
+                            const t = pQuery();
+                            if (t.length >= 3 && !hasLocal(t.toLowerCase())) ytSearchT = setTimeout(() => { if (pQuery() === t) ytSearch(t); }, 700);
+                        });
+                        qi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); qi.blur(); const t = pQuery(); if (t && !hasLocal(t.toLowerCase())) ytSearch(t, true); } });
+                        const yu = document.getElementById('rt-yt-url');
+                        if (yu) yu.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const g = document.getElementById('rt-yt-go'); if (g) g.click(); } });
                     }
                     mSongs().then(pList).catch(() => { });                          // pick up songs other students added or deleted
                 };
