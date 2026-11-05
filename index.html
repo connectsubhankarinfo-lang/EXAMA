@@ -23268,6 +23268,7 @@ window.__tpPaint = function () {
                     if (!/^[\w-]{11}$/.test(id)) return toast('Wrong link', 'Paste a YouTube video link.', 'error');
                     if (!DRIVE()) return toast('Music is not set up', 'Drive link is missing.', 'error');
                     if (YT.busy[id]) return;
+                    if (!M.q.length) { const c = loadCache(); if (c.length) applyList(c); }
                     if (M.q.some(s => s.yt === id)) return toast('Already in your list', '', 'info');
                     YT.busy[id] = 1; ytProgStart(); if (document.getElementById('rt-pl')) pList();
                     try {
@@ -49670,8 +49671,8 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     } catch (e) { }
   };
 
-  /* 2) SHARE INTO APP: whatever is shared into Exama (link / Drive file link / text) opens a "Share to..." sheet:
-        Send to Discuss, Add to Material Hub, or Watch lecture (when the link is already one of your lectures). */
+  /* 2) SHARE INTO APP: whatever is shared into Exama (link / Drive file link / text) opens an iOS-style "Shared to Exama" sheet:
+        Watch lecture (when the link is already one of your lectures), Add to Run songs (YouTube links) or Send to Discuss. */
   function shareKey(u) { var m = String(u).match(/(?:youtu\.be\/|[?&]v=|d\/|id=)([\w-]{11,})/); return m ? m[1] : String(u); }
   function kindOf(u) {
     if (!u) return 'Text';
@@ -49684,66 +49685,103 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function waitFor(fn, ms) { return new Promise(function (res) { var t0 = Date.now(); (function p() { var ok = false; try { ok = fn(); } catch (e) { } if (ok) return res(true); if (Date.now() - t0 > ms) return res(false); setTimeout(p, 150); })(); }); }
   function shown(id) { var e = document.getElementById(id); return !!e && !e.classList.contains('hidden-view') && e.getClientRects().length > 0; }
-  function closeSheet() { var e = document.getElementById('mn-share'); if (e) e.remove(); }
-  function toDiscuss(it) {
+  function closeSheet() { var e = document.getElementById('mn-share'); if (!e) return; e.removeAttribute('id'); e.classList.remove('in'); e.classList.add('out'); setTimeout(function () { if (e.parentNode) e.remove(); }, 260); }
+  function toDiscuss(it) {                                  // opens Discuss and sends the shared title + link as a message
     closeSheet(); location.hash = 'chat';
-    waitFor(function () { var i = document.getElementById('chat-input'); return i && i.getClientRects().length > 0; }, 5000).then(function (ok) {
+    var text = [it.subject, it.url].filter(Boolean).join('\n');
+    waitFor(function () { var i = document.getElementById('chat-input'); return i && i.getClientRects().length > 0 && typeof W.sendChatMessage === 'function'; }, 6000).then(function (ok) {
       var i = document.getElementById('chat-input'); if (!ok || !i) return toast('Could not open Discuss', 'Open Discuss and try again.');
-      i.value = [it.subject, it.url].filter(Boolean).join('\n'); try { i.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { }
-      try { i.focus(); } catch (e) { } toast('Ready in Discuss', 'Add a note if you like, then tap send.');
+      var draft = i.value;                                  // keep whatever the person had half-typed
+      function fire(v) { i.value = v; try { i.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { } }
+      fire(text);
+      setTimeout(function () {                              // let Discuss finish opening, then send
+        var sent;
+        try { sent = Promise.resolve(W.sendChatMessage()); } catch (e) { sent = Promise.reject(e); }
+        sent.then(function () { fire(draft); toast('Sent to Discuss', ''); },
+          function () { fire(text); toast('Could not send', 'Your message is ready in Discuss, tap send.'); });
+      }, 450);
     });
   }
-  function toMaterial(it) {
-    closeSheet(); location.hash = 'materials';
-    waitFor(function () { return shown('materials-view') && typeof W.openMaterialUploadModal === 'function'; }, 5000).then(function (ok) {
-      if (!ok) return toast('Could not open Material Hub', 'Open it and try again.');
-      W.openMaterialUploadModal();
-      setTimeout(function () {
-        var ti = document.getElementById('mat-title'), li = document.getElementById('mat-ext-link'), b = document.getElementById('btn-gdrive-upload'), s = document.getElementById('gdrive-upload-status');
-        if (ti && !ti.value && it.subject && !/^https?:/i.test(it.subject)) ti.value = it.subject.slice(0, 120);
-        if (li) li.value = it.url;
-        if (b) { b.innerHTML = '<i class="fa-solid fa-check-circle text-emerald-600 text-lg"></i> Link attached'; b.className = 'w-full bg-emerald-50 border border-emerald-300 text-emerald-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition-all'; }
-        if (s) { s.innerText = 'Link attached'; s.classList.remove('hidden'); }
-        toast('Link attached', 'Choose the subject and topic, then publish.');
-      }, 350);
-    });
+  /* ---- Run songs: a YouTube link shared into the app can go straight into the Run monitor song list ---- */
+  var YT_RE = /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#\s]*&)?v=|shorts\/|embed\/|live\/|v\/)|music\.youtube\.com\/watch\?(?:[^#\s]*&)?v=)([\w-]{11})(?![\w-])/i;
+  function ytId(u) { var m = String(u || '').match(YT_RE); return m ? m[1] : ''; }
+  function canAddSong(it) { return W.currentRole === 'student' && typeof W.__rtYtAdd === 'function' && !!ytId(it.url); }
+  function toRunSongs(it) {
+    closeSheet();
+    var id = ytId(it.url); if (!id) return;
+    toast('Adding to Run songs', 'Downloading and saving to Drive...');
+    try { var p = W.__rtYtAdd(id); if (p && p.catch) p.catch(function () { }); } catch (e) { toast('Could not add song', 'Open the Run monitor and try again.'); }
+  }
+  /* ---- the sheet itself: iOS action-sheet look (frosted glass, grouped list, colour icon tiles, separate Cancel) ---- */
+  function shareCss() {
+    if (document.getElementById('mn-share-css')) return;
+    var s = document.createElement('style'); s.id = 'mn-share-css';
+    s.textContent =
+      '.mn-sheet{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.34);opacity:0;transition:opacity .28s ease;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}' +
+      '.mn-sheet.in{opacity:1}' +
+      '.mn-sheet .mn-w{width:100%;max-width:480px;padding:0 8px calc(8px + env(safe-area-inset-bottom,0px));transform:translateY(105%);transition:transform .42s cubic-bezier(.32,.72,0,1)}' +
+      '.mn-sheet.in .mn-w{transform:translateY(0)}.mn-sheet.out{opacity:0;transition-duration:.2s}.mn-sheet.out .mn-w{transform:translateY(105%);transition-duration:.22s;transition-timing-function:ease-in}' +
+      '.mn-sheet .mn-g{background:rgba(249,249,251,.86);-webkit-backdrop-filter:saturate(180%) blur(30px);backdrop-filter:saturate(180%) blur(30px);border-radius:14px;overflow:hidden}' +
+      '.mn-sheet .mn-h{padding:14px 18px 13px;text-align:center;border-bottom:.5px solid rgba(60,60,67,.29)}' +
+      '.mn-sheet .mn-k{font-size:13px;font-weight:600;letter-spacing:-.01em;color:rgba(60,60,67,.6)}' +
+      '.mn-sheet .mn-s{margin-top:3px;font-size:13px;font-weight:400;line-height:1.3;color:rgba(60,60,67,.6);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}' +
+      '.mn-sheet .mn-b{display:flex;align-items:center;gap:13px;width:100%;min-height:58px;padding:8px 16px;border:0;border-top:.5px solid rgba(60,60,67,.29);background:transparent;text-align:left;font:inherit;color:#000;cursor:pointer;transition:background .12s}' +
+      '.mn-sheet .mn-h+.mn-b{border-top:0}.mn-sheet .mn-b:active{background:rgba(60,60,67,.14)}' +
+      '.mn-sheet .mn-i{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;color:#fff;font-size:16px}' +
+      '.mn-sheet .mn-t{flex:1;min-width:0}.mn-sheet .mn-t b{display:block;font-size:17px;font-weight:400;letter-spacing:-.022em;line-height:1.25}' +
+      '.mn-sheet .mn-t span{display:block;margin-top:1px;font-size:13px;color:rgba(60,60,67,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.mn-sheet .mn-c{color:rgba(60,60,67,.3);font-size:13px;flex:none}' +
+      '.mn-sheet .mn-x{margin-top:8px;justify-content:center;border:0;border-radius:14px;background:rgba(255,255,255,.94);min-height:57px;font-size:17px;font-weight:600;letter-spacing:-.022em;color:#007aff}' +
+      '.mn-sheet .mn-x:active{background:rgba(228,228,232,.98)}';
+    document.head.appendChild(s);
   }
   function showShareSheet(it) {
     closeSheet();
     var hit = it.url ? (W.videosDB || []).find(function (v) { return v.sourceUrl && shareKey(v.sourceUrl) === shareKey(it.url); }) : null;
-    var d = document.createElement('div'); d.id = 'mn-share';
-    d.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(15,23,42,.55);display:flex;align-items:flex-end;justify-content:center;font-family:inherit';
-    var bs = 'display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;border:0;border-radius:16px;background:#f1f5f9;color:#0f172a;font-weight:800;font-size:14px;text-align:left;cursor:pointer';
-    var rows = [];
-    if (hit) rows.push(['watch', 'fa-circle-play', 'Watch lecture', hit.title || '']);
-    rows.push(['chat', 'fa-comments', 'Send to Discuss', 'Opens Discuss with it ready to send']);
-    if (it.url) rows.push(['mat', 'fa-folder-plus', 'Add to Material Hub', 'Attach it as a study material']);
-    rows.push(['copy', 'fa-copy', 'Copy', '']);
-    d.innerHTML = '<div style="width:100%;max-width:480px;background:#fff;border-radius:24px 24px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px rgba(0,0,0,.25)">' +
-      '<div style="width:40px;height:4px;border-radius:4px;background:#cbd5e1;margin:0 auto 14px"></div>' +
-      '<div style="font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#6366f1">Shared to Exama \u00b7 ' + esc(kindOf(it.url)) + '</div>' +
-      '<div style="font-size:15px;font-weight:800;color:#0f172a;margin:4px 0 2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">' + esc(it.subject || it.url || '') + '</div>' +
-      (it.url && it.subject ? '<div style="font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.url) + '</div>' : '') +
-      '<div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">' +
-      rows.map(function (r) { return '<button type="button" data-a="' + r[0] + '" style="' + bs + '"><i class="fa-solid ' + r[1] + '" style="width:22px;text-align:center;color:#4f46e5"></i><span style="flex:1;min-width:0"><span style="display:block">' + r[2] + '</span>' + (r[3] ? '<span style="display:block;font-size:11px;font-weight:600;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r[3]) + '</span>' : '') + '</span></button>'; }).join('') +
-      '<button type="button" data-a="x" style="' + bs + ';background:transparent;justify-content:center;color:#64748b">Cancel</button></div></div>';
+    var rows = [];                                           // [action, icon, tile colour, title, subtitle]
+    if (hit) rows.push(['watch', 'fa-play', '#007aff', 'Watch lecture', hit.title || '']);
+    if (canAddSong(it)) rows.push(['song', 'fa-music', '#ff2d55', 'Add to Run songs', 'Saves it to your Run monitor playlist']);
+    rows.push(['chat', 'fa-comments', '#34c759', 'Send to Discuss', 'Sends it to the Discuss chat']);
+    shareCss();
+    var d = document.createElement('div'); d.id = 'mn-share'; d.className = 'mn-sheet';
+    d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true');
+    d.innerHTML = '<div class="mn-w"><div class="mn-g">' +
+      '<div class="mn-h"><div class="mn-k">Shared to Exama \u00b7 ' + esc(kindOf(it.url)) + '</div>' +
+      (it.subject || it.url ? '<div class="mn-s">' + esc(it.subject || it.url) + '</div>' : '') + '</div>' +
+      rows.map(function (r) { return '<button type="button" class="mn-b" data-a="' + r[0] + '"><span class="mn-i" style="background:' + r[2] + '"><i class="fa-solid ' + r[1] + '"></i></span><span class="mn-t"><b>' + r[3] + '</b>' + (r[4] ? '<span>' + esc(r[4]) + '</span>' : '') + '</span><i class="fa-solid fa-chevron-right mn-c"></i></button>'; }).join('') +
+      '</div><button type="button" class="mn-b mn-x" data-a="x">Cancel</button></div>';
     d.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('button[data-a]'), a = b ? b.getAttribute('data-a') : (e.target === d ? 'x' : '');
       if (!a) return;
       if (a === 'watch' && hit && W.playVideo) { closeSheet(); W.playVideo(hit.id); }
+      else if (a === 'song') toRunSongs(it);
       else if (a === 'chat') toDiscuss(it);
-      else if (a === 'mat') toMaterial(it);
-      else if (a === 'copy') { try { navigator.clipboard.writeText([it.subject, it.url].filter(Boolean).join('\n')); } catch (e2) { } closeSheet(); toast('Copied', ''); }
       else closeSheet();
     });
     document.body.appendChild(d);
+    requestAnimationFrame(function () { requestAnimationFrame(function () { d.classList.add('in'); }); });
   }
   function firstUrl(t) { var m = String(t || '').match(/https?:\/\/[^\s<>"']+/i); return m ? m[0].replace(/[)\].,;!?]+$/, '') : ''; }
+  /* The Median share plugin can hand the SAME share to the page again (app re-opened from recents, page reloaded, called twice).
+     That is why the sheet kept coming back. Every share that was shown is remembered on this phone, and an identical one is ignored
+     when it arrives twice in a row, or in the first seconds after the page loads (that is the old share being re-delivered).
+     The same link shared again later, while the app is open, is a new share and is shown normally. */
+  var SHARE_LAST = 'exama_share_last', LOADED_AT = Date.now(), RELOAD_GUARD_MS = 25000, inflight = '';
+  function shareSig(it) { return (it.url || '') + '|' + (it.subject || ''); }
+  function isRedelivery(it) {
+    var sig = shareSig(it); if (sig === inflight) return true;
+    var last = null; try { last = JSON.parse(localStorage.getItem(SHARE_LAST) || 'null'); } catch (e) { }
+    if (!last || last.s !== sig) return false;
+    var now = Date.now(); return (now - last.t < 4000) || (now - LOADED_AT < RELOAD_GUARD_MS);
+  }
+  function markShown(it) { try { localStorage.setItem(SHARE_LAST, JSON.stringify({ s: shareSig(it), t: Date.now() })); } catch (e) { } }
   function deliverShare(it) {
+    var sig = shareSig(it); inflight = sig;
     waitFor(function () { return !!W.loggedInMobile && !!document.body; }, 45000).then(function (ok) {
+      inflight = '';
       if (!ok) { try { sessionStorage.setItem('exama_pending_share', JSON.stringify(it)); } catch (e) { } return toast('Please log in', 'Then share again.'); }
       try { sessionStorage.removeItem('exama_pending_share'); } catch (e) { }
-      showShareSheet(it);
+      markShown(it); showShareSheet(it);
     });
   }
   W.median_share_to_app = function (data) {
@@ -49756,6 +49794,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
         if (u) { it.url = u; it.subject = it.subject.replace(u, '').replace(/\s+/g, ' ').trim(); }
       }
       if (!it.url && !it.subject) return;
+      if (isRedelivery(it)) return;
       deliverShare(it);
     } catch (e) { }
   };
