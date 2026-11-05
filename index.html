@@ -49751,6 +49751,52 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     } catch (e) { }
   };
 
+  /* 1b) LINKS OPEN IN THE IN-APP BROWSER (like Instagram / Chrome tabs). Any link the student taps that leaves the app (another website) opens in Median's
+        native in-app browser (median.window.open(url, 'appbrowser')): it has its own close button, handles the notch / status bar / gesture bar on every phone,
+        and closing it returns to the app exactly where it was. Same-site links, mailto / tel / app-scheme links, downloads and documents keep their normal
+        behaviour; WhatsApp and Google Maps links open their own apps. Only real taps are redirected (not code-triggered clicks), so downloads and sign-in
+        redirects are not affected. In a normal browser (no Median bridge) nothing changes. Set IAB_ENABLED = false to switch this off. */
+  var IAB_ENABLED = true;
+  var IAB_EXTERNAL_HOST = /^(wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com|maps\.app\.goo\.gl|maps\.google\.[a-z.]+)$/i;   // these have their own app: open outside
+  var IAB_SKIP_FILE = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|7z|apk|mp3|m4a|wav|mp4|mkv|webm)$/i;                            // documents / downloads: keep the existing viewer / download behaviour
+  var iabLast = { u: '', t: 0 };
+  var iabNativeOpen = W.open;
+  function iabBridge() { var b = W.median || W.gonative; return (b && b.window && typeof b.window.open === 'function') ? b : null; }
+  function iabParse(raw) {
+    try {
+      var u = new URL(String(raw), W.location.href);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;   // mailto: tel: sms: intent: upi: whatsapp: ... stay as they are
+      if (u.origin === W.location.origin) return null;                      // same site: normal in-app navigation
+      if (IAB_SKIP_FILE.test(u.pathname)) return null;
+      return u;
+    } catch (e) { return null; }
+  }
+  function iabOpen(u) {                                    // true = handed to the native browser
+    var b = iabBridge(); if (!b) return false;
+    var now = Date.now(); if (iabLast.u === u.href && now - iabLast.t < 800) return true;   // ignore a double fire of the same tap
+    iabLast = { u: u.href, t: now };
+    var outside = IAB_EXTERNAL_HOST.test(u.hostname) || (/(^|\.)google\.[a-z.]+$/i.test(u.hostname) && /^\/maps(\/|$)/.test(u.pathname));
+    try { b.window.open(u.href, outside ? 'external' : 'appbrowser'); return true; } catch (e) { return false; }
+  }
+  document.addEventListener('click', function (e) {
+    try {
+      if (!IAB_ENABLED || !e.isTrusted || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a || a.hasAttribute('download') || a.getAttribute('data-iab') === 'off') return;
+      var u = iabParse(a.getAttribute('href')); if (!u || !iabBridge()) return;
+      e.preventDefault();
+      if (!iabOpen(u)) { try { iabNativeOpen.call(W, u.href, '_blank', 'noopener'); } catch (x) { } }
+    } catch (x) { }
+  }, true);
+  W.open = function (url, name, feat) {                    // window.open('https://...') from the app's own buttons (WhatsApp, links, file fallbacks)
+    try {
+      if (IAB_ENABLED && url && (!name || name === '_blank') && !/width|height|left|top/i.test(String(feat || '')) && (!navigator.userActivation || navigator.userActivation.isActive)) {
+        var u = iabParse(url); if (u && iabOpen(u)) return null;
+      }
+    } catch (e) { }
+    return iabNativeOpen.apply(W, arguments);
+  };
+
   /* 2) SHARE INTO APP: whatever is shared into Exama (link / Drive file link / text) opens a Samsung One UI style "Shared to Exama" bottom sheet:
         Watch lecture (when the link is already one of your lectures), Add to Run songs (YouTube links) or Send to Discuss. */
   function shareKey(u) { var m = String(u).match(/(?:youtu\.be\/|[?&]v=|d\/|id=)([\w-]{11,})/); return m ? m[1] : String(u); }
