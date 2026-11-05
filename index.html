@@ -22851,6 +22851,14 @@ window.__tpPaint = function () {
                     }).catch(e => { console.warn('[music] script load failed', e); giveUp(String((e && e.message) || 'failed')); });
                 };
                 const songUrls = id => { const e = encodeURIComponent(id); return ['https://drive.google.com/uc?export=download&id=' + e, 'https://drive.usercontent.google.com/download?id=' + e + '&export=download&confirm=t', 'https://docs.google.com/uc?export=open&id=' + e]; };
+                // FIRST CHOICE: stream the song through the Cloudflare proxy (the same one the lectures use). It supports seeking and needs no waiting: the song starts as soon as the first bytes arrive.
+                // If that fails, the Google script sends the whole file (slow, kept as a fallback), then the plain Drive links are tried.
+                const SONG_PROXY = 'https://exama-video-proxy.connect-subhankar-info.workers.dev/';
+                const songProxy = (id, mime) => {
+                    const m = String(mime || '').toLowerCase();
+                    const ext = /audio\/(mp4|x-m4a|m4a|aac)/.test(m) ? '.m4a' : /mp4/.test(m) ? '.mp4' : /ogg/.test(m) ? '.ogg' : /wav/.test(m) ? '.wav' : /flac/.test(m) ? '.flac' : '.mp3';
+                    return SONG_PROXY + '?id=' + encodeURIComponent(id) + '&ext=' + ext;
+                };
                 const cleanName = n => String(n || '').replace(/\.[^.]+$/, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim() || 'Song';
                 const rand = () => Math.floor(Math.random() * M.q.length);
                 const pEsc = x => window.escHtml ? window.escHtml(x) : String(x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22910,7 +22918,14 @@ window.__tpPaint = function () {
                             if (M.q.length > 1 && M.errs <= M.q.length) { mTitle('Skipping...'); setTimeout(() => { if (M.active && M.want) window.runMusicNext(); }, 500); }
                             else { mTitle('Cannot play this song'); if (why) { setT('rt-mp-sub', String(why).toUpperCase().slice(0, 110)); const se = $('rt-mp-sub'); if (se) { se.style.whiteSpace = 'normal'; se.style.overflow = 'visible'; se.style.textOverflow = 'clip'; } } }
                         };
-                        if (au.__alt && !au.__alt.b) { au.__alt.b = 1; au.__alt.id = au.__alt.id || ''; if (au.__alt.id) { loadViaScript(au.__alt.id, au.__alt, giveUp); return; } }   // then let the Google script send the file
+                        if (au.__alt && !au.__alt.b) {
+                            au.__alt.b = 1; au.__alt.id = au.__alt.id || '';
+                            if (au.__alt.id) {                                   // then let the Google script send the file
+                                const a0 = au.__alt;
+                                loadViaScript(a0.id, a0, a0.dl ? (why => { if (au.__alt !== a0) return; console.warn('[music] script failed, trying Drive links:', why); a0.sw = String(why || 'failed').slice(0, 40); a0.u = a0.dl; a0.dl = null; a0.i = 0; au.src = a0.u[0]; doPlay(); }) : giveUp);
+                                return;
+                            }
+                        }
                         giveUp((au.__alt && au.__alt.bi ? 'SCRIPT SENT ' + au.__alt.bi + ' BUT NOT PLAYABLE' : 'SCRIPT FAILED: ' + ((au.__alt && au.__alt.sw) || 'NO REPLY')) + ' / CODE ' + (au.error ? au.error.code : '?'));
                     });
                     // the old YouTube-style handle is kept on purpose: Nova (voice) and the walkie-talkie lower / pause the music through it
@@ -22953,7 +22968,8 @@ window.__tpPaint = function () {
                     M.i = i; M.want = true; M.bag = M.bag.filter(x => x !== i);
                     nowInfo(); mAudio();
                     const b = $('rt-mp-bar'); if (b) b.style.width = '0';
-                    { const sid = M.q[i].id, alt = { u: songUrls(sid), i: -1, b: 1, id: sid }; au.__alt = alt; try { au.pause(); au.removeAttribute('src'); } catch (e) { } loadViaScript(sid, alt, why => { if (au.__alt !== alt) return; console.warn('[music] script failed, trying Drive links:', why); alt.sw = String(why || 'failed').slice(0, 40); alt.i = 0; au.src = alt.u[0]; doPlay(); }); }
+                    { const sid = M.q[i].id, alt = { u: [songProxy(sid, M.q[i].mime)], i: 0, b: 0, id: sid, dl: songUrls(sid) }; au.__alt = alt; try { au.pause(); au.removeAttribute('src'); } catch (e) { } au.src = alt.u[0]; doPlay();
+                        setTimeout(() => { if (au.__alt === alt && !alt.b && M.want && au.readyState < 3 && !au.paused) { try { au.dispatchEvent(new Event('error')); } catch (e) { } } }, 15000); }   // proxy silent for 15 s: move on to the fallbacks
                     if (document.getElementById('rt-pl')) pList();
                 };
                 const startPlay = () => {
@@ -23282,6 +23298,42 @@ window.__tpPaint = function () {
                     delete YT.busy[id]; ytProgStop(); if (document.getElementById('rt-pl')) pList();
                 };
                 window.__rtYtAdd = ytAdd;
+
+                // ===== ANDROID NOTIFICATION / LOCK-SCREEN CONTROLS for the Run music =====
+                // The Android WebView ignores the browser Media Session, so a song played by the <audio> tag never gets a media notification (it only keeps sounding).
+                // Lectures get one because the app hands them to Median's native media player when it goes to the background. Songs use the same hand-off:
+                // Median asks the page for getPlayerStatus(), plays that track natively (notification + lock screen: title, artwork, play / pause), and calls
+                // updatePlayerStatus() when the app comes back. Set RUN_NATIVE_PLAYER = false to go back to the old behaviour (sound only, no controls).
+                const RUN_NATIVE_PLAYER = true;
+                let natOn = false;
+                const natUrl = s => {                                   // the native player cannot open a blob: (in-memory) song, so it streams it through the proxy
+                    const src = (au && (au.currentSrc || au.src)) || '';
+                    return /^https?:\/\//i.test(src) ? src : songProxy(s.id, s.mime);
+                };
+                window.__rtMusicNative = {
+                    get: () => {                                        // app goes to the background while a song is playing -> hand it over
+                        try {
+                            if (!RUN_NATIVE_PLAYER || !au || !M.active || M.i < 0 || au.paused || au.ended || !au.getAttribute('src')) return null;
+                            const s = M.q[M.i]; if (!s || !s.id) return null;
+                            const st = { currentTime: au.currentTime || 0, isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'Run monitor', url: natUrl(s) };
+                            if (/^https?:\/\//i.test(s.art || '')) st.artwork = s.art;
+                            natOn = true;
+                            try { au.pause(); } catch (e) { }           // the native player takes over the sound
+                            return st;
+                        } catch (e) { natOn = false; return null; }
+                    },
+                    back: st => {                                       // app is back: continue from where the native player is (st.currentTime is in ms). Returns true when it was a song.
+                        if (!natOn) return false; natOn = false;
+                        try {
+                            if (!au || !M.active) return true;
+                            const pos = st && st.currentTime ? st.currentTime / 1000 : 0, dur = au.duration;
+                            if (dur > 0 && isFinite(dur) && pos >= dur - 1.5) { M.want = true; window.runMusicNext(); return true; }   // the song finished while the app was in the background: go on to the next one
+                            if (pos) au.currentTime = pos;
+                            if (st && st.isPaused === false) doPlay();
+                        } catch (e) { }
+                        return true;
+                    }
+                };
 
                 const pList = () => {
                     const box = document.getElementById('rt-pl-list'); if (!box) return;
@@ -49651,7 +49703,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   /* 1) LECTURES IN BACKGROUND. Median calls getPlayerStatus() when the app is backgrounded / locked and hands the lecture to the
         native player (lock-screen controls). updatePlayerStatus() runs when the app comes back. Only direct video links (Drive/MP4 proxy)
         can be handed over: YouTube embeds and offline blob files cannot, so they return null and simply pause as before. */
-  W.getPlayerStatus = function () {
+  var lectureStatus = function () {
     try {
       var p = W.vjsPlayer; if (!p || (p.isDisposed && p.isDisposed())) return null;
       var src = (p.currentSrc && p.currentSrc()) || '';
@@ -49662,7 +49714,12 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       return s;
     } catch (e) { return null; }
   };
+  W.getPlayerStatus = function () {                        // lecture first, otherwise the Run monitor song that is playing
+    var s = lectureStatus(); if (s) return s;
+    try { return (W.__rtMusicNative && W.__rtMusicNative.get()) || null; } catch (e) { return null; }
+  };
   W.updatePlayerStatus = function (st) {
+    try { if (W.__rtMusicNative && W.__rtMusicNative.back(st)) return; } catch (e) { }   // it was a Run monitor song
     try {
       var p = W.vjsPlayer; if (!p || !st) return;
       if (st.currentTime) p.currentTime(st.currentTime / 1000);
