@@ -23331,6 +23331,7 @@ window.__tpPaint = function () {
                 // updatePlayerStatus() when the app comes back. RUN_NATIVE_PLAYER = true (current) enables the hand-off; false keeps the sound in the web view (no notification controls).
                 const RUN_NATIVE_PLAYER = true;   // ON: when the app goes to the background, the song is handed to Median's native player (notification + lock screen controls). If the music goes silent in the background, set this back to false
                 let natOn = false;
+                const natDbg = m => { try { localStorage.setItem('rtNatDbg', m); } catch (e) { } };   // TEMP debug: remembers what the hand-off did
                 const natUrl = s => {                                   // the native player cannot open a blob: (in-memory) song, so it streams it through the proxy
                     const src = (au && (au.currentSrc || au.src)) || '';
                     return /^https?:\/\//i.test(src) ? src : songProxy(s.id, s.mime);
@@ -23338,10 +23339,11 @@ window.__tpPaint = function () {
                 window.__rtMusicNative = {
                     get: () => {                                        // app goes to the background while a song is playing -> hand it over
                         try {
-                            if (!RUN_NATIVE_PLAYER || !au || !M.active || M.i < 0 || au.paused || au.ended || !au.getAttribute('src')) return null;
+                            if (!RUN_NATIVE_PLAYER || !au || !M.active || M.i < 0 || au.paused || au.ended || !au.getAttribute('src')) { natDbg('NOT handed over (flag=' + RUN_NATIVE_PLAYER + ', active=' + M.active + ', index=' + M.i + ', paused=' + (au && au.paused) + ', src=' + !!(au && au.getAttribute('src')) + ')'); return null; }
                             const s = M.q[M.i]; if (!s || !s.id) return null;
                             const st = { currentTime: au.currentTime || 0, isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'Run monitor', url: natUrl(s) };
-                            natOn = true;
+                            // artwork removed for testing (lectures have none and work): if (/^https?:\/\//i.test(s.art || '')) st.artwork = s.art;
+                            natOn = true; natDbg('handed over to native: ' + st.url + ' at ' + Math.round(st.currentTime) + 's, artwork ' + (st.artwork ? 'sent' : 'not sent')); try { localStorage.setItem('rtNatUrl', st.url); } catch (e) { }
                             try { au.pause(); } catch (e) { }           // the native player takes over the sound
                             return st;
                         } catch (e) { natOn = false; return null; }
@@ -49738,10 +49740,12 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     } catch (e) { return null; }
   };
   W.getPlayerStatus = function () {                        // lecture first, otherwise the Run monitor song that is playing
+    try { localStorage.setItem('rtNatCall', 'yes (' + new Date().toLocaleTimeString() + ')'); } catch (e) { }   // TEMP debug
     var s = lectureStatus(); if (s) return s;
     try { return (W.__rtMusicNative && W.__rtMusicNative.get()) || null; } catch (e) { return null; }
   };
   W.updatePlayerStatus = function (st) {
+    try { localStorage.setItem('rtNatBack', JSON.stringify(st)); } catch (e) { }   // TEMP debug
     try { if (W.__rtMusicNative && W.__rtMusicNative.back(st)) return; } catch (e) { }   // it was a Run monitor song
     try {
       var p = W.vjsPlayer; if (!p || !st) return;
@@ -49750,6 +49754,25 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       else if (p.paused()) { var r = p.play(); if (r && r.catch) r.catch(function () { }); }
     } catch (e) { }
   };
+
+  /* TEMP DEBUG: when the app comes back and Run music was on, show what happened to the native hand-off. Delete this block when music works. */
+  document.addEventListener('visibilitychange', function () {
+    try {
+      var M = W.__rtMusic;
+      if (document.hidden) { if (M && M.active && M.want) localStorage.setItem('rtNatWas', '1'); return; }
+      if (localStorage.getItem('rtNatWas') !== '1') return;
+      setTimeout(function () {   // give Median a moment to call updatePlayerStatus first
+        try {
+          var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('rtNatDbg'), u = localStorage.getItem('rtNatUrl'), nb = localStorage.getItem('rtNatBack');
+          ['rtNatWas', 'rtNatCall', 'rtNatDbg', 'rtNatUrl', 'rtNatBack'].forEach(function (k) { localStorage.removeItem(k); });
+          var show = function (x) { if (W.showCustomAlert) W.showCustomAlert('Music debug', 'getPlayerStatus: ' + (a || 'NO') + '. Hand-off: ' + (b || 'not reached') + '. NATIVE STATUS ON RETURN: ' + (nb || 'updatePlayerStatus NOT called') + '.' + x, 'info'); };
+          if (u && /^https?:/i.test(u) && W.fetch) {
+            fetch(u, { headers: { Range: 'bytes=0-1' } }).then(function (r) { var t = r.headers.get('content-type'), cr = r.headers.get('content-range'); var info = ' PROXY: HTTP ' + r.status + ', ' + t + ', ' + cr; if (r.status >= 400) { return r.text().then(function (tx) { show(info + ', REPLY: ' + String(tx).replace(/\s+/g, ' ').slice(0, 200)); }); } try { r.body && r.body.cancel(); } catch (e) { } show(info); }).catch(function (e) { show(' PROXY FAILED: ' + (e && e.message)); });
+          } else show('');
+        } catch (e) { }
+      }, 1500);
+    } catch (e) { }
+  });
 
   /* 1b) LINKS OPEN IN THE IN-APP BROWSER (like Instagram / Chrome tabs). Any link the student taps that leaves the app (another website) opens in Median's
         native in-app browser (median.window.open(url, 'appbrowser')): it has its own close button, handles the notch / status bar / gesture bar on every phone,
