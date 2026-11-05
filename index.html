@@ -49768,6 +49768,8 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
         native player (lock-screen controls). updatePlayerStatus() runs when the app comes back. Only direct video links (Drive/MP4 proxy)
         can be handed over: YouTube embeds and offline blob files cannot, so they return null and simply pause as before. */
   var NATIVE_TIME_IN_MS = false;   // Median may expect the position in milliseconds. If a song / lecture restarts from 0:00 in the background, set this to true.
+  var NATIVE_HANDOFF = false;      // false (current): do NOT give the sound to Median's native player, it keeps playing inside the page when you lock / leave the app. true: hand lectures / songs to the native player (lock-screen controls, but it was silent on this phone).
+  W.NATIVE_HANDOFF = NATIVE_HANDOFF;
   var NATIVE_BG_DEBUG = true;     // true = popup every time you return to the app, showing what the background hand-off did (lectures AND music)
   var PROXY = 'https://exama-video-proxy.connect-subhankar-info.workers.dev/';
   W.NATIVE_TIME_IN_MS = NATIVE_TIME_IN_MS;
@@ -49813,6 +49815,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   };
   W.getPlayerStatus = function () {                        // a PLAYING lecture first, then a playing Run monitor song, then a paused lecture
     try { localStorage.setItem('rtNatCall', 'yes (' + new Date().toLocaleTimeString() + ')'); } catch (e) { }
+    if (!W.NATIVE_HANDOFF) { why('web mode: sound stays in the page (native hand-off is off)'); return null; }
     var L = lectureInfo();
     if (L && !L.s.isPaused) { try { L.p.pause(); } catch (e) { } why('lecture handed over: ' + L.s.url); return L.s; }   // native player takes over the sound
     try {
@@ -49840,7 +49843,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     if (!NATIVE_BG_DEBUG || document.hidden) return;
     setTimeout(function () {
       try {
-        var mb = W.median ? ('median bridge: yes, backgroundMedia: ' + (W.median.backgroundMedia ? 'yes' : 'NO')) : 'median bridge: NO (not running inside the Median app)'; var bad = Object.keys(okUrl).filter(function (k) { return okUrl[k] === false; }).length; var t = mb + '. Proxy checks failed: ' + bad + '. getPlayerStatus: ' + (localStorage.getItem('rtNatCall') || 'NEVER CALLED (Median Media Playback plugin off or app not rebuilt)') + '. Last result: ' + (localStorage.getItem('nbWhy') || 'none') + '. updatePlayerStatus: ' + (localStorage.getItem('rtNatBack') || 'not called') + '.';
+        var mb = W.median ? ('median bridge: yes, backgroundMedia: ' + (W.median.backgroundMedia ? 'yes' : 'NO')) : 'median bridge: NO (not running inside the Median app)'; var bad = Object.keys(okUrl).filter(function (k) { return okUrl[k] === false; }).length; var t = 'MODE: ' + (W.NATIVE_HANDOFF ? 'native hand-off' : 'web (sound stays in page)') + '. ' + mb + '. Proxy checks failed: ' + bad + '. getPlayerStatus: ' + (localStorage.getItem('rtNatCall') || 'NEVER CALLED (Median Media Playback plugin off or app not rebuilt)') + '. Last result: ' + (localStorage.getItem('nbWhy') || 'none') + '. updatePlayerStatus: ' + (localStorage.getItem('rtNatBack') || 'not called') + '.';
         if (W.showCustomAlert) W.showCustomAlert('Background debug', t, 'info');
       } catch (e) { }
     }, 1200);
