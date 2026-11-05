@@ -23336,6 +23336,7 @@ window.__tpPaint = function () {
                     const src = (au && (au.currentSrc || au.src)) || '';
                     return /^https?:\/\//i.test(src) ? src : songProxy(s.id, s.mime);
                 };
+                window.__rtNatUrl = natUrl;
                 // Native Next / Previous: the native player only shows those buttons for a PLAYLIST (median.backgroundMedia.streamPlaylist).
                 // RUN_NATIVE_PLAYLIST = true: when the app goes to the background the whole song list is sent as a playlist (current song first in shuffle mode).
                 // false: old behaviour, only the current song is handed over (play / pause only).
@@ -23382,7 +23383,7 @@ window.__tpPaint = function () {
                                     return null;                        // we started the native player ourselves, so Median must not start a second one
                                 } catch (e) { natPL = false; natDbg('streamPlaylist failed: ' + (e && e.message) + ', using single song'); }
                             }
-                            const st = { currentTime: pos, isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'Run monitor', url: natUrl(s) };   // no artwork on purpose: the native player does not need it, the in-app player shows it
+                            const st = { currentTime: (window.NATIVE_TIME_IN_MS ? Math.round(pos * 1000) : pos), isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'Run monitor', url: natUrl(s) };   // no artwork on purpose: the native player does not need it, the in-app player shows it
                             natOn = true; natDbg('handed over to native (single song): ' + st.url + ' at ' + Math.round(pos) + 's'); try { localStorage.setItem('rtNatUrl', st.url); } catch (e) { }
                             try { au.pause(); } catch (e) { }           // the native player takes over the sound
                             return st;
@@ -49766,22 +49767,84 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   /* 1) LECTURES IN BACKGROUND. Median calls getPlayerStatus() when the app is backgrounded / locked and hands the lecture to the
         native player (lock-screen controls). updatePlayerStatus() runs when the app comes back. Only direct video links (Drive/MP4 proxy)
         can be handed over: YouTube embeds and offline blob files cannot, so they return null and simply pause as before. */
-  var lectureStatus = function () {
+  var NATIVE_TIME_IN_MS = false;   // Median may expect the position in milliseconds. If a song / lecture restarts from 0:00 in the background, set this to true.
+  var NATIVE_BG_DEBUG = false;     // true = popup every time you return to the app, showing what the background hand-off did (lectures AND music)
+  var PROXY = 'https://exama-video-proxy.connect-subhankar-info.workers.dev/';
+  W.NATIVE_TIME_IN_MS = NATIVE_TIME_IN_MS;
+  var nTime = function (sec) { return W.NATIVE_TIME_IN_MS ? Math.round(sec * 1000) : sec; };
+  var why = function (m) { try { localStorage.setItem('nbWhy', m + ' (' + new Date().toLocaleTimeString() + ')'); } catch (e) { } };
+
+  /* The native player downloads the URL itself (no cookies, no page scripts). Check once, while the app is open, that the proxy really answers it.
+     Only a readable HTTP error / HTML reply marks a URL as bad; if the check itself cannot run we still hand over. */
+  var okUrl = {};
+  function preflight(url) {
+    if (!url || !W.fetch || Object.prototype.hasOwnProperty.call(okUrl, url)) return;
+    okUrl[url] = true;
+    try {
+      fetch(url, { headers: { Range: 'bytes=0-1' } }).then(function (r) {
+        var ct = (r.headers.get('content-type') || '').toLowerCase();
+        okUrl[url] = r.status < 400 && !/text\/html|json/.test(ct);
+        if (!okUrl[url]) why('proxy check failed: HTTP ' + r.status + ' ' + ct);
+        try { r.body && r.body.cancel(); } catch (e) { }
+      }).catch(function () { });
+    } catch (e) { }
+  }
+
+  /* Which URL can the native player stream for the lecture that is open? */
+  function lectureNativeUrl(p, v) {
+    var src = (p.currentSrc && p.currentSrc()) || '';
+    if ((v && v.videoType === 'youtube') || /youtube|youtu\.be/i.test(src)) return { url: null, why: 'YouTube lecture: YouTube cannot be streamed by the native player' };
+    if (/^https?:\/\//i.test(src)) return { url: src };
+    if (/^blob:/i.test(src) && v && v.sourceUrl) {          // downloaded (offline) lecture: while online, stream the same lecture through the proxy instead
+      var m = String(v.sourceUrl).match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
+      if (m && navigator.onLine !== false) return { url: PROXY + '?id=' + m[1] + '&ext=.mp4' };
+      return { url: null, why: 'offline lecture and no internet' };
+    }
+    return { url: null, why: 'unsupported lecture source' };
+  }
+  var lectureInfo = function () {
     try {
       var p = W.vjsPlayer; if (!p || (p.isDisposed && p.isDisposed())) return null;
-      var src = (p.currentSrc && p.currentSrc()) || '';
-      if (!/^https?:\/\//i.test(src) || /youtube|youtu\.be/i.test(src)) return null;
-      var v = vidById(W.currentWatchVideoId);
-      var s = { currentTime: p.currentTime() || 0, isPaused: !!p.paused(), title: v.title || 'Lecture', album: [v.subject, v.topic].filter(Boolean).join(' \u00b7 ') || 'Exama', artist: v.uploader || 'Exama', url: src };
-      if (!s.isPaused) { try { p.pause(); } catch (e) { } }   // native player takes over the sound
-      return s;
+      var v = vidById(W.currentWatchVideoId), r = lectureNativeUrl(p, v);
+      if (!r.url) { why('lecture not handed over: ' + r.why); return null; }
+      if (okUrl[r.url] === false) { why('lecture not handed over: proxy check failed'); return null; }
+      return { p: p, s: { currentTime: nTime(p.currentTime() || 0), isPaused: !!p.paused(), title: v.title || 'Lecture', album: [v.subject, v.topic].filter(Boolean).join(' \u00b7 ') || 'Exama', artist: v.uploader || 'Exama', url: r.url } };
     } catch (e) { return null; }
   };
-  W.getPlayerStatus = function () {                        // lecture first, otherwise the Run monitor song that is playing
-    try { localStorage.setItem('rtNatCall', 'yes (' + new Date().toLocaleTimeString() + ')'); } catch (e) { }   // TEMP debug
-    var s = lectureStatus(); if (s) return s;
-    try { return (W.__rtMusicNative && W.__rtMusicNative.get()) || null; } catch (e) { return null; }
+  W.getPlayerStatus = function () {                        // a PLAYING lecture first, then a playing Run monitor song, then a paused lecture
+    try { localStorage.setItem('rtNatCall', 'yes (' + new Date().toLocaleTimeString() + ')'); } catch (e) { }
+    var L = lectureInfo();
+    if (L && !L.s.isPaused) { try { L.p.pause(); } catch (e) { } why('lecture handed over: ' + L.s.url); return L.s; }   // native player takes over the sound
+    try {
+      var M = W.__rtMusic, mu = (M && M.q && M.i >= 0 && M.q[M.i] && W.__rtNatUrl) ? W.__rtNatUrl(M.q[M.i]) : '';
+      if (mu && okUrl[mu] === false) why('song not handed over: proxy check failed');
+      else { var ms = (W.__rtMusicNative && W.__rtMusicNative.get()) || null; if (ms) { why('song handed over'); return ms; } }
+    } catch (e) { }
+    if (L) return L.s;                                      // paused lecture: native player shows it paused so it can be resumed from the lock screen
+    return null;
   };
+  setInterval(function () {                                // while the app is open: warm up the check for whatever is playing + one-time YouTube notice
+    try {
+      if (document.hidden) return;
+      var p = W.vjsPlayer;
+      if (p && !(p.isDisposed && p.isDisposed())) {
+        var v = vidById(W.currentWatchVideoId), r = lectureNativeUrl(p, v);
+        if (r.url) preflight(r.url);
+        else if (W.median && v.videoType === 'youtube' && !W.__ytBgWarned) { W.__ytBgWarned = 1; toast('YouTube lecture', 'YouTube videos pause when the screen locks. Drive lectures keep playing in the background.'); }
+      }
+      var Mu = W.__rtMusic;
+      if (Mu && Mu.active && Mu.i >= 0 && Mu.q && Mu.q[Mu.i] && W.__rtNatUrl) preflight(W.__rtNatUrl(Mu.q[Mu.i]));
+    } catch (e) { }
+  }, 4000);
+  document.addEventListener('visibilitychange', function () {   // optional on-device debug (NATIVE_BG_DEBUG)
+    if (!NATIVE_BG_DEBUG || document.hidden) return;
+    setTimeout(function () {
+      try {
+        var t = 'getPlayerStatus: ' + (localStorage.getItem('rtNatCall') || 'NEVER CALLED (Median Media Playback plugin off or app not rebuilt)') + '. Last result: ' + (localStorage.getItem('nbWhy') || 'none') + '. updatePlayerStatus: ' + (localStorage.getItem('rtNatBack') || 'not called') + '.';
+        if (W.showCustomAlert) W.showCustomAlert('Background debug', t, 'info');
+      } catch (e) { }
+    }, 1200);
+  });
   W.updatePlayerStatus = function (st) {
     try { localStorage.setItem('rtNatBack', JSON.stringify(st)); } catch (e) { }   // TEMP debug
     try { if (W.__rtMusicNative && W.__rtMusicNative.back(st)) return; } catch (e) { }   // it was a Run monitor song
