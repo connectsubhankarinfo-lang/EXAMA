@@ -22861,45 +22861,12 @@ window.__tpPaint = function () {
                     return fetch(url, c ? { signal: c.signal } : {}).then(r => { clearTimeout(t); return r.ok ? r.json() : Promise.reject(new Error('http')); }, e => { clearTimeout(t); throw e; });
                 };
                 const normSong = x => ({ id: x.id, title: x.title || cleanName(x.name), artist: x.artist || '', art: x.art || '', mime: x.mime || '', yt: x.yt || '' });
-                const YK = 'rtYtSongs', Y = { p: null, on: false, playing: false };
-                const ytRaw = () => { try { const a = JSON.parse(localStorage.getItem(YK) || '[]'); return Array.isArray(a) ? a.filter(x => x && x.yt) : []; } catch (e) { return []; } };
-                const ytLoad = () => ytRaw().map(normSong);
-                const ytSave = () => { try { localStorage.setItem(YK, JSON.stringify(M.q.filter(x => x.yt))); } catch (e) { } };
-                const ytApi = () => new Promise(res => {
-                    if (window.YT && window.YT.Player) return res();
-                    const prev = window.onYouTubeIframeAPIReady; window.onYouTubeIframeAPIReady = () => { try { prev && prev(); } catch (e) { } res(); };
-                    if (!document.getElementById('yt-api')) { const t = document.createElement('script'); t.id = 'yt-api'; t.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(t); }
-                });
-                const ytPlay = async s => {
-                    Y.on = true; Y.playing = false; await ytApi();
-                    if (!document.getElementById('rt-yt')) { const d = document.createElement('div'); d.id = 'rt-yt'; d.style.cssText = 'position:fixed;left:-9999px;top:0;width:200px;height:200px;opacity:0;pointer-events:none'; d.innerHTML = '<div id="rt-yt-p"></div>'; document.body.appendChild(d); }
-                    if (Y.p && Y.p.loadVideoById) { Y.p.loadVideoById(s.yt); return; }
-                    Y.p = new YT.Player('rt-yt-p', { height: '200', width: '200', videoId: s.yt, playerVars: { autoplay: 1, playsinline: 1, controls: 0, rel: 0 }, events: {
-                        onReady: e => { try { e.target.playVideo(); } catch (x) { } },
-                        onStateChange: e => {
-                            if (!Y.on) return;
-                            if (e.data === 1) { Y.playing = true; M.playing = true; M.errs = 0; mIco(true); try { nowInfo(); } catch (x) { } }
-                            else if (e.data === 2) { Y.playing = false; M.playing = false; mIco(false); }
-                            else if (e.data === 0) { Y.playing = false; M.playing = false; window.runMusicNext(); }
-                        },
-                        onError: () => { if (!Y.on) return; M.errs++; toast('Cannot play this video', 'YouTube blocked it. Skipping.', 'error'); if (M.q.length > 1 && M.errs <= M.q.length) setTimeout(() => { if (M.active && M.want) window.runMusicNext(); }, 500); else mTitle('Cannot play this video'); }
-                    } });
-                };
-                const ytStop = () => { if (!Y.on) return; Y.on = false; Y.playing = false; try { Y.p && Y.p.stopVideo(); } catch (e) { } };
-                const ytTick = () => { try { if (Y.on && Y.p && Y.p.getDuration) { const d = Y.p.getDuration(), c = Y.p.getCurrentTime(), b = $('rt-mp-bar'); if (b && d > 0) b.style.width = Math.min(100, c / d * 100).toFixed(1) + '%'; } } catch (e) { } };
-                window.__rtYtAdd = (vid, title, author) => {          // called by the Share into Exama sheet
-                    const id = 'yt_' + vid, a = ytRaw(); if (a.some(x => x.id === id)) return 'dup';
-                    const song = { id, yt: vid, title: title || 'YouTube video', artist: author || 'YouTube', art: 'https://i.ytimg.com/vi/' + vid + '/hqdefault.jpg' };
-                    a.push(song); try { localStorage.setItem(YK, JSON.stringify(a)); } catch (e) { return 'err'; }
-                    if (M.q.length) { M.q.push(normSong(song)); saveCache(); if (document.getElementById('rt-pl')) pList(); }
-                    return 'ok';
-                };
                 const CK = 'rtDriveSongs';
                 const loadCache = () => { try { const a = JSON.parse(localStorage.getItem(CK) || '[]'); return Array.isArray(a) ? a.filter(x => x && x.id) : []; } catch (e) { return []; } };
                 const saveCache = () => { try { localStorage.setItem(CK, JSON.stringify(M.q)); } catch (e) { } };
                 const applyList = list => {                             // swap in a fresh list but keep pointing at the song that is playing
                     const cur = M.i >= 0 && M.q[M.i] ? M.q[M.i].id : '';
-                    M.q = list.filter(x => !x.yt).map(normSong).concat(ytLoad()); M.bag = []; M.hist = [];
+                    M.q = list.map(normSong); M.bag = []; M.hist = [];
                     M.i = cur ? M.q.findIndex(s => s.id === cur) : -1;
                 };
                 let listP = null;
@@ -22948,10 +22915,10 @@ window.__tpPaint = function () {
                     });
                     // the old YouTube-style handle is kept on purpose: Nova (voice) and the walkie-talkie lower / pause the music through it
                     M.yt = {
-                        getVolume: () => { try { if (Y.on && Y.p) return Y.p.getVolume(); } catch (e) { } return Math.round(au.volume * 100); },
-                        setVolume: v => { au.volume = Math.max(0, Math.min(1, v / 100)); try { if (Y.on && Y.p) Y.p.setVolume(v); } catch (e) { } },
-                        pauseVideo: () => { au.pause(); try { if (Y.on && Y.p) Y.p.pauseVideo(); } catch (e) { } },
-                        playVideo: () => { if (Y.on && Y.p) { try { Y.p.playVideo(); } catch (e) { } return; } const p = au.play(); if (p && p.catch) p.catch(() => { }); }
+                        getVolume: () => Math.round(au.volume * 100),
+                        setVolume: v => { au.volume = Math.max(0, Math.min(1, v / 100)); },
+                        pauseVideo: () => { au.pause(); },
+                        playVideo: () => { const p = au.play(); if (p && p.catch) p.catch(() => { }); }
                     };
                     M.ready = true;
                     try {
@@ -22966,7 +22933,7 @@ window.__tpPaint = function () {
                 };
                 const mTick = () => {
                     if (!M.active) return;
-                    mSync(); ytTick();
+                    mSync();
                     try { if (au) { const d = au.duration, c = au.currentTime, b = $('rt-mp-bar'); if (b && d > 0 && isFinite(d)) b.style.width = Math.min(100, c / d * 100).toFixed(1) + '%'; } } catch (e) { }
                 };
                 let mTimer = null;
@@ -22986,8 +22953,6 @@ window.__tpPaint = function () {
                     M.i = i; M.want = true; M.bag = M.bag.filter(x => x !== i);
                     nowInfo(); mAudio();
                     const b = $('rt-mp-bar'); if (b) b.style.width = '0';
-                    if (M.q[i].yt) { try { au.pause(); au.removeAttribute('src'); } catch (e) { } ytPlay(M.q[i]); if (document.getElementById('rt-pl')) pList(); return; }
-                    ytStop();
                     { const sid = M.q[i].id, alt = { u: songUrls(sid), i: -1, b: 1, id: sid }; au.__alt = alt; try { au.pause(); au.removeAttribute('src'); } catch (e) { } loadViaScript(sid, alt, why => { if (au.__alt !== alt) return; console.warn('[music] script failed, trying Drive links:', why); alt.sw = String(why || 'failed').slice(0, 40); alt.i = 0; au.src = alt.u[0]; doPlay(); }); }
                     if (document.getElementById('rt-pl')) pList();
                 };
@@ -23012,7 +22977,6 @@ window.__tpPaint = function () {
                 };
                 window.runMusicToggle = function () {
                     if (!au || !M.q.length) { M.want = true; return; }
-                    { const cs = M.q[M.i]; if (cs && cs.yt && Y.on && Y.p) { try { if (Y.playing) { M.want = false; Y.p.pauseVideo(); } else { M.want = true; Y.p.playVideo(); } } catch (e) { } return; } }
                     if (M.i < 0 || !au.getAttribute('src')) { playAt(M.i >= 0 ? M.i : (M.shuf ? rand() : 0), true); return; }
                     if (au.paused) { M.want = true; doPlay(); } else { M.want = false; au.pause(); }
                 };
@@ -23036,7 +23000,7 @@ window.__tpPaint = function () {
                     toast(M.shuf ? 'Shuffle on' : 'Shuffle off', '', 'info');
                 };
                 window.runMusicStop = function () {
-                    M.want = false; M.active = false; M.card = false; M.playing = false; mTimerOn(false); ytStop();
+                    M.want = false; M.active = false; M.card = false; M.playing = false; mTimerOn(false);
                     try { if (au) { au.pause(); au.removeAttribute('src'); au.load(); } } catch (e) { }
                     mIco(false); mSync(); if (window.closeRunPlaylist) window.closeRunPlaylist();
                 };
@@ -23212,7 +23176,7 @@ window.__tpPaint = function () {
                     if (!yes) return;
                     try {
                         if (window.showLoader) window.showLoader('Deleting song');
-                        if (!s.yt) await fetch(DRIVE(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'delete', folderType: 'music', fileId: id }) })
+                        await fetch(DRIVE(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'delete', folderType: 'music', fileId: id }) })
                             .then(r => r.json()).then(j => { if (!j || !j.success) throw new Error((j && j.error) || 'Delete failed'); });
                     } catch (e) {
                         if (window.hideLoader) window.hideLoader();
@@ -23225,9 +23189,9 @@ window.__tpPaint = function () {
                     M.q.splice(r, 1);
                     M.hist = M.hist.filter(x => x !== r).map(x => x > r ? x - 1 : x); M.bag = M.bag.filter(x => x !== r).map(x => x > r ? x - 1 : x);
                     if (!wasCur && r < M.i) M.i--;
-                    saveCache(); ytSave();
+                    saveCache();
                     if (wasCur) {
-                        M.i = -1; ytStop();
+                        M.i = -1;
                         if (M.q.length && M.active) playAt(M.shuf ? rand() : Math.min(r, M.q.length - 1), true);
                         else { try { if (au) { au.pause(); au.removeAttribute('src'); au.load(); } } catch (e) { } M.playing = false; mIco(false); mTitle('No songs yet'); setT('rt-mp-sub', 'TAP HERE TO ADD SONGS'); const im = $('rt-mp-art'); if (im) im.src = PH; }
                     } else if (M.i >= 0) nowInfo();
@@ -23336,22 +23300,33 @@ window.__tpPaint = function () {
                     p.style.cssText = 'position:fixed;inset:0;z-index:130;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center';
                     p.innerHTML = '<div style="width:100%;max-width:480px;height:78dvh;background:#0f0f12;color:#fff;border-radius:24px 24px 0 0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)">'
                         + '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px"><span style="font-size:11px;font-weight:900;letter-spacing:.35em">CHOOSE A SONG</span><button type="button" id="rt-pl-x" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
-                        + '<div style="display:flex;gap:8px;padding:0 14px 6px"><input id="rt-pl-q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search a song" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
-                        + '<button type="button" id="rt-pl-go" aria-label="Search" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-magnifying-glass"></i></button>'
-                        + '<button type="button" id="rt-pl-add" aria-label="Add a song from YouTube" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-plus"></i></button></div>'
-                        + '<div id="rt-yt-box" style="display:none;gap:8px;padding:0 14px 8px;align-items:center"><input id="rt-yt-url" type="url" inputmode="url" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste YouTube link" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
+                        + '<div style="display:flex;gap:8px;padding:0 14px 8px"><div id="rt-slide" style="flex:1;min-width:0;overflow:hidden;border-radius:14px"><div id="rt-slide-track" style="display:flex;width:200%;transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform">'
+                        + '<div id="rt-pane-s" style="width:50%;min-width:0;display:flex;gap:8px"><input id="rt-pl-q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search a song" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
+                        + '<button type="button" id="rt-pl-go" aria-label="Search" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-magnifying-glass"></i></button></div>'
+                        + '<div id="rt-pane-p" inert style="width:50%;min-width:0;display:flex;gap:8px"><input id="rt-yt-url" type="url" inputmode="url" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste YouTube link" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
                         + '<button type="button" id="rt-yt-go" aria-label="Download and save" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-arrow-down"></i></button></div>'
+                        + '</div></div><button type="button" id="rt-pl-add" aria-label="Add a song from YouTube" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i id="rt-pl-add-i" class="fa-solid fa-plus" style="transition:transform .32s cubic-bezier(.4,0,.2,1)"></i></button></div>'
                         + '<p style="padding:0 18px 8px;font-size:9px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.35);text-transform:uppercase">Hold a song to delete it</p>'
                         + '<div id="rt-pl-up" style="display:none;margin:0 14px 8px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.08)"><p id="rt-pl-up-t" class="truncate" style="font-size:11px;font-weight:800;color:#fff"></p><div style="height:4px;border-radius:4px;background:rgba(255,255,255,.12);margin-top:8px;overflow:hidden"><div id="rt-pl-up-b" style="height:100%;width:0;background:linear-gradient(90deg,#f43f5e,#fb7185);transition:width .25s"></div></div></div>'
                         + '<div id="rt-pl-list" style="flex:1;overflow-y:auto;padding:4px 10px 14px;-webkit-overflow-scrolling:touch"></div></div>';
+                        const ytMode = on => {                                         // + button: slide the search field away and show the paste field in its place (and back)
+                            const $g = x => document.getElementById(x), t = $g('rt-slide-track'); if (!t) return;
+                            const ps = $g('rt-pane-s'), pp = $g('rt-pane-p'), ic = $g('rt-pl-add-i'), ad = $g('rt-pl-add'), q = $g('rt-pl-q'), u = $g('rt-yt-url');
+                            t.style.transform = on ? 'translateX(-50%)' : 'translateX(0)';
+                            if (ps) { if (on) ps.setAttribute('inert', ''); else ps.removeAttribute('inert'); }
+                            if (pp) { if (on) pp.removeAttribute('inert'); else pp.setAttribute('inert', ''); }
+                            if (ic) ic.style.transform = on ? 'rotate(45deg)' : '';
+                            if (ad) { ad.setAttribute('data-open', on ? '1' : ''); ad.setAttribute('aria-label', on ? 'Back to search' : 'Add a song from YouTube'); }
+                            if (on) { if (q) q.blur(); if (u) { try { u.focus({ preventScroll: true }); } catch (x) { u.focus(); } } } else if (u) u.blur();
+                        };
                     let lpT = null, lpFired = false, lpX = 0, lpY = 0;
                     const lpStop = () => { clearTimeout(lpT); lpT = null; };
                     p.addEventListener('click', e => {
                         if (lpFired) { lpFired = false; return; }
                         if (e.target === p || e.target.closest('#rt-pl-x')) return window.closeRunPlaylist();
                         if (e.target.closest('#rt-pl-go')) { const q = document.getElementById('rt-pl-q'); if (q) q.blur(); pList(); const t = pQuery(); if (t && !hasLocal(t.toLowerCase())) ytSearch(t, true); return; }
-                        if (e.target.closest('#rt-pl-add')) { const b = document.getElementById('rt-yt-box'); if (b) { const open = b.style.display === 'none'; b.style.display = open ? 'flex' : 'none'; if (open) { const u = document.getElementById('rt-yt-url'); if (u) u.focus(); } } return; }
-                        if (e.target.closest('#rt-yt-go')) { const u = document.getElementById('rt-yt-url'); const id = ytIdFromText(u && u.value); if (!id) return toast('Wrong link', 'Paste a YouTube video link.', 'error'); if (u) { u.value = ''; u.blur(); } const b = document.getElementById('rt-yt-box'); if (b) b.style.display = 'none'; ytAdd(id); return; }
+                        if (e.target.closest('#rt-pl-add')) { const a = document.getElementById('rt-pl-add'); ytMode(!(a && a.getAttribute('data-open') === '1')); return; }
+                        if (e.target.closest('#rt-yt-go')) { const u = document.getElementById('rt-yt-url'); const id = ytIdFromText(u && u.value); if (!id) return toast('Wrong link', 'Paste a YouTube video link.', 'error'); if (u) { u.value = ''; u.blur(); } ytMode(false); ytAdd(id); return; }
                         const ya = e.target.closest('[data-yt-add]'); if (ya) { const id = ya.getAttribute('data-yt-add'), it = YT.items.find(x => x.id === id) || {}; ytAdd(id, { title: it.title, artist: it.channel }); return; }
                         if (e.target.closest('[data-yt-go]')) { const t = pQuery(); if (t) ytSearch(t, true); return; }
                         const r = e.target.closest('[data-i]'); if (!r) return;
@@ -49675,26 +49650,8 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   /* 1) LECTURES IN BACKGROUND. Median calls getPlayerStatus() when the app is backgrounded / locked and hands the lecture to the
         native player (lock-screen controls). updatePlayerStatus() runs when the app comes back. Only direct video links (Drive/MP4 proxy)
         can be handed over: YouTube embeds and offline blob files cannot, so they return null and simply pause as before. */
-    /* Run Music uses the same hand-off as lectures: when the app goes to the background the playing Drive song is given to the native player (notification + lock screen). */
-  function musicStatus() {
-    var M = W.__rtMusic, au = document.getElementById('rt-audio'), s = M && M.q && M.q[M.i];
-    if (!M || !M.active || !au || !s || s.yt || !s.id || au.paused) return null;
-    var st = { currentTime: au.currentTime || 0, isPaused: false, title: s.title || 'Song', album: 'Run Music', artist: s.artist || 'Exama', url: 'https://drive.usercontent.google.com/download?id=' + encodeURIComponent(s.id) + '&export=download&confirm=t' };
-    if (/^https?:\/\//i.test(s.art || '')) st.artwork = s.art;
-    try { au.pause(); } catch (e) { } M.want = false; W.__mnMusicNative = true;
-    return st;
-  }
-  function musicBack(st) {
-    W.__mnMusicNative = false;
-    var M = W.__rtMusic, au = document.getElementById('rt-audio'); if (!M || !au) return;
-    var t = (st.currentTime || 0) / 1000;
-    if (au.duration && t >= au.duration - 1.5) { M.want = true; if (W.runMusicNext) W.runMusicNext(); return; }   // song ended while in the background: go to the next one
-    if (t) { try { au.currentTime = t; } catch (e) { } }
-    if (!st.isPaused) { M.want = true; var r = au.play(); if (r && r.catch) r.catch(function () { }); }
-  }
-W.getPlayerStatus = function () {
+  W.getPlayerStatus = function () {
     try {
-      var ms = musicStatus(); if (ms) return ms;
       var p = W.vjsPlayer; if (!p || (p.isDisposed && p.isDisposed())) return null;
       var src = (p.currentSrc && p.currentSrc()) || '';
       if (!/^https?:\/\//i.test(src) || /youtube|youtu\.be/i.test(src)) return null;
@@ -49706,7 +49663,6 @@ W.getPlayerStatus = function () {
   };
   W.updatePlayerStatus = function (st) {
     try {
-      if (W.__mnMusicNative && st) return musicBack(st);
       var p = W.vjsPlayer; if (!p || !st) return;
       if (st.currentTime) p.currentTime(st.currentTime / 1000);
       if (st.isPaused) { if (!p.paused()) p.pause(); }
@@ -49753,7 +49709,6 @@ W.getPlayerStatus = function () {
     });
   }
   function showShareSheet(it) {
-    if (W.__mnShare2) return W.__mnShare2(it);
     closeSheet();
     var hit = it.url ? (W.videosDB || []).find(function (v) { return v.sourceUrl && shareKey(v.sourceUrl) === shareKey(it.url); }) : null;
     var d = document.createElement('div'); d.id = 'mn-share';
@@ -49795,7 +49750,7 @@ W.getPlayerStatus = function () {
     try {
       if (typeof data === 'string') { try { data = JSON.parse(data); } catch (e) { data = { subject: data }; } }
       data = data || {};
-      var it = { url: String(data.url || data.link || '').trim(), subject: String(data.subject || data.text || data.title || '').trim(), mime: String(data.mimeType || data.mime || data.type || '').trim() };
+      var it = { url: String(data.url || data.link || '').trim(), subject: String(data.subject || data.text || data.title || '').trim() };
       if (!it.url) {                                        // many apps put the link inside the shared text
         var u = firstUrl(it.subject);
         if (u) { it.url = u; it.subject = it.subject.replace(u, '').replace(/\s+/g, ' ').trim(); }
@@ -49836,136 +49791,6 @@ W.getPlayerStatus = function () {
   };
 })();
 </script>
-<script id="mn-share2">
-/* iOS-style "Share into Exama" sheet: YouTube -> Discuss / Run Music, PDF + image -> Material Hub only, live preview, haptics, swipe to dismiss */
-(function () {
-  var W = window, D = document;
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function toast(a, b, t) { try { if (W.showToast) W.showToast(a, b || '', t || 'info'); } catch (e) { } }
-  function hap(s) { try { var m = W.median || W.gonative; if (m && m.haptics && m.haptics.trigger) { m.haptics.trigger({ style: s || 'light' }); return; } if (navigator.vibrate) navigator.vibrate(8); } catch (e) { } }
-  function waitFor(fn, ms) { return new Promise(function (res) { var t0 = Date.now(); (function p() { var ok = false; try { ok = fn(); } catch (e) { } if (ok) return res(true); if (Date.now() - t0 > ms) return res(false); setTimeout(p, 150); })(); }); }
-  function shown(id) { var e = D.getElementById(id); return !!e && !e.classList.contains('hidden-view') && e.getClientRects().length > 0; }
-  function key(u) { var m = String(u).match(/(?:youtu\.be\/|[?&]v=|d\/|id=)([\w-]{11,})/); return m ? m[1] : String(u); }
-  function ytId(u) { var m = String(u || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/))([\w-]{11})/i); return m ? m[1] : ''; }
-  function host(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
-  function fname(u) { try { return decodeURIComponent(new URL(u).pathname.split('/').pop() || ''); } catch (e) { return ''; } }
-  function kind(it) {
-    var u = it.url || '', mt = String(it.mime || '').toLowerCase();
-    if (ytId(u)) return 'yt';
-    if (mt === 'application/pdf' || /\.pdf(\?|#|$)/i.test(u)) return 'pdf';
-    if (/^image\//.test(mt) || /\.(png|jpe?g|webp|gif|heic)(\?|#|$)/i.test(u)) return 'image';
-    if (/\.(docx?|pptx?|xlsx?)(\?|#|$)/i.test(u)) return 'doc';
-    if (/drive\.google|docs\.google/i.test(u)) return 'drive';
-    return u ? 'web' : 'text';
-  }
-  var META = { yt: ['YouTube', '#ff3b30', 'fa-brands fa-youtube'], pdf: ['PDF', '#ff3b30', 'fa-solid fa-file-pdf'], image: ['Image', '#ff9500', 'fa-solid fa-image'], doc: ['Document', '#007aff', 'fa-solid fa-file-lines'], drive: ['Google Drive', '#34c759', 'fa-solid fa-cloud'], web: ['Link', '#5856d6', 'fa-solid fa-link'], text: ['Text', '#8e8e93', 'fa-solid fa-align-left'] };
-  function rowsFor(k, hit) {
-    var R = [];
-    if (k === 'pdf' || k === 'image' || k === 'doc') return [['mat', 'fa-folder-plus', '#34c759', 'Add to Material Hub', 'Save it as study material']];   // files: Material Hub only, no Copy
-    if (hit) R.push(['watch', 'fa-circle-play', '#ff3b30', 'Watch lecture', hit.title || 'Already in Lecture Hub']);
-    R.push(['chat', 'fa-comments', '#5856d6', 'Send to Discuss', 'Share it with your class']);
-    if (k === 'yt') R.push(['music', 'fa-music', '#ff2d55', 'Add to Run Music', 'Plays while you run']);
-    if (k === 'drive' || k === 'web') R.push(['mat', 'fa-folder-plus', '#34c759', 'Add to Material Hub', 'Attach it as study material']);
-    R.push(['more', 'fa-arrow-up-from-bracket', '#007aff', 'Share\u2026', 'Send with another app']);
-    R.push(['copy', 'fa-copy', '#8e8e93', 'Copy', '']);
-    return R;
-  }
-  function css() {
-    if (D.getElementById('mn2-css')) return;
-    var s = D.createElement('style'); s.id = 'mn2-css';
-    s.textContent = '#mn2{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,0);transition:background .3s,backdrop-filter .3s,-webkit-backdrop-filter .3s;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Roboto,"Segoe UI",sans-serif;-webkit-tap-highlight-color:transparent;--bg:rgba(242,242,247,.88);--cd:#fff;--tx:#000;--t2:#6c6c70;--sp:rgba(60,60,67,.18);--hl:rgba(60,60,67,.08)}' +
-      '@media(prefers-color-scheme:dark){#mn2{--bg:rgba(28,28,30,.88);--cd:#2c2c2e;--tx:#fff;--t2:#98989f;--sp:rgba(84,84,88,.55);--hl:rgba(255,255,255,.09)}}' +
-      '#mn2.on{background:rgba(0,0,0,.38);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}' +
-      '#mn2 .sh{width:100%;max-width:520px;margin:0 8px calc(8px + env(safe-area-inset-bottom,0px));padding:8px 12px 12px;border-radius:30px;background:var(--bg);-webkit-backdrop-filter:saturate(180%) blur(40px);backdrop-filter:saturate(180%) blur(40px);box-shadow:0 20px 60px rgba(0,0,0,.35);color:var(--tx);transform:translateY(115%);transition:transform .5s cubic-bezier(.32,.72,0,1)}' +
-      '#mn2.on .sh{transform:translateY(0)}' +
-      '#mn2 .dg{touch-action:none}#mn2 .gr{width:38px;height:5px;border-radius:3px;background:var(--sp);margin:0 auto 10px}' +
-      '#mn2 .hd{display:flex;gap:12px;align-items:center;padding:4px 6px 14px}' +
-      '#mn2 .th{width:60px;height:60px;border-radius:14px;flex:none;background:#8e8e93 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px}' +
-      '#mn2 .tt{min-width:0;flex:1}#mn2 .t{font-size:16px;font-weight:600;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}' +
-      '#mn2 .s{font-size:13px;color:var(--t2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-      '#mn2 .ls{background:var(--cd);border-radius:16px;overflow:hidden}#mn2 .ls+.ls{margin-top:10px}' +
-      '#mn2 .rw{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border:0;background:transparent;color:var(--tx);font:inherit;text-align:left;position:relative;cursor:pointer;transition:background .12s}' +
-      '#mn2 .rw:active{background:var(--hl)}#mn2 .rw+.rw:before{content:"";position:absolute;top:0;left:58px;right:0;height:.5px;background:var(--sp)}' +
-      '#mn2 .ic{width:32px;height:32px;border-radius:8px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;flex:none}' +
-      '#mn2 .rt{flex:1;min-width:0}#mn2 .rt b{display:block;font-size:16px;font-weight:500}' +
-      '#mn2 .rt i{display:block;font-style:normal;font-size:12.5px;color:var(--t2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-      '#mn2 .ch{color:var(--t2);opacity:.55;font-size:12px}#mn2 .cn{justify-content:center;color:#007aff;font-weight:600;font-size:17px;padding:15px}' +
-      '@media(prefers-reduced-motion:reduce){#mn2,#mn2 .sh{transition:none}}';
-    D.head.appendChild(s);
-  }
-  function close() {
-    var d = D.getElementById('mn2'); if (!d) return;
-    var sh = d.firstChild; sh.style.transition = ''; sh.style.transform = ''; d.classList.remove('on');
-    setTimeout(function () { if (d.parentNode) d.remove(); }, 420);
-  }
-  function toDiscuss(it) {
-    location.hash = 'chat';
-    waitFor(function () { var i = D.getElementById('chat-input'); return i && i.getClientRects().length > 0; }, 5000).then(function (ok) {
-      var i = D.getElementById('chat-input'); if (!ok || !i) return toast('Could not open Discuss', 'Open Discuss and try again.');
-      var sub = it.ytTitle || it.subject; i.value = [sub, it.url].filter(Boolean).join('\n'); try { i.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { }
-      try { i.focus(); } catch (e) { } toast('Ready in Discuss', 'Add a note if you like, then tap send.');
-    });
-  }
-  function toMaterial(it) {
-    location.hash = 'materials';
-    waitFor(function () { return shown('materials-view') && typeof W.openMaterialUploadModal === 'function'; }, 5000).then(function (ok) {
-      if (!ok) return toast('Could not open Material Hub', 'Open it and try again.');
-      W.openMaterialUploadModal();
-      setTimeout(function () {
-        var ti = D.getElementById('mat-title'), li = D.getElementById('mat-ext-link'), b = D.getElementById('btn-gdrive-upload'), s = D.getElementById('gdrive-upload-status');
-        var nm = (it.subject && !/^https?:/i.test(it.subject)) ? it.subject : fname(it.url);
-        if (ti && !ti.value && nm) ti.value = nm.replace(/\.[a-z0-9]{2,4}$/i, '').slice(0, 120);
-        if (li) li.value = it.url;
-        if (b) { b.innerHTML = '<i class="fa-solid fa-check-circle text-emerald-600 text-lg"></i> Link attached'; b.className = 'w-full bg-emerald-50 border border-emerald-300 text-emerald-700 font-black py-3 sm:py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 text-sm shadow-sm transition-all'; }
-        if (s) { s.innerText = 'Link attached'; s.classList.remove('hidden'); }
-        toast('Attached', 'Choose the subject and topic, then publish.');
-      }, 350);
-    });
-  }
-  function copyText(t) { try { navigator.clipboard.writeText(t); } catch (e) { try { (W.median || W.gonative).clipboard.set({ data: t }); } catch (e2) { } } }
-  function act(a, it, hit, vid) {
-    hap('light');
-    if (a === 'x') return close();
-    if (a === 'watch' && hit && W.playVideo) { close(); return W.playVideo(hit.id); }
-    if (a === 'chat') { close(); return toDiscuss(it); }
-    if (a === 'mat') { close(); return toMaterial(it); }
-    if (a === 'music') {
-      var t = it.ytTitle || (/^https?:/i.test(it.subject) ? '' : it.subject), r = W.__rtYtAdd ? W.__rtYtAdd(vid, t, it.ytAuthor) : 'err'; close();
-      if (r === 'ok') { hap('medium'); toast('Added to Run Music', 'Open Run Music to play it.', 'success'); }
-      else if (r === 'dup') toast('Already in Run Music', '', 'info'); else toast('Run Music not ready', 'Update the app and try again.', 'error');
-      return;
-    }
-    if (a === 'more') { close(); try { if (W.exShare) W.exShare({ url: it.url, text: it.ytTitle || it.subject }); } catch (e) { } return; }
-    if (a === 'copy') { copyText([it.ytTitle || it.subject, it.url].filter(Boolean).join('\n')); close(); toast('Copied', '', 'success'); }
-  }
-  W.__mnShare2 = function (it) {
-    css(); var old = D.getElementById('mn2'); if (old) old.remove();
-    var k = kind(it), vid = ytId(it.url), M = META[k], hit = it.url ? (W.videosDB || []).find(function (v) { return v.sourceUrl && key(v.sourceUrl) === key(it.url); }) : null;
-    var title = (it.subject && !/^https?:\/\/\S+$/i.test(it.subject)) ? it.subject : (k === 'yt' ? 'YouTube video' : (fname(it.url) || host(it.url) || it.url || 'Shared item'));
-    var sub = M[0] + (host(it.url) ? ' \u00b7 ' + host(it.url) : '');
-    var th = k === 'yt' ? 'background-image:url(https://i.ytimg.com/vi/' + vid + '/hqdefault.jpg)' : 'background:' + M[1];
-    var d = D.createElement('div'); d.id = 'mn2'; d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Share to Exama');
-    d.innerHTML = '<div class="sh"><div class="dg"><div class="gr"></div><div class="hd"><div class="th" style="' + th + '">' + (k === 'yt' ? '' : '<i class="' + M[2] + '"></i>') + '</div><div class="tt"><div class="t" id="mn2-t">' + esc(title) + '</div><div class="s" id="mn2-s">' + esc(sub) + '</div></div></div></div>' +
-      '<div class="ls">' + rowsFor(k, hit).map(function (r) { return '<button type="button" class="rw" data-a="' + r[0] + '"><span class="ic" style="background:' + r[2] + '"><i class="fa-solid ' + r[1] + '"></i></span><span class="rt"><b>' + esc(r[3]) + '</b>' + (r[4] ? '<i>' + esc(r[4]) + '</i>' : '') + '</span><span class="ch"><i class="fa-solid fa-chevron-right"></i></span></button>'; }).join('') + '</div>' +
-      '<div class="ls"><button type="button" class="rw cn" data-a="x">Cancel</button></div></div>';
-    var sh = d.firstChild, dg = sh.querySelector('.dg'), y0 = 0, dy = 0, on = false;
-    d.addEventListener('click', function (e) { var b = e.target.closest && e.target.closest('button[data-a]'); if (b) act(b.getAttribute('data-a'), it, hit, vid); else if (e.target === d) close(); });
-    dg.addEventListener('touchstart', function (e) { y0 = e.touches[0].clientY; dy = 0; on = true; sh.style.transition = 'none'; }, { passive: true });
-    dg.addEventListener('touchmove', function (e) { if (!on) return; dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transform = 'translateY(' + dy + 'px)'; }, { passive: true });
-    dg.addEventListener('touchend', function () { if (!on) return; on = false; sh.style.transition = ''; if (dy > 90) { hap('light'); close(); } else sh.style.transform = ''; });
-    D.body.appendChild(d); hap('medium');
-    requestAnimationFrame(function () { requestAnimationFrame(function () { d.classList.add('on'); }); });
-    if (k === 'yt') {   // live preview: real title + channel from YouTube
-      Promise.race([fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + vid)).then(function (r) { return r.ok ? r.json() : null; }), new Promise(function (r) { setTimeout(function () { r(null); }, 6000); })]).then(function (j) {
-        if (!j || !j.title) return; it.ytTitle = j.title; it.ytAuthor = j.author_name || '';
-        var t = D.getElementById('mn2-t'), s = D.getElementById('mn2-s'); if (t) t.textContent = j.title; if (s) s.textContent = 'YouTube \u00b7 ' + (j.author_name || 'video');
-      }).catch(function () { });
-    }
-  };
-  D.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
-})();
-</script>
-
 <script id="ex-share">
 /* exShare: one share call that works inside the Median Android app.
    1) image file through the Web Share API when the browser supports it (Chrome, Safari)
