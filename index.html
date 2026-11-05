@@ -23331,71 +23331,31 @@ window.__tpPaint = function () {
                 // updatePlayerStatus() when the app comes back. RUN_NATIVE_PLAYER = true (current) enables the hand-off; false keeps the sound in the web view (no notification controls).
                 const RUN_NATIVE_PLAYER = true;   // ON: when the app goes to the background, the song is handed to Median's native player (notification + lock screen controls). If the music goes silent in the background, set this back to false
                 let natOn = false;
-                const natDbg = m => { try { localStorage.setItem('rtNatDbg', m); } catch (e) { } };   // TEMP debug: remembers what the hand-off did
                 const natUrl = s => {                                   // the native player cannot open a blob: (in-memory) song, so it streams it through the proxy
                     const src = (au && (au.currentSrc || au.src)) || '';
                     return /^https?:\/\//i.test(src) ? src : songProxy(s.id, s.mime);
                 };
-                // Native Next / Previous: the native player only shows those buttons for a PLAYLIST (median.backgroundMedia.streamPlaylist).
-                // RUN_NATIVE_PLAYLIST = true: when the app goes to the background the whole song list is sent as a playlist (current song first in shuffle mode).
-                // false: old behaviour, only the current song is handed over (play / pause only).
-                const RUN_NATIVE_PLAYLIST = false;   // OFF: starting a playlist from inside getPlayerStatus left the music silent in the background; the single-song hand-off (play / pause only) is the one that works
-                let natPL = false;
-                const bgm = () => { try { return (window.median || window.gonative || {}).backgroundMedia || null; } catch (e) { return null; } };
-                const idOfUrl = u => { const m = String(u || '').match(/[?&]id=([\w-]+)/); return m ? m[1] : ''; };
-                const natBack = st => {                                // app is back: continue from where the native player is (st.currentTime is in ms)
-                    const wasPL = natPL; natOn = false; natPL = false;
-                    try {
-                        if (!au || !M.active) { if (wasPL) { const b = bgm(); b && b.stop && b.stop(); } return true; }
-                        const pos = st && st.currentTime ? st.currentTime / 1000 : 0;
-                        const nid = idOfUrl(st && st.url), ni = nid ? M.q.findIndex(x => x.id === nid) : -1;
-                        if (ni >= 0 && ni !== M.i) {                   // Next / Previous was used in the notification: continue with that song
-                            const paused = !!(st && st.isPaused);
-                            playAt(ni);
-                            if (pos > 1) { const seek = () => { au.removeEventListener('loadedmetadata', seek); try { au.currentTime = pos; } catch (e) { } }; au.addEventListener('loadedmetadata', seek); }
-                            if (paused) { M.want = false; try { au.pause(); } catch (e) { } }
-                        } else {
-                            const dur = au.duration;
-                            if (!wasPL && dur > 0 && isFinite(dur) && pos >= dur - 1.5) { M.want = true; window.runMusicNext(); return true; }   // the song finished in the background: go on to the next one
-                            if (pos) au.currentTime = pos;
-                            if (!st || st.isPaused === false) doPlay();
-                        }
-                        if (wasPL) { const b = bgm(); try { b && b.stop && b.stop(); } catch (e) { } }   // our web player has the sound again: remove the native player
-                    } catch (e) { }
-                    return true;
-                };
                 window.__rtMusicNative = {
                     get: () => {                                        // app goes to the background while a song is playing -> hand it over
                         try {
-                            if (!RUN_NATIVE_PLAYER || !au || !M.active || M.i < 0 || au.paused || au.ended || !au.getAttribute('src')) { natDbg('NOT handed over (flag=' + RUN_NATIVE_PLAYER + ', active=' + M.active + ', index=' + M.i + ', paused=' + (au && au.paused) + ', src=' + !!(au && au.getAttribute('src')) + ')'); return null; }
+                            if (!RUN_NATIVE_PLAYER || !au || !M.active || M.i < 0 || au.paused || au.ended || !au.getAttribute('src')) return null;
                             const s = M.q[M.i]; if (!s || !s.id) return null;
-                            const pos = au.currentTime || 0, bm = bgm();
-                            if (RUN_NATIVE_PLAYLIST && bm && typeof bm.streamPlaylist === 'function' && M.q.length > 1) {
-                                let order = M.q.map((_, k) => k);
-                                if (M.shuf) { const rest = order.filter(k => k !== M.i); for (let k = rest.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); const t = rest[k]; rest[k] = rest[j]; rest[j] = t; } order = [M.i].concat(rest); }
-                                const tracks = order.map(k => { const q = M.q[k]; return { url: songProxy(q.id, q.mime), title: q.title || 'Song', album: 'Run monitor', artist: q.artist || 'Fitness Monitor' }; });
-                                const cur = order.indexOf(M.i); if (cur >= 0) tracks[cur].time = pos;
-                                try {
-                                    bm.streamPlaylist({ currentTrackNumber: cur, tracks: tracks });
-                                    natOn = true; natPL = true; natDbg('native PLAYLIST started: ' + tracks.length + ' songs, current #' + cur + ' at ' + Math.round(pos) + 's');
-                                    try { au.pause(); } catch (e) { }
-                                    return null;                        // we started the native player ourselves, so Median must not start a second one
-                                } catch (e) { natPL = false; natDbg('streamPlaylist failed: ' + (e && e.message) + ', using single song'); }
-                            }
-                            const st = { currentTime: pos, isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'Run monitor', url: natUrl(s) };   // no artwork on purpose: the native player does not need it, the in-app player shows it
-                            natOn = true; natDbg('handed over to native (single song): ' + st.url + ' at ' + Math.round(pos) + 's'); try { localStorage.setItem('rtNatUrl', st.url); } catch (e) { }
+                            const st = { currentTime: au.currentTime || 0, isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'Run monitor', url: natUrl(s) };
+                            natOn = true;
                             try { au.pause(); } catch (e) { }           // the native player takes over the sound
                             return st;
-                        } catch (e) { natOn = false; natPL = false; return null; }
+                        } catch (e) { natOn = false; return null; }
                     },
-                    back: st => { if (!natOn) return false; return natBack(st); },   // Median calls this (via updatePlayerStatus) when the app is back. Returns true when it was a song.
-                    resume: () => {                                     // playlist mode: Median may not report back, so ask the native player ourselves
+                    back: st => {                                       // app is back: continue from where the native player is (st.currentTime is in ms). Returns true when it was a song.
+                        if (!natOn) return false; natOn = false;
                         try {
-                            if (!natOn || !natPL) return;
-                            const bm = bgm();
-                            if (bm && typeof bm.getPlayerStatus === 'function') bm.getPlayerStatus({ callback: st => { if (natOn) natBack(st || null); } });
-                            else natBack(null);
-                        } catch (e) { natBack(null); }
+                            if (!au || !M.active) return true;
+                            const pos = st && st.currentTime ? st.currentTime / 1000 : 0, dur = au.duration;
+                            if (dur > 0 && isFinite(dur) && pos >= dur - 1.5) { M.want = true; window.runMusicNext(); return true; }   // the song finished while the app was in the background: go on to the next one
+                            if (pos) au.currentTime = pos;
+                            if (st && st.isPaused === false) doPlay();
+                        } catch (e) { }
+                        return true;
                     }
                 };
 
@@ -49778,12 +49738,10 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     } catch (e) { return null; }
   };
   W.getPlayerStatus = function () {                        // lecture first, otherwise the Run monitor song that is playing
-    try { localStorage.setItem('rtNatCall', 'yes (' + new Date().toLocaleTimeString() + ')'); } catch (e) { }   // TEMP debug
     var s = lectureStatus(); if (s) return s;
     try { return (W.__rtMusicNative && W.__rtMusicNative.get()) || null; } catch (e) { return null; }
   };
   W.updatePlayerStatus = function (st) {
-    try { localStorage.setItem('rtNatBack', JSON.stringify(st)); } catch (e) { }   // TEMP debug
     try { if (W.__rtMusicNative && W.__rtMusicNative.back(st)) return; } catch (e) { }   // it was a Run monitor song
     try {
       var p = W.vjsPlayer; if (!p || !st) return;
@@ -49792,31 +49750,6 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       else if (p.paused()) { var r = p.play(); if (r && r.catch) r.catch(function () { }); }
     } catch (e) { }
   };
-
-  /* TEMP DEBUG: when the app comes back and Run music was on, show what happened to the native hand-off. Delete this block when music works. */
-  var RUN_NATIVE_DEBUG = false;   // true = show the 'Music debug' popup every time you return to the app
-  document.addEventListener('visibilitychange', function () {   // playlist mode: when the app is back, take the song / position from the native player
-    if (document.hidden) return;
-    setTimeout(function () { try { if (W.__rtMusicNative && W.__rtMusicNative.resume) W.__rtMusicNative.resume(); } catch (e) { } }, 900);
-  });
-  document.addEventListener('visibilitychange', function () {
-    if (!RUN_NATIVE_DEBUG) return;
-    try {
-      var M = W.__rtMusic;
-      if (document.hidden) { if (M && M.active && M.want) localStorage.setItem('rtNatWas', '1'); return; }
-      if (localStorage.getItem('rtNatWas') !== '1') return;
-      setTimeout(function () {   // give Median a moment to call updatePlayerStatus first
-        try {
-          var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('rtNatDbg'), u = localStorage.getItem('rtNatUrl'), nb = localStorage.getItem('rtNatBack');
-          ['rtNatWas', 'rtNatCall', 'rtNatDbg', 'rtNatUrl', 'rtNatBack'].forEach(function (k) { localStorage.removeItem(k); });
-          var show = function (x) { if (W.showCustomAlert) W.showCustomAlert('Music debug', 'getPlayerStatus: ' + (a || 'NO') + '. Hand-off: ' + (b || 'not reached') + '. NATIVE STATUS ON RETURN: ' + (nb || 'updatePlayerStatus NOT called') + '.' + x, 'info'); };
-          if (u && /^https?:/i.test(u) && W.fetch) {
-            fetch(u, { headers: { Range: 'bytes=0-1' } }).then(function (r) { var t = r.headers.get('content-type'), cr = r.headers.get('content-range'); var info = ' PROXY: HTTP ' + r.status + ', ' + t + ', ' + cr; if (r.status >= 400) { return r.text().then(function (tx) { show(info + ', REPLY: ' + String(tx).replace(/\s+/g, ' ').slice(0, 200)); }); } try { r.body && r.body.cancel(); } catch (e) { } show(info); }).catch(function (e) { show(' PROXY FAILED: ' + (e && e.message)); });
-          } else show('');
-        } catch (e) { }
-      }, 1500);
-    } catch (e) { }
-  });
 
   /* 2) SHARE INTO APP: whatever is shared into Exama (link / Drive file link / text) opens a Samsung One UI style "Shared to Exama" bottom sheet:
         Watch lecture (when the link is already one of your lectures), Add to Run songs (YouTube links) or Send to Discuss. */
