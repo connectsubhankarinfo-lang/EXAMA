@@ -23318,7 +23318,7 @@ window.__tpPaint = function () {
                             const s = M.q[M.i]; if (!s || !s.id) return null;
                             const st = { currentTime: au.currentTime || 0, isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'Run monitor', url: natUrl(s) };
                             // artwork removed for testing (lectures have none and work): if (/^https?:\/\//i.test(s.art || '')) st.artwork = s.art;
-                            natOn = true; natDbg('handed over to native: ' + st.url + ' at ' + Math.round(st.currentTime) + 's'); try { localStorage.setItem('rtNatUrl', st.url); } catch (e) { }
+                            natOn = true; natDbg('handed over to native: ' + st.url + ' at ' + Math.round(st.currentTime) + 's, artwork ' + (st.artwork ? 'sent' : 'not sent')); try { localStorage.setItem('rtNatUrl', st.url); } catch (e) { }
                             try { au.pause(); } catch (e) { }           // the native player takes over the sound
                             return st;
                         } catch (e) { natOn = false; return null; }
@@ -49721,6 +49721,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     try { return (W.__rtMusicNative && W.__rtMusicNative.get()) || null; } catch (e) { return null; }
   };
   W.updatePlayerStatus = function (st) {
+    try { localStorage.setItem('rtNatBack', JSON.stringify(st)); } catch (e) { }   // TEMP debug
     try { if (W.__rtMusicNative && W.__rtMusicNative.back(st)) return; } catch (e) { }   // it was a Run monitor song
     try {
       var p = W.vjsPlayer; if (!p || !st) return;
@@ -49736,13 +49737,16 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       var M = W.__rtMusic;
       if (document.hidden) { if (M && M.active && M.want) localStorage.setItem('rtNatWas', '1'); return; }
       if (localStorage.getItem('rtNatWas') !== '1') return;
-      var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('rtNatDbg');
-      var u = localStorage.getItem('rtNatUrl');
-      ['rtNatWas', 'rtNatCall', 'rtNatDbg', 'rtNatUrl'].forEach(function (k) { localStorage.removeItem(k); });
-      var show = function (x) { if (W.showCustomAlert) W.showCustomAlert('Music debug', 'Median called getPlayerStatus: ' + (a || 'NO') + '. Hand-off: ' + (b || 'not reached') + '.' + x, 'info'); };
-      if (u && /^https?:/i.test(u) && W.fetch) {   // ask the proxy for the first 2 bytes the way the native player would
-        fetch(u, { headers: { Range: 'bytes=0-1' } }).then(function (r) { var t = r.headers.get('content-type'), cr = r.headers.get('content-range'); var info = ' PROXY TEST: HTTP ' + r.status + ', type ' + t + ', range ' + cr; if (r.status >= 400) { return r.text().then(function (tx) { show(info + ', REPLY: ' + String(tx).replace(/\s+/g, ' ').slice(0, 260)); }); } try { r.body && r.body.cancel(); } catch (e) { } show(info); }).catch(function (e) { show(' PROXY TEST FAILED: ' + (e && e.message)); });
-      } else show('');
+      setTimeout(function () {   // give Median a moment to call updatePlayerStatus first
+        try {
+          var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('rtNatDbg'), u = localStorage.getItem('rtNatUrl'), nb = localStorage.getItem('rtNatBack');
+          ['rtNatWas', 'rtNatCall', 'rtNatDbg', 'rtNatUrl', 'rtNatBack'].forEach(function (k) { localStorage.removeItem(k); });
+          var show = function (x) { if (W.showCustomAlert) W.showCustomAlert('Music debug', 'getPlayerStatus: ' + (a || 'NO') + '. Hand-off: ' + (b || 'not reached') + '. NATIVE STATUS ON RETURN: ' + (nb || 'updatePlayerStatus NOT called') + '.' + x, 'info'); };
+          if (u && /^https?:/i.test(u) && W.fetch) {
+            fetch(u, { headers: { Range: 'bytes=0-1' } }).then(function (r) { var t = r.headers.get('content-type'), cr = r.headers.get('content-range'); var info = ' PROXY: HTTP ' + r.status + ', ' + t + ', ' + cr; if (r.status >= 400) { return r.text().then(function (tx) { show(info + ', REPLY: ' + String(tx).replace(/\s+/g, ' ').slice(0, 200)); }); } try { r.body && r.body.cancel(); } catch (e) { } show(info); }).catch(function (e) { show(' PROXY FAILED: ' + (e && e.message)); });
+          } else show('');
+        } catch (e) { }
+      }, 1500);
     } catch (e) { }
   });
 
