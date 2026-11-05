@@ -49832,6 +49832,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       if (p && !(p.isDisposed && p.isDisposed())) {
         var v = vidById(W.currentWatchVideoId), r = lectureNativeUrl(p, v);
         if (r.url) preflight(r.url);
+        else if (W.median && v.videoType === 'youtube' && !W.__ytBgWarned) { W.__ytBgWarned = 1; toast('YouTube lecture', 'YouTube videos pause when the screen locks. Drive lectures keep playing in the background.'); }
       }
       var Mu = W.__rtMusic;
       if (Mu && Mu.active && Mu.i >= 0 && Mu.q && Mu.q[Mu.i] && W.__rtNatUrl) preflight(W.__rtNatUrl(Mu.q[Mu.i]));
@@ -50059,7 +50060,6 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       var b = e.target.closest && e.target.closest('button[data-a]'), a = b ? b.getAttribute('data-a') : (e.target === d ? 'x' : '');
       if (!a) return;
       try { if (a !== 'x' && navigator.vibrate) navigator.vibrate(10); } catch (x) { }
-      if (a !== 'x') markDone(it);                          // action used = work done: this share will not come back
       if (a === 'watch' && hit && W.playVideo) closeSheet(function () { W.playVideo(hit.id); });
       else if (a === 'song') closeSheet(function () { toRunSongs(it); });
       else if (a === 'chat') closeSheet(function () { toDiscuss(it); });
@@ -50074,10 +50074,10 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   /* The Median share plugin can hand the SAME share to the page again (after a page change, app re-opened from recents, page reloaded, called twice).
      That is why the sheet kept coming back, even after the person had already used it. Rules now (identical link + text only):
        1. the app has stayed open since the sheet was shown -> it is the old share coming back, ignore it (a real new share needs the person to leave the app first);
-       2. the same share was shown / seen in the last REPEAT_MS (now 24 hours: Median re-sends the last share every time the app opens / resumes) -> ignore it, and keep ignoring while it keeps coming back;
+       2. the same share was shown / seen in the last REPEAT_MS (10 min) -> ignore it, and keep ignoring while it keeps coming back;
        3. the page has just (re)loaded (RELOAD_GUARD_MS) and the same share is delivered again -> ignore it.
      A different link or text is always shown. The same link shared again after more than REPEAT_MS is a new share and is shown normally. */
-  var SHARE_LAST = 'exama_share_last', LOADED_AT = Date.now(), RELOAD_GUARD_MS = 60000, REPEAT_MS = 24 * 60 * 60 * 1000, inflight = '', memLast = null, leftSinceShown = true;
+  var SHARE_LAST = 'exama_share_last', LOADED_AT = Date.now(), RELOAD_GUARD_MS = 60000, REPEAT_MS = 10 * 60 * 1000, inflight = '', memLast = null, leftSinceShown = true;
   document.addEventListener('visibilitychange', function () { if (document.hidden) leftSinceShown = true; });
   function shareSig(it) { return (it.url || '') + '|' + (it.subject || ''); }
   function lastShare() {
@@ -50088,18 +50088,12 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   function saveLast(sig) { memLast = { s: sig, t: Date.now() }; try { localStorage.setItem(SHARE_LAST, JSON.stringify(memLast)); } catch (e) { } }
   function isRedelivery(it) {
     var sig = shareSig(it); if (sig === inflight) return true;
-    if (doneSig() === sig) return true;                                  // already used from the sheet: finished
     var last = lastShare(); if (!last || last.s !== sig) return false;
     var now = Date.now();
     if (!leftSinceShown || (now - last.t < REPEAT_MS) || (now - LOADED_AT < RELOAD_GUARD_MS)) { saveLast(sig); return true; }   // saveLast: the 10 minutes start again each time it comes back
     return false;
   }
-  /* DONE: once an action was used from the sheet (Watch lecture / Add to Run songs / Send to Discuss) that exact share is finished and never shows again,
-     however often Median re-sends it. Cancel only keeps the normal 24 hour rule. A different share clears the DONE mark, so sharing that link again later is a new share. */
-  var SHARE_DONE = 'exama_share_done', memDone = '';
-  function doneSig() { var d = ''; try { d = localStorage.getItem(SHARE_DONE) || ''; } catch (e) { } return d || memDone; }
-  function markDone(it) { var g = shareSig(it); memDone = g; try { localStorage.setItem(SHARE_DONE, g); } catch (e) { } }
-  function markShown(it) { var g = shareSig(it); if (doneSig() && doneSig() !== g) { memDone = ''; try { localStorage.removeItem(SHARE_DONE); } catch (e) { } } saveLast(g); leftSinceShown = false; }
+  function markShown(it) { saveLast(shareSig(it)); leftSinceShown = false; }
   function deliverShare(it) {
     var sig = shareSig(it); inflight = sig;
     waitFor(function () { return !!W.loggedInMobile && !!document.body; }, 45000).then(function (ok) {
