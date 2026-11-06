@@ -12712,6 +12712,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
         // ---------------- STUDENT: ringing screen (Snooze = 1 min, "Alarm I know" = stop) ----------------
         function stopTone() { if (tone) { clearInterval(tone.iv); clearInterval(tone.vb); tone = null; } }
         function startTone() {
+            if (window.EXAMA_NATIVE) return;
             stopTone();
             try {
                 unlockAudio(); const C = AC; if (!C) return; C.resume && C.resume();
@@ -12725,7 +12726,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
             $("alarm-ring").classList.remove("hidden"); startTone();
         }
         function resetMath() { $("ar-actions").classList.remove("hidden"); $("ar-math").classList.add("hidden"); $("ar-ans").value = ""; }
-        function hideRing() { ring = null; stopTone(); $("alarm-ring").classList.add("hidden"); resetMath(); }
+        function hideRing() { ring = null; stopTone(); if (window.EXAMA_NATIVE && window.median && median.exama) median.exama.alarms.stop(); $("alarm-ring").classList.add("hidden"); resetMath(); }
         let mAns = 0; const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
         function newQ() {
             const t = Math.random(), a = rnd(12, 48), b = rnd(3, 19); let q;
@@ -12739,7 +12740,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
             const m = $("ar-math"); m.classList.remove("ar-shake"); void m.offsetWidth; m.classList.add("ar-shake");
             if (navigator.vibrate) navigator.vibrate(200); newQ(); $("ar-ans").focus();
         };
-        async function act(op, key) { const s = session(); hideRing(); if (s) await call("/alarm/" + op, { key }, s.u); if (op === "snooze") setTimeout(() => { burstUntil = Date.now() + 40000; tick(); }, 60000); }
+        async function act(op, key) { const s = session(); hideRing(); if (op === "snooze" && window.EXAMA_NATIVE && window.median && median.exama) median.exama.alarms.snooze(60); if (s) await call("/alarm/" + op, { key }, s.u); if (op === "snooze") setTimeout(() => { burstUntil = Date.now() + 40000; tick(); }, 60000); }
         window.alarmSnooze = () => ring && act("snooze", ring.key);
         window.alarmAck = () => { if (!ring) return; $("ar-actions").classList.add("hidden"); $("ar-math").classList.remove("hidden"); newQ(); setTimeout(() => $("ar-ans").focus(), 400); };
 
@@ -33788,6 +33789,7 @@ YOUR DIRECTIVES:
                     if (role === 'student') {
                         R.unsubs.alarmMine = onSnapshot(doc(db, 'alarm_mirror', mob), s => {
                             R.alarms = (s.exists() && Array.isArray(s.data().alarms)) ? s.data().alarms : [];
+                            try { if (window.EXAMA_NATIVE && window.median && median.exama) median.exama.alarms.sync(R.alarms); } catch (e) { }
                             window.renderStudentAlarmSidebar && window.renderStudentAlarmSidebar();
                         }, () => { });
                     }
