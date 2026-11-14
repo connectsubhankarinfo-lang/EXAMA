@@ -3,7 +3,8 @@
 
 <head>
 <style id="gl-silent-css">html.gl-boot-silent #global-loader #loader-content-wrapper,html.gl-boot-silent #global-loader .gl-fly,html.gl-boot-silent #global-loader .gl-ver{display:none!important}</style>
-<script id="gl-silent-boot">/* EXAMA app only: at app start the home screen / login appears behind a plain cover (the page colour), with NO loader animation, logo or "Welcome back" text. Later loaders (Saving, Uploading ...) are unchanged. */(function(){try{if(/EXAMA_APP/i.test(navigator.userAgent)){window.__glBootSilent=true;document.documentElement.classList.add('gl-boot-silent');setTimeout(function(){if(window.__glBootSilent){window.__glBootSilent=false;document.documentElement.classList.remove('gl-boot-silent');}},20000);}}catch(e){}})();</script>
+<script id="gl-silent-boot">/* EXAMA app only: at app start the home screen / login appears behind a plain cover (the page colour), with NO loader animation, logo or "Welcome back" text. Later loaders (Saving, Uploading ...) are unchanged. */(function(){try{if(/EXAMA_APP/i.test(navigator.userAgent)){window.__glBootSilent=true;window.__glInApp=true;document.documentElement.classList.add('gl-boot-silent');setTimeout(function(){if(window.__glBootSilent){window.__glBootSilent=false;document.documentElement.classList.remove('gl-boot-silent');}},20000);}}catch(e){}})();</script>
+<script id="ar-ready">/* EXAMA app only: tells the app (the Lottie splash) when the home screen is REALLY loaded: the loader step is done AND the first students / exams / results data has arrived (or the person is not logged in). The app then fades the Lottie out, so no empty screen shows. */(function(){var F=window.__arFlags={};window.__arMark=function(k){try{F[k]=1;window.__arCheck();}catch(e){}};window.__arCheck=function(){try{if(!window.__glInApp||F.done||!F.loader)return;if(window.loggedInMobile&&!(F.students&&F.exams&&F.results))return;F.done=1;setTimeout(function(){try{if(window.flutter_inappwebview&&window.flutter_inappwebview.callHandler)window.flutter_inappwebview.callHandler('median','splash.ready',{});}catch(e){}},350);}catch(e){}};})();</script>
 <style id="al-pre-css">html.al-pre body>*{visibility:hidden}html.al-pre body>#al-lock,html.al-pre body>#al-pw{visibility:visible!important}</style>
 <script id="al-pre">(function(){try{var m=localStorage.getItem('exama_mob'),r=localStorage.getItem('exama_role');if(r==='student'&&m&&localStorage.getItem('exama_lock_'+m)==='1'&&/EXAMA_APP|median|gonative/i.test(navigator.userAgent)){var h=document.documentElement;h.classList.add('al-pre');setTimeout(function(){if(!document.getElementById('al-lock'))h.classList.remove('al-pre');},10000);}}catch(e){}})();</script>
 <script id="qp-boot">
@@ -20173,8 +20174,8 @@ window.__tpPaint = function () {
                     loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly', 'gl-veil');
                     loader.dataset.animating = 'false';
                     try { window.__glClean(loader); window.__glBwClean(); } catch (e) { }
-                    // tell the app the first screen is ready: the Lottie splash fades out now (median bridge: splash.ready)
-                    try { if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) window.flutter_inappwebview.callHandler('median', 'splash.ready', {}); } catch (e) { }
+                    // the first screen is up: the app's Lottie splash fades out once the home data has also arrived (ar-ready script)
+                    try { window.__arMark && window.__arMark('loader'); } catch (e) { }
                     return;
                 }
 
@@ -20863,6 +20864,7 @@ window.__tpPaint = function () {
                     let firstStudents = true;
                     await new Promise(r => requestAnimationFrame(r));
                     onSnapshot(collection(db, window.getCollectionName("students")), (snapshot) => {
+                        try { window.__arMark && window.__arMark('students'); } catch (e) { }
                         window.studentsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                         // remember the logged-in student's name so the next start can say "Welcome Back, <name>"
                         try { if (window.currentRole === 'student' && window.loggedInMobile) { const me = window.studentsDB.find(x => x.mobile === window.loggedInMobile); if (me && me.name && localStorage.getItem('exama_name') !== me.name) localStorage.setItem('exama_name', me.name); } } catch (e) { }
@@ -20882,6 +20884,7 @@ window.__tpPaint = function () {
                     let firstExams = true;
                     await new Promise(r => requestAnimationFrame(r));
                     onSnapshot(collection(db, window.getCollectionName("exams")), (snapshot) => {
+                        try { window.__arMark && window.__arMark('exams'); } catch (e) { }
                         window.examsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                         if (firstExams || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
                             firstExams = false;
@@ -20893,6 +20896,7 @@ window.__tpPaint = function () {
                     let firstResults = true;
                     await new Promise(r => requestAnimationFrame(r));
                     onSnapshot(collection(db, window.getCollectionName("results")), (snapshot) => {
+                        try { window.__arMark && window.__arMark('results'); } catch (e) { }
                         window.resultsDB = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                         if (firstResults || snapshot.docChanges().some(c => c.type === 'added' || c.type === 'removed')) {
                             firstResults = false;
