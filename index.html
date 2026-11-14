@@ -4,7 +4,7 @@
 <head>
 <style id="gl-silent-css">html.gl-boot-silent #global-loader #loader-content-wrapper,html.gl-boot-silent #global-loader .gl-fly,html.gl-boot-silent #global-loader .gl-ver{display:none!important}</style>
 <script id="gl-silent-boot">/* EXAMA app only: at app start the home screen / login appears behind a plain cover (the page colour), with NO loader animation, logo or "Welcome back" text. Later loaders (Saving, Uploading ...) are unchanged. */(function(){try{if(/EXAMA_APP/i.test(navigator.userAgent)){window.__glBootSilent=true;window.__glInApp=true;document.documentElement.classList.add('gl-boot-silent');setTimeout(function(){if(window.__glBootSilent){window.__glBootSilent=false;document.documentElement.classList.remove('gl-boot-silent');}},20000);}}catch(e){}})();</script>
-<script id="ar-ready">/* EXAMA app only: tells the app (the Lottie splash) when the home screen is REALLY loaded: the loader step is done AND the first students / exams / results data has arrived (or the person is not logged in). The app then fades the Lottie out, so no empty screen shows. */(function(){var F=window.__arFlags={};window.__arMark=function(k){try{F[k]=1;window.__arCheck();}catch(e){}};window.__arCheck=function(){try{if(!window.__glInApp||F.done||!F.loader)return;if(window.loggedInMobile&&!(F.students&&F.exams&&F.results))return;F.done=1;setTimeout(function(){try{if(window.flutter_inappwebview&&window.flutter_inappwebview.callHandler)window.flutter_inappwebview.callHandler('median','splash.ready',{});}catch(e){}},350);}catch(e){}};})();</script>
+<script id="ar-ready">/* EXAMA app only: tells the app (the Lottie splash) when the home screen is REALLY loaded: the loader step is done AND the first students / exams / results data has arrived (or the person is not logged in). The app then fades the Lottie out, so no empty screen shows. H4 (2026-11-14): the signal now waits until the home view has really been drawn (the data callbacks run BEFORE the 150 ms debounced refreshUI, so the old 350 ms timer could fire on an empty page): at least 700 ms after the data, the visible view must have content, then 2 frames + 150 ms; never longer than 5 s. */(function(){var F=window.__arFlags={};window.__arMark=function(k){try{F[k]=1;window.__arCheck();}catch(e){}};window.__arCheck=function(){try{if(!window.__glInApp||F.done||!F.loader)return;if(window.loggedInMobile&&!(F.students&&F.exams&&F.results))return;F.done=1;var t0=Date.now(),V=['student-view','admin-view','login-view','admin-login-view'];function shown(){for(var i=0;i<V.length;i++){var e=document.getElementById(V[i]);if(e&&!e.classList.contains('hidden-view')&&e.getBoundingClientRect().height>0&&((e.innerText||'').trim().length>20))return true;}return false;}function send(){try{if(window.flutter_inappwebview&&window.flutter_inappwebview.callHandler)window.flutter_inappwebview.callHandler('median','splash.ready',{});}catch(e){}}function paint(){requestAnimationFrame(function(){requestAnimationFrame(function(){setTimeout(send,150);});});}function wait(){var el=Date.now()-t0;if(el>=5000||(el>=700&&shown())){paint();return;}setTimeout(wait,100);}setTimeout(wait,100);}catch(e){}};})();</script>
 <style id="al-pre-css">html.al-pre body>*{visibility:hidden}html.al-pre body>#al-lock,html.al-pre body>#al-pw{visibility:visible!important}</style>
 <script id="al-pre">(function(){try{var m=localStorage.getItem('exama_mob'),r=localStorage.getItem('exama_role');if(r==='student'&&m&&localStorage.getItem('exama_lock_'+m)==='1'&&/EXAMA_APP|median|gonative/i.test(navigator.userAgent)){var h=document.documentElement;h.classList.add('al-pre');setTimeout(function(){if(!document.getElementById('al-lock'))h.classList.remove('al-pre');},10000);}}catch(e){}})();</script>
 <script id="qp-boot">
@@ -33315,10 +33315,10 @@ YOUR DIRECTIVES:
 
                 // Different vibration patterns for different actions
                 switch (type) {
-                    case 'light': navigator.vibrate(10); break; // Small taps (navigating, opening menus)
+                    case 'light': navigator.vibrate(18); break; // Small taps (navigating, opening menus). H2: was 10 ms, too short to feel
                     case 'medium': navigator.vibrate(30); break; // Actions (submitting, saving)
-                    case 'heavy': navigator.vibrate([40, 10, 40]); break; // Warnings, deletions, errors
-                    case 'success': navigator.vibrate([20, 30, 20, 30, 40]); break; // Finished an exam
+                    case 'heavy': navigator.vibrate([40, 20, 40]); break; // Warnings, deletions, errors
+                    case 'success': navigator.vibrate([25, 40, 25, 40, 50]); break; // Finished an exam
                 }
             };
             // Function to push the main app backward
@@ -33338,14 +33338,14 @@ YOUR DIRECTIVES:
                 app.style.filter = 'brightness(1)';
                 app.style.borderRadius = '0px';
             };
-            document.addEventListener('touchstart', function (e) {
-                // If the user taps a button or an element acting as a button
-                const target = e.target.closest('button, .cursor-pointer, .glass-card');
+            // H2: haptic on a real TAP (click), not on every touch start, so scrolling over cards does not buzz
+            // (and in the app does not send a bridge call at the start of every scroll).
+            document.addEventListener('click', function (e) {
+                const target = e.target.closest && e.target.closest('button, .cursor-pointer, .glass-card');
                 if (target && !target.disabled) {
-                    // Trigger a light system vibration instantly
                     window.haptic('light');
                 }
-            }, { passive: true });
+            }, true);
             // ==============================================
             // BUDGET MANAGER LOGIC
             // ==============================================
@@ -41853,7 +41853,7 @@ html body .xb:not(#_):not(#__):focus-visible{outline:2.5px solid var(--c);outlin
     var W = window, D = document;
     function $(id) { return D.getElementById(id); }
     function safe(fn) { try { fn(); } catch (e) { try { console.warn('gesture-pack', e); } catch (x) { } } }
-    function vib(ms) { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch (e) { } }
+    function vib(ms) { try { navigator.vibrate && navigator.vibrate(Math.max(ms || 8, 15)); } catch (e) { } } /* H2: 15 ms minimum, shorter pulses cannot be felt */
     function shown(el) { return !!el && !el.classList.contains('hidden-view') && !el.classList.contains('hidden') && el.getClientRects().length > 0; }
     function whenReady(test, fn, tries) {
         tries = tries || 160;
