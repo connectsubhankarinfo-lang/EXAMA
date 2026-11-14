@@ -2,6 +2,12 @@
 <html lang="en">
 
 <head>
+<link rel="preconnect" href="https://cdn.tailwindcss.com">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <style id="gl-silent-css">html.gl-boot-silent #global-loader #loader-content-wrapper,html.gl-boot-silent #global-loader .gl-fly,html.gl-boot-silent #global-loader .gl-ver{display:none!important}</style>
 <script id="gl-silent-boot">/* EXAMA app only: at app start the home screen / login appears behind a plain cover (the page colour), with NO loader animation, logo or "Welcome back" text. Later loaders (Saving, Uploading ...) are unchanged. */(function(){try{if(/EXAMA_APP/i.test(navigator.userAgent)){window.__glBootSilent=true;window.__glInApp=true;document.documentElement.classList.add('gl-boot-silent');setTimeout(function(){if(window.__glBootSilent){window.__glBootSilent=false;document.documentElement.classList.remove('gl-boot-silent');}},20000);}}catch(e){}})();</script>
 <script id="ar-ready">/* EXAMA app only: tells the app (the Lottie splash) when the home screen is REALLY loaded: the loader step is done AND the first students / exams / results data has arrived (or the person is not logged in). The app then fades the Lottie out, so no empty screen shows. H4 (2026-11-14): the signal now waits until the home view has really been drawn (the data callbacks run BEFORE the 150 ms debounced refreshUI, so the old 350 ms timer could fire on an empty page): at least 700 ms after the data, the visible view must have content, then 2 frames + 150 ms; never longer than 5 s. */(function(){var F=window.__arFlags={};window.__arMark=function(k){try{F[k]=1;window.__arCheck();}catch(e){}};window.__arCheck=function(){try{if(!window.__glInApp||F.done||!F.loader)return;if(window.loggedInMobile&&!(F.students&&F.exams&&F.results))return;F.done=1;var t0=Date.now(),V=['student-view','admin-view','login-view','admin-login-view'];function shown(){for(var i=0;i<V.length;i++){var e=document.getElementById(V[i]);if(e&&!e.classList.contains('hidden-view')&&e.getBoundingClientRect().height>0&&((e.innerText||'').trim().length>20))return true;}return false;}function send(){try{if(window.flutter_inappwebview&&window.flutter_inappwebview.callHandler)window.flutter_inappwebview.callHandler('median','splash.ready',{});}catch(e){}}function paint(){requestAnimationFrame(function(){requestAnimationFrame(function(){setTimeout(send,150);});});}function wait(){var el=Date.now()-t0;if(el>=5000||(el>=700&&shown())){paint();return;}setTimeout(wait,100);}setTimeout(wait,100);}catch(e){}};})();</script>
@@ -469,6 +475,53 @@ html.is-bg *,html.is-bg *::before,html.is-bg *::after{animation-play-state:pause
 html.mem-low [class*="backdrop-blur-xl"],html.mem-low [class*="backdrop-blur-2xl"],html.mem-low [class*="backdrop-blur-3xl"]{--tw-backdrop-blur:blur(14px)!important}
 html.mem-low [class]:not(.flip-card):not(.sd-fold):not(.sd-quote){will-change:auto}
 </style>
+<script id="lazy-libs">
+/* Speed: the PDF reader, PDF maker and video player libraries (about 2 MB) are no longer downloaded and run BEFORE the app starts.
+   They load in the background a few seconds after the app is up, or at the moment a feature first needs them (whichever is first).
+   Every place that uses them waits for window.__exLib('<name>') first, so nothing can run before its library is ready. */
+(function () {
+  try {
+    var D = document, W = window, P = {}, U = {};
+    var LIBS = {
+      pdfjs: { u: ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'], ok: function () { return !!(W.pdfjsLib || W['pdfjs-dist/build/pdf']); } },
+      jspdf: { u: ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'], ok: function () { return !!(W.jspdf && W.jspdf.jsPDF); } },
+      html2pdf: { u: ['https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'], ok: function () { return typeof W.html2pdf === 'function'; } },
+      videojs: { u: ['https://vjs.zencdn.net/8.6.1/video.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/videojs-youtube/3.0.1/Youtube.min.js'] }
+    };
+    function add(url) {
+      if (U[url]) return U[url];
+      return U[url] = new Promise(function (res, rej) {
+        var s = D.createElement('script'); s.src = url; s.async = false;
+        s.onload = function () { res(); };
+        s.onerror = function () { delete U[url]; try { s.remove(); } catch (e) { } rej(new Error('Could not load ' + url)); };
+        (D.head || D.documentElement).appendChild(s);
+      });
+    }
+    W.__exLib = function (name) {
+      var L = LIBS[name]; if (!L) return Promise.resolve();
+      try { if (L.ok && L.ok()) return Promise.resolve(); } catch (e) { }
+      if (P[name]) return P[name];
+      return P[name] = L.u.reduce(function (p, u) { return p.then(function () { return add(u); }); }, Promise.resolve())
+        .catch(function (e) { delete P[name]; throw e; });
+    };
+    /* background warm-up, one library at a time, only when the phone is idle and Data Saver is off */
+    var started = false;
+    function warm() {
+      if (started) return; started = true;
+      try { if (navigator.connection && navigator.connection.saveData) return; } catch (e) { }
+      var order = ['pdfjs', 'videojs', 'jspdf', 'html2pdf'];
+      (function next() {
+        var n = order.shift(); if (!n) return;
+        W.__exLib(n).catch(function () { }).then(function () {
+          setTimeout(function () { (W.requestIdleCallback || function (f) { setTimeout(f, 300); })(next, { timeout: 4000 }); }, 600);
+        });
+      })();
+    }
+    function arm() { setTimeout(function () { (W.requestIdleCallback || function (f) { setTimeout(f, 0); })(warm, { timeout: 5000 }); }, 5000); }
+    if (D.readyState === 'complete') arm(); else W.addEventListener('load', arm);
+  } catch (e) { }
+})();
+</script>
 
 
 <script>
@@ -605,163 +658,9 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
 })();
 </script>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
     <!-- SortableJS for Drag and Drop -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js" defer></script>
 
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&family=Space+Grotesk:wght@700&display=swap"
         rel="stylesheet">
@@ -805,316 +704,9 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
     <!-- PDF.js Engine -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
 
     <!-- LocalForage for Offline Storage -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js" defer></script>
 
 
     <!-- Tailwind CSS with custom breakpoints for Redmi Pad SE -->
@@ -1130,472 +722,11 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
             }
         }
     </script>
-    <script>
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
 
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
 
     <!-- HTML2PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" defer>
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
 
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1606,629 +737,13 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
         rel="stylesheet">
 
     <!-- Google Drive API / OAuth2 SDK -->
-    <script src="https://apis.google.com/js/api.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
 
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
-
-    <script src="https://accounts.google.com/gsi/client">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
 
 
     <!-- Video.js Core -->
     <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet" />
-    <script src="https://vjs.zencdn.net/8.6.1/video.min.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
 
     <!-- Video.js YouTube Plugin -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/videojs-youtube/3.0.1/Youtube.min.js">
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
 
 
     <style>
@@ -2258,160 +773,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
     </style>
 
     <!-- OneSignal Push Notifications SDK -->
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer>
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
-    </script>
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 
     <script>
         window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -2425,163 +787,11 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
             }
         });
 
-        // ==========================================
-        // UNIVERSAL CUSTOM SELECT ENGINE (iOS Style)
-        // ==========================================
-        window.activeNativeSelect = null;
-        window.selectedCustomValue = null;
-
-        window.initCustomSelects = function () {
-            const selects = document.querySelectorAll('select:not(.custom-select-initialized)');
-            selects.forEach(select => {
-                select.classList.add('custom-select-initialized');
-                select.style.display = 'none';
-
-                const proxyBtn = document.createElement('button');
-                proxyBtn.type = 'button';
-                // Copy existing classes and force it to look like a solid box
-                let baseClass = select.className.replace('hidden', '');
-                if (!baseClass.includes('bg-')) baseClass += ' bg-gray-50 border border-gray-200';
-                if (!baseClass.includes('rounded')) baseClass += ' rounded-xl';
-                if (!baseClass.includes('p-') && !baseClass.includes('px-')) baseClass += ' px-4 py-3';
-
-                proxyBtn.className = baseClass + " flex items-center justify-between text-left relative overflow-hidden transition-all active:scale-[0.98]";
-
-                const labelSpan = document.createElement('span');
-                labelSpan.className = "truncate flex-1 min-w-0 pointer-events-none";
-
-                const iconSpan = document.createElement('span');
-                iconSpan.innerHTML = '<i class="fa-solid fa-chevron-down text-[11px] opacity-50 ml-2 shrink-0"></i>';
-
-                proxyBtn.appendChild(labelSpan);
-                proxyBtn.appendChild(iconSpan);
-
-                const syncLabel = () => {
-                    const selectedOpt = select.options[select.selectedIndex];
-                    if (selectedOpt) {
-                        labelSpan.innerText = selectedOpt.text;
-                        // Add placeholder style if it's disabled or empty value
-                        if (selectedOpt.disabled || !selectedOpt.value) {
-                            labelSpan.classList.add('text-gray-400');
-                        } else {
-                            labelSpan.classList.remove('text-gray-400');
-                        }
-                    } else {
-                        labelSpan.innerText = "Select...";
-                    }
-                };
-
-                syncLabel();
-                select.addEventListener('change', syncLabel);
-
-                select.parentNode.insertBefore(proxyBtn, select);
-
-                proxyBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    window.openCustomSelect(select);
-                });
-            });
-        };
-
-        window.openCustomSelect = function (nativeSelectElement) {
-            window.activeNativeSelect = nativeSelectElement;
-            window.selectedCustomValue = nativeSelectElement.value;
-
-            let title = "Select Option";
-            if (nativeSelectElement.id) {
-                title = nativeSelectElement.id.replace(/-/g, ' ').replace(/edit|new|select/gi, '').trim().replace(/\w/g, l => l.toUpperCase());
-            }
-            document.getElementById('ios-select-title').innerText = (title || "Select").toUpperCase();
-
-            const optionsContainer = document.getElementById('ios-select-options');
-            optionsContainer.innerHTML = '';
-
-            Array.from(nativeSelectElement.options).forEach((opt, index) => {
-                if (opt.disabled || opt.style.display === 'none') return; // Skip disabled placeholders
-
-                const btn = document.createElement('button');
-                btn.className = "w-full text-left px-5 py-4 border-b border-gray-200/50 flex justify-between items-center bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors " + (index === 0 ? "rounded-t-2xl mt-4 mx-4 border-t shadow-sm" : "mx-4") + (index === nativeSelectElement.options.length - 1 ? " rounded-b-2xl mb-4 border-b-0 shadow-sm" : "");
-                btn.style.width = 'calc(100% - 32px)';
-
-                const textSpan = document.createElement('span');
-                textSpan.className = "text-[16px] text-gray-900 " + (opt.value === nativeSelectElement.value ? "font-bold" : "font-medium");
-                textSpan.innerText = opt.text;
-
-                const checkSpan = document.createElement('span');
-                checkSpan.className = "text-indigo-600 text-[14px] transition-opacity " + (opt.value === nativeSelectElement.value ? "opacity-100" : "opacity-0");
-                checkSpan.innerHTML = '<i class="fa-solid fa-check"></i>';
-
-                btn.appendChild(textSpan);
-                btn.appendChild(checkSpan);
-
-                btn.onclick = () => {
-                    Array.from(optionsContainer.children).forEach(c => {
-                        c.querySelector('span:last-child').classList.replace('opacity-100', 'opacity-0');
-                        c.querySelector('span:first-child').classList.replace('font-bold', 'font-medium');
-                    });
-                    checkSpan.classList.replace('opacity-0', 'opacity-100');
-                    textSpan.classList.replace('font-medium', 'font-bold');
-
-                    window.selectedCustomValue = opt.value;
-
-                    setTimeout(() => {
-                        window.confirmCustomSelect();
-                    }, 150);
-                };
-
-                optionsContainer.appendChild(btn);
-            });
-
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            // Check active element and blur to close keyboard
-            if (document.activeElement) document.activeElement.blur();
-
-            overlay.classList.remove('hidden');
-            void overlay.offsetWidth;
-            overlay.classList.remove('opacity-0');
-            overlay.classList.add('opacity-100');
-
-            sheet.classList.remove('translate-y-full');
-        };
-
-        window.closeCustomSelect = function () {
-            const overlay = document.getElementById('ios-select-overlay');
-            const sheet = document.getElementById('ios-select-sheet');
-
-            sheet.classList.add('translate-y-full');
-            overlay.classList.remove('opacity-100');
-            overlay.classList.add('opacity-0');
-
-            setTimeout(() => {
-                overlay.classList.add('hidden');
-                window.activeNativeSelect = null;
-            }, 300);
-        };
-
-        window.confirmCustomSelect = function () {
-            if (window.activeNativeSelect && window.activeNativeSelect.value !== window.selectedCustomValue) {
-                window.activeNativeSelect.value = window.selectedCustomValue;
-                window.activeNativeSelect.dispatchEvent(new Event('change'));
-            }
-            window.closeCustomSelect();
-        };
-
-        // Auto-initialize periodically to catch modals opening and dynamic content
-        setInterval(() => {
-            if (typeof window.initCustomSelects === 'function') window.initCustomSelects();
-        }, 1000);
-
-        // Run initially
-        setTimeout(() => window.initCustomSelects(), 500);
-
     </script>
 
 
     <!-- 8x8 Jitsi API Integration -->
-    <script src="https://8x8.vc/vpaas-magic-cookie-9ae60bbf9a9d41bf821cd8122e49a08f/external_api.js"></script>
+    <script src="https://8x8.vc/vpaas-magic-cookie-9ae60bbf9a9d41bf821cd8122e49a08f/external_api.js" defer></script>
 
 
     <meta name="theme-color" content="transparent">
@@ -4131,6 +2341,66 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
 @keyframes ncQOut{from{opacity:1;translate:0 0;scale:1}to{opacity:0;translate:0 10px;scale:.97}}
 }
 </style>
+<script id="offscreen-anim">
+/* Speed: infinite CSS animations (spinners, pulses, glows) that are scrolled off screen or in a hidden view are paused, and resume the moment they come back into view.
+   Nothing visible changes. It touches no class or attribute (it uses the browser's Web Animations API), so no other script can notice it. */
+(function () {
+  try {
+    if (!('IntersectionObserver' in window) || !document.getAnimations) return;
+    var W = window, D = document, mine = new WeakSet(), seen = new WeakSet(), io = null, timer = 0, lastN = 0;
+    var EXTRA = '.fa-beat,.fa-fade,.fa-beat-fade,.fa-bounce,.fa-flip,.fa-shake,.fa-spin,.fa-spin-pulse,.fa-pulse,.animate-spin,.animate-pulse,.animate-bounce,.animate-ping';
+    function infinite(a) {
+      try { if (!(a instanceof CSSAnimation)) return false; var t = a.effect && a.effect.getComputedTiming(); return !!t && t.iterations === Infinity; } catch (e) { return false; }
+    }
+    function pauseEl(el) {
+      try { el.getAnimations().forEach(function (a) { if (a.playState === 'running' && infinite(a)) { a.pause(); mine.add(a); } }); } catch (e) { }
+    }
+    function resumeEl(el) {
+      try { el.getAnimations().forEach(function (a) { if (mine.has(a)) { mine.delete(a); if (a.playState === 'paused') a.play(); } }); } catch (e) { }
+    }
+    function onIO(entries) {
+      if (D.hidden) return;
+      for (var i = 0; i < entries.length; i++) { var e = entries[i]; if (e.isIntersecting) resumeEl(e.target); else pauseEl(e.target); }
+    }
+    function walkRules(rules, out) {
+      for (var i = 0; i < rules.length; i++) {
+        var r = rules[i];
+        if (r.cssRules && !r.selectorText) { try { walkRules(r.cssRules, out); } catch (e) { } continue; }
+        if (!r.selectorText || !r.style) continue;
+        var v = (r.style.animation || '') + ' ' + (r.style.animationIterationCount || '');
+        if (v.indexOf('infinite') < 0) continue;
+        r.selectorText.split(',').forEach(function (sel) {
+          sel = sel.replace(/::?(before|after|first-line|first-letter|selection|placeholder)\b/g, '').trim();
+          if (sel && !/:(hover|active|focus|focus-within|focus-visible|checked|disabled|target)\b/.test(sel)) out.push(sel);
+        });
+      }
+    }
+    function scan() {
+      try {
+        if (D.hidden) return;
+        var n = D.getElementsByTagName('*').length;
+        if (n === lastN && io) return; lastN = n;
+        var sels = [EXTRA];
+        for (var i = 0; i < D.styleSheets.length; i++) { var rs; try { rs = D.styleSheets[i].cssRules; } catch (e) { continue; } if (rs) walkRules(rs, sels); }
+        if (!io) io = new IntersectionObserver(onIO, { rootMargin: '150px' });
+        var uniq = {}, count = 0;
+        sels.forEach(function (sel) {
+          if (uniq[sel]) return; uniq[sel] = 1;
+          var list; try { list = D.querySelectorAll(sel); } catch (e) { return; }
+          for (var j = 0; j < list.length && count < 1500; j++) { var el = list[j]; if (!seen.has(el)) { seen.add(el); io.observe(el); count++; } }
+        });
+      } catch (e) { }
+    }
+    function later() { clearTimeout(timer); timer = setTimeout(function () { (W.requestIdleCallback || function (f) { f(); })(scan, { timeout: 2000 }); }, 1200); }
+    D.addEventListener('visibilitychange', function () {
+      if (D.hidden) { try { D.getAnimations().forEach(function (a) { if (a.playState === 'running' && infinite(a)) { a.pause(); mine.add(a); } }); } catch (e) { } }
+      else { try { D.getAnimations().forEach(function (a) { if (mine.has(a)) { mine.delete(a); if (a.playState === 'paused') a.play(); } }); } catch (e) { } lastN = 0; later(); }
+    });
+    W.addEventListener('hashchange', function () { lastN = 0; later(); });
+    W.addEventListener('load', function () { setTimeout(scan, 3000); setInterval(function () { if (!D.hidden) scan(); }, 7000); });
+  } catch (e) { }
+})();
+</script>
 </head>
 
 
@@ -17860,6 +16130,7 @@ window.__tpPaint = function () {
                     }
                 };
 
+                if (window.__exLib) { try { await window.__exLib('videojs'); } catch (e) { } }
                 // 🔥 OFFLINE PLAYBACK LOGIC 🔥
                 if (isDownloaded) {
                     const localBlob = await localforage.getItem(`exama_video_${id}`);
@@ -22476,6 +20747,7 @@ window.__tpPaint = function () {
                     if (statusEl) statusEl.innerText = "Converting Images to PDF...";
                     if (uploadBtn) uploadBtn.innerHTML = `<i class="fa-solid fa-file-pdf fa-bounce text-red-500 text-lg"></i> Generating PDF...`;
 
+                    if (window.__exLib) { try { await window.__exLib('jspdf'); } catch (e) { } }
                     const { jsPDF } = window.jspdf;
                     const pdf = new jsPDF('p', 'mm', 'a4');
                     const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -27121,8 +25393,9 @@ function mpDrawTab(tab, body) {
                         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'li', '.pdf-keep'] }
                     };
                     // two frames first so the loader paints instantly, then the heavy work starts
-                    requestAnimationFrame(() => setTimeout(() => {
+                    requestAnimationFrame(() => setTimeout(async () => {
                         try {
+                            if (window.__exLib) await window.__exLib('html2pdf');
                             const w = html2pdf().set(opt).from(host);
                             if (wantB64) w.outputPdf('datauristring').then(d => end(true, null, String(d).split(',')[1])).catch(e => end(false, e));
                             else if (o.alsoB64) w.toPdf().get('pdf').then(pdf => { pdf.save(filename); end(true, null, String(pdf.output('datauristring')).split(',')[1]); }).catch(e => end(false, e));
@@ -31866,6 +30139,7 @@ function mpDrawTab(tab, body) {
 
                     loaderText.innerText = "Initializing Engine...";
 
+                    if (window.__exLib) { try { await window.__exLib('pdfjs'); } catch (e) { } }
                     const activePdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
                     if (!activePdfjsLib) throw new Error("PDF Engine is still loading in the background. Please wait a second and click Read again.");
                     if (!activePdfjsLib.GlobalWorkerOptions.workerSrc) {
