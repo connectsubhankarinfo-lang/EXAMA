@@ -25515,7 +25515,18 @@ function mpDrawTab(tab, body) {
 
                             if (user) {
                                 // Firebase session is actively alive
-                                window.__EXAMA_NATIVE_CREDS = null;
+                                // 📱 native hand-over: the app says WHICH student must be signed in. If the saved web session
+                                // belongs to another account (e.g. the previous student on this phone), switch to the right one.
+                                const nc0 = window.__EXAMA_NATIVE_CREDS; window.__EXAMA_NATIVE_CREDS = null;
+                                if (nc0 && savedRole === 'student' && nc0.mobile === savedMob && nc0.pass && (user.email || '').toLowerCase() !== `${nc0.mobile}@exama.app`.toLowerCase()) {
+                                    try { await window.EXAMA_loginWithCredentials(nc0.mobile, nc0.pass); }
+                                    catch (e) {
+                                        console.error("Native hand-over failed:", e);
+                                        localStorage.clear(); window.currentRole = ''; window.loggedInMobile = '';
+                                        window.location.hash = 'login'; handleHashChange(); hideLoader();
+                                        return;
+                                    }
+                                }
                                 executeLoginUI(savedRole, savedMob);
                                 hideLoader();
                             } else {
