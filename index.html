@@ -25515,6 +25515,7 @@ function mpDrawTab(tab, body) {
 
                             if (user) {
                                 // Firebase session is actively alive
+                                window.__EXAMA_NATIVE_CREDS = null;
                                 executeLoginUI(savedRole, savedMob);
                                 hideLoader();
                             } else {
@@ -25522,7 +25523,10 @@ function mpDrawTab(tab, body) {
                                 try {
                                     showLoader("Restoring session");
                                     const authEmail = `${savedMob}@exama.app`;
-                                    throw new Error("No active session");
+                                    const nc = window.__EXAMA_NATIVE_CREDS;   // set by the Flutter app at document start (students only)
+                                    if (!(nc && savedRole === 'student' && nc.mobile === savedMob && nc.pass)) throw new Error("No active session");
+                                    await window.EXAMA_loginWithCredentials(nc.mobile, nc.pass);
+                                    window.__EXAMA_NATIVE_CREDS = null;
 
                                     // Re-auth successful!
                                     executeLoginUI(savedRole, savedMob);
@@ -25589,6 +25593,18 @@ function mpDrawTab(tab, body) {
             window.__verifyPw = async function (mobile, pass) {
                 try { await signInWithEmailAndPassword(secondaryAuth, mobile + '@exama.app', pass); try { await secondaryAuth.signOut(); } catch (e) { } return true; } catch (e) { return false; }
             };
+            // 📱 NATIVE APP HAND-OVER (P09b): the Flutter app already logged the student in natively.
+            // It gives this page the same mobile + password once so the website session is signed in too.
+            window.EXAMA_loginWithCredentials = async function (mobile, pass) {
+                const mob = String(mobile || '').trim();
+                const pw = String(pass || '').trim();
+                if (!mob || !pw) throw new Error('Missing credentials.');
+                const u = auth.currentUser;
+                if (u && (u.email || '').toLowerCase() === `${mob}@exama.app`.toLowerCase()) return true;
+                await signInWithEmailAndPassword(auth, `${mob}@exama.app`, pw);
+                return true;
+            };
+
             document.getElementById('login-form').addEventListener('submit', async function (e) {
                 e.preventDefault();
                 const mob = document.getElementById('mobile').value.trim();
