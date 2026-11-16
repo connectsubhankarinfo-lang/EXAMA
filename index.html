@@ -11,7 +11,7 @@ Rules when editing:
    checkForAppUpdates, downloadAppUpdate, showToast, showCustomAlert, showCustomConfirm, loggedInMobile, currentRole, getPlayerStatus, updatePlayerStatus, findMyLiveSession,
    EXAMA_loginWithCredentials, the ids discus-video-modal / incoming-call-modal / student-view / admin-view / login-view / admin-login-view, the class hidden-view,
    the localStorage keys exama_mob / exama_role / exama_name, the hash views (#notices #fitness #doubt-board #budget-room #materials ...).
-3. The app is detected by the user agent text EXAMA_APP (scripts gl-silent-boot and the splash signal __arMark / __arCheck). Keep both scripts.
+3. The app is detected by the user agent text EXAMA_APP (script gl-app-flag and the splash signal __arMark / __arCheck). Keep both scripts. The quiet boot cover (gl-silent-boot) was REMOVED: the real website loader shows at app start.
 4. A NEW native function (something the browser cannot do) needs an app update too: use FLUTTER_CONNECT.md (recipes). Publish the app first, this website after.
 5. Never put secrets (API keys, bot tokens) in this file.
 Version: 2026-11-16 (as supplied by the owner; notes added, nothing else changed).
@@ -22,8 +22,7 @@ Version: 2026-11-16 (as supplied by the owner; notes added, nothing else changed
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<style id="gl-silent-css">html.gl-boot-silent #global-loader #loader-content-wrapper,html.gl-boot-silent #global-loader .gl-fly,html.gl-boot-silent #global-loader .gl-ver{display:none!important}</style>
-<script id="gl-silent-boot">/* EXAMA app only: at app start the home screen / login appears behind a plain cover (the page colour), with NO loader animation, logo or "Welcome back" text. Later loaders (Saving, Uploading ...) are unchanged. */(function(){try{if(/EXAMA_APP/i.test(navigator.userAgent)){window.__glBootSilent=true;window.__glInApp=true;document.documentElement.classList.add('gl-boot-silent');setTimeout(function(){if(window.__glBootSilent){window.__glBootSilent=false;document.documentElement.classList.remove('gl-boot-silent');}},20000);}}catch(e){}})();</script>
+<script id="gl-app-flag">/* EXAMA app only: just marks that the page runs inside the app (the real loader now shows normally at app start). */(function(){try{if(/EXAMA_APP/i.test(navigator.userAgent))window.__glInApp=true;}catch(e){}})();</script>
 <script id="ar-ready">/* EXAMA app only: tells the app (the Lottie splash) when the home screen is REALLY loaded: the loader step is done AND the first students / exams / results data has arrived (or the person is not logged in). The app then fades the Lottie out, so no empty screen shows. H4 (2026-11-14): the signal now waits until the home view has really been drawn (the data callbacks run BEFORE the 150 ms debounced refreshUI, so the old 350 ms timer could fire on an empty page): at least 700 ms after the data, the visible view must have content, then 2 frames + 150 ms; never longer than 5 s. */(function(){var F=window.__arFlags={};window.__arMark=function(k){try{F[k]=1;window.__arCheck();}catch(e){}};window.__arCheck=function(){try{if(!window.__glInApp||F.done||!F.loader)return;if(window.loggedInMobile&&!(F.students&&F.exams&&F.results))return;F.done=1;var t0=Date.now(),V=['student-view','admin-view','login-view','admin-login-view'];function shown(){for(var i=0;i<V.length;i++){var e=document.getElementById(V[i]);if(e&&!e.classList.contains('hidden-view')&&e.getBoundingClientRect().height>0&&((e.innerText||'').trim().length>20))return true;}return false;}function send(){try{if(window.flutter_inappwebview&&window.flutter_inappwebview.callHandler)window.flutter_inappwebview.callHandler('median','splash.ready',{});}catch(e){}}function paint(){requestAnimationFrame(function(){requestAnimationFrame(function(){setTimeout(send,150);});});}function wait(){var el=Date.now()-t0;if(el>=5000||(el>=700&&shown())){paint();return;}setTimeout(wait,100);}setTimeout(wait,100);}catch(e){}};})();</script>
 <style id="al-pre-css">html.al-pre body>*{visibility:hidden}html.al-pre body>#al-lock,html.al-pre body>#al-pw{visibility:visible!important}</style>
 <script id="al-pre">(function(){try{var m=localStorage.getItem('exama_mob'),r=localStorage.getItem('exama_role');if(r==='student'&&m&&localStorage.getItem('exama_lock_'+m)==='1'&&/EXAMA_APP|median|gonative/i.test(navigator.userAgent)){var h=document.documentElement;h.classList.add('al-pre');setTimeout(function(){if(!document.getElementById('al-lock'))h.classList.remove('al-pre');},10000);}}catch(e){}})();</script>
@@ -18391,7 +18390,6 @@ window.__tpPaint = function () {
                 const loader = document.getElementById('global-loader');
                 const loaderText = document.getElementById('loader-text');
                 if (!loader) return;
-                if (window.__glBootSilent) return;   // app start: plain cover, no loader animation / text (gl-silent-boot)
                 const G = window.__gl;
 
                 // A new show cancels any pending / running exit
@@ -18451,18 +18449,8 @@ window.__tpPaint = function () {
                 // Prevent duplicate triggers from breaking the animation
                 if (!loader || loader.classList.contains('hidden-view') || loader.dataset.animating === 'true') return;
 
-                // EXAMA app, app start: the home screen / login is ready, remove the plain cover at once (gl-silent-boot)
-                if (window.__glBootSilent) {
-                    window.__glBootSilent = false;
-                    document.documentElement.classList.remove('gl-boot-silent');
-                    loader.classList.add('hidden-view');
-                    loader.classList.remove('gl-out', 'gl-flying', 'gl-nofly', 'gl-veil');
-                    loader.dataset.animating = 'false';
-                    try { window.__glClean(loader); window.__glBwClean(); } catch (e) { }
-                    // the first screen is up: the app's Lottie splash fades out once the home data has also arrived (ar-ready script)
-                    try { window.__arMark && window.__arMark('loader'); } catch (e) { }
-                    return;
-                }
+                // old app builds only: tell the (old) splash the loader step is done; harmless in the browser / new app
+                try { window.__arMark && window.__arMark('loader'); } catch (e) { }
 
                 const G = window.__gl;
                 loader.dataset.animating = 'true';
