@@ -17,7 +17,7 @@ Rules when editing:
 Version: 2026-11-16 (as supplied by the owner; notes added, nothing else changed).
 Change 2026-11-16: "Notification settings" is now a website page INSIDE the Settings panel (ids qs-np, qs-np-body, np-sheet; code block "NOTIFICATION SETTINGS" next to openQs). Back returns to Settings. The row no longer opens the native screen (window.openNativeNotificationSettings is still defined by the app but not called from here).
 Change 2026-11-17: NO BLACK SCREEN at app start. Script gl-app-flag now also adds class gl-boot to <html> (app only) and the style gl-boot-css paints html + body #f8fafc until hideLoader finishes (it removes gl-boot; 30 s safety timer). Before this, html/body were #0f172a (dark) and showed between the app logo and the loader. Keep gl-boot / gl-boot-css.
-Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). Lock-screen / notification buttons for these songs need an app update, see FLUTTER_CONNECT.md section 0.7.
+Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). Lock-screen / notification: when the app sets window.EXAMA_YT_NATIVE (app update 2026-11-18, media_service.dart) the page hands the playing song + the next songs to the native player through __rtMusicNative.get/back/resume; without it nothing is handed over. See FLUTTER_CONNECT.md section 0.7.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -21445,11 +21445,57 @@ window.__tpPaint = function () {
                 };
                 window.__rtYtAdd = ytAdd;
 
-                // ===== ANDROID NOTIFICATION / LOCK-SCREEN CONTROLS =====
-                // The app's native player (notification + lock screen) can only stream a direct file link, and a YouTube song has none, so nothing is handed over yet.
-                // These three hooks stay because the page's lecture hand-off (getPlayerStatus / updatePlayerStatus) calls them. NEXT STEP (needs an app update): see FLUTTER_CONNECT.md section 0.7.
-                window.__rtNatUrl = () => '';
-                window.__rtMusicNative = { get: () => null, back: () => false, resume: () => { } };
+                // ===== ANDROID NOTIFICATION / LOCK-SCREEN CONTROLS (needs the app with window.EXAMA_YT_NATIVE) =====
+                // When the app goes to the background the app calls window.getPlayerStatus() (see median-native script), which asks get() here: the song is paused in the page and handed to the
+                // app's native player (media_service.dart looks the YouTube audio up on the phone) together with the songs that follow, so the music goes on with the screen off and the
+                // notification has play / pause. When the app is visible again updatePlayerStatus(st) calls back() here and the page continues from the song and position the app reached.
+                // An older app has no EXAMA_YT_NATIVE: nothing is handed over (get() returns null) and the song just plays in the page as before.
+                let natId = '';
+                const ytIdOf = u => { const m = String(u || '').match(/(?:youtube\.com\/(?:watch\?(?:[^#\s]*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : ''; };
+                const watchUrl = id => 'https://www.youtube.com/watch?v=' + id;
+                const upNext = () => {                                              // the songs after this one (shuffle: the rest of the round in random order)
+                    const n = M.q.length, order = [];
+                    if (n < 2 || M.i < 0) return [];
+                    if (M.shuf) { for (let k = 0; k < n; k++) if (k !== M.i) order.push(k); for (let k = order.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); const t = order[k]; order[k] = order[j]; order[j] = t; } }
+                    else for (let k = 1; k < n; k++) order.push((M.i + k) % n);
+                    return order.slice(0, 10).map(k => { const x = M.q[k]; return { url: watchUrl(x.id), title: x.title || 'Song', artist: x.artist || 'Fitness Monitor', album: 'EXAMA' }; });
+                };
+                window.__rtNatUrl = () => '';                                       // no direct file address exists for a YouTube song (the page's proxy check is skipped)
+                window.__rtMusicNative = {
+                    get: () => {
+                        if (!window.EXAMA_YT_NATIVE) return null;
+                        const s = M.q[M.i];
+                        if (!M.active || !M.want || !M.playing || !s || !curVid || !P || !pReady) return null;
+                        let t = 0; try { t = P.getCurrentTime() || 0; } catch (e) { }
+                        M.extPause = true; natId = s.id;                            // the page must not start the sound again while the app plays it
+                        try { P.pauseVideo(); } catch (e) { }
+                        return { url: watchUrl(s.id), currentTime: t, isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'EXAMA', next: upNext() };
+                    },
+                    back: st => {
+                        const id = ytIdOf(st && st.url); if (!id) return false;    // not a YouTube song: it is a lecture, the lecture code handles it
+                        natId = ''; M.extPause = false;
+                        if (!M.active) return true;                                 // the student left the Fitness screen meanwhile: the music was stopped on purpose
+                        const ms = +st.currentTime || 0, dur = +st.duration || 0;
+                        const i = M.q.findIndex(x => x.id === id);
+                        if (i >= 0) { M.i = i; M.bag = []; }
+                        if (st.isPaused && dur > 0 && ms >= dur - 2000) { M.want = true; setTimeout(() => window.runMusicNext(), 100); return true; }   // the song ended while away: next one
+                        M.want = !st.isPaused;
+                        nowInfo();
+                        mPlayer().then(p => {
+                            try {
+                                if (curVid !== id) { curVid = id; playTok++; p.loadVideoById({ videoId: id, startSeconds: ms / 1000 }); if (st.isPaused) setTimeout(() => { try { p.pauseVideo(); } catch (e) { } }, 900); }
+                                else { p.seekTo(ms / 1000, true); if (st.isPaused) p.pauseVideo(); else p.playVideo(); }
+                            } catch (e) { }
+                        }).catch(() => { });
+                        if (document.getElementById('rt-pl')) pList();
+                        return true;
+                    },
+                    resume: () => {                                                 // safety net: the app said nothing about the song (status was empty), so play in the page again
+                        if (!natId) return;
+                        natId = ''; M.extPause = false;
+                        if (M.active && M.want) { try { P.playVideo(); } catch (e) { } }
+                    }
+                };
 
                 const pList = () => {
                     const box = document.getElementById('rt-pl-list'); if (!box) return;
