@@ -17,7 +17,7 @@ Rules when editing:
 Version: 2026-11-16 (as supplied by the owner; notes added, nothing else changed).
 Change 2026-11-16: "Notification settings" is now a website page INSIDE the Settings panel (ids qs-np, qs-np-body, np-sheet; code block "NOTIFICATION SETTINGS" next to openQs). Back returns to Settings. The row no longer opens the native screen (window.openNativeNotificationSettings is still defined by the app but not called from here).
 Change 2026-11-17: NO BLACK SCREEN at app start. Script gl-app-flag now also adds class gl-boot to <html> (app only) and the style gl-boot-css paints html + body #f8fafc until hideLoader finishes (it removes gl-boot; 30 s safety timer). Before this, html/body were #0f172a (dark) and showed between the app logo and the loader. Keep gl-boot / gl-boot-css.
-Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). Lock-screen / notification: when the app sets window.EXAMA_YT_NATIVE (app update 2026-11-18, media_service.dart) the page hands the playing song + the next songs to the native player through __rtMusicNative.get/back/resume; without it nothing is handed over. See FLUTTER_CONNECT.md section 0.7.
+Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). Lock-screen / notification: when the app sets window.EXAMA_YT_NATIVE (app update 2026-11-18, media_service.dart) the page hands the playing song + the next songs to the native player through __rtMusicNative.get/back/resume; without it nothing is handed over. See FLUTTER_CONNECT.md section 0.7. Lecture Hub YouTube lectures use the SAME hand-off (lectureNativeUrl / ytLecId in the median-native script): with EXAMA_YT_NATIVE the app plays the lecture's audio in the background and the lecture continues in the page when the app is back; Run music back() only claims a song it handed over itself (natId).
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -21472,7 +21472,8 @@ window.__tpPaint = function () {
                         return { url: watchUrl(s.id), currentTime: t, isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'EXAMA', next: upNext() };
                     },
                     back: st => {
-                        const id = ytIdOf(st && st.url); if (!id) return false;    // not a YouTube song: it is a lecture, the lecture code handles it
+                        if (!natId) return false;                                       // this app did not hand over a Run song: it is a lecture (also a YouTube lecture), the lecture code handles it
+                        const id = ytIdOf(st && st.url); if (!id) return false;
                         natId = ''; M.extPause = false;
                         if (!M.active) return true;                                 // the student left the Fitness screen meanwhile: the music was stopped on purpose
                         const ms = +st.currentTime || 0, dur = +st.duration || 0;
@@ -48108,7 +48109,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
      Only a readable HTTP error / HTML reply marks a URL as bad; if the check itself cannot run we still hand over. */
   var okUrl = {};
   function preflight(url) {
-    if (!url || !W.fetch || Object.prototype.hasOwnProperty.call(okUrl, url)) return;
+    if (!url || !W.fetch || /youtube\.com|youtu\.be/i.test(url) || Object.prototype.hasOwnProperty.call(okUrl, url)) return;
     okUrl[url] = true;
     try {
       fetch(url, { headers: { Range: 'bytes=0-1' } }).then(function (r) {
@@ -48121,9 +48122,14 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   }
 
   /* Which URL can the native player stream for the lecture that is open? */
+  function ytLecId(x) { var m = String(x || '').match(/(?:youtube(?:-nocookie)?\.com\/(?:embed\/|watch\?(?:[^#\s]*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : ''; }
   function lectureNativeUrl(p, v) {
     var src = (p.currentSrc && p.currentSrc()) || '';
-    if ((v && v.videoType === 'youtube') || /youtube|youtu\.be/i.test(src)) return { url: null, why: 'YouTube lecture: YouTube cannot be streamed by the native player' };
+    if ((v && v.videoType === 'youtube') || /youtube|youtu\.be/i.test(src)) {
+      var yid = ytLecId(src) || ytLecId(v && v.sourceUrl);   // new app (EXAMA_YT_NATIVE): the app looks the YouTube audio up on the phone and plays it in the background
+      if (W.EXAMA_YT_NATIVE && yid) return { url: 'https://www.youtube.com/watch?v=' + yid };
+      return { url: null, why: 'YouTube lecture: this app version cannot play YouTube in the background' };
+    }
     if (/^https?:\/\//i.test(src)) return { url: src };
     if (/^blob:/i.test(src) && v && v.sourceUrl) {          // downloaded (offline) lecture: while online, stream the same lecture through the proxy instead
       var m = String(v.sourceUrl).match(/(?:d\/|id=)([a-zA-Z0-9_-]{25,})/);
