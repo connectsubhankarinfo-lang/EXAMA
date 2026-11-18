@@ -17,6 +17,7 @@ Rules when editing:
 Version: 2026-11-16 (as supplied by the owner; notes added, nothing else changed).
 Change 2026-11-16: "Notification settings" is now a website page INSIDE the Settings panel (ids qs-np, qs-np-body, np-sheet; code block "NOTIFICATION SETTINGS" next to openQs). Back returns to Settings. The row no longer opens the native screen (window.openNativeNotificationSettings is still defined by the app but not called from here).
 Change 2026-11-17: NO BLACK SCREEN at app start. Script gl-app-flag now also adds class gl-boot to <html> (app only) and the style gl-boot-css paints html + body #f8fafc until hideLoader finishes (it removes gl-boot; 30 s safety timer). Before this, html/body were #0f172a (dark) and showed between the app logo and the loader. Keep gl-boot / gl-boot-css.
+Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). Lock-screen / notification buttons for these songs need an app update, see FLUTTER_CONNECT.md section 0.7.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -21105,11 +21106,12 @@ window.__tpPaint = function () {
                     try { if (window.renderFitnessMonitor) window.renderFitnessMonitor(); } catch (e) { }   // refresh Latest run + Week Curve right away
                     const v = $('run-tracker'); if (v) v.classList.add('hidden'); if (window.__rtMusicSync) window.__rtMusicSync();
                 };
-                // ----- Music: songs come from the Google Drive music folder (MP3 / MP4 only). One hidden <audio> element lives in <body>,
-                // so the music keeps playing when the run screen is closed or the run is finished. Stops when the student leaves the Fitness screen. -----
+                // ----- Music (2026-11-18): every student has a PERSONAL playlist of YouTube songs. Nothing is downloaded and nothing is saved to Drive:
+                // the songs are streamed by ONE hidden YouTube player that lives in <body>, so the music keeps playing when the run screen is closed or the run is finished.
+                // The list is kept in localStorage (rtPl_<mobile>) and copied to Firebase RTDB run_playlists/<mobile> (test mode: test_run_playlists/<mobile>) so it follows the student to a new phone.
+                // Other students' lists are never loaded or shown. Stops when the student leaves the Fitness screen. -----
                 const M = { yt: null, ready: false, loading: false, active: false, card: false, want: false, playing: false, vid: '' }; window.__rtMusic = M;
                 const PH = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f43f5e"/><stop offset="1" stop-color="#7f1d1d"/></linearGradient></defs><rect width="64" height="64" fill="url(#g)"/><circle cx="22" cy="46" r="7" fill="#fff" fill-opacity=".92"/><circle cx="42" cy="42" r="7" fill="#fff" fill-opacity=".92"/><path d="M27 14L49 9V38H45V19L31 22.5V46H27Z" fill="#fff" fill-opacity=".92"/></svg>');
-                const MAX_SONG_MB = 25;                          // Apps Script can take roughly 30 MB per request after base64
                 const setT = (id, t) => { const e = $(id); if (e && e.textContent !== t) e.textContent = t; };
                 const mTitle = t => { setT('rt-mp-title', t); setT('rt-mini-title', t); };
                 const mIco = on => ['rt-mp-ico', 'rt-mini-ico'].forEach(id => { const i = $(id); if (i) { i.className = 'fa-solid ' + (on ? 'fa-pause' : 'fa-play') + (id === 'rt-mp-ico' ? ' text-lg' : ' text-sm'); i.style.marginLeft = on ? '0' : '2px'; } });
@@ -21122,46 +21124,10 @@ window.__tpPaint = function () {
                     if (mini) { const on = M.active && !trackerOpen; mini.classList.toggle('hidden', !on); mini.classList.toggle('flex', on); }
                 };
                 window.__rtMusicSync = mSync;
-                // ===== QUEUE ENGINE: the app keeps its own song list, so Shuffle, Next and Previous always agree with each other =====
-                Object.assign(M, { q: [], i: -1, bag: [], hist: [], shuf: !!M.shuf, errs: 0 });
-                const DRIVE = () => String(window.EXAMA_DRIVE_API || '');
-                const songUrl = id => 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(id);
-                // several Drive links for the same file: if the first one is refused by the browser, the next one is tried before giving up
-                // last resort: the Google script reads the file from Drive itself and sends it to the page, which plays it from memory
-                const blobCache = {}, blobKeys = [];
-                const loadViaScript = (id, alt, giveUp) => {
-                    mTitle('Loading song...');
-                    const apply = u => { if (au && au.__alt === alt) { au.src = u; try { nowInfo(); } catch (e) { } doPlay(); } };
-                    if (blobCache[id]) return apply(blobCache[id]);
-                    fetchT(DRIVE() + '?action=song&id=' + encodeURIComponent(id), 180000).then(j => {
-                        if (!j || !j.success) throw new Error((j && j.error) || 'No file');
-                        const bin = atob(String(j.b64).replace(/^data:[^,]*,/, '').replace(/\s+/g, '')), n = bin.length, arr = new Uint8Array(n); for (let k = 0; k < n; k++) arr[k] = bin.charCodeAt(k);
-                        // look at the real bytes: Drive sometimes sends a web page (permission / quota / virus-scan) and the declared mime can be wrong; both give MEDIA error code 4
-                        const sn = (o, c) => String.fromCharCode.apply(null, arr.subarray(o, o + c));
-                        let ty = '';
-                        if (sn(0, 3) === 'ID3' || (arr[0] === 0xFF && (arr[1] & 0xE0) === 0xE0)) ty = 'audio/mpeg';
-                        else if (sn(4, 4) === 'ftyp') ty = sn(8, 4) === 'M4A ' ? 'audio/mp4' : 'video/mp4';
-                        else if (sn(0, 4) === 'OggS') ty = 'audio/ogg';
-                        else if (sn(0, 4) === 'RIFF' && sn(8, 4) === 'WAVE') ty = 'audio/wav';
-                        else if (sn(0, 4) === 'fLaC') ty = 'audio/flac';
-                        else if (/^\s*(<!doctype|<html|<\?xml|\{)/i.test(sn(0, 64))) throw new Error('The server sent a web page, not a song');
-                        return new Blob([arr], { type: ty || j.mime || 'audio/mpeg' });
-                    }).then(b => {
-                        const u = URL.createObjectURL(b); alt.bi = Math.round(b.size / 1024) + 'KB ' + (b.type || '?'); blobCache[id] = u; blobKeys.push(id);
-                        while (blobKeys.length > 4) { const o = blobKeys.shift(); try { URL.revokeObjectURL(blobCache[o]); } catch (e) { } delete blobCache[o]; }
-                        apply(u);
-                    }).catch(e => { console.warn('[music] script load failed', e); giveUp(String((e && e.message) || 'failed')); });
-                };
-                const songUrls = id => { const e = encodeURIComponent(id); return ['https://drive.google.com/uc?export=download&id=' + e, 'https://drive.usercontent.google.com/download?id=' + e + '&export=download&confirm=t', 'https://docs.google.com/uc?export=open&id=' + e]; };
-                // FIRST CHOICE: stream the song through the Cloudflare proxy (the same one the lectures use). It supports seeking and needs no waiting: the song starts as soon as the first bytes arrive.
-                // If that fails, the Google script sends the whole file (slow, kept as a fallback), then the plain Drive links are tried.
-                const SONG_PROXY = 'https://exama-video-proxy.connect-subhankar-info.workers.dev/';
-                const songProxy = (id, mime) => {
-                    const m = String(mime || '').toLowerCase();
-                    const ext = /audio\/(mp4|x-m4a|m4a|aac)/.test(m) ? '.m4a' : /mp4/.test(m) ? '.mp4' : /ogg/.test(m) ? '.ogg' : /wav/.test(m) ? '.wav' : /flac/.test(m) ? '.flac' : '.mp3';
-                    return SONG_PROXY + '?id=' + encodeURIComponent(id) + '&ext=' + ext;
-                };
-                const cleanName = n => String(n || '').replace(/\.[^.]+$/, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim() || 'Song';
+                Object.assign(M, { q: [], i: -1, bag: [], hist: [], shuf: !!M.shuf, errs: 0, extPause: false });
+                const DRIVE = () => String(window.EXAMA_DRIVE_API || '');          // used ONLY to search YouTube (nothing is downloaded or stored there)
+                const thumb = id => 'https://i.ytimg.com/vi/' + id + '/mqdefault.jpg';
+                const idOk = id => /^[\w-]{11}$/.test(String(id || ''));
                 const rand = () => Math.floor(Math.random() * M.q.length);
                 const pEsc = x => window.escHtml ? window.escHtml(x) : String(x).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
                 const toast = (a, b, c) => { try { if (window.showToast) window.showToast(a, b || '', c || 'info'); } catch (e) { } };
@@ -21170,29 +21136,70 @@ window.__tpPaint = function () {
                     const t = setTimeout(() => { try { c && c.abort(); } catch (e) { } }, ms || 15000);
                     return fetch(url, c ? { signal: c.signal } : {}).then(r => { clearTimeout(t); return r.ok ? r.json() : Promise.reject(new Error('http')); }, e => { clearTimeout(t); throw e; });
                 };
-                const normSong = x => ({ id: x.id, title: x.title || cleanName(x.name), artist: x.artist || '', art: x.art || '', mime: x.mime || '', yt: x.yt || '' });
-                const CK = 'rtDriveSongs';
-                const loadCache = () => { try { const a = JSON.parse(localStorage.getItem(CK) || '[]'); return Array.isArray(a) ? a.filter(x => x && x.id) : []; } catch (e) { return []; } };
-                const saveCache = () => { try { localStorage.setItem(CK, JSON.stringify(M.q)); } catch (e) { } };
-                const applyList = list => {                             // swap in a fresh list but keep pointing at the song that is playing
-                    const cur = M.i >= 0 && M.q[M.i] ? M.q[M.i].id : '';
-                    M.q = list.filter(x => !(window.__rtPendingDel && window.__rtPendingDel.has(x.id))).map(normSong); M.bag = []; M.hist = [];
+                const normSong = x => ({ id: x.id, title: x.title || 'YouTube song', artist: x.artist || '', art: thumb(x.id), mime: '', yt: x.id });
+
+                // ===== PERSONAL PLAYLIST (only the logged-in student's own list is ever in memory) =====
+                const mobKey = () => String(window.loggedInMobile || '').replace(/\W/g, '') || 'guest';
+                const plLs = () => 'rtPl_' + mobKey();
+                const plDirty = () => 'rtPlD_' + mobKey();
+                const plDb = () => (window.isGlobalTestMode ? 'test_run_playlists/' : 'run_playlists/') + mobKey();
+                const slim = () => M.q.map(s => ({ id: s.id, t: String(s.title || '').slice(0, 150), a: String(s.artist || '').slice(0, 100) }));
+                const fromStore = x => ({ id: x && x.id, title: x && x.t, artist: x && x.a });
+                const loadLocal = () => { try { const a = JSON.parse(localStorage.getItem(plLs()) || '[]'); return Array.isArray(a) ? a.filter(x => x && idOk(x.id)) : []; } catch (e) { return []; } };
+                const saveLocal = () => { try { localStorage.setItem(plLs(), JSON.stringify(slim())); } catch (e) { } };
+                let dbMod = null, saveT = null, plOwner = '', plP = Promise.resolve();
+                const fbm = async () => dbMod || (dbMod = await import('https://www.gstatic.com/firebasejs/10.5.0/firebase-database.js'));
+                const saveCloud = () => {
+                    const who = mobKey(); clearTimeout(saveT);
+                    try { localStorage.setItem(plDirty(), '1'); } catch (e) { }
+                    saveT = setTimeout(async () => {
+                        try {
+                            if (!window.rtdb || who === 'guest' || mobKey() !== who) return;
+                            const f = await fbm(); await f.set(f.ref(window.rtdb, plDb()), { songs: slim(), ts: Date.now() });
+                            try { localStorage.removeItem('rtPlD_' + who); } catch (e) { }
+                        } catch (e) { }                                            // offline / rules: the list is still safe in localStorage and is sent again next time
+                    }, 700);
+                };
+                const savePl = () => { saveLocal(); saveCloud(); };
+                const applyList = list => {                                        // swap in a list but keep pointing at the song that is playing
+                    const cur = M.i >= 0 && M.q[M.i] ? M.q[M.i].id : '', seen = {};
+                    M.q = list.filter(x => x && idOk(x.id) && !seen[x.id] && (seen[x.id] = 1)).map(normSong); M.bag = []; M.hist = [];
                     M.i = cur ? M.q.findIndex(s => s.id === cur) : -1;
                 };
-                let listP = null;
-                const mSongs = () => {
-                    if (listP) return listP;
-                    if (!DRIVE()) return Promise.reject(new Error('no api'));
-                    listP = fetchT(DRIVE() + '?action=list&folderType=music', 25000).then(r => {
-                        listP = null;
-                        if (!r || !r.success) throw new Error((r && r.error) || 'list failed');
-                        applyList(r.files || []); saveCache(); return M.q;
-                    }, e => { listP = null; throw e; });
-                    return listP;
+                const pullCloud = async () => {
+                    const who = plOwner;
+                    if (!window.rtdb || who === 'guest') return;
+                    try {
+                        if (localStorage.getItem(plDirty()) === '1') { saveCloud(); return; }          // this phone has a newer list that was not sent yet: send it, do not overwrite it
+                        const f = await fbm(), sn = await f.get(f.ref(window.rtdb, plDb()));
+                        if (plOwner !== who) return;
+                        if (sn.exists()) {
+                            const v = sn.val() || {}, arr = Array.isArray(v.songs) ? v.songs : Object.values(v.songs || {});
+                            applyList(arr.map(fromStore)); saveLocal();
+                        } else if (M.q.length) saveCloud();
+                    } catch (e) { }
+                    if (document.getElementById('rt-pl')) pList();
                 };
+                const ensureList = () => {                                         // loads the list of the student who is logged in now (a different student = a different list)
+                    const who = mobKey(); if (plOwner === who) return;
+                    if (plOwner && M.active) { try { window.runMusicStop(); } catch (e) { } }
+                    plOwner = who; M.q = []; M.i = -1; M.bag = []; M.hist = [];
+                    applyList(loadLocal().map(fromStore));
+                    plP = Promise.race([pullCloud(), new Promise(r => setTimeout(r, 4000))]);
+                };
+                const shiftIdx = d => { if (M.i >= 0) M.i += d; M.hist = M.hist.map(x => x + d); M.bag = M.bag.map(x => x + d); };
 
-                // ----- the audio element -----
-                let au = null;
+                // ===== THE PLAYER: one hidden YouTube player (same way the Daily Motivation sound plays) =====
+                let P = null, pReady = false, pP = null, ytApiP = null, curVid = '', playTok = 0, startT = null;
+                const loadYT = () => ytApiP || (ytApiP = new Promise((res, rej) => {
+                    if (window.YT && window.YT.Player) return res();
+                    const prev = window.onYouTubeIframeAPIReady; let iv = null, to = null;
+                    const done = ok => { clearInterval(iv); clearTimeout(to); if (ok) res(); else { ytApiP = null; rej(new Error('YouTube could not load')); } };
+                    window.onYouTubeIframeAPIReady = () => { try { if (prev) prev(); } catch (e) { } done(true); };
+                    iv = setInterval(() => { if (window.YT && window.YT.Player) done(true); }, 300);
+                    to = setTimeout(() => done(false), 20000);
+                    if (!document.getElementById('rt-yt-api') && !document.getElementById('dm-yt-api')) { const s = document.createElement('script'); s.id = 'rt-yt-api'; s.src = 'https://www.youtube.com/iframe_api'; s.onerror = () => done(false); document.head.appendChild(s); }
+                }));
                 const mArt = s => {
                     ['rt-mp-art', 'rt-mini-art'].forEach(x => { const im = $(x); if (im) { im.onerror = () => { im.onerror = null; im.src = PH; }; im.src = (s && s.art) || PH; } });
                 };
@@ -21201,43 +21208,44 @@ window.__tpPaint = function () {
                     mTitle(s.title);
                     { const se = $('rt-mp-sub'); if (se) { se.style.whiteSpace = ''; se.style.overflow = ''; se.style.textOverflow = ''; } } setT('rt-mp-sub', ((n > 1 && M.i >= 0) ? (M.i + 1) + ' / ' + n + '   ' : '') + String(s.artist || 'FITNESS MONITOR').toUpperCase() + (M.shuf ? '   SHUFFLE' : ''));
                     mArt(s);
-                    try { if (navigator.mediaSession && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: s.title, artist: s.artist || 'FITNESS MONITOR', artwork: s.art ? [{ src: s.art, sizes: '400x400', type: 'image/jpeg' }] : [] }); } catch (e) { }
+                    try { if (navigator.mediaSession && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: s.title, artist: s.artist || 'FITNESS MONITOR', artwork: s.art ? [{ src: s.art, sizes: '320x180', type: 'image/jpeg' }] : [] }); } catch (e) { }
                 };
-                const mAudio = () => {
-                    if (au) return au;
-                    au = new Audio(); au.preload = 'auto'; au.id = 'rt-audio'; au.setAttribute('playsinline', ''); au.style.display = 'none';
-                    try { document.body.appendChild(au); } catch (e) { }
-                    au.addEventListener('playing', () => { M.playing = true; M.errs = 0; mIco(true); try { nowInfo(); } catch (e) { } });
-                    au.addEventListener('pause', () => { M.playing = false; mIco(false); });
-                    au.addEventListener('waiting', () => { if (M.want) M.playing = true; });
-                    au.addEventListener('ended', () => { M.playing = false; window.runMusicNext(); });      // song finished: go to the next one (shuffle aware)
-                    au.addEventListener('error', () => {                                                    // file missing / not playable: skip it
-                        if (!au.getAttribute('src')) return;
-                        try { console.warn('[music] audio error code', au.error && au.error.code, au.currentSrc || au.src); } catch (e) { }
-                        if (au.__alt && au.__alt.i < au.__alt.u.length - 1) { au.__alt.i++; au.src = au.__alt.u[au.__alt.i]; doPlay(); return; }   // try the next Drive link first
-                        const giveUp = why => {
-                            M.errs++; M.playing = false; mIco(false);
-                            if (M.q.length > 1 && M.errs <= M.q.length) { mTitle('Skipping...'); setTimeout(() => { if (M.active && M.want) window.runMusicNext(); }, 500); }
-                            else { mTitle('Cannot play this song'); if (why) { setT('rt-mp-sub', String(why).toUpperCase().slice(0, 110)); const se = $('rt-mp-sub'); if (se) { se.style.whiteSpace = 'normal'; se.style.overflow = 'visible'; se.style.textOverflow = 'clip'; } } }
-                        };
-                        if (au.__alt && !au.__alt.b) {
-                            au.__alt.b = 1; au.__alt.id = au.__alt.id || '';
-                            if (au.__alt.id) {                                   // then let the Google script send the file
-                                const a0 = au.__alt;
-                                loadViaScript(a0.id, a0, a0.dl ? (why => { if (au.__alt !== a0) return; console.warn('[music] script failed, trying Drive links:', why); a0.sw = String(why || 'failed').slice(0, 40); a0.u = a0.dl; a0.dl = null; a0.i = 0; au.src = a0.u[0]; doPlay(); }) : giveUp);
-                                return;
-                            }
-                        }
-                        giveUp((au.__alt && au.__alt.bi ? 'SCRIPT SENT ' + au.__alt.bi + ' BUT NOT PLAYABLE' : 'SCRIPT FAILED: ' + ((au.__alt && au.__alt.sw) || 'NO REPLY')) + ' / CODE ' + (au.error ? au.error.code : '?'));
-                    });
-                    // the old YouTube-style handle is kept on purpose: Nova (voice) and the walkie-talkie lower / pause the music through it
+                const giveUp = why => {
+                    M.errs++; M.playing = false; mIco(false);
+                    if (M.q.length > 1 && M.errs <= M.q.length) {
+                        const s = M.q[M.i]; if (s && M.errs === 1) toast('Skipped a song', s.title + ' cannot be played here.', 'info');
+                        mTitle('Skipping...'); setTimeout(() => { if (M.active && M.want) window.runMusicNext(); }, 600);
+                    } else {
+                        mTitle('Cannot play this song');
+                        if (why) { setT('rt-mp-sub', String(why).toUpperCase().slice(0, 110)); const se = $('rt-mp-sub'); if (se) { se.style.whiteSpace = 'normal'; se.style.overflow = 'visible'; se.style.textOverflow = 'clip'; } }
+                    }
+                };
+                const refine = () => {                                             // a song added without a title gets its real name from the player
+                    try {
+                        const s = M.q[M.i], d = P && P.getVideoData && P.getVideoData();
+                        if (!s || !d || d.video_id !== s.id) return;
+                        let ch = false;
+                        if (d.title && (!s.title || s.title === 'YouTube song')) { s.title = String(d.title).slice(0, 150); ch = true; }
+                        if (d.author && !s.artist) { s.artist = String(d.author).slice(0, 100); ch = true; }
+                        if (ch) { savePl(); if (document.getElementById('rt-pl')) pList(); }
+                    } catch (e) { }
+                };
+                const onState = e => {
+                    const st = e && e.data;
+                    if (st === 1) { clearTimeout(startT); M.playing = true; M.errs = 0; M.extPause = false; mIco(true); refine(); nowInfo(); }
+                    else if (st === 2) { M.playing = false; mIco(false); }
+                    else if (st === 3) { if (M.want) M.playing = true; }
+                    else if (st === 0) { M.playing = false; if (M.active && M.want) window.runMusicNext(); }     // song finished: go to the next one (shuffle aware)
+                };
+                const onErr = e => { const c = e && e.data; giveUp(c === 101 || c === 150 ? 'The owner does not allow this song here' : c === 100 ? 'Song not found or private' : 'Song cannot be played'); };
+                const setHandle = () => {
+                    // the old handle name is kept on purpose: Nova (voice) and the walkie-talkie lower / pause the music through it
                     M.yt = {
-                        getVolume: () => Math.round(au.volume * 100),
-                        setVolume: v => { au.volume = Math.max(0, Math.min(1, v / 100)); },
-                        pauseVideo: () => { au.pause(); },
-                        playVideo: () => { const p = au.play(); if (p && p.catch) p.catch(() => { }); }
+                        getVolume: () => { try { return Math.round(P.getVolume()); } catch (e) { return 100; } },
+                        setVolume: v => { try { P.setVolume(Math.max(0, Math.min(100, v))); } catch (e) { } },
+                        pauseVideo: () => { M.extPause = true; try { P.pauseVideo(); } catch (e) { } },
+                        playVideo: () => { M.extPause = false; try { P.playVideo(); } catch (e) { } }
                     };
-                    M.ready = true;
                     try {
                         if (navigator.mediaSession) {
                             navigator.mediaSession.setActionHandler('play', () => window.runMusicToggle());
@@ -21246,15 +21254,34 @@ window.__tpPaint = function () {
                             navigator.mediaSession.setActionHandler('previoustrack', () => window.runMusicPrev());
                         }
                     } catch (e) { }
-                    return au;
                 };
+                const mPlayer = () => pP || (pP = loadYT().then(() => new Promise((res, rej) => {
+                    let h = document.getElementById('rt-yt-host');
+                    if (!h) { h = document.createElement('div'); h.id = 'rt-yt-host'; h.style.cssText = 'position:fixed;left:0;bottom:0;width:200px;height:200px;opacity:.01;pointer-events:none;z-index:-1;overflow:hidden'; h.innerHTML = '<div id="rt-yt"></div>'; document.body.appendChild(h); }
+                    const to = setTimeout(() => { if (!pReady) rej(new Error('player timeout')); }, 15000);
+                    P = new window.YT.Player('rt-yt', {
+                        host: 'https://www.youtube-nocookie.com', width: '200', height: '200',
+                        playerVars: { autoplay: 1, controls: 0, playsinline: 1, rel: 0, modestbranding: 1, disablekb: 1, fs: 0, iv_load_policy: 3, origin: location.origin },
+                        events: { onReady: () => { clearTimeout(to); pReady = true; M.ready = true; setHandle(); res(P); }, onStateChange: onState, onError: onErr }
+                    });
+                })).catch(e => { pP = null; P = null; pReady = false; const h = document.getElementById('rt-yt-host'); if (h) h.remove(); throw e; }));
                 const mTick = () => {
                     if (!M.active) return;
                     mSync();
-                    try { if (au) { const d = au.duration, c = au.currentTime, b = $('rt-mp-bar'); if (b && d > 0 && isFinite(d)) b.style.width = Math.min(100, c / d * 100).toFixed(1) + '%'; } } catch (e) { }
+                    try { if (P && pReady && curVid) { const d = P.getDuration(), c = P.getCurrentTime(), b = $('rt-mp-bar'); if (b && d > 0 && isFinite(d)) b.style.width = Math.min(100, c / d * 100).toFixed(1) + '%'; } } catch (e) { }
                 };
                 let mTimer = null;
                 const mTimerOn = on => { if (on && !mTimer) mTimer = setInterval(mTick, 700); if (!on && mTimer) { clearInterval(mTimer); mTimer = null; } };
+                // BACKGROUND HELP: when the phone / app goes to the background or comes back, Android (or YouTube) can pause the sound by itself.
+                // If the student did NOT press pause, play again. (Lock-screen buttons for YouTube songs need the app update, see FLUTTER_CONNECT.md.)
+                const resumeIfNeeded = () => {
+                    try {
+                        if (!M.active || !M.want || M.extPause || !P || !pReady || !curVid) return;
+                        const st = P.getPlayerState(); if (st === 2 || st === 5 || st === -1) P.playVideo();
+                    } catch (e) { }
+                };
+                document.addEventListener('visibilitychange', () => { setTimeout(resumeIfNeeded, document.hidden ? 300 : 700); setTimeout(resumeIfNeeded, document.hidden ? 1500 : 2000); });
+                ['exama-pause', 'exama-resume'].forEach(n => window.addEventListener(n, () => { setTimeout(resumeIfNeeded, 400); setTimeout(resumeIfNeeded, 1800); }));
                 // which song comes next? Shuffle = random song that has not played yet (every song once, then a fresh round); otherwise the next one in the list
                 const pickNext = () => {
                     const n = M.q.length; if (!n) return -1;
@@ -21263,50 +21290,52 @@ window.__tpPaint = function () {
                     if (!M.bag.length) { for (let k = 0; k < n; k++) if (k !== M.i) M.bag.push(k); }
                     return M.bag.splice(Math.floor(Math.random() * M.bag.length), 1)[0];
                 };
-                const doPlay = () => { try { const p = au.play(); if (p && p.catch) p.catch(() => { M.playing = false; mIco(false); }); } catch (e) { } };
                 const playAt = (i, noHist) => {
                     if (i < 0 || i >= M.q.length) return;
                     if (!noHist && M.i >= 0 && M.i !== i) { M.hist.push(M.i); if (M.hist.length > 100) M.hist.shift(); }
-                    M.i = i; M.want = true; M.bag = M.bag.filter(x => x !== i);
-                    nowInfo(); mAudio();
+                    M.i = i; M.want = true; M.extPause = false; M.bag = M.bag.filter(x => x !== i);
+                    nowInfo();
                     const b = $('rt-mp-bar'); if (b) b.style.width = '0';
-                    { const sid = M.q[i].id, alt = { u: [songProxy(sid, M.q[i].mime)], i: 0, b: 0, id: sid, dl: songUrls(sid) }; au.__alt = alt; try { au.pause(); au.removeAttribute('src'); } catch (e) { } au.src = alt.u[0]; doPlay();
-                        setTimeout(() => { if (au.__alt === alt && !alt.b && M.want && au.readyState < 3 && !au.paused) { try { au.dispatchEvent(new Event('error')); } catch (e) { } } }, 15000); }   // proxy silent for 15 s: move on to the fallbacks
+                    const sid = M.q[i].id, tok = ++playTok; curVid = sid; clearTimeout(startT);
+                    mPlayer().then(p => {
+                        if (tok !== playTok) return;
+                        try { p.loadVideoById(sid); } catch (e) { giveUp('Player not ready'); return; }
+                        startT = setTimeout(() => { if (tok === playTok && M.want && !M.playing) { setT('rt-mp-sub', 'TAP PLAY TO START'); mIco(false); } }, 5000);   // the phone blocked auto-start: one tap on play starts it
+                    }).catch(() => { if (tok === playTok) giveUp('Could not load YouTube. Check your internet'); });
                     if (document.getElementById('rt-pl')) pList();
                 };
                 const startPlay = () => {
                     if (!M.active || !M.want) return;
                     if (!M.q.length) { mTitle('No songs yet'); setT('rt-mp-sub', 'TAP HERE TO ADD SONGS'); M.want = false; window.runMusicList(); return; }
                     if (M.i < 0) playAt(M.shuf ? rand() : 0);
-                    else if (au && au.getAttribute('src')) doPlay();
+                    else if (curVid && P && pReady) { try { P.playVideo(); } catch (e) { } }
                     else playAt(M.i, true);
                 };
                 window.openRunMusic = function () {          // music button on the run screen
                     if (!M.active) {
+                        ensureList();
                         M.active = true; M.card = true; M.want = true; mTitle('Loading music...'); mSync(); mTimerOn(true);
-                        mAudio();                            // created inside the tap, so the phone allows sound
-                        if (!DRIVE()) { mTitle('Music is not set up'); return; }
-                        if (!M.q.length) { const c = loadCache(); if (c.length) applyList(c); }
-                        if (M.q.length) { startPlay(); mSongs().then(() => { if (document.getElementById('rt-pl')) pList(); }).catch(() => { }); }   // play at once from the last known list, refresh quietly
-                        else mSongs().then(startPlay).catch(() => { if (M.active) { mTitle('Cannot load songs'); setT('rt-mp-sub', 'CHECK YOUR INTERNET'); } });
+                        mPlayer().catch(() => { });          // starts loading the player inside the tap, so the phone allows sound
+                        if (M.q.length) { startPlay(); plP.then(() => { if (document.getElementById('rt-pl')) pList(); }); }   // play at once from this phone's list, the cloud copy is merged quietly
+                        else plP.then(() => { if (M.active) startPlay(); });                                                    // empty here: maybe the cloud has the list (new phone)
                         return;
                     }
                     M.card = !M.card; mSync();               // already playing: just show / hide the card, the music keeps going
                 };
                 window.runMusicToggle = function () {
-                    if (!au || !M.q.length) { M.want = true; return; }
-                    if (M.i < 0 || !au.getAttribute('src')) { playAt(M.i >= 0 ? M.i : (M.shuf ? rand() : 0), true); return; }
-                    if (au.paused) { M.want = true; doPlay(); } else { M.want = false; au.pause(); }
+                    if (!M.q.length) { M.want = true; return; }
+                    if (M.i < 0 || !curVid || !P || !pReady) { playAt(M.i >= 0 ? M.i : (M.shuf ? rand() : 0), true); return; }
+                    let st = -2; try { st = P.getPlayerState(); } catch (e) { }
+                    if (st === 1 || st === 3) { M.want = false; M.extPause = false; try { P.pauseVideo(); } catch (e) { } }
+                    else { M.want = true; M.extPause = false; try { P.playVideo(); } catch (e) { } }
                 };
                 window.runMusicNext = function () {
-                    if (!au) return;
                     if (!M.q.length) { M.want = true; return; }
                     playAt(pickNext());
                 };
                 window.runMusicPrev = function () {
-                    if (!au) return;
                     if (!M.q.length) { M.want = true; return; }
-                    try { if (au.currentTime > 3) { M.want = true; au.currentTime = 0; doPlay(); return; } } catch (e) { }   // song already running: first tap restarts it
+                    try { if (P && pReady && curVid && P.getCurrentTime() > 3) { M.want = true; P.seekTo(0, true); P.playVideo(); return; } } catch (e) { }   // song already running: first tap restarts it
                     const n = M.q.length;
                     if (M.shuf && M.hist.length) playAt(M.hist.pop(), true);
                     else playAt((M.i - 1 + n) % n, true);
@@ -21314,454 +21343,183 @@ window.__tpPaint = function () {
                 window.runMusicShuffle = function () {
                     M.shuf = !M.shuf; M.bag = [];
                     document.querySelectorAll('.rt-shuf').forEach(b => { b.style.opacity = M.shuf ? '1' : '.45'; b.style.color = M.shuf ? '#fff' : ''; });
-                    if (M.ready && M.i >= 0) nowInfo();
+                    if (M.i >= 0) nowInfo();
                     toast(M.shuf ? 'Shuffle on' : 'Shuffle off', '', 'info');
                 };
                 window.runMusicStop = function () {
-                    M.want = false; M.active = false; M.card = false; M.playing = false; mTimerOn(false);
-                    try { if (au) { au.pause(); au.removeAttribute('src'); au.load(); } } catch (e) { }
+                    M.want = false; M.active = false; M.card = false; M.playing = false; M.extPause = false; mTimerOn(false); playTok++; clearTimeout(startT); curVid = '';
+                    try { if (P && pReady) P.stopVideo(); } catch (e) { }
                     mIco(false); mSync(); if (window.closeRunPlaylist) window.closeRunPlaylist();
                 };
 
-                // ===== READ SONG NAME + ARTWORK FROM THE FILE ITSELF (ID3 tags in MP3, iTunes atoms in MP4) =====
-                const rd = (f, a, b) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(new Uint8Array(r.result)); r.onerror = () => rej(r.error); r.readAsArrayBuffer(f.slice(a, b)); });
-                const u32 = (b, p) => ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0;
-                const synch = (b, p) => (b[p] << 21) | (b[p + 1] << 14) | (b[p + 2] << 7) | b[p + 3];
-                const id3Text = body => {
-                    if (!body || body.length < 2) return '';
-                    const enc = body[0]; let d = body.subarray(1), label = 'iso-8859-1';
-                    if (enc === 1) {
-                        if (d[0] === 0xFF && d[1] === 0xFE) { label = 'utf-16le'; d = d.subarray(2); }
-                        else if (d[0] === 0xFE && d[1] === 0xFF) { label = 'utf-16be'; d = d.subarray(2); }
-                        else label = 'utf-16le';
-                    } else if (enc === 2) label = 'utf-16be'; else if (enc === 3) label = 'utf-8';
-                    let s = ''; try { s = new TextDecoder(label).decode(d); } catch (e) { s = ''; }
-                    return s.replace(/\u0000+$/, '').replace(/\u0000/g, ', ').replace(/\s+/g, ' ').trim();
-                };
-                const id3Pic = (body, v2) => {
-                    const enc = body[0]; let p = 1;
-                    if (v2) p += 3; else { while (p < body.length && body[p] !== 0) p++; p++; }          // image format (PIC) or mime type (APIC)
-                    p++;                                                                                  // picture type
-                    if (enc === 1 || enc === 2) { while (p + 1 < body.length && !(body[p] === 0 && body[p + 1] === 0)) p += 2; p += 2; }
-                    else { while (p < body.length && body[p] !== 0) p++; p++; }                           // description
-                    return p < body.length ? body.subarray(p) : null;
-                };
-                const readId3 = async f => {
-                    const h = await rd(f, 0, 10);
-                    if (h[0] !== 0x49 || h[1] !== 0x44 || h[2] !== 0x33) return null;
-                    const ver = h[3], flags = h[5], size = synch(h, 6);
-                    const b = await rd(f, 10, 10 + Math.min(size, 10 * 1048576));
-                    const out = { title: '', artist: '', pic: null };
-                    let p = 0;
-                    if (flags & 0x40) p = ver === 4 ? synch(b, 0) : u32(b, 0) + 4;                         // skip the extended header
-                    const idLen = ver === 2 ? 3 : 4, hdr = ver === 2 ? 6 : 10;
-                    while (p + hdr <= b.length && b[p] !== 0) {
-                        const id = String.fromCharCode.apply(null, b.subarray(p, p + idLen));
-                        const fs = ver === 2 ? ((b[p + 3] << 16) | (b[p + 4] << 8) | b[p + 5]) : ver === 4 ? synch(b, p + 4) : u32(b, p + 4);
-                        const s = p + hdr; if (fs <= 0 || s + fs > b.length) break;
-                        const body = b.subarray(s, s + fs);
-                        if (id === 'TIT2' || id === 'TT2') out.title = id3Text(body);
-                        else if (id === 'TPE1' || id === 'TP1') out.artist = id3Text(body);
-                        else if ((id === 'APIC' || id === 'PIC') && !out.pic) out.pic = id3Pic(body, ver === 2);
-                        p = s + fs;
-                    }
-                    return out;
-                };
-                const readId3v1 = async f => {
-                    if (f.size < 128) return null;
-                    const t = await rd(f, f.size - 128, f.size);
-                    if (t[0] !== 0x54 || t[1] !== 0x41 || t[2] !== 0x47) return null;
-                    const txt = (a, b) => new TextDecoder('iso-8859-1').decode(t.subarray(a, b)).replace(/\u0000+.*$/, '').trim();
-                    return { title: txt(3, 33), artist: txt(33, 63), pic: null };
-                };
-                const mp4Kids = (b, s, e) => {
-                    const out = []; let p = s;
-                    while (p + 8 <= e) { const sz = u32(b, p); if (sz < 8 || p + sz > e) break; out.push({ t: String.fromCharCode(b[p + 4], b[p + 5], b[p + 6], b[p + 7]), s: p + 8, e: p + sz }); p += sz; }
-                    return out;
-                };
-                const readMp4 = async f => {
-                    let off = 0, moov = null;
-                    while (off + 8 <= f.size) {                                                           // walk the top-level atoms until "moov" (it can sit at the start or the end)
-                        const h = await rd(f, off, Math.min(f.size, off + 16));
-                        let sz = u32(h, 0), hl = 8; const type = String.fromCharCode(h[4], h[5], h[6], h[7]);
-                        if (sz === 1 && h.length >= 16) { sz = u32(h, 8) * 4294967296 + u32(h, 12); hl = 16; } else if (sz === 0) sz = f.size - off;
-                        if (sz < hl) break;
-                        if (type === 'moov') { if (sz <= 40 * 1048576) moov = await rd(f, off + hl, off + sz); break; }
-                        off += sz;
-                    }
-                    if (!moov) return null;
-                    const pick = (list, t) => list.find(x => x.t === t);
-                    const udta = pick(mp4Kids(moov, 0, moov.length), 'udta');
-                    const meta = udta && pick(mp4Kids(moov, udta.s, udta.e), 'meta');
-                    const ilst = meta && pick(mp4Kids(moov, meta.s + 4, meta.e), 'ilst');
-                    if (!ilst) return null;
-                    const out = { title: '', artist: '', pic: null }, A = String.fromCharCode(0xA9);
-                    mp4Kids(moov, ilst.s, ilst.e).forEach(k => {
-                        const d = pick(mp4Kids(moov, k.s, k.e), 'data'); if (!d) return;
-                        const pay = moov.subarray(d.s + 8, d.e);
-                        const txt = () => { try { return new TextDecoder('utf-8').decode(pay).replace(/\s+/g, ' ').trim(); } catch (e) { return ''; } };
-                        if (k.t === A + 'nam') out.title = txt();
-                        else if (k.t === A + 'ART') out.artist = txt();
-                        else if (k.t === 'aART' && !out.artist) out.artist = txt();
-                        else if (k.t === 'covr' && !out.pic) out.pic = pay;
-                    });
-                    return out;
-                };
-                const shrinkArt = u8 => new Promise(res => {              // cover art can be huge: shrink to a small JPEG (base64) before it goes to Drive
-                    try {
-                        const url = URL.createObjectURL(new Blob([u8], { type: u8[0] === 0x89 ? 'image/png' : 'image/jpeg' })), im = new Image();
-                        im.onload = () => {
-                            try {
-                                const r = Math.min(1, 400 / Math.max(im.width, im.height)), c = document.createElement('canvas');
-                                c.width = Math.max(1, Math.round(im.width * r)); c.height = Math.max(1, Math.round(im.height * r));
-                                c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-                                const d = c.toDataURL('image/jpeg', .82).split(',')[1]; URL.revokeObjectURL(url); res(d || '');
-                            } catch (e) { res(''); }
-                        };
-                        im.onerror = () => { URL.revokeObjectURL(url); res(''); };
-                        im.src = url;
-                    } catch (e) { res(''); }
-                });
-                const readTags = async f => {
-                    let t = null;
-                    try { t = /\.mp4$/i.test(f.name) ? await readMp4(f) : ((await readId3(f)) || (await readId3v1(f))); } catch (e) { t = null; }
-                    t = t || { title: '', artist: '', pic: null };
-                    let art = ''; if (t.pic && t.pic.length > 200) art = await shrinkArt(t.pic);
-                    return { title: (t.title || '').slice(0, 150) || cleanName(f.name), artist: (t.artist || '').slice(0, 150), art };
+                // ===== REMOVE A SONG: swipe it left or right in the list. No question is asked. =====
+                window.runMusicDelete = function (id) {
+                    const r = M.q.findIndex(x => x.id === id); if (r < 0) return;
+                    const wasCur = r === M.i;
+                    M.q.splice(r, 1);
+                    M.hist = M.hist.filter(x => x !== r).map(x => x > r ? x - 1 : x); M.bag = M.bag.filter(x => x !== r).map(x => x > r ? x - 1 : x);
+                    if (!wasCur && r < M.i) M.i--;
+                    savePl();
+                    if (wasCur) {
+                        M.i = -1;
+                        if (M.q.length && M.active && M.want) playAt(M.shuf ? rand() : Math.min(r, M.q.length - 1), true);
+                        else {
+                            playTok++; clearTimeout(startT); curVid = ''; try { if (P && pReady) P.stopVideo(); } catch (e) { } M.playing = false; mIco(false);
+                            mTitle(M.q.length ? 'Choose a song' : 'No songs yet'); setT('rt-mp-sub', M.q.length ? 'TAP HERE TO PICK ONE' : 'TAP HERE TO ADD SONGS'); mArt(null);
+                        }
+                    } else if (M.i >= 0) nowInfo();
+                    if (document.getElementById('rt-pl')) pList();
                 };
 
-                // ===== UPLOAD (several songs at once) =====
-                const fileB64 = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
-                // NOTE: never attach x.upload.* listeners here. A listener on x.upload forces a CORS preflight (OPTIONS),
-                // and Google Apps Script cannot answer OPTIONS, so the browser reports 'Network error'.
-                // Progress is simulated instead, which keeps this a CORS 'simple request'.
-                const xhrSend = (payload, onPct) => new Promise((res, rej) => {
-                    const x = new XMLHttpRequest(); x.open('POST', DRIVE(), true); x.timeout = 300000;
-                    x.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
-                    let fake = 0, tm = null;
-                    if (onPct) tm = setInterval(() => { fake += (95 - fake) * 0.05; try { onPct(Math.round(fake)); } catch (e) { } }, 400);
-                    const stop = () => { if (tm) { clearInterval(tm); tm = null; } };
-                    x.onload = () => { stop(); try { const j = JSON.parse(x.responseText); j.success ? res(j) : rej(new Error(j.error || 'Upload failed')); } catch (e) { rej(new Error('Bad answer from the server')); } };
-                    x.onerror = () => { stop(); rej(new Error('Network error')); }; x.ontimeout = () => { stop(); rej(new Error('Timed out')); };
-                    x.send(JSON.stringify(payload));
-                });
-                let upBusy = false, upText = '', upPct = 0;
-                const upPaint = () => {
-                    const box = document.getElementById('rt-pl-up'); if (!box) return;
-                    box.style.display = upBusy ? 'block' : 'none';
-                    const t = document.getElementById('rt-pl-up-t'), b = document.getElementById('rt-pl-up-b');
-                    if (t) t.textContent = upText; if (b) b.style.width = upPct + '%';
-                };
-                const shiftIdx = d => { if (M.i >= 0) M.i += d; M.hist = M.hist.map(x => x + d); M.bag = M.bag.map(x => x + d); };
-                const uploadSongs = async files => {
-                    const all = Array.from(files || []); if (!all.length) return;
-                    if (!DRIVE()) return toast('Music is not set up', 'Music link is missing.', 'error');
-                    if (upBusy) return toast('Please wait', 'Songs are still uploading.', 'info');
-                    const ok = [], bad = [];
-                    all.forEach(f => {
-                        const ext = (String(f.name).split('.').pop() || '').toLowerCase();
-                        if (ext !== 'mp3' && ext !== 'mp4') bad.push(f.name + ' (only MP3 or MP4)');
-                        else if (f.size > MAX_SONG_MB * 1048576) bad.push(f.name + ' (over ' + MAX_SONG_MB + ' MB)');
-                        else ok.push(f);
-                    });
-                    if (!ok.length) return window.showCustomAlert ? window.showCustomAlert('Cannot add', bad.join('\n') || 'Choose MP3 or MP4 files.', 'warning') : null;
-                    upBusy = true; upPct = 0; upText = 'Reading song 1 of ' + ok.length + '...'; upPaint();
-                    let done = 0; const fails = [];
-                    for (let k = 0; k < ok.length; k++) {
-                        const f = ok[k], base = k / ok.length * 100, span = 100 / ok.length;
-                        try {
-                            upText = 'Reading ' + (k + 1) + '/' + ok.length + ': ' + cleanName(f.name); upPct = Math.round(base + span * .05); upPaint();
-                            const tags = await readTags(f);
-                            if (M.q.some(s => s.title.toLowerCase() === tags.title.toLowerCase() && (s.artist || '').toLowerCase() === tags.artist.toLowerCase())) { fails.push(tags.title + ' (already added)'); continue; }
-                            upText = 'Uploading ' + (k + 1) + '/' + ok.length + ': ' + tags.title; upPaint();
-                            const b64 = await fileB64(f);
-                            const j = await xhrSend({ folderType: 'music', fileName: f.name, mimeType: /\.mp3$/i.test(f.name) ? 'audio/mpeg' : 'video/mp4', base64: b64, title: tags.title, artist: tags.artist, artBase64: tags.art }, p => { upPct = Math.round(base + span * (.1 + .88 * p / 100)); upPaint(); });
-                            M.q.unshift(normSong({ id: j.id, title: j.title || tags.title, artist: j.artist || tags.artist, art: j.art || '', mime: j.mime })); shiftIdx(1); saveCache(); done++;
-                            if (document.getElementById('rt-pl')) pList();
-                        } catch (e) { console.warn('[music] upload failed', e); fails.push(cleanName(f.name) + ' (' + ((e && e.message) || 'failed') + ')'); }
-                    }
-                    upBusy = false; upText = ''; upPct = 0; upPaint();
-                    if (done) { toast(done === 1 ? 'Song added' : done + ' songs added', 'Everyone can play them now.', 'success'); if (M.active && !M.q[M.i] && M.q.length) { /* nothing playing yet */ } }
-                    const issues = bad.concat(fails);
-                    if (issues.length && window.showCustomAlert) window.showCustomAlert(done ? 'Some songs were skipped' : 'Upload failed', issues.slice(0, 6).join('\n'), done ? 'warning' : 'error');
-                };
-
-                // ===== DELETE (hold a song) =====
-                // The song leaves the list with an animation (slides out, then the gap closes) while the server delete runs in the background (no loader).
-                window.__rtPendingDel = window.__rtPendingDel || new Set();
-                const rowOut = id => new Promise(res => {
-                    try {
-                        const box = document.getElementById('rt-pl-list'), row = box && box.querySelector('[data-id="' + id + '"]');
-                        if (!row) return res();
-                        const h = row.offsetHeight;
-                        row.style.pointerEvents = 'none'; row.style.overflow = 'hidden'; row.style.maxHeight = h + 'px';
-                        row.style.transition = 'opacity .2s ease, transform .26s cubic-bezier(.4,0,1,1), max-height .26s ease .14s, margin .26s ease .14s, padding .26s ease .14s';
-                        void row.offsetHeight;
-                        row.style.opacity = '0'; row.style.transform = 'translateX(-36px) scale(.97)'; row.style.maxHeight = '0px';
-                        row.style.marginBottom = '0px'; row.style.paddingTop = '0px'; row.style.paddingBottom = '0px';
-                        setTimeout(res, 420);
-                    } catch (e) { res(); }
-                });
-                window.runMusicDelete = async function (id) {
-                    const idx = M.q.findIndex(s => s.id === id); if (idx < 0) return;
-                    const s = M.q[idx], PD = window.__rtPendingDel;
-                    if (PD.has(id)) return;
-                    const yes = window.showCustomConfirm ? await window.showCustomConfirm('Delete song', 'Delete \"' + s.title + '\"? It will disappear for every student.', 'Delete', 'Cancel', 'danger') : true;
-                    if (!yes) return;
-                    PD.add(id);
-                    const req = fetch(DRIVE(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'delete', folderType: 'music', fileId: id }) })
-                        .then(r => r.json()).then(j => { if (!j || !j.success) throw new Error((j && j.error) || 'Delete failed'); return true; })
-                        .catch(e => { console.warn('[music] delete failed', e); return false; });
-                    await rowOut(id);
-                    const r = M.q.findIndex(x => x.id === id);
-                    if (r >= 0) {
-                        const wasCur = r === M.i;
-                        M.q.splice(r, 1);
-                        M.hist = M.hist.filter(x => x !== r).map(x => x > r ? x - 1 : x); M.bag = M.bag.filter(x => x !== r).map(x => x > r ? x - 1 : x);
-                        if (!wasCur && r < M.i) M.i--;
-                        saveCache();
-                        if (wasCur) {
-                            M.i = -1;
-                            if (M.q.length && M.active) playAt(M.shuf ? rand() : Math.min(r, M.q.length - 1), true);
-                            else { try { if (au) { au.pause(); au.removeAttribute('src'); au.load(); } } catch (e) { } M.playing = false; mIco(false); mTitle('No songs yet'); setT('rt-mp-sub', 'TAP HERE TO ADD SONGS'); const im = $('rt-mp-art'); if (im) im.src = PH; }
-                        } else if (M.i >= 0) nowInfo();
-                        if (document.getElementById('rt-pl')) pList();
-                    }
-                    const ok = await req;
-                    PD.delete(id);
-                    if (ok) { toast('Song deleted', '', 'success'); return; }
-                    // the server refused: put the song back where it was
-                    if (!M.q.some(x => x.id === id)) {
-                        const at = Math.min(idx, M.q.length);
-                        M.q.splice(at, 0, s);
-                        if (M.i >= at) M.i++;
-                        M.bag = []; M.hist = M.hist.map(x => x >= at ? x + 1 : x);
-                        saveCache(); if (document.getElementById('rt-pl')) pList();
-                    }
-                    if (window.showCustomAlert) window.showCustomAlert('Could not delete', 'The song was not removed. Check your connection and try again.', 'error');
-                };
-
-                // ----- Song sheet: tap the song title / thumbnail. Type to filter (nothing found = YouTube search with a + button), the + button pastes a YouTube link, hold a song to delete it -----
-                const pRow = (i, s, cur) => '<div data-i="' + i + '" data-id="' + pEsc(s.id) + '" style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin-bottom:4px;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;' + (cur ? 'background:rgba(251,113,133,.16)' : '') + '">'
+                // ----- Song sheet: tap the song title / thumbnail. Type to filter your list or search for more songs (+ adds to YOUR playlist), swipe a song to remove it -----
+                const pRow = (i, s, cur) => '<div class="rt-sw" data-i="' + i + '" data-id="' + pEsc(s.id) + '" style="position:relative;margin-bottom:4px;border-radius:14px;overflow:hidden">'
+                    + '<div class="rt-sw-bg" style="position:absolute;inset:0;border-radius:14px;background:#dc2626;display:flex;align-items:center;justify-content:space-between;padding:0 22px;color:#fff;font-size:18px;opacity:0"><i class="fa-solid fa-trash"></i><i class="fa-solid fa-trash"></i></div>'
+                    + '<div class="rt-sw-fg" style="position:relative;display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:pan-y;will-change:transform;background:' + (cur ? '#351f24' : '#0f0f12') + '">'
                     + '<span style="width:20px;text-align:center;font-size:11px;font-weight:900;color:' + (cur ? '#fb7185' : 'rgba(255,255,255,.35)') + '">' + (cur ? '<i class="fa-solid fa-volume-high"></i>' : (i + 1)) + '</span>'
                     + '<img loading="lazy" draggable="false" alt="" src="' + pEsc(s.art || PH) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;background:#18181b;flex:none;pointer-events:none">'
-                    + '<div style="min-width:0;flex:1"><p class="pt truncate" style="font-size:12px;font-weight:900;color:#fff">' + pEsc(s.title) + '</p><p class="pa truncate" style="font-size:9px;font-weight:900;letter-spacing:.2em;margin-top:4px;color:rgba(255,255,255,.4);text-transform:uppercase">' + pEsc(s.artist || '') + '</p></div></div>';
+                    + '<div style="min-width:0;flex:1"><p class="pt truncate" style="font-size:12px;font-weight:900;color:#fff">' + pEsc(s.title) + '</p><p class="pa truncate" style="font-size:9px;font-weight:900;letter-spacing:.2em;margin-top:4px;color:rgba(255,255,255,.4);text-transform:uppercase">' + pEsc(s.artist || '') + '</p></div></div></div>';
                 const pMsg = t => '<p style="padding:18px 14px;text-align:center;font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">' + t + '</p>';
                 const pQuery = () => { const e = document.getElementById('rt-pl-q'); return e ? e.value.trim() : ''; };
-                // ===== YOUTUBE: paste a link, or search when a song is not in the list. The Google script downloads it and saves it in Drive (nothing is uploaded from the phone) =====
-                const YT = { q: '', items: [], loading: false, err: '', busy: {}, fmt: 'mp3' };
-                const YT_MAX_SEC = 900;                                        // 15 minutes: longer videos are mixes / shows, not songs
-                let ytActive = 0, ytPct = 0, ytTimer = null, ytSearchT = null;
-                const ytIdFromText = t => {
-                    const m = String(t || '').trim().match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#\s]*&)?v=|shorts\/|embed\/|live\/|v\/)|music\.youtube\.com\/watch\?(?:[^#\s]*&)?v=)([\w-]{11})(?![\w-])/i);
-                    return m ? m[1] : '';
-                };
+                // ===== YOUTUBE SEARCH: only looks for songs. Adding one just puts its link in YOUR list (nothing is downloaded) =====
+                const YS = { q: '', items: [], loading: false, err: '', busy: {} };
                 const hasLocal = ql => M.q.some(s => s.title.toLowerCase().indexOf(ql) >= 0 || (s.artist || '').toLowerCase().indexOf(ql) >= 0);
-                const ytProgPaint = () => {
-                    upBusy = ytActive > 0; upText = ytActive > 0 ? 'Adding song' + (ytActive > 1 ? ' (' + ytActive + ' songs)' : '') + '...' : ''; upPct = Math.round(ytPct); upPaint();
-                };
-                const ytProgStart = () => {
-                    ytActive++; if (ytActive === 1) { ytPct = 6; ytTimer = setInterval(() => { ytPct += (92 - ytPct) * 0.035; ytProgPaint(); }, 400); }
-                    ytProgPaint();
-                };
-                const ytProgStop = () => {
-                    ytActive = Math.max(0, ytActive - 1);
-                    if (!ytActive) { clearInterval(ytTimer); ytTimer = null; ytPct = 0; }
-                    ytProgPaint();
-                };
-                const ytCircle = (id, sec) => {
-                    const have = M.q.some(s => s.yt === id), busy = !!YT.busy[id], long = sec > YT_MAX_SEC;
+                let ytSearchT = null;
+                const ytCircle = id => {
+                    const have = M.q.some(s => s.id === id), busy = !!YS.busy[id];
                     const base = 'width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;';
-                    if (have) return '<span title="Already in your list" style="' + base + 'background:rgba(52,211,153,.2);color:#34d399"><i class="fa-solid fa-check"></i></span>';
+                    if (have) return '<span title="Already in your playlist" style="' + base + 'background:rgba(52,211,153,.2);color:#34d399"><i class="fa-solid fa-check"></i></span>';
                     if (busy) return '<span style="' + base + 'background:rgba(255,255,255,.12)"><i class="fa-solid fa-spinner fa-spin"></i></span>';
-                    if (long) return '<span title="Too long" style="' + base + 'background:rgba(255,255,255,.06);color:rgba(255,255,255,.3)"><i class="fa-solid fa-ban"></i></span>';
-                    return '<button type="button" data-yt-add="' + pEsc(id) + '" aria-label="Add to playlist" style="' + base + 'background:linear-gradient(135deg,#f43f5e,#dc2626)"><i class="fa-solid fa-plus"></i></button>';
+                    return '<button type="button" data-yt-add="' + pEsc(id) + '" aria-label="Add to my playlist" style="' + base + 'background:linear-gradient(135deg,#f43f5e,#dc2626)"><i class="fa-solid fa-plus"></i></button>';
                 };
                 const ytRow = it => '<div style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin-bottom:4px">'
-                    + '<img loading="lazy" draggable="false" alt="" src="' + pEsc(it.thumb || PH) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;background:#18181b;flex:none">'
+                    + '<img loading="lazy" draggable="false" alt="" src="' + pEsc(it.thumb || thumb(it.id)) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;background:#18181b;flex:none">'
                     + '<div style="min-width:0;flex:1"><p class="truncate" style="font-size:12px;font-weight:900;color:#fff">' + pEsc(it.title) + '</p><p class="truncate" style="font-size:9px;font-weight:900;letter-spacing:.2em;margin-top:4px;color:rgba(255,255,255,.4);text-transform:uppercase">' + pEsc(it.channel || '') + (it.dur ? ' &bull; ' + pEsc(it.dur) : '') + '</p></div>'
-                    + ytCircle(it.id, it.sec || 0) + '</div>';
+                    + ytCircle(it.id) + '</div>';
                 const ytSection = ql => {
-                    let h = '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 10px 8px"><span style="font-size:10px;font-weight:900;letter-spacing:.3em;color:rgba(255,255,255,.45)"><i class="fa-solid fa-music" style="color:#f43f5e;margin-right:8px"></i>MORE SONGS</span>' + '</div>';
-                    if (YT.q !== ql) return h + '<button type="button" data-yt-go="1" style="display:block;width:calc(100% - 20px);margin:0 10px;padding:12px;border-radius:14px;background:rgba(255,255,255,.08);color:#fff;font-size:12px;font-weight:800">Search online for &ldquo;' + pEsc(ql) + '&rdquo;</button>';
-                    if (YT.loading) return h + pMsg('<i class="fa-solid fa-spinner fa-spin"></i>&nbsp; Searching...');
-                    if (YT.err) return h + pMsg(pEsc(YT.err)) + '<button type="button" data-yt-go="1" style="display:block;margin:0 auto;padding:8px 18px;border-radius:12px;background:rgba(255,255,255,.1);color:#fff;font-size:11px;font-weight:900">Try again</button>';
-                    if (!YT.items.length) return h + pMsg('Nothing found.');
-                    return h + YT.items.map(ytRow).join('');
+                    let h = '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 10px 8px"><span style="font-size:10px;font-weight:900;letter-spacing:.3em;color:rgba(255,255,255,.45)"><i class="fa-solid fa-music" style="color:#f43f5e;margin-right:8px"></i>MORE SONGS</span></div>';
+                    if (YS.q !== ql) return h + '<button type="button" data-yt-go="1" style="display:block;width:calc(100% - 20px);margin:0 10px;padding:12px;border-radius:14px;background:rgba(255,255,255,.08);color:#fff;font-size:12px;font-weight:800">Search online for &ldquo;' + pEsc(ql) + '&rdquo;</button>';
+                    if (YS.loading) return h + pMsg('<i class="fa-solid fa-spinner fa-spin"></i>&nbsp; Searching...');
+                    if (YS.err) return h + pMsg(pEsc(YS.err)) + '<button type="button" data-yt-go="1" style="display:block;margin:0 auto;padding:8px 18px;border-radius:12px;background:rgba(255,255,255,.1);color:#fff;font-size:11px;font-weight:900">Try again</button>';
+                    if (!YS.items.length) return h + pMsg('Nothing found.');
+                    return h + YS.items.map(ytRow).join('');
                 };
                 const ytSearch = async (q, force) => {
                     const key = q.toLowerCase(); if (!key) return;
-                    if (!force && YT.q === key && (YT.loading || YT.items.length || YT.err)) return;
-                    if (!DRIVE()) { YT.q = key; YT.err = 'Music is not set up.'; return pList(); }
-                    YT.q = key; YT.loading = true; YT.err = ''; YT.items = []; pList();
+                    if (!force && YS.q === key && (YS.loading || YS.items.length || YS.err)) return;
+                    if (!DRIVE()) { YS.q = key; YS.err = 'Search is not set up.'; return pList(); }
+                    YS.q = key; YS.loading = true; YS.err = ''; YS.items = []; pList();
                     try {
                         const j = await fetchT(DRIVE() + '?action=ytsearch&q=' + encodeURIComponent(q), 30000);
-                        if (YT.q !== key) return;
+                        if (YS.q !== key) return;
                         if (!j || !j.success) throw new Error((j && j.error) || 'Search failed');
-                        YT.items = j.items || [];
+                        YS.items = (j.items || []).filter(x => x && idOk(x.id));
                     } catch (e) {
-                        if (YT.q !== key) return;
-                        YT.err = (e && e.message && e.message !== 'http') ? e.message : 'Could not search. Check your internet.';
+                        if (YS.q !== key) return;
+                        YS.err = (e && e.message && e.message !== 'http') ? e.message : 'Could not search. Check your internet.';
                     }
-                    YT.loading = false; pList();
+                    YS.loading = false; pList();
                 };
-                const ytAdd = async (id, hint) => {
-                    hint = hint || {};
-                    if (!/^[\w-]{11}$/.test(id)) return toast('Wrong link', 'Paste a song link.', 'error');
-                    if (!DRIVE()) return toast('Music is not set up', 'Music link is missing.', 'error');
-                    if (YT.busy[id]) return;
-                    if (!M.q.length) { const c = loadCache(); if (c.length) applyList(c); }
-                    if (M.q.some(s => s.yt === id)) return toast('Already in your list', '', 'info');
-                    YT.busy[id] = 1; ytProgStart(); if (document.getElementById('rt-pl')) pList();
-                    try {
-                        const j = await xhrSend({ action: 'ytImport', videoId: id, format: 'mp3', title: hint.title || '', artist: hint.artist || '' });
-                        if (!M.q.some(s => s.id === j.id)) { M.q.unshift(normSong({ id: j.id, title: j.title, artist: j.artist, art: j.art || '', mime: j.mime, yt: id })); shiftIdx(1); saveCache(); }
-                        toast(j.already ? 'Already in your list' : 'Song added', (j.title || '') + (j.already ? '' : ' is added.'), 'success');
-                    } catch (e) {
-                        console.warn('[music] youtube import failed', e);
-                        if (window.showCustomAlert) window.showCustomAlert('Could not add song', (e && e.message === 'Network error') ? 'Could not reach the server. Check your internet.' : String((e && e.message) || 'Failed').replace(/^Error:\s*/, '').slice(0, 220), 'error');
+                // title + channel of a song link, WITHOUT downloading anything (YouTube's public info address); if it cannot be read the song is still added and gets its name when it plays
+                const ytInfo = async id => {
+                    const url = 'https://www.youtube.com/watch?v=' + id;
+                    const tries = ['https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(url), 'https://noembed.com/embed?url=' + encodeURIComponent(url)];
+                    for (let k = 0; k < tries.length; k++) {
+                        try { const j = await fetchT(tries[k], 8000); if (j && j.title) return { title: String(j.title), artist: String(j.author_name || '') }; } catch (e) { }
                     }
-                    delete YT.busy[id]; ytProgStop(); if (document.getElementById('rt-pl')) pList();
+                    return null;
+                };
+                const ytAdd = async (id, hint) => {          // also called by the share sheet: a YouTube link shared into the app goes straight into the student's own playlist
+                    hint = hint || {};
+                    if (!idOk(id)) return toast('Wrong link', 'This is not a YouTube song link.', 'error');
+                    if (!window.loggedInMobile) return toast('Please log in', 'Log in to use your playlist.', 'info');
+                    ensureList(); try { await plP; } catch (e) { }
+                    if (M.q.some(s => s.id === id)) return toast('Already in your playlist', '', 'info');
+                    if (YS.busy[id]) return;
+                    YS.busy[id] = 1; if (document.getElementById('rt-pl')) pList();
+                    let info = hint.title ? { title: hint.title, artist: hint.artist } : null;
+                    if (!info) info = await ytInfo(id);
+                    if (!M.q.some(s => s.id === id)) { M.q.unshift(normSong({ id: id, title: (info && info.title) || '', artist: (info && info.artist) || '' })); shiftIdx(1); savePl(); }
+                    delete YS.busy[id];
+                    toast('Added to your playlist', (info && info.title) || 'Song added', 'success');
+                    if (document.getElementById('rt-pl')) pList();
                 };
                 window.__rtYtAdd = ytAdd;
 
-                // ===== ANDROID NOTIFICATION / LOCK-SCREEN CONTROLS for the Run music =====
-                // The Android WebView ignores the browser Media Session, so a song played by the <audio> tag never gets a media notification (it only keeps sounding).
-                // Lectures get one because the app hands them to Median's native media player when it goes to the background. Songs use the same hand-off:
-                // Median asks the page for getPlayerStatus(), plays that track natively (notification + lock screen: title, artwork, play / pause), and calls
-                // updatePlayerStatus() when the app comes back. RUN_NATIVE_PLAYER = true (current) enables the hand-off; false keeps the sound in the web view (no notification controls).
-                const RUN_NATIVE_PLAYER = true;   // ON: when the app goes to the background, the song is handed to Median's native player (notification + lock screen controls). If the music goes silent in the background, set this back to false
-                let natOn = false;
-                const natDbg = m => { try { localStorage.setItem('rtNatDbg', m); } catch (e) { } };   // TEMP debug: remembers what the hand-off did
-                const natUrl = s => {                                   // the native player cannot open a blob: (in-memory) song, so it streams it through the proxy
-                    const src = (au && (au.currentSrc || au.src)) || '';
-                    return /^https?:\/\//i.test(src) ? src : songProxy(s.id, s.mime);
-                };
-                window.__rtNatUrl = natUrl;
-                // Native Next / Previous: the native player only shows those buttons for a PLAYLIST (median.backgroundMedia.streamPlaylist).
-                // RUN_NATIVE_PLAYLIST = true: when the app goes to the background the whole song list is sent as a playlist (current song first in shuffle mode).
-                // false: old behaviour, only the current song is handed over (play / pause only).
-                const RUN_NATIVE_PLAYLIST = !!window.EXAMA_NATIVE;   // OFF: starting a playlist from inside getPlayerStatus left the music silent in the background; the single-song hand-off (play / pause only) is the one that works
-                let natPL = false;
-                const bgm = () => { try { return (window.median || window.gonative || {}).backgroundMedia || null; } catch (e) { return null; } };
-                const idOfUrl = u => { const m = String(u || '').match(/[?&]id=([\w-]+)/); return m ? m[1] : ''; };
-                const natBack = st => {                                // app is back: continue from where the native player is (st.currentTime is in ms)
-                    const wasPL = natPL; natOn = false; natPL = false;
-                    try {
-                        if (!au || !M.active) { if (wasPL) { const b = bgm(); b && b.stop && b.stop(); } return true; }
-                        const pos = st && st.currentTime ? st.currentTime / 1000 : 0;
-                        const nid = idOfUrl(st && st.url), ni = nid ? M.q.findIndex(x => x.id === nid) : -1;
-                        if (ni >= 0 && ni !== M.i) {                   // Next / Previous was used in the notification: continue with that song
-                            const paused = !!(st && st.isPaused);
-                            playAt(ni);
-                            if (pos > 1) { const seek = () => { au.removeEventListener('loadedmetadata', seek); try { au.currentTime = pos; } catch (e) { } }; au.addEventListener('loadedmetadata', seek); }
-                            if (paused) { M.want = false; try { au.pause(); } catch (e) { } }
-                        } else {
-                            const dur = au.duration;
-                            if (!wasPL && dur > 0 && isFinite(dur) && pos >= dur - 1.5) { M.want = true; window.runMusicNext(); return true; }   // the song finished in the background: go on to the next one
-                            if (pos) au.currentTime = pos;
-                            if (!st || st.isPaused === false) doPlay();
-                        }
-                        if (wasPL) { const b = bgm(); try { b && b.stop && b.stop(); } catch (e) { } }   // our web player has the sound again: remove the native player
-                    } catch (e) { }
-                    return true;
-                };
-                window.__rtMusicNative = {
-                    get: () => {                                        // app goes to the background while a song is playing -> hand it over
-                        try {
-                            if (!RUN_NATIVE_PLAYER || !au || !M.active || M.i < 0 || au.paused || au.ended || !au.getAttribute('src')) { natDbg('NOT handed over (flag=' + RUN_NATIVE_PLAYER + ', active=' + M.active + ', index=' + M.i + ', paused=' + (au && au.paused) + ', src=' + !!(au && au.getAttribute('src')) + ')'); return null; }
-                            const s = M.q[M.i]; if (!s || !s.id) return null;
-                            const pos = au.currentTime || 0, bm = bgm();
-                            if (RUN_NATIVE_PLAYLIST && bm && typeof bm.streamPlaylist === 'function' && M.q.length > 1) {
-                                let order = M.q.map((_, k) => k);
-                                if (M.shuf) { const rest = order.filter(k => k !== M.i); for (let k = rest.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); const t = rest[k]; rest[k] = rest[j]; rest[j] = t; } order = [M.i].concat(rest); }
-                                const tracks = order.map(k => { const q = M.q[k]; return { url: songProxy(q.id, q.mime), title: q.title || 'Song', album: 'Run monitor', artist: q.artist || 'Fitness Monitor' }; });
-                                const cur = order.indexOf(M.i); if (cur >= 0) tracks[cur].time = pos;
-                                try {
-                                    bm.streamPlaylist({ currentTrackNumber: cur, tracks: tracks });
-                                    natOn = true; natPL = true; natDbg('native PLAYLIST started: ' + tracks.length + ' songs, current #' + cur + ' at ' + Math.round(pos) + 's');
-                                    try { au.pause(); } catch (e) { }
-                                    return null;                        // we started the native player ourselves, so Median must not start a second one
-                                } catch (e) { natPL = false; natDbg('streamPlaylist failed: ' + (e && e.message) + ', using single song'); }
-                            }
-                            const st = { currentTime: (window.NATIVE_TIME_IN_MS ? Math.round(pos * 1000) : pos), isPaused: false, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', album: 'Run monitor', url: natUrl(s) };   // no artwork on purpose: the native player does not need it, the in-app player shows it
-                            natOn = true; natDbg('handed over to native (single song): ' + st.url + ' at ' + Math.round(pos) + 's'); try { localStorage.setItem('rtNatUrl', st.url); } catch (e) { }
-                            try { au.pause(); } catch (e) { }           // the native player takes over the sound
-                            return st;
-                        } catch (e) { natOn = false; natPL = false; return null; }
-                    },
-                    back: st => { if (!natOn) return false; return natBack(st); },   // Median calls this (via updatePlayerStatus) when the app is back. Returns true when it was a song.
-                    resume: () => {                                     // playlist mode: Median may not report back, so ask the native player ourselves
-                        try {
-                            if (!natOn || !natPL) return;
-                            const bm = bgm();
-                            if (bm && typeof bm.getPlayerStatus === 'function') bm.getPlayerStatus({ callback: st => { if (natOn) natBack(st || null); } });
-                            else natBack(null);
-                        } catch (e) { natBack(null); }
-                    }
-                };
+                // ===== ANDROID NOTIFICATION / LOCK-SCREEN CONTROLS =====
+                // The app's native player (notification + lock screen) can only stream a direct file link, and a YouTube song has none, so nothing is handed over yet.
+                // These three hooks stay because the page's lecture hand-off (getPlayerStatus / updatePlayerStatus) calls them. NEXT STEP (needs an app update): see FLUTTER_CONNECT.md section 0.7.
+                window.__rtNatUrl = () => '';
+                window.__rtMusicNative = { get: () => null, back: () => false, resume: () => { } };
 
                 const pList = () => {
                     const box = document.getElementById('rt-pl-list'); if (!box) return;
                     const ql = pQuery().toLowerCase(), cur = M.i, rows = [];
                     M.q.forEach((s, i) => { if (!ql || s.title.toLowerCase().indexOf(ql) >= 0 || (s.artist || '').toLowerCase().indexOf(ql) >= 0) rows.push(pRow(i, s, i === cur)); });
-                    if (!M.q.length && !ql) box.innerHTML = pMsg('No songs yet.<br>Tap <b>+</b> and paste a song link, or search for a song.');
-                    else if (!rows.length) box.innerHTML = pMsg('Not in your list.') + ytSection(ql);
-                    else box.innerHTML = rows.join('');
+                    if (!ql) box.innerHTML = rows.length ? rows.join('') : pMsg('Your playlist is empty.<br>Search a song above, or share a YouTube link to EXAMA.');
+                    else box.innerHTML = (rows.length ? rows.join('') : pMsg('Not in your playlist.')) + ytSection(ql);
                     if (!ql) { const c = box.querySelector('[data-i="' + cur + '"]'); if (c && c.scrollIntoView && !box.__seen) { box.__seen = 1; c.scrollIntoView({ block: 'center' }); } }
                 };
                 window.__rtPlRefresh = () => { if (document.getElementById('rt-pl')) pList(); };
                 window.closeRunPlaylist = function () { const p = document.getElementById('rt-pl'); if (p) p.remove(); };
                 window.runMusicList = function () {
-                    if (!M.ready) { if (!M.active) return; mAudio(); }
+                    if (!M.active && !M.ready) return;
+                    ensureList();
                     window.closeRunPlaylist();
                     const p = document.createElement('div'); p.id = 'rt-pl';
                     p.style.cssText = 'position:fixed;inset:0;z-index:130;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center';
                     p.innerHTML = '<div style="width:100%;max-width:480px;height:78dvh;background:#0f0f12;color:#fff;border-radius:24px 24px 0 0;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)">'
-                        + '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px"><span style="font-size:11px;font-weight:900;letter-spacing:.35em">CHOOSE A SONG</span><button type="button" id="rt-pl-x" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
-                        + '<div style="display:flex;gap:8px;padding:0 14px 8px"><div id="rt-slide" style="flex:1;min-width:0;overflow:hidden;border-radius:14px"><div id="rt-slide-track" style="display:flex;width:200%;transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform">'
-                        + '<div id="rt-pane-s" style="width:50%;min-width:0;display:flex;gap:8px"><input id="rt-pl-q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search a song" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
+                        + '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 18px 10px"><span style="font-size:11px;font-weight:900;letter-spacing:.35em">MY PLAYLIST</span><button type="button" id="rt-pl-x" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);color:#fff"><i class="fa-solid fa-xmark"></i></button></div>'
+                        + '<div style="display:flex;gap:8px;padding:0 14px 6px"><input id="rt-pl-q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search a song" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
                         + '<button type="button" id="rt-pl-go" aria-label="Search" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-magnifying-glass"></i></button></div>'
-                        + '<div id="rt-pane-p" inert style="width:50%;min-width:0;display:flex;gap:8px"><input id="rt-yt-url" type="url" inputmode="url" enterkeyhint="go" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste song link" style="flex:1;min-width:0;height:42px;border-radius:14px;background:rgba(255,255,255,.09);color:#fff;padding:0 14px;font-size:14px;font-weight:700;outline:none;border:1px solid rgba(255,255,255,.08)">'
-                        + '<button type="button" id="rt-yt-go" aria-label="Download and save" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i class="fa-solid fa-arrow-down"></i></button></div>'
-                        + '</div></div><button type="button" id="rt-pl-add" aria-label="Add a song" style="width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff;flex:none"><i id="rt-pl-add-i" class="fa-solid fa-plus" style="transition:transform .32s cubic-bezier(.4,0,.2,1)"></i></button></div>'
-                        + '<div id="rt-pl-up" style="display:none;margin:0 14px 8px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.08)"><p id="rt-pl-up-t" class="truncate" style="font-size:11px;font-weight:800;color:#fff"></p><div style="height:4px;border-radius:4px;background:rgba(255,255,255,.12);margin-top:8px;overflow:hidden"><div id="rt-pl-up-b" style="height:100%;width:0;background:linear-gradient(90deg,#f43f5e,#fb7185);transition:width .25s"></div></div></div>'
+                        + '<p style="padding:0 18px 6px;font-size:10px;font-weight:700;letter-spacing:.04em;color:rgba(255,255,255,.35)">Swipe a song left or right to remove it</p>'
                         + '<div id="rt-pl-list" style="flex:1;overflow-y:auto;padding:4px 10px 14px;-webkit-overflow-scrolling:touch"></div></div>';
-                        const ytMode = on => {                                         // + button: slide the search field away and show the paste field in its place (and back)
-                            const $g = x => document.getElementById(x), t = $g('rt-slide-track'); if (!t) return;
-                            const ps = $g('rt-pane-s'), pp = $g('rt-pane-p'), ic = $g('rt-pl-add-i'), ad = $g('rt-pl-add'), q = $g('rt-pl-q'), u = $g('rt-yt-url');
-                            t.style.transform = on ? 'translateX(-50%)' : 'translateX(0)';
-                            if (ps) { if (on) ps.setAttribute('inert', ''); else ps.removeAttribute('inert'); }
-                            if (pp) { if (on) pp.removeAttribute('inert'); else pp.setAttribute('inert', ''); }
-                            if (ic) ic.style.transform = on ? 'rotate(45deg)' : '';
-                            if (ad) { ad.setAttribute('data-open', on ? '1' : ''); ad.setAttribute('aria-label', on ? 'Back to search' : 'Add a song'); }
-                            if (on) { if (q) q.blur(); if (u) { try { u.focus({ preventScroll: true }); } catch (x) { u.focus(); } } } else if (u) u.blur();
-                        };
-                    let lpT = null, lpFired = false, lpX = 0, lpY = 0;
-                    const lpStop = () => { clearTimeout(lpT); lpT = null; };
+                    let sw = null, swiped = false;
+                    const swipeOut = (s, dir) => {                                 // the row slides away, the gap closes, then the song is removed (no question asked)
+                        const row = s.row, fg = s.fg, h = row.offsetHeight;
+                        try { navigator.vibrate && navigator.vibrate(15); } catch (x) { }
+                        row.style.pointerEvents = 'none'; row.style.maxHeight = h + 'px';
+                        fg.style.transition = 'transform .2s ease-in, opacity .2s ease-in'; fg.style.transform = 'translateX(' + (dir * (s.w + 30)) + 'px)'; fg.style.opacity = '0';
+                        row.style.transition = 'max-height .22s ease .12s, margin .22s ease .12s'; void row.offsetHeight;
+                        row.style.maxHeight = '0px'; row.style.marginBottom = '0px';
+                        setTimeout(() => window.runMusicDelete(s.id), 360);
+                    };
                     p.addEventListener('click', e => {
-                        if (lpFired) { lpFired = false; return; }
+                        if (swiped) { swiped = false; return; }
                         if (e.target === p || e.target.closest('#rt-pl-x')) return window.closeRunPlaylist();
-                        if (e.target.closest('#rt-pl-go')) { const q = document.getElementById('rt-pl-q'); if (q) q.blur(); pList(); const t = pQuery(); if (t && !hasLocal(t.toLowerCase())) ytSearch(t, true); return; }
-                        if (e.target.closest('#rt-pl-add')) { const a = document.getElementById('rt-pl-add'); ytMode(!(a && a.getAttribute('data-open') === '1')); return; }
-                        if (e.target.closest('#rt-yt-go')) { const u = document.getElementById('rt-yt-url'); const id = ytIdFromText(u && u.value); if (!id) return toast('Wrong link', 'Paste a song link.', 'error'); if (u) { u.value = ''; u.blur(); } ytMode(false); ytAdd(id); return; }
-                        const ya = e.target.closest('[data-yt-add]'); if (ya) { const id = ya.getAttribute('data-yt-add'), it = YT.items.find(x => x.id === id) || {}; ytAdd(id, { title: it.title, artist: it.channel }); return; }
+                        if (e.target.closest('#rt-pl-go')) { const q = document.getElementById('rt-pl-q'); if (q) q.blur(); pList(); const t = pQuery(); if (t) ytSearch(t, true); return; }
+                        const ya = e.target.closest('[data-yt-add]'); if (ya) { const id = ya.getAttribute('data-yt-add'), it = YS.items.find(x => x.id === id) || {}; ytAdd(id, { title: it.title, artist: it.channel }); return; }
                         if (e.target.closest('[data-yt-go]')) { const t = pQuery(); if (t) ytSearch(t, true); return; }
                         const r = e.target.closest('[data-i]'); if (!r) return;
                         const i = parseInt(r.getAttribute('data-i'), 10);
                         if (i === M.i && M.playing) { window.closeRunPlaylist(); return; }
                         playAt(i); window.closeRunPlaylist();
                     });
-                    p.addEventListener('pointerdown', e => {                       // hold a song for ~0.6 s -> delete
-                        const r = e.target.closest('[data-id]'); if (!r) return;
-                        lpFired = false; lpX = e.clientX; lpY = e.clientY; lpStop();
-                        lpT = setTimeout(() => { lpT = null; lpFired = true; try { navigator.vibrate && navigator.vibrate(30); } catch (x) { } window.runMusicDelete(r.getAttribute('data-id')); }, 600);
+                    p.addEventListener('pointerdown', e => {                       // start of a possible swipe
+                        const row = e.target.closest('.rt-sw'); if (!row || e.button > 0) return;
+                        sw = { row: row, fg: row.querySelector('.rt-sw-fg'), bg: row.querySelector('.rt-sw-bg'), x0: e.clientX, y0: e.clientY, dx: 0, t0: Date.now(), on: false, id: row.getAttribute('data-id'), w: row.offsetWidth, pid: e.pointerId };
                     });
-                    p.addEventListener('pointermove', e => { if (lpT && (Math.abs(e.clientX - lpX) > 8 || Math.abs(e.clientY - lpY) > 8)) lpStop(); });
-                    ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => p.addEventListener(n, lpStop));
+                    p.addEventListener('pointermove', e => {
+                        if (!sw || e.pointerId !== sw.pid) return;
+                        const dx = e.clientX - sw.x0, dy = e.clientY - sw.y0;
+                        if (!sw.on) {
+                            if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; }     // up / down = the list scrolls
+                            if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy)) return;
+                            sw.on = true; sw.fg.style.transition = 'none';
+                        }
+                        sw.dx = dx; sw.fg.style.transform = 'translateX(' + dx + 'px)'; sw.bg.style.opacity = String(Math.min(1, Math.abs(dx) / 60));
+                    });
+                    const swEnd = e => {
+                        if (!sw || e.pointerId !== sw.pid) return;
+                        const s = sw; sw = null; if (!s.on) return;
+                        swiped = true; setTimeout(() => { swiped = false; }, 350);                           // the tap that follows a swipe must not play the song
+                        const v = Math.abs(s.dx) / Math.max(1, Date.now() - s.t0);
+                        if (e.type !== 'pointercancel' && (Math.abs(s.dx) > s.w * .38 || (v > .6 && Math.abs(s.dx) > 40))) swipeOut(s, s.dx > 0 ? 1 : -1);
+                        else { s.fg.style.transition = 'transform .2s ease'; s.fg.style.transform = ''; s.bg.style.opacity = '0'; }
+                    };
+                    ['pointerup', 'pointercancel'].forEach(n => p.addEventListener(n, swEnd));
                     p.addEventListener('contextmenu', e => e.preventDefault());
                     p.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.getAttribute('src') !== PH) t.src = PH; }, true);
-                    document.body.appendChild(p); pList(); upPaint();
+                    document.body.appendChild(p); pList();
                     const qi = document.getElementById('rt-pl-q');
                     if (qi) {
                         qi.addEventListener('input', () => {
@@ -21769,11 +21527,9 @@ window.__tpPaint = function () {
                             const t = pQuery();
                             if (t.length >= 3 && !hasLocal(t.toLowerCase())) ytSearchT = setTimeout(() => { if (pQuery() === t) ytSearch(t); }, 700);
                         });
-                        qi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); qi.blur(); const t = pQuery(); if (t && !hasLocal(t.toLowerCase())) ytSearch(t, true); } });
-                        const yu = document.getElementById('rt-yt-url');
-                        if (yu) yu.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const g = document.getElementById('rt-yt-go'); if (g) g.click(); } });
+                        qi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); qi.blur(); const t = pQuery(); if (t) ytSearch(t, true); } });
                     }
-                    mSongs().then(pList).catch(() => { });                          // pick up songs other students added or deleted
+                    plP.then(pList).catch(() => { });
                 };
                 window.__rtMusicStop = window.runMusicStop;
                 // leaving the Fitness screen entirely stops the music (it must never keep playing during an exam or on another page)
@@ -48448,7 +48204,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   };
 
   /* 2) SHARE INTO APP: whatever is shared into Exama (link / Drive file link / text) opens a Samsung One UI style "Shared to Exama" bottom sheet:
-        Watch lecture (when the link is already one of your lectures), Add to Run songs (YouTube links) or Send to Discuss. */
+        Watch lecture (when the link is already one of your lectures), Add to my playlist (YouTube links, the student's own Run music list) or Send to Discuss. */
   function shareKey(u) { var m = String(u).match(/(?:youtu\.be\/|[?&]v=|d\/|id=)([\w-]{11,})/); return m ? m[1] : String(u); }
   function kindOf(u) {
     if (!u) return 'Text';
@@ -48498,14 +48254,14 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       }, 450);
     });
   }
-  /* ---- Run songs: a YouTube link shared into the app can go straight into the Run monitor song list ---- */
+  /* ---- Run songs: a YouTube link shared into the app goes straight into the student's OWN playlist (window.__rtYtAdd, nothing is downloaded) ---- */
   var YT_RE = /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#\s]*&)?v=|shorts\/|embed\/|live\/|v\/)|music\.youtube\.com\/watch\?(?:[^#\s]*&)?v=)([\w-]{11})(?![\w-])/i;
   function ytId(u) { var m = String(u || '').match(YT_RE); return m ? m[1] : ''; }
   function canAddSong(it) { return W.currentRole === 'student' && typeof W.__rtYtAdd === 'function' && !!ytId(it.url); }
   function toRunSongs(it) {
     closeSheet();
     var id = ytId(it.url); if (!id) return;
-    toast('Adding to Run songs', 'This can take a moment...');
+    toast('Adding to your playlist', '');
     try { var p = W.__rtYtAdd(id); if (p && p.catch) p.catch(function () { }); } catch (e) { toast('Could not add song', 'Open the Run monitor and try again.'); }
   }
   /* ---- the sheet itself: Samsung One UI look (rounded bottom sheet, drag handle, preview card, round tinted action icons, pill Cancel, swipe down to close, light / dark) ---- */
@@ -48570,7 +48326,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     var hit = it.url ? (W.videosDB || []).find(function (v) { return v.sourceUrl && shareKey(v.sourceUrl) === shareKey(it.url); }) : null;
     var rows = [];                                           // [action, icon, colour, label]
     if (hit) rows.push(['watch', 'fa-solid fa-play', '#3e91ff', 'Watch lecture']);
-    if (canAddSong(it)) rows.push(['song', 'fa-solid fa-music', '#ff4d6d', 'Add to Run songs']);
+    if (canAddSong(it)) rows.push(['song', 'fa-solid fa-music', '#ff4d6d', 'Add to my playlist']);
     rows.push(['chat', 'fa-solid fa-comments', '#2fbf71', 'Send to Discuss']);
     shareCss();
     var km = kindMeta(it.url), host = hostOf(it.url), title = (hit && hit.title) || it.subject || it.url || 'Shared text';
