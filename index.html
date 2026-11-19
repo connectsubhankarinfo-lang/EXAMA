@@ -21517,10 +21517,9 @@ window.__tpPaint = function () {
                 let natId = '';
                 // TEMP diagnostics: why the song was not handed over (or the app could not play it) is shown as a message when the student comes back to the app
                 const natMiss = why => { try { localStorage.setItem('rtNatErr', String(why)); } catch (e) { } };
-                document.addEventListener('visibilitychange', () => {
-                    if (document.hidden) return;
-                    setTimeout(() => { try { const e = localStorage.getItem('rtNatErr'); if (!e) return; localStorage.removeItem('rtNatErr'); if (M.active) toast('Background music problem', e, 'error'); } catch (x) { } }, 1300);
-                });
+                const showNatErr = () => { setTimeout(() => { try { const e = localStorage.getItem('rtNatErr'); if (!e) return; localStorage.removeItem('rtNatErr'); if (M.active) toast('Background music problem', e, 'error'); } catch (x) { } }, 1300); };
+                document.addEventListener('visibilitychange', () => { if (!document.hidden) showNatErr(); });
+                window.addEventListener('exama-resume', showNatErr);   // the app can come back without the page ever becoming 'hidden'
                 const ytIdOf = u => { const m = String(u || '').match(/(?:youtube\.com\/(?:watch\?(?:[^#\s]*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : ''; };
                 const watchUrl = id => 'https://www.youtube.com/watch?v=' + id;
                 const upNext = () => {                                              // the songs after this one (shuffle: the rest of the round in random order)
@@ -48257,29 +48256,23 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   };
 
   /* TEMP DEBUG: when the app comes back and Run music was on, show what happened to the native hand-off. Delete this block when music works. */
-  var RUN_NATIVE_DEBUG = false;   // true = show the 'Music debug' popup every time you return to the app
-  document.addEventListener('visibilitychange', function () {   // playlist mode: when the app is back, take the song / position from the native player
-    if (document.hidden) return;
-    setTimeout(function () { try { if (W.__rtMusicNative && W.__rtMusicNative.resume) W.__rtMusicNative.resume(); } catch (e) { } }, 900);
-  });
-  document.addEventListener('visibilitychange', function () {
+  var RUN_NATIVE_DEBUG = true;   // true = after you leave the app with Run music on and come back, a 'Music debug' popup says what happened. Set false when music works.
+  var natDbgLeave = function () { try { var M = W.__rtMusic; if (M && M.active && M.want) localStorage.setItem('rtNatWas', '1'); } catch (e) { } };
+  var natDbgBack = function () {
     if (!RUN_NATIVE_DEBUG) return;
-    try {
-      var M = W.__rtMusic;
-      if (document.hidden) { if (M && M.active && M.want) localStorage.setItem('rtNatWas', '1'); return; }
-      if (localStorage.getItem('rtNatWas') !== '1') return;
-      setTimeout(function () {   // give Median a moment to call updatePlayerStatus first
-        try {
-          var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('rtNatDbg'), u = localStorage.getItem('rtNatUrl'), nb = localStorage.getItem('rtNatBack');
-          ['rtNatWas', 'rtNatCall', 'rtNatDbg', 'rtNatUrl', 'rtNatBack'].forEach(function (k) { localStorage.removeItem(k); });
-          var show = function (x) { if (W.showCustomAlert) W.showCustomAlert('Music debug', 'getPlayerStatus: ' + (a || 'NO') + '. Hand-off: ' + (b || 'not reached') + '. NATIVE STATUS ON RETURN: ' + (nb || 'updatePlayerStatus NOT called') + '.' + x, 'info'); };
-          if (u && /^https?:/i.test(u) && W.fetch) {
-            fetch(u, { headers: { Range: 'bytes=0-1' } }).then(function (r) { var t = r.headers.get('content-type'), cr = r.headers.get('content-range'); var info = ' PROXY: HTTP ' + r.status + ', ' + t + ', ' + cr; if (r.status >= 400) { return r.text().then(function (tx) { show(info + ', REPLY: ' + String(tx).replace(/\s+/g, ' ').slice(0, 200)); }); } try { r.body && r.body.cancel(); } catch (e) { } show(info); }).catch(function (e) { show(' PROXY FAILED: ' + (e && e.message)); });
-          } else show('');
-        } catch (e) { }
-      }, 1500);
-    } catch (e) { }
-  });
+    setTimeout(function () {
+      try {
+        if (localStorage.getItem('rtNatWas') !== '1') return;
+        var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('nbWhy'), nb = localStorage.getItem('rtNatBack');
+        ['rtNatWas', 'rtNatCall', 'nbWhy', 'rtNatBack'].forEach(function (k) { localStorage.removeItem(k); });
+        var s = nb ? String(nb).slice(0, 260) : 'updatePlayerStatus NOT called';
+        if (W.showCustomAlert) W.showCustomAlert('Music debug', 'getPlayerStatus: ' + (a || 'NOT called') + '. Hand-off: ' + (b || 'not reached') + '. App status on return: ' + s + '.', 'info');
+      } catch (e) { }
+    }, 2200);
+  };
+  document.addEventListener('visibilitychange', function () { if (document.hidden) natDbgLeave(); else natDbgBack(); });
+  W.addEventListener('exama-pause', natDbgLeave);
+  W.addEventListener('exama-resume', natDbgBack);
 
   /* 1b) LINKS OPEN IN THE IN-APP BROWSER (like Instagram / Chrome tabs). Any link the student taps that leaves the app (another website) opens in Median's
         native in-app browser (median.window.open(url, 'appbrowser')): it has its own close button, handles the notch / status bar / gesture bar on every phone,
