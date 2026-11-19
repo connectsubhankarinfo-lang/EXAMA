@@ -21481,6 +21481,12 @@ window.__tpPaint = function () {
                 // notification has play / pause. When the app is visible again updatePlayerStatus(st) calls back() here and the page continues from the song and position the app reached.
                 // An older app has no EXAMA_YT_NATIVE: nothing is handed over (get() returns null) and the song just plays in the page as before.
                 let natId = '';
+                // TEMP diagnostics: why the song was not handed over (or the app could not play it) is shown as a message when the student comes back to the app
+                const natMiss = why => { try { localStorage.setItem('rtNatErr', String(why)); } catch (e) { } };
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) return;
+                    setTimeout(() => { try { const e = localStorage.getItem('rtNatErr'); if (!e) return; localStorage.removeItem('rtNatErr'); if (M.active) toast('Background music problem', e, 'error'); } catch (x) { } }, 1300);
+                });
                 const ytIdOf = u => { const m = String(u || '').match(/(?:youtube\.com\/(?:watch\?(?:[^#\s]*&)?v=|shorts\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : ''; };
                 const watchUrl = id => 'https://www.youtube.com/watch?v=' + id;
                 const upNext = () => {                                              // the songs after this one (shuffle: the rest of the round in random order)
@@ -21493,9 +21499,11 @@ window.__tpPaint = function () {
                 window.__rtNatUrl = () => '';                                       // no direct file address exists for a YouTube song (the page's proxy check is skipped)
                 window.__rtMusicNative = {
                     get: () => {
-                        if (!window.EXAMA_YT_NATIVE) return null;
+                        if (!M.active || !M.want) return null;                      // the student does not want music now (paused / stopped): nothing to hand over
                         const s = M.q[M.i];
-                        if (!M.active || !M.want || !M.playing || !s || !curVid || !P || !pReady) return null;
+                        // not "M.playing": the YouTube player may already have paused itself while the app goes to the background; what counts is that the student wants the music
+                        if (!window.EXAMA_YT_NATIVE) { if (!window.__natOldWarned) { window.__natOldWarned = 1; natMiss('this app version cannot play YouTube in the background, install the new app'); } return null; }
+                        if (!s || !curVid || !P || !pReady) { natMiss('the player was not ready'); return null; }
                         let t = 0; try { t = P.getCurrentTime() || 0; } catch (e) { }
                         M.extPause = true; natId = s.id;                            // the page must not start the sound again while the app plays it
                         try { P.pauseVideo(); } catch (e) { }
