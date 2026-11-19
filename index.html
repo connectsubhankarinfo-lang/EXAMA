@@ -17,7 +17,7 @@ Rules when editing:
 Version: 2026-11-16 (as supplied by the owner; notes added, nothing else changed).
 Change 2026-11-16: "Notification settings" is now a website page INSIDE the Settings panel (ids qs-np, qs-np-body, np-sheet; code block "NOTIFICATION SETTINGS" next to openQs). Back returns to Settings. The row no longer opens the native screen (window.openNativeNotificationSettings is still defined by the app but not called from here).
 Change 2026-11-17: NO BLACK SCREEN at app start. Script gl-app-flag now also adds class gl-boot to <html> (app only) and the style gl-boot-css paints html + body #f8fafc until hideLoader finishes (it removes gl-boot; 30 s safety timer). Before this, html/body were #0f172a (dark) and showed between the app logo and the loader. Keep gl-boot / gl-boot-css.
-Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). Lock-screen / notification: when the app sets window.EXAMA_YT_NATIVE (app update 2026-11-18, media_service.dart) the page hands the playing song + the next songs to the native player through __rtMusicNative.get/back/resume; without it nothing is handed over. See FLUTTER_CONNECT.md section 0.7. Lecture Hub YouTube lectures use the SAME hand-off (lectureNativeUrl / ytLecId in the median-native script): with EXAMA_YT_NATIVE the app plays the lecture's audio in the background and the lecture continues in the page when the app is back; Run music back() only claims a song it handed over itself (natId).
+Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). ALARMS (2026-11-18): in the app the alarm ring screen is NATIVE (window.EXAMA_NATIVE_RING, alarm_ring_screen.dart): the page poll() no longer shows its own ring screen there (back-up only when window.__exactAlarmOk === false) and flushNative() tells the server what the student did on the native screen. Lock-screen / notification: when the app sets window.EXAMA_YT_NATIVE (app update 2026-11-18, media_service.dart) the page hands the playing song + the next songs to the native player through __rtMusicNative.get/back/resume; without it nothing is handed over. See FLUTTER_CONNECT.md section 0.7. Lecture Hub YouTube lectures use the SAME hand-off (lectureNativeUrl / ytLecId in the median-native script): with EXAMA_YT_NATIVE the app plays the lecture's audio in the background and the lecture continues in the page when the app is back; Run music back() only claims a song it handed over itself (natId).
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -11035,6 +11035,9 @@ setInterval(() => { attach(); tiles(); }, 1500);
         window.alarmAck = () => { if (!ring) return; $("ar-actions").classList.add("hidden"); $("ar-math").classList.remove("hidden"); newQ(); setTimeout(() => $("ar-ans").focus(), 400); };
 
         async function poll() {
+            // app with the NATIVE ring screen (alarm_ring_screen.dart): it rings and shows itself, with or without internet, so the page keeps quiet
+            // (only when the phone has no exact-alarm permission the page still shows its own screen as a back-up)
+            if (window.EXAMA_NATIVE_RING && window.__exactAlarmOk !== false) return;
             if (window.currentRole !== "student" || ring || document.hidden) return;
             const s = session(); if (!s) return;
             try { const r = await call("/alarm/ringing", {}, s.u); if (r.ok && r.data.rings.length) showRing(r.data.rings[0]); } catch (e) {}
@@ -11063,6 +11066,33 @@ setInterval(() => { attach(); tiles(); }, 1500);
         document.addEventListener("visibilitychange", wake);
         window.addEventListener("focus", wake); window.addEventListener("online", wake); window.addEventListener("pageshow", wake);
         setTimeout(() => { tick(); arm(); }, 3000);
+
+        // ---- native ring screen: what the student did there (Alarm I know / Snooze) is told to the server when there is internet ----
+        // The app keeps the actions (median.exama.alarms.takePending); offline they wait here (localStorage) and are sent later while the server still has the ring (about 15 min).
+        const nqGet = () => { try { return JSON.parse(localStorage.getItem("exama_alarm_q") || "[]"); } catch (e) { return []; } };
+        const nqSet = a => { try { localStorage.setItem("exama_alarm_q", JSON.stringify(a.slice(-20))); } catch (e) {} };
+        let nFlushing = false;
+        async function flushNative() {
+            if (nFlushing || !(window.EXAMA_NATIVE_RING && window.median && median.exama && median.exama.alarms && median.exama.alarms.takePending)) return;
+            nFlushing = true;
+            try {
+                let q = nqGet();
+                try { const got = await median.exama.alarms.takePending(); if (Array.isArray(got)) q = q.concat(got); } catch (e) {}
+                q = q.filter(x => x && x.title != null && Date.now() - (+x.ts || 0) < 15 * 60000);
+                const s = session(); if (!q.length || !s) { nqSet(q); return; }
+                let rings = null;
+                try { const r = await call("/alarm/ringing", {}, s.u); if (r && r.ok && r.data) rings = r.data.rings || []; } catch (e) {}
+                if (!rings) { nqSet(q); return; }               // offline: keep them, try again later
+                for (const it of q) {
+                    const hit = rings.find(x => x.title === it.title && x.time === it.time);
+                    if (hit) { try { await call("/alarm/" + (it.op === "snooze" ? "snooze" : "ack"), { key: hit.key }, s.u); } catch (e) {} }
+                }
+                nqSet([]);
+            } finally { nFlushing = false; }
+        }
+        ["online", "focus", "pageshow", "exama-resume"].forEach(n => window.addEventListener(n, () => setTimeout(flushNative, 800)));
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(flushNative, 800); });
+        setTimeout(flushNative, 4000); setInterval(flushNative, 60000);
 
         // Called from median_onesignal_push_opened when an alarm notification (or one of its buttons) is tapped
         window.__alarmPushOpened = async function (data) {
