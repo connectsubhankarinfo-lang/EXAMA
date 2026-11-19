@@ -6201,7 +6201,7 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
             <div
                 class="flex-1 overflow-y-auto no-scrollbar p-3 sm:p-5 space-y-4 sm:space-y-6 relative md:w-3/4 md:mx-auto pb-28">
 
-                <div class="rm-hero">
+                <div class="rm-flip" id="rm-flip"><div class="rm-flip-in"><div class="rm-side rm-front"><div class="rm-hero" id="rm-hero"><button type="button" class="rm-flipbtn" id="rm-flip-go" aria-label="Show health card" onclick="window.fh&&window.fh.flip(true)"><i class="fa-solid fa-heart-pulse"></i><span>HEALTH</span></button>
                     <p class="rm-k">THIS WEEK</p>
                     <div class="rm-big"><span id="fit-perf-weekly-runs">0.0 KM</span></div>
                     <div class="rm-bar"><i id="rm-goal-bar"></i></div>
@@ -6213,7 +6213,7 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
                         <div><b id="fit-perf-streak">0</b><span>Day streak</span></div>
                     </div>
                 </div>
-                <div id="fh-card" style="display:none" aria-live="polite"></div>
+                </div><div class="rm-side rm-back" aria-hidden="true"><div id="fh-card" style="display:none" aria-live="polite"></div></div></div></div>
                 <div class="rm-card" id="rm-week-card">
                     <div class="rm-wkhead"><div><h3><span class="rm-lr-ic"><i class="fa-solid fa-chart-line"></i></span>WEEK CURVE</h3><p id="rm-g-sub">Monday to Sunday</p></div><div class="rm-wktot"><b id="rm-g-total">0.0</b><span id="rm-g-unit">km this week</span></div></div>
 <div class="rm-wkbar"><div class="rm-nav"><button type="button" id="rm-wk-prev" aria-label="Previous week"><i class="fa-solid fa-chevron-left"></i></button><button type="button" id="rm-wk-next" aria-label="Next week" disabled><i class="fa-solid fa-chevron-right"></i></button></div><span class="rm-delta" id="rm-g-delta"></span><div class="rm-seg" id="rm-seg"><button type="button" data-m="km" class="on">KM</button><button type="button" data-m="min">TIME</button><button type="button" data-m="cal">KCAL</button></div></div>
@@ -6387,6 +6387,40 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
 #fitness-view .rm-rv{opacity:0;transform:translateY(30px) scale(.92);will-change:transform,opacity}
 #fitness-view .rm-rv.rm-in{opacity:1;transform:none;transition:opacity .55s ease var(--d,0ms),transform .75s cubic-bezier(.2,1.15,.3,1.1) var(--d,0ms)}
 @media (prefers-reduced-motion:reduce){#fitness-view .rm-rv{opacity:1!important;transform:none!important}}
+</style>
+<style id="rm-flip-css">
+/* This week card FLIPS to the Health card (2026-11-19). Front = .rm-hero, back = #fh-card.
+   Both faces sit in ONE grid cell, so they are always exactly the same size.
+   The turn is on the .rm-side wrappers (not on .rm-hero), because the scroll-reveal script uses transform on .rm-hero. */
+#fitness-view .rm-flip{position:relative}
+#fitness-view .rm-flip-in{display:grid}
+#fitness-view .rm-side{grid-area:1/1;min-width:0;display:flex;flex-direction:column}
+#fitness-view .rm-side>*{flex:1 1 auto;min-width:0}
+/* two-step turn: the front turns away (0 to 90deg), then the back turns in (-90 to 0deg). Each side has its own transform,
+   and the transform exists ONLY while the turn plays (animation, no transform at rest). Reason: the dark-mode colour filter on
+   .rm-hero is drawn wrongly by Chromium when a transform stays on its parent. .go is added by the script at the first turn. */
+#fitness-view .rm-front{visibility:visible;transition:visibility 0s .38s}
+#fitness-view .rm-back{visibility:hidden;transition:visibility 0s .38s}
+#fitness-view .rm-flip.on .rm-front{visibility:hidden}
+#fitness-view .rm-flip.on .rm-back{visibility:visible}
+@keyframes fhOutF{from{transform:perspective(1400px) rotateY(0deg)}to{transform:perspective(1400px) rotateY(90deg)}}
+@keyframes fhInF{from{transform:perspective(1400px) rotateY(90deg)}to{transform:perspective(1400px) rotateY(0deg)}}
+@keyframes fhOutB{from{transform:perspective(1400px) rotateY(0deg)}to{transform:perspective(1400px) rotateY(-90deg)}}
+@keyframes fhInB{from{transform:perspective(1400px) rotateY(-90deg)}to{transform:perspective(1400px) rotateY(0deg)}}
+#fitness-view .rm-flip.go.on .rm-front{animation:fhOutF .38s ease-in forwards}
+#fitness-view .rm-flip.go.on .rm-back{animation:fhInB .42s ease-out .38s backwards}
+#fitness-view .rm-flip.go:not(.on) .rm-front{animation:fhInF .42s ease-out .38s backwards}
+#fitness-view .rm-flip.go:not(.on) .rm-back{animation:fhOutB .38s ease-in forwards}
+#fitness-view .rm-flip.has-fh .rm-side{cursor:pointer}
+#fitness-view>.overflow-y-auto>.rm-flip{grid-column:1/-1}
+/* the button on the front */
+#fitness-view .rm-flipbtn{display:none;position:absolute;top:16px;right:16px;z-index:3;height:30px;padding:0 12px;border-radius:99px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.1);color:#fff;font-size:11px;font-weight:800;letter-spacing:.07em;align-items:center;gap:6px;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .12s,background .2s}
+#fitness-view .rm-flipbtn i{color:#fb7185;font-size:12px}
+#fitness-view .rm-flipbtn:active{transform:scale(.94);background:rgba(255,255,255,.2)}
+#fitness-view .rm-flip.has-fh .rm-flipbtn{display:flex}
+@media (min-width:600px){#fitness-view .rm-flipbtn{top:20px;right:22px}}
+@media (orientation:landscape) and (max-height:520px){#fitness-view .rm-flipbtn{top:8px;right:10px;height:26px;padding:0 10px;font-size:10px}}
+@media (prefers-reduced-motion:reduce){#fitness-view .rm-flip .rm-front,#fitness-view .rm-flip .rm-back{animation:none!important;transition-delay:0s!important}}
 </style>
 <style id="rm-v2">
 /* capsule: ONE capsule, Best day = left corner, Active day = right corner */
@@ -48546,12 +48580,12 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
 </script>
 <script id="fitness-health">
 /* FITNESS MONITOR x HEALTH CONNECT (students, Median Android app).
-   Reads steps, active calories, exercise time, sleep, heart rate, resting heart rate, HRV, SpO2, breathing rate, VO2 max, blood pressure
-   and total calories through Median's Health Bridge plugin (median.healthBridge). Everything is read on the phone and only cached in
+   Reads steps, active calories, exercise time, sleep and heart rate (shown on the HEALTH CARD = the back of the This week card, section rm-flip)
+   through Median's Health Bridge plugin (median.healthBridge). Everything is read on the phone and only cached in
    this phone's localStorage: nothing is uploaded. Every call is guarded, so the site still works in a normal browser (the card stays hidden). */
 (function () {
   var W = window, D = document;
-  var TYPES = ['steps', 'activeEnergy', 'exerciseTime', 'totalCaloriesBurned', 'sleep', 'heartRate', 'restingHeartRate', 'heartRateVariability', 'oxygenSaturation', 'respiratoryRate', 'vo2Max', 'bloodPressure'];
+  var TYPES = ['steps', 'activeEnergy', 'exerciseTime', 'sleep', 'heartRate'];
   var STEP_GOAL = 10000, STALE_MS = 120000;
   var S = { busy: false, msg: '', m: null, on: false, perm: null, ready: false, last: 0 };
 
@@ -48637,15 +48671,13 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       try { return await tout(b.getData({ dataTypes: types, startDate: from.toISOString(), endDate: now.toISOString(), bucket: bucket }), 25000) || {}; }
       catch (e) { errs++; return {}; }
     }
-    var r1 = await get(['steps', 'activeEnergy', 'exerciseTime', 'totalCaloriesBurned'], s7, 'day');
+    var r1 = await get(['steps', 'activeEnergy', 'exerciseTime'], s7, 'day');
     var r2 = await get(['sleep'], addDays(s7, -1), 'raw');
     var r3 = await get(['heartRate'], dayStart(now), 'raw');
-    var r4 = await get(['restingHeartRate', 'heartRateVariability', 'oxygenSaturation', 'respiratoryRate'], s7, 'raw');
-    var r5 = await get(['vo2Max', 'bloodPressure'], addDays(dayStart(now), -30), 'raw');
 
     var m = { t: Date.now(), labels: labels, errs: errs };
     m.steps = daily(rowsOf(r1, 'steps'), keys); m.kcal = daily(rowsOf(r1, 'activeEnergy'), keys);
-    m.ex = daily(rowsOf(r1, 'exerciseTime'), keys); m.tot = daily(rowsOf(r1, 'totalCaloriesBurned'), keys);
+    m.ex = daily(rowsOf(r1, 'exerciseTime'), keys);
     var sl = rowsOf(r2, 'sleep');
     m.sleep = daily(sl, keys, true);                                    // counted on the day you woke up
     var from30 = now.getTime() - 30 * 3600000;
@@ -48654,17 +48686,6 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     hr.forEach(function (r) { var v = vOf(r); if (typeof v === 'number' && v >= 25 && v <= 250) vals.push(v); });
     if (vals.length > 6000) { var st = Math.ceil(vals.length / 6000); vals = vals.filter(function (_, k) { return k % st === 0; }); }
     m.hr = vals.length ? { avg: vals.reduce(function (a, v) { return a + v; }, 0) / vals.length, min: Math.min.apply(null, vals), max: Math.max.apply(null, vals), n: vals.length } : null;
-    m.rhr = numLatest(rowsOf(r4, 'restingHeartRate'));
-    m.hrv = numLatest(rowsOf(r4, 'heartRateVariability'));
-    var sp = numLatest(rowsOf(r4, 'oxygenSaturation')); m.spo2 = sp == null ? null : (sp <= 1 ? sp * 100 : sp);
-    m.resp = numLatest(rowsOf(r4, 'respiratoryRate'));
-    m.vo2 = numLatest(rowsOf(r5, 'vo2Max'));
-    var bp = latest(rowsOf(r5, 'bloodPressure')); m.bp = null;
-    if (bp) {
-      var o = (bp.v && typeof bp.v === 'object') ? bp.v : bp.r, sy = o.systolic != null ? o.systolic : o.sys, di = o.diastolic != null ? o.diastolic : o.dia;
-      sy = parseFloat(sy); di = parseFloat(di);
-      if (!isNaN(sy) && !isNaN(di)) m.bp = { sys: sy, dia: di };
-    }
     return m;
   }
   async function sync(force) {
@@ -48673,124 +48694,136 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     S.busy = true; S.msg = ''; paint();
     try {
       var m = await pull();
-      var any = [m.steps, m.kcal, m.ex, m.sleep].some(function (a) { return a.some(function (v) { return v > 0; }); }) || m.hr || m.rhr != null || m.hrv != null || m.spo2 != null || m.vo2 != null || m.bp;
-      if (!any && m.errs >= 3) S.msg = 'Could not read Health Connect right now. Check that Health Connect is installed and that Exama is allowed in App permissions.';
+      var any = [m.steps, m.kcal, m.ex, m.sleep].some(function (a) { return a.some(function (v) { return v > 0; }); }) || m.hr;
+      if (!any && m.errs >= 3) S.msg = 'Could not read Health Connect. Check that it is installed and that Exama is allowed.';
       S.m = m; lsSet('cache', JSON.stringify(m));
     } catch (e) { S.msg = 'Sync failed. Please try again.'; }
     S.busy = false; paint();
   }
 
   /* ---------- drawing ---------- */
+  /* The HEALTH CARD is the back of the This week card (flip). Light theme, same size as the front (they share one grid cell). */
   function css() {
     if (D.getElementById('fh-css')) return;
     var s = D.createElement('style'); s.id = 'fh-css';
-    s.textContent = '#fh-card{background:#fff;border:1px solid #eef2f7;border-radius:24px;padding:18px;box-shadow:0 6px 22px rgba(15,23,42,.05)}' +
-      '#fh-card .fh-top{display:flex;align-items:center;gap:12px}' +
-      '#fh-card .fh-ic{width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#fb7185,#e11d48);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}' +
-      '#fh-card h3{font-size:16px;font-weight:800;color:#0f172a;line-height:1.1}' +
-      '#fh-card .fh-sub{font-size:11px;font-weight:600;color:#94a3b8;margin-top:3px}' +
-      '#fh-card .fh-sync{margin-left:auto;width:36px;height:36px;border-radius:50%;border:0;background:#f1f5f9;color:#475569;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .15s}' +
-      '#fh-card .fh-sync:active{transform:scale(.9)}' +
-      '#fh-card .fh-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}' +
-      '@media (min-width:640px){#fh-card .fh-grid.g4{grid-template-columns:repeat(4,minmax(0,1fr))}}' +
-      '#fh-card .fh-t{border-radius:18px;padding:12px 12px 11px;border:1px solid transparent;min-width:0}' +
-      '#fh-card .fh-t .fh-ti{font-size:13px;margin-bottom:6px;display:block}' +
-      '#fh-card .fh-t b{display:block;font-size:22px;font-weight:900;font-style:italic;letter-spacing:-.02em;color:#0f172a;line-height:1.05;white-space:nowrap}' +
-      '#fh-card .fh-t b small{font-size:11px;font-weight:700;font-style:normal;color:#64748b;letter-spacing:0;margin-left:3px}' +
-      '#fh-card .fh-t span.fh-l{display:block;font-size:11px;font-weight:700;color:#64748b;margin-top:3px}' +
-      '#fh-card .fh-t em{display:block;font-style:normal;font-size:10px;font-weight:600;color:#94a3b8;margin-top:2px}' +
-      '#fh-card .c-rose{background:#fff1f2;border-color:#ffe4e6}#fh-card .c-rose .fh-ti{color:#e11d48}' +
-      '#fh-card .c-amber{background:#fffbeb;border-color:#fef3c7}#fh-card .c-amber .fh-ti{color:#d97706}' +
-      '#fh-card .c-teal{background:#f0fdfa;border-color:#ccfbf1}#fh-card .c-teal .fh-ti{color:#0d9488}' +
-      '#fh-card .c-indigo{background:#eef2ff;border-color:#e0e7ff}#fh-card .c-indigo .fh-ti{color:#4f46e5}' +
-      '#fh-card .c-sky{background:#f0f9ff;border-color:#e0f2fe}#fh-card .c-sky .fh-ti{color:#0284c7}' +
-      '#fh-card .c-green{background:#f0fdf4;border-color:#dcfce7}#fh-card .c-green .fh-ti{color:#16a34a}' +
-      '#fh-card .c-slate{background:#f8fafc;border-color:#eef2f7}#fh-card .c-slate .fh-ti{color:#475569}' +
-      '#fh-card .fh-bar{height:6px;border-radius:6px;background:rgba(15,23,42,.08);overflow:hidden;margin-top:8px}' +
-      '#fh-card .fh-bar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#be123c,#fb7185);transition:width .7s}' +
-      '#fh-card .fh-h{display:flex;align-items:baseline;justify-content:space-between;margin:18px 2px 8px}' +
-      '#fh-card .fh-h b{font-size:11px;font-weight:900;letter-spacing:.16em;color:#94a3b8;text-transform:uppercase}' +
-      '#fh-card .fh-h span{font-size:11px;font-weight:700;color:#64748b}' +
-      '#fh-card .fh-ch{display:flex;align-items:flex-end;gap:7px;height:96px;position:relative}' +
-      '#fh-card .fh-ch .fh-c{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:5px}' +
-      '#fh-card .fh-ch .fh-c i{display:block;width:100%;max-width:30px;border-radius:8px 8px 4px 4px;background:#e2e8f0;min-height:4px}' +
-      '#fh-card .fh-ch .fh-c.on i{background:linear-gradient(180deg,#fb7185,#e11d48)}' +
-      '#fh-card .fh-ch .fh-c.ok i{background:#fda4af}' +
-      '#fh-card .fh-ch .fh-c u{text-decoration:none;font-size:10px;font-weight:800;color:#94a3b8}' +
-      '#fh-card .fh-ch .fh-c.on u{color:#e11d48}' +
-      '#fh-card .fh-chip{display:flex;align-items:center;gap:10px;margin-top:14px;border-radius:16px;padding:11px 13px;background:#0d1117;color:#fff}' +
-      '#fh-card .fh-chip i{font-size:15px;color:#fb7185}' +
-      '#fh-card .fh-chip b{display:block;font-size:13px;font-weight:800}' +
-      '#fh-card .fh-chip span{display:block;font-size:11px;font-weight:600;color:#94a3b8;margin-top:1px}' +
-      '#fh-card .fh-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:0;border-radius:16px;padding:14px;font-size:13px;font-weight:800;letter-spacing:.04em;background:#0d1117;color:#fff;margin-top:14px}' +
-      '#fh-card .fh-btn:active{transform:scale(.98)}#fh-card .fh-btn[disabled]{opacity:.6}' +
-      '#fh-card .fh-note{font-size:12px;font-weight:600;color:#64748b;line-height:1.45;margin-top:12px}' +
-      '#fh-card .fh-err{font-size:12px;font-weight:700;color:#be123c;background:#fff1f2;border-radius:12px;padding:9px 11px;margin-top:12px;line-height:1.4}' +
-      '#fh-card .fh-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:16px;padding-top:12px;border-top:1px dashed #e2e8f0}' +
-      '#fh-card .fh-foot p{font-size:10px;font-weight:600;color:#94a3b8;line-height:1.35}' +
-      '#fh-card .fh-foot button{border:0;background:transparent;font-size:11px;font-weight:800;color:#64748b;padding:4px 2px;flex-shrink:0}' +
-      '#fh-card .fh-spin{animation:fhspin .9s linear infinite}@keyframes fhspin{to{transform:rotate(360deg)}}';
+    s.textContent = [
+      '#fh-card{position:relative;overflow:hidden;box-sizing:border-box;border-radius:28px;padding:22px 20px 18px;color:#0f172a;background:linear-gradient(180deg,#fff5f6 0%,#fff 48%);border:1px solid #fecdd3;box-shadow:0 14px 34px rgba(244,63,94,.14);display:flex;flex-direction:column;justify-content:space-between;gap:14px}',
+      '#fh-card::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;background:linear-gradient(90deg,#f43f5e,#fb923c)}',
+      '#fh-card::after{content:"";position:absolute;right:-70px;top:-70px;width:210px;height:210px;border-radius:50%;background:radial-gradient(circle,rgba(244,63,94,.16),rgba(244,63,94,0) 70%);pointer-events:none}',
+      '#fh-card>*{position:relative;z-index:1}',
+      '#fh-card .fh-top{display:flex;align-items:center;gap:10px}',
+      '#fh-card .fh-ic{width:40px;height:40px;border-radius:14px;background:linear-gradient(135deg,#fb7185,#e11d48);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex:none;box-shadow:0 8px 16px -8px rgba(225,29,72,.65)}',
+      '#fh-card .fh-tt{min-width:0;flex:1}',
+      '#fh-card h3{font-size:16px;font-weight:900;color:#0f172a;line-height:1.1;letter-spacing:.01em;margin:0}',
+      '#fh-card .fh-sub{font-size:11px;font-weight:600;color:#94a3b8;margin:3px 0 0;display:flex;align-items:baseline;gap:5px;white-space:nowrap;min-width:0}',
+      '#fh-card .fh-st{min-width:0;overflow:hidden;text-overflow:ellipsis}',
+      '#fh-card .fh-dot{font-style:normal;flex:none}',
+      '#fh-card .fh-lnk{flex:none;border:0;background:none;padding:0;font:inherit;font-weight:800;color:#be123c;text-decoration:underline;text-underline-offset:2px}',
+      '#fh-card .fh-round{width:34px;height:34px;border-radius:50%;border:1px solid #fecdd3;background:#fff;color:#be123c;display:flex;align-items:center;justify-content:center;flex:none;font-size:13px;transition:transform .12s}',
+      '#fh-card .fh-round:active{transform:scale(.9)}',
+      '#fh-card .fh-back{width:34px;height:34px;border-radius:50%;border:0;background:#0d1117;color:#fb7185;display:flex;align-items:center;justify-content:center;flex:none;font-size:13px;transition:transform .12s}',
+      '#fh-card .fh-back:active{transform:scale(.9)}',
+      '#fh-card .fh-main{display:flex;align-items:center;gap:16px;min-width:0}',
+      '#fh-card .fh-ring{position:relative;width:78px;height:78px;flex:none}',
+      '#fh-card .fh-ring svg{width:100%;height:100%;transform:rotate(-90deg);display:block}',
+      '#fh-card .fh-ring circle{fill:none;stroke-width:4;stroke-linecap:round}',
+      '#fh-card .fh-ring .bg{stroke:#ffe4e6}',
+      '#fh-card .fh-ring .pg{stroke-dasharray:97.4}',
+      '#fh-card .fh-ring>i{position:absolute;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#e11d48}',
+      '#fh-card .fh-ring.fh-soft{border-radius:50%;background:#fff1f2;border:1px solid #fecdd3}',
+      '#fitness-view .rm-flip.on #fh-card .fh-ring .pg{animation:fhring .95s cubic-bezier(.3,.75,.25,1) .55s both}',
+      '@keyframes fhring{from{stroke-dashoffset:97.4}}',
+      '#fh-card .fh-steps{min-width:0}',
+      '#fh-card .fh-steps b{display:block;font-size:clamp(32px,10vw,42px);font-weight:900;font-style:italic;letter-spacing:-.04em;line-height:1;color:#0f172a;white-space:nowrap}',
+      '#fh-card .fh-steps span{display:block;font-size:12px;font-weight:700;color:#64748b;margin-top:6px;line-height:1.3}',
+      '#fh-card .fh-steps span em{font-style:normal;color:#be123c;font-weight:800}',
+      '#fh-card .fh-note{font-size:12.5px;font-weight:600;color:#64748b;line-height:1.5;margin:0;min-width:0}',
+      '#fh-card .fh-grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}',
+      '#fh-card .fh-t{border-radius:16px;padding:10px 4px 9px;text-align:center;border:1px solid transparent;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}',
+      '#fh-card .fh-t>i{font-size:13px;margin-bottom:3px}',
+      '#fh-card .fh-t b{font-size:17px;font-weight:900;font-style:italic;letter-spacing:-.02em;line-height:1.1;color:#0f172a;white-space:nowrap}',
+      '#fh-card .fh-t b small{font-size:9.5px;font-weight:800;font-style:normal;color:#64748b;margin-left:2px;letter-spacing:0}',
+      '#fh-card .fh-t span{font-size:10.5px;font-weight:700;color:#64748b}',
+      '#fh-card .c-rose{background:#fff1f2;border-color:#ffe4e6}#fh-card .c-rose>i{color:#e11d48}',
+      '#fh-card .c-amber{background:#fffbeb;border-color:#fef3c7}#fh-card .c-amber>i{color:#d97706}',
+      '#fh-card .c-teal{background:#f0fdfa;border-color:#ccfbf1}#fh-card .c-teal>i{color:#0d9488}',
+      '#fh-card .c-indigo{background:#eef2ff;border-color:#e0e7ff}#fh-card .c-indigo>i{color:#4f46e5}',
+      '#fh-card .fh-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:0;border-radius:16px;padding:14px;font-size:13px;font-weight:800;letter-spacing:.04em;background:#0d1117;color:#fff;transition:transform .12s}',
+      '#fh-card .fh-btn:active{transform:scale(.98)}#fh-card .fh-btn[disabled]{opacity:.6}',
+      '#fh-card .fh-err{font-size:12px;font-weight:700;color:#be123c;background:#fff1f2;border-radius:12px;padding:8px 11px;line-height:1.4}',
+      '#fh-card .fh-spin{animation:fhspin .9s linear infinite}@keyframes fhspin{to{transform:rotate(360deg)}}',
+      '@media (min-width:600px){#fh-card{padding:26px 26px 22px}#fh-card .fh-ring{width:92px;height:92px}#fh-card .fh-ring>i{font-size:24px}#fh-card .fh-t b{font-size:20px}}',
+      '@media (max-width:380px){#fh-card{padding-left:14px;padding-right:14px}#fh-card .fh-grid4{gap:6px}#fh-card .fh-t{padding:9px 2px 8px}#fh-card .fh-t b{font-size:15px}#fh-card .fh-t b small{font-size:8.5px;margin-left:1px}#fh-card .fh-t span{font-size:10px}#fh-card .fh-ring{width:70px;height:70px}}',
+      '@media (orientation:landscape) and (max-height:520px){#fh-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);column-gap:20px;row-gap:8px;align-items:center;padding:14px 18px}#fh-card>*{grid-column:1}#fh-card>.fh-grid4{grid-column:2;grid-row:1/span 3;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#fh-card .fh-t{padding:7px 4px 6px}#fh-card .fh-t>i{margin-bottom:1px}#fh-card .fh-t b{font-size:15px}#fh-card>.fh-btn{grid-column:2;grid-row:1/span 3;align-self:center}#fh-card>.fh-err{grid-column:1/-1}#fh-card .fh-ring{width:58px;height:58px}#fh-card .fh-ring.fh-soft{display:none}#fh-card .fh-ring>i{font-size:16px}#fh-card .fh-steps b{font-size:30px}}'
+    ].join('');
     D.head.appendChild(s);
   }
-  function tile(c, ic, big, unit, label, sub) {
-    return '<div class="fh-t ' + c + '"><i class="fa-solid ' + ic + ' fh-ti"></i><b>' + big + (unit ? '<small>' + unit + '</small>' : '') + '</b><span class="fh-l">' + label + '</span>' + (sub ? '<em>' + sub + '</em>' : '') + '</div>';
+  var CIRC = 97.4, ZERO = { steps: [0, 0, 0, 0, 0, 0, 0], kcal: [0, 0, 0, 0, 0, 0, 0], ex: [0, 0, 0, 0, 0, 0, 0], night: 0, hr: null };
+  function tile(c, ic, big, unit, label) {
+    return '<div class="fh-t ' + c + '"><i class="fa-solid ' + ic + '"></i><b>' + big + (unit && big !== '\u2014' ? '<small>' + unit + '</small>' : '') + '</b><span>' + label + '</span></div>';
   }
-  function bars(vals, labels, goal, fmt) {
-    var mx = Math.max.apply(null, vals.concat([goal || 1, 1]));
-    return '<div class="fh-ch">' + vals.map(function (v, i) {
-      var h = Math.max(4, Math.round(v / mx * 78)), cls = i === vals.length - 1 ? 'on' : (goal && v >= goal ? 'ok' : '');
-      return '<div class="fh-c ' + cls + '" title="' + fmt(v) + '"><i style="height:' + h + 'px"></i><u>' + labels[i] + '</u></div>';
-    }).join('') + '</div>';
+  function dash(v) { return v > 0 ? n0(v) : '\u2014'; }
+  function ring(pct, icon) {
+    var o = (CIRC * (1 - Math.min(100, Math.max(0, pct)) / 100)).toFixed(1);
+    return '<div class="fh-ring"><svg viewBox="0 0 36 36" aria-hidden="true"><defs><linearGradient id="fh-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb923c"/><stop offset="1" stop-color="#e11d48"/></linearGradient></defs>' +
+      '<circle class="bg" cx="18" cy="18" r="15.5"/><circle class="pg" cx="18" cy="18" r="15.5" stroke="url(#fh-g)" style="stroke-dashoffset:' + o + (pct > 0 ? '' : ';visibility:hidden') + '"/></svg><i class="fa-solid ' + icon + '"></i></div>';
   }
-  function head(sub, showSync) {
-    return '<div class="fh-top"><span class="fh-ic"><i class="fa-solid fa-heart-pulse"></i></span><div style="min-width:0"><h3>HEALTH CONNECT</h3><p class="fh-sub">' + sub + '</p></div>' +
-      (showSync ? '<button type="button" class="fh-sync" aria-label="Sync now" onclick="window.fh.sync()"><i class="fa-solid fa-rotate' + (S.busy ? ' fh-spin' : '') + '"></i></button>' : '') + '</div>';
+  function head(subHtml, showSync) {
+    return '<div class="fh-top"><span class="fh-ic"><i class="fa-solid fa-heart-pulse"></i></span>' +
+      '<div class="fh-tt"><h3>Health card</h3><p class="fh-sub">' + subHtml + '</p></div>' +
+      (showSync ? '<button type="button" class="fh-round" aria-label="Sync now" onclick="window.fh.sync()"><i class="fa-solid fa-rotate' + (S.busy ? ' fh-spin' : '') + '"></i></button>' : '') +
+      '<button type="button" class="fh-back" aria-label="Back to this week" title="This week" onclick="window.fh.flip(false)"><i class="fa-solid fa-person-running"></i></button></div>';
   }
+
+  /* ---------- flip (This week  <->  Health card) ---------- */
+  function flipEl() { return D.getElementById('rm-flip'); }
+  function applyFlip() {
+    var fl = flipEl(); if (!fl) return;
+    var on = fl.classList.contains('on'), f = fl.querySelector('.rm-front'), k = fl.querySelector('.rm-back');
+    try { if (f) f.inert = on; if (k) k.inert = !on; } catch (e) { }
+    if (f) f.setAttribute('aria-hidden', on ? 'true' : 'false');
+    if (k) k.setAttribute('aria-hidden', on ? 'false' : 'true');
+  }
+  function flip(toBack) {
+    var fl = flipEl(); if (!fl) return;
+    var on = !!toBack && fl.classList.contains('has-fh');
+    if (on !== fl.classList.contains('on')) fl.classList.add('go');
+    fl.classList.toggle('on', on); applyFlip();
+    if (on && S.on && S.ready) sync(false);
+  }
+  function setAvail(v) {
+    var fl = flipEl(); if (!fl) return;
+    fl.classList.toggle('has-fh', !!v);
+    if (!v) fl.classList.remove('on');
+    applyFlip();
+  }
+
   function paint() {
     var el = box(); if (!el) return;
-    if (W.currentRole !== 'student' || !S.ready) { el.style.display = 'none'; return; }
-    css(); el.style.display = '';
+    if (W.currentRole !== 'student' || !S.ready) { el.style.display = 'none'; setAvail(false); return; }
+    css(); el.style.display = ''; setAvail(true);
     var h;
     if (!S.on) {
-      h = head('Your watch and phone data, inside Fitness Monitor', false) +
-        '<p class="fh-note">Connect Health Connect to see your steps, active calories, exercise time, sleep, heart rate, resting heart rate, HRV, SpO\u2082, breathing rate, VO\u2082 max and blood pressure here. Data is read on this phone only and is never uploaded.</p>' +
+      h = head('<span class="fh-st">Steps, sleep and heart rate</span>', false) +
+        '<div class="fh-main"><div class="fh-ring fh-soft"><i class="fa-solid fa-heart-pulse"></i></div>' +
+        '<p class="fh-note">Connect Health Connect to see your steps, calories, sleep and heart rate here. Read on this phone only, never uploaded.</p></div>' +
         (S.msg ? '<div class="fh-err">' + S.msg + '</div>' : '') +
         '<button type="button" class="fh-btn" onclick="window.fh.connect()"' + (S.busy ? ' disabled' : '') + '><i class="fa-solid ' + (S.busy ? 'fa-circle-notch fh-spin' : 'fa-link') + '"></i>' + (S.busy ? 'OPENING\u2026' : 'CONNECT HEALTH CONNECT') + '</button>';
     } else {
-      var m = S.m, i = 6;
-      if (!m) {
-        h = head(S.busy ? 'Reading your data\u2026' : 'Connected', true) + (S.msg ? '<div class="fh-err">' + S.msg + '</div>' : '<p class="fh-note">' + (S.busy ? 'Just a moment\u2026' : 'Tap the sync button to read today\u2019s data.') + '</p>');
-      } else {
-        var goalPct = Math.min(100, Math.round(m.steps[i] / STEP_GOAL * 100));
-        var rd = m.night >= 420 ? ['Good to push today', 'You slept ' + fmtMin(m.night) + '. A solid session is fine.'] : m.night >= 330 ? ['Take it steady', 'You slept ' + fmtMin(m.night) + '. Keep today\u2019s run easy.'] : m.night > 0 ? ['Go easy or rest', 'Only ' + fmtMin(m.night) + ' of sleep. Recover before a hard run.'] : null;
-        var avgSleep = m.sleep.filter(function (v) { return v > 0; }); avgSleep = avgSleep.length ? avgSleep.reduce(function (a, v) { return a + v; }, 0) / avgSleep.length : 0;
-        var stepsAvg = m.steps.reduce(function (a, v) { return a + v; }, 0) / 7;
-        h = head('Synced ' + ago(m.t) + ' \u00B7 stays on this phone', true) +
-          (S.msg ? '<div class="fh-err">' + S.msg + '</div>' : '') +
-          '<div class="fh-h"><b>Today</b><span>' + goalPct + '% of ' + nf(STEP_GOAL) + ' steps</span></div>' +
-          '<div class="fh-grid g4">' +
-          '<div class="fh-t c-rose"><i class="fa-solid fa-shoe-prints fh-ti"></i><b>' + nf(Math.round(m.steps[i])) + '</b><span class="fh-l">Steps</span><div class="fh-bar"><i style="width:' + goalPct + '%"></i></div></div>' +
-          tile('c-amber', 'fa-fire', n0(m.kcal[i]), 'kcal', 'Active calories', m.tot[i] > 0 ? 'Total burn ' + nf(Math.round(m.tot[i])) + ' kcal' : '') +
-          tile('c-teal', 'fa-stopwatch', n0(m.ex[i]), 'min', 'Exercise', '') +
-          tile('c-indigo', 'fa-bed', m.night > 0 ? fmtMin(m.night) : '\u2014', '', 'Sleep last night', avgSleep ? '7-day avg ' + fmtMin(avgSleep) : '') +
-          '</div>' +
-          (rd ? '<div class="fh-chip"><i class="fa-solid fa-person-running"></i><div><b>Run readiness: ' + rd[0] + '</b><span>' + rd[1] + '</span></div></div>' : '') +
-          '<div class="fh-h"><b>Steps \u00B7 last 7 days</b><span>avg ' + nf(Math.round(stepsAvg)) + ' / day</span></div>' + bars(m.steps, m.labels, STEP_GOAL, function (v) { return nf(Math.round(v)) + ' steps'; }) +
-          '<div class="fh-h"><b>Heart &amp; recovery</b><span>' + (m.hr ? m.hr.n + ' readings today' : '') + '</span></div>' +
-          '<div class="fh-grid">' +
-          tile('c-rose', 'fa-heart-pulse', m.hr ? n0(m.hr.avg) : '\u2014', 'bpm', 'Heart rate today', m.hr ? 'Low ' + n0(m.hr.min) + ' \u00B7 High ' + n0(m.hr.max) : 'No readings yet') +
-          tile('c-rose', 'fa-bed-pulse', n0(m.rhr), 'bpm', 'Resting heart rate', '') +
-          tile('c-green', 'fa-wave-square', n0(m.hrv), 'ms', 'Heart rate variability', '') +
-          tile('c-sky', 'fa-droplet', m.spo2 == null ? '\u2014' : n1(m.spo2), '%', 'Blood oxygen (SpO\u2082)', '') +
-          tile('c-teal', 'fa-lungs', n1(m.resp), '/min', 'Breathing rate', '') +
-          tile('c-amber', 'fa-gauge-high', n1(m.vo2), '', 'VO\u2082 max', 'ml/kg/min') +
-          tile('c-slate', 'fa-heart', m.bp ? n0(m.bp.sys) + '/' + n0(m.bp.dia) : '\u2014', '', 'Blood pressure', 'mmHg \u00B7 last 30 days') +
-          '</div>' +
-          '<div class="fh-h"><b>Sleep \u00B7 last 7 days</b><span>by wake-up day</span></div>' + bars(m.sleep, m.labels, 420, function (v) { return fmtMin(v); });
-        var none = !m.steps.some(function (v) { return v > 0; }) && !m.hr && m.night <= 0;
-        if (none) h += '<p class="fh-note">No data yet. Open your watch or fitness app and let it sync into Health Connect, then tap the sync button.</p>';
-      }
-      h += '<div class="fh-foot"><p>Read from Health Connect on this phone. Not uploaded or shared.</p><button type="button" onclick="window.fh.connect()">Manage access</button><button type="button" onclick="window.fh.disconnect()">Disconnect</button></div>';
+      var m = S.m || ZERO, i = 6, steps = m.steps[i] || 0, pct = Math.min(100, Math.round(steps / STEP_GOAL * 100));
+      var none = !!S.m && !steps && !m.hr && m.night <= 0 && !m.kcal[i] && !m.ex[i];
+      var sub = S.busy ? '<span class="fh-st">Reading your data\u2026</span>' : '<span class="fh-st">' + (S.m ? 'Synced ' + ago(m.t) : 'Connected') + '</span><em class="fh-dot">\u00B7</em><button type="button" class="fh-lnk" onclick="window.fh.disconnect()">Disconnect</button>';
+      var big = S.m ? nf(Math.round(steps)) : '\u2014';
+      var lab = !S.m ? (S.busy ? 'Reading your data\u2026' : 'Tap sync to read today') : none ? 'No data yet \u00B7 sync your watch app' : 'steps today \u00B7 <em>' + pct + '%</em> of ' + nf(STEP_GOAL);
+      h = head(sub, true) +
+        '<div class="fh-main">' + ring(pct, 'fa-shoe-prints') + '<div class="fh-steps"><b>' + big + '</b><span>' + lab + '</span></div></div>' +
+        (S.msg ? '<div class="fh-err">' + S.msg + '</div>' : '') +
+        '<div class="fh-grid4">' +
+        tile('c-amber', 'fa-fire', dash(m.kcal[i]), 'kcal', 'Calories') +
+        tile('c-teal', 'fa-stopwatch', dash(m.ex[i]), 'min', 'Exercise') +
+        tile('c-indigo', 'fa-bed', m.night > 0 ? fmtMin(m.night) : '\u2014', '', 'Sleep') +
+        tile('c-rose', 'fa-heart-pulse', m.hr ? n0(m.hr.avg) : '\u2014', 'bpm', 'Heart rate') +
+        '</div>';
     }
     el.innerHTML = h;
   }
@@ -48811,7 +48844,13 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       else if (++n > 16) { clearInterval(t); S.ready = false; paint(); }
     }, 500);
   }
-  W.fh = { connect: connect, sync: function () { sync(true); }, disconnect: disconnect, open: open };
+  W.fh = { connect: connect, sync: function () { sync(true); }, disconnect: disconnect, open: open, flip: flip };
+  /* a tap on the card (not on a button) turns it over */
+  D.addEventListener('click', function (e) {
+    var fl = flipEl(); if (!fl || !fl.classList.contains('has-fh') || !fl.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('button,a,input')) return;
+    flip(!fl.classList.contains('on'));
+  });
   W.addEventListener('hashchange', function () { if (W.location.hash === '#fitness') setTimeout(open, 250); });
   D.addEventListener('visibilitychange', function () { if (!D.hidden && viewOpen()) open(); });
   setInterval(function () { if (!D.hidden && viewOpen() && S.on && S.ready) sync(false); }, 60000);
