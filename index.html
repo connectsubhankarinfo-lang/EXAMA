@@ -18,6 +18,7 @@ Version: 2026-11-16 (as supplied by the owner; notes added, nothing else changed
 Change 2026-11-16: "Notification settings" is now a website page INSIDE the Settings panel (ids qs-np, qs-np-body, np-sheet; code block "NOTIFICATION SETTINGS" next to openQs). Back returns to Settings. The row no longer opens the native screen (window.openNativeNotificationSettings is still defined by the app but not called from here).
 Change 2026-11-17: NO BLACK SCREEN at app start. Script gl-app-flag now also adds class gl-boot to <html> (app only) and the style gl-boot-css paints html + body #f8fafc until hideLoader finishes (it removes gl-boot; 30 s safety timer). Before this, html/body were #0f172a (dark) and showed between the app logo and the loader. Keep gl-boot / gl-boot-css.
 Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). ALARMS (2026-11-18): in the app the alarm ring screen is NATIVE (window.EXAMA_NATIVE_RING, alarm_ring_screen.dart): the page poll() no longer shows its own ring screen there (back-up only when window.__exactAlarmOk === false) and flushNative() tells the server what the student did on the native screen. Lock-screen / notification: when the app sets window.EXAMA_YT_NATIVE (app update 2026-11-18, media_service.dart) the page hands the playing song + the next songs to the native player through __rtMusicNative.get/back/resume; without it nothing is handed over. See FLUTTER_CONNECT.md section 0.7. Lecture Hub YouTube lectures use the SAME hand-off (lectureNativeUrl / ytLecId in the median-native script): with EXAMA_YT_NATIVE the app plays the lecture's audio in the background and the lecture continues in the page when the app is back; Run music back() only claims a song it handed over itself (natId).
+Change 2026-11-20: RUN MUSIC WEB BACKGROUND MODE (window.EXAMA_WEB_BG from the app shim): the song keeps playing in the page, the app shows the Android notification and sends its buttons back (event exama-remote); __rtRemSend() tells the app what plays. See FLUTTER_CONNECT.md section 0.7d.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -21273,6 +21274,7 @@ window.__tpPaint = function () {
                     { const se = $('rt-mp-sub'); if (se) { se.style.whiteSpace = ''; se.style.overflow = ''; se.style.textOverflow = ''; } } setT('rt-mp-sub', ((n > 1 && M.i >= 0) ? (M.i + 1) + ' / ' + n + '   ' : '') + String(s.artist || 'FITNESS MONITOR').toUpperCase() + (M.shuf ? '   SHUFFLE' : ''));
                     mArt(s);
                     try { if (navigator.mediaSession && window.MediaMetadata) navigator.mediaSession.metadata = new MediaMetadata({ title: s.title, artist: s.artist || 'FITNESS MONITOR', artwork: s.art ? [{ src: s.art, sizes: '320x180', type: 'image/jpeg' }] : [] }); } catch (e) { }
+                    try { window.__rtRemSend && window.__rtRemSend(); } catch (e) { }   // 2026-11-20: tell the app (Android notification)
                 };
                 const giveUp = why => {
                     M.errs++; M.playing = false; mIco(false);
@@ -21300,6 +21302,7 @@ window.__tpPaint = function () {
                     else if (st === 2) { M.playing = false; mIco(false); }
                     else if (st === 3) { if (M.want) M.playing = true; }
                     else if (st === 0) { M.playing = false; if (M.active && M.want) window.runMusicNext(); }     // song finished: go to the next one (shuffle aware)
+                    try { window.__rtRemSend && window.__rtRemSend(); } catch (e) { }   // 2026-11-20: tell the app (Android notification)
                 };
                 const onYtErr = e => { const c = e && e.data; giveUp(c === 101 || c === 150 ? 'The owner does not allow this song here' : c === 100 ? 'Song not found or private' : 'Song cannot be played'); };
                 const setHandle = () => {
@@ -21414,6 +21417,7 @@ window.__tpPaint = function () {
                     M.want = false; M.active = false; M.card = false; M.playing = false; M.extPause = false; mTimerOn(false); playTok++; clearTimeout(startT); curVid = '';
                     try { if (P && pReady) P.stopVideo(); } catch (e) { }
                     mIco(false); mSync(); if (window.closeRunPlaylist) window.closeRunPlaylist();
+                    try { window.__rtRemSend && window.__rtRemSend(); } catch (e) { }   // 2026-11-20: tell the app (Android notification)
                 };
 
                 // ===== REMOVE A SONG: swipe it left or right in the list. No question is asked. =====
@@ -21509,6 +21513,34 @@ window.__tpPaint = function () {
                 };
                 window.__rtYtAdd = ytAdd;
 
+                // ===== WEB BACKGROUND MODE (2026-11-20, needs the app with window.EXAMA_WEB_BG) =====
+                // The song keeps playing in THIS page (the hidden YouTube player). The app keeps the WebView awake, hides the "app is in the background" state from the YouTube frame
+                // (shell_screen.dart) and shows the Android media notification (foreground service). Its buttons come back here as the 'exama-remote' event.
+                // Nothing is looked up on the phone any more, so YouTube cannot rate-limit that lookup. To go back to the old way set EXAMA_WEB_BG = false in median_shim.dart.
+                let remT = null;
+                window.__rtRemSend = () => {
+                    clearTimeout(remT);
+                    remT = setTimeout(() => {
+                        try {
+                            const f = window.EXAMA_WEB_BG && window.median && window.median.backgroundMedia && window.median.backgroundMedia.remote;
+                            if (!f) return;
+                            const s = M.q[M.i], n = M.q.length;
+                            if (!M.active || !s) { f({ active: false }); return; }
+                            f({ active: true, playing: !!M.playing, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', art: s.art || '', hasPrev: n > 1, hasNext: n > 1 });
+                        } catch (e) { }
+                    }, 250);
+                };
+                window.addEventListener('exama-remote', ev => {                    // a button of the Android notification / lock screen
+                    try {
+                        const a = ev && ev.detail && ev.detail.action;
+                        if (!M.active || !a) return;
+                        if (a === 'next') window.runMusicNext();
+                        else if (a === 'prev') window.runMusicPrev();
+                        else if (a === 'play') { if (P && pReady && curVid) { M.want = true; M.extPause = false; try { P.playVideo(); } catch (e) { } } else window.runMusicToggle(); }
+                        else if (a === 'pause') { M.want = false; M.extPause = false; try { if (P && pReady) P.pauseVideo(); } catch (e) { } }
+                    } catch (e) { }
+                });
+                setInterval(() => { try { if (window.EXAMA_WEB_BG && document.hidden) resumeIfNeeded(); } catch (e) { } }, 4000);   // in the background: if YouTube paused the song by itself and the student did not press pause, play again
                 // ===== ANDROID NOTIFICATION / LOCK-SCREEN CONTROLS (needs the app with window.EXAMA_YT_NATIVE) =====
                 // When the app goes to the background the app calls window.getPlayerStatus() (see median-native script), which asks get() here: the song is paused in the page and handed to the
                 // app's native player (media_service.dart looks the YouTube audio up on the phone) together with the songs that follow, so the music goes on with the screen off and the
@@ -21533,6 +21565,7 @@ window.__tpPaint = function () {
                 window.__rtMusicNative = {
                     get: () => {
                         if (!M.active || !M.want) return null;                      // the student does not want music now (paused / stopped): nothing to hand over
+                        if (window.EXAMA_WEB_BG) return null;                       // 2026-11-20 web background mode: the song stays in the page, nothing is handed to the app (see __rtRemSend)
                         const s = M.q[M.i];
                         // not "M.playing": the YouTube player may already have paused itself while the app goes to the background; what counts is that the student wants the music
                         if (!window.EXAMA_YT_NATIVE) { if (!window.__natOldWarned) { window.__natOldWarned = 1; natMiss('this app version cannot play YouTube in the background, install the new app'); } return null; }
