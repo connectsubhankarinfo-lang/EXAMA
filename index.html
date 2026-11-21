@@ -21301,7 +21301,7 @@ window.__tpPaint = function () {
                 let wBadSince = 0, wReloadAt = 0, wHiddenAt = 0;   // 2026-11-21 background watchdog (see resumeIfNeeded)
                 const onState = e => {
                     const st = e && e.data;
-                    wLog('yt state ' + st + (document.hidden ? ' (page hidden)' : ''));
+                    wLog('yt' + st + (document.hidden ? 'h' : ''));
                     if (st === 1) { clearTimeout(startT); M.playing = true; M.errs = 0; M.extPause = false; mIco(true); refine(); nowInfo(); }
                     else if (st === 2) { M.playing = false; mIco(false); }
                     else if (st === 3) { if (M.want) M.playing = true; }
@@ -21353,7 +21353,7 @@ window.__tpPaint = function () {
                     wReloads.push(now);
                     const t0 = Math.max(0, +P.getCurrentTime() || 0);
                     wReloadAt = now; wBadSince = 0;
-                    wLog('watchdog: yt ' + st + ' -> load again at ' + Math.round(t0) + 's (reload #' + wReloads.length + ' in 30 s)');
+                    wLog('RELOAD#' + wReloads.length + ' st' + st + ' @' + Math.round(t0) + 's');
                     try { P.loadVideoById({ videoId: curVid, startSeconds: t0 }); } catch (e) { wLog('reload failed: ' + e); }
                 };
                 const resumeIfNeeded = () => {
@@ -21363,7 +21363,7 @@ window.__tpPaint = function () {
                         if (st === 1 || st === 0) { wBadSince = 0; return; }              // playing, or finished (onState goes to the next song)
                         if (!hid) {                                                          // app is open: the old gentle way
                             wBadSince = 0;
-                            if (st === 2 || st === 5 || st === -1) { wLog('watchdog: yt state ' + st + ' -> playVideo'); P.playVideo(); }
+                            if (st === 2 || st === 5 || st === -1) { wLog('playVideo st' + st); P.playVideo(); }
                             return;
                         }
                         const wait = wReloads.length >= 5 ? 10000 : 2500;                    // back off when it keeps failing
@@ -21550,9 +21550,9 @@ window.__tpPaint = function () {
                             const f = window.EXAMA_WEB_BG && window.median && window.median.backgroundMedia && window.median.backgroundMedia.remote;
                             if (!f) return;
                             const s = M.q[M.i], n = M.q.length;
-                            try { wLog('remote send ' + (M.active && s ? 'playing=' + M.playing : 'inactive') + (document.hidden ? ' (page hidden)' : '')); } catch (e) { }
+                            try { wLog('send ' + (M.active && s ? (M.want ? 'T' : 'F') : 'off') + (document.hidden ? 'h' : '')); } catch (e) { }
                             if (!M.active || !s) { f({ active: false }); return; }
-                            const rr = f({ active: true, playing: !!M.playing, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', art: s.art || '', hasPrev: n > 1, hasNext: n > 1 });
+                            const rr = f({ active: true, playing: !!M.want, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', art: s.art || '', hasPrev: n > 1, hasNext: n > 1 });
                             try { window.__rtRemN = (window.__rtRemN || 0) + 1; const t0 = new Date().toLocaleTimeString(); Promise.resolve(rr).then(r => { try { localStorage.setItem('rtRemInfo', 'sent ' + window.__rtRemN + 'x, last ' + t0 + ', app answered ' + JSON.stringify(r)); } catch (e) { } }, er => { try { localStorage.setItem('rtRemInfo', 'sent ' + window.__rtRemN + 'x, last ' + t0 + ', ERROR ' + er); } catch (e) { } }); } catch (e) { }
                         } catch (e) { try { localStorage.setItem('rtRemInfo', 'remote() threw: ' + e); } catch (x) { } }
                     }, 250);
@@ -21568,15 +21568,15 @@ window.__tpPaint = function () {
                     } catch (e) { }
                 });
                 setInterval(() => { try { if (window.EXAMA_WEB_BG && document.hidden) resumeIfNeeded(); } catch (e) { } }, 1500);   // in the background: if YouTube paused the song by itself and the student did not press pause, play again
-                document.addEventListener('visibilitychange', () => { if (document.hidden) wHiddenAt = Date.now(); wLog('page ' + (document.hidden ? 'HIDDEN' : 'visible')); });
-                ['exama-pause', 'exama-resume'].forEach(n => window.addEventListener(n, () => { if (n === 'exama-pause') wHiddenAt = Date.now(); wLog('app event ' + n); }));
-                window.addEventListener('exama-remote', ev => wLog('notification button: ' + (ev && ev.detail && ev.detail.action)));
+                document.addEventListener('visibilitychange', () => { if (document.hidden) wHiddenAt = Date.now(); wLog(document.hidden ? 'PAGE-HIDDEN' : 'page-visible'); });
+                ['exama-pause', 'exama-resume'].forEach(n => window.addEventListener(n, () => { if (n === 'exama-pause') wHiddenAt = Date.now(); wLog(n === 'exama-pause' ? 'APP-PAUSE' : 'APP-RESUME'); }));
+                window.addEventListener('exama-remote', ev => wLog('BTN-' + (ev && ev.detail && ev.detail.action)));
                 let wLast = Date.now();
                 setInterval(() => {   // while the page is hidden: every 5 s what YouTube is doing. A big gap= means the page's JavaScript was frozen.
                     try {
                         const now = Date.now(), gap = Math.round((now - wLast) / 1000); wLast = now;
                         if (!document.hidden || !M.active) return;
-                        wLog('tick gap=' + gap + 's yt=' + (P && pReady ? P.getPlayerState() : 'none') + ' pos=' + (P && pReady ? Math.round(P.getCurrentTime()) : '-') + ' want=' + M.want + ' playing=' + M.playing + ' ext=' + M.extPause);
+                        wLog('tick yt=' + (P && pReady ? P.getPlayerState() : 'none') + ' pos=' + (P && pReady ? Math.round(P.getCurrentTime()) : '-') + (M.want ? '' : ' want=F') + (gap > 7 ? ' GAP' + gap : ''));
                     } catch (e) { }
                 }, 5000);
                 // ===== ANDROID NOTIFICATION / LOCK-SCREEN CONTROLS (needs the app with window.EXAMA_YT_NATIVE) =====
@@ -48335,7 +48335,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       try {
         if (localStorage.getItem('rtNatWas') !== '1') return;
         var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('nbWhy'), nb = localStorage.getItem('rtNatBack'), er = localStorage.getItem('rtNatErrLast');
-        var wl = ''; try { wl = (JSON.parse(localStorage.getItem('rtWebLog') || '[]') || []).slice(-60).join(' | ').slice(-3400); localStorage.removeItem('rtWebLog'); } catch (e) { }
+        var wl = ''; try { wl = (JSON.parse(localStorage.getItem('rtWebLog') || '[]') || []).slice(-70).join(' ').slice(-3000); localStorage.removeItem('rtWebLog'); } catch (e) { }
         ['rtNatWas', 'rtNatCall', 'nbWhy', 'rtNatBack', 'rtNatErrLast'].forEach(function (k) { localStorage.removeItem(k); });
         var s = nb ? String(nb).slice(0, 1000) : 'updatePlayerStatus NOT called';
         var ri = localStorage.getItem('rtRemInfo') || 'remote() was NEVER called'; localStorage.removeItem('rtRemInfo');
