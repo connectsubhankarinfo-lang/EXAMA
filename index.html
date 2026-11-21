@@ -21308,7 +21308,7 @@ window.__tpPaint = function () {
                     else if (st === 0) { M.playing = false; if (M.active && M.want) window.runMusicNext(); }     // song finished: go to the next one (shuffle aware)
                     try { window.__rtRemSend && window.__rtRemSend(); } catch (e) { }   // 2026-11-20: tell the app (Android notification)
                 };
-                const onYtErr = e => { const c = e && e.data; giveUp(c === 101 || c === 150 ? 'The owner does not allow this song here' : c === 100 ? 'Song not found or private' : 'Song cannot be played'); };
+                const onYtErr = e => { const c = e && e.data; wLog('yt ERROR ' + c); giveUp(c === 101 || c === 150 ? 'The owner does not allow this song here' : c === 100 ? 'Song not found or private' : 'Song cannot be played'); };
                 const setHandle = () => {
                     // the old handle name is kept on purpose: Nova (voice) and the walkie-talkie lower / pause the music through it
                     M.yt = {
@@ -21345,25 +21345,31 @@ window.__tpPaint = function () {
                 const mTimerOn = on => { if (on && !mTimer) mTimer = setInterval(mTick, 700); if (!on && mTimer) { clearInterval(mTimer); mTimer = null; } };
                 // BACKGROUND HELP: when the phone / app goes to the background or comes back, Android (or YouTube) can pause the sound by itself.
                 // If the student did NOT press pause, play again. (Lock-screen buttons for YouTube songs need the app update, see FLUTTER_CONNECT.md.)
-                // 2026-11-21: log of 08:49 showed that when the app goes to the background YouTube pauses by itself (state 2); playVideo() then leaves it
-                // stuck in "buffering" (state 3) for ever, but LOADING THE SAME SONG AGAIN at the same second (what Next does) plays fine in the background.
+                // 2026-11-21 (v7): in the background YouTube pauses itself ~1 s after every playVideo() ("resume"), logs of 08:49 and 08:58. A fresh load of the same
+                // song at the same second (what Next does) is what works, so the watchdog never uses playVideo() while the page is hidden. After many reloads in a row it waits longer.
+                const wReloads = [];
                 const reloadSame = st => {
+                    const now = Date.now(); while (wReloads.length && now - wReloads[0] > 30000) wReloads.shift();
+                    wReloads.push(now);
                     const t0 = Math.max(0, +P.getCurrentTime() || 0);
-                    wReloadAt = Date.now(); wBadSince = 0;
-                    wLog('watchdog: yt state ' + st + ' -> load the same song again at ' + Math.round(t0) + 's');
+                    wReloadAt = now; wBadSince = 0;
+                    wLog('watchdog: yt ' + st + ' -> load again at ' + Math.round(t0) + 's (reload #' + wReloads.length + ' in 30 s)');
                     try { P.loadVideoById({ videoId: curVid, startSeconds: t0 }); } catch (e) { wLog('reload failed: ' + e); }
                 };
                 const resumeIfNeeded = () => {
                     try {
                         if (!M.active || !M.want || M.extPause || !P || !pReady || !curVid) { wBadSince = 0; return; }
-                        const st = P.getPlayerState(), hid = document.hidden;
+                        const st = P.getPlayerState(), hid = document.hidden, now = Date.now();
                         if (st === 1 || st === 0) { wBadSince = 0; return; }              // playing, or finished (onState goes to the next song)
-                        if (st === 2 || st === 5 || st === -1) {
-                            if (hid && st === 2 && Date.now() - wReloadAt > 6000) { reloadSame(st); return; }
-                            wLog('watchdog: yt state ' + st + ' -> playVideo' + (hid ? ' (page hidden)' : '')); P.playVideo();
+                        if (!hid) {                                                          // app is open: the old gentle way
+                            wBadSince = 0;
+                            if (st === 2 || st === 5 || st === -1) { wLog('watchdog: yt state ' + st + ' -> playVideo'); P.playVideo(); }
+                            return;
                         }
-                        if (hid) { if (!wBadSince) wBadSince = Date.now(); else if (Date.now() - wBadSince > 3500 && Date.now() - wReloadAt > 6000) reloadSame(st); }   // still not playing 3.5 s later (stuck buffering)
-                        else wBadSince = 0;
+                        const wait = wReloads.length >= 5 ? 10000 : 2500;                    // back off when it keeps failing
+                        if (st === 2) { if (now - wReloadAt > wait) reloadSame(st); return; }
+                        if (!wBadSince) wBadSince = now;                                     // buffering / unstarted: give it 3 s, then load again
+                        else if (now - wBadSince > 3000 && now - wReloadAt > wait) reloadSame(st);
                     } catch (e) { }
                 };
                 document.addEventListener('visibilitychange', () => { setTimeout(resumeIfNeeded, document.hidden ? 300 : 700); setTimeout(resumeIfNeeded, document.hidden ? 1500 : 2000); });
@@ -21558,14 +21564,10 @@ window.__tpPaint = function () {
                         if (a === 'next') window.runMusicNext();
                         else if (a === 'prev') window.runMusicPrev();
                         else if (a === 'play') { if (P && pReady && curVid) { M.want = true; M.extPause = false; try { P.playVideo(); } catch (e) { } } else window.runMusicToggle(); }
-                        else if (a === 'pause') {
-                            // 2026-11-21: 3 s after the app went to the background the app's silent player paused ITSELF (log 08:49:05, not a finger on the button) and that paused the song for good. Ignore a pause that comes right after leaving the app and tell the app we are still playing.
-                            if (window.EXAMA_WEB_BG && M.want && Date.now() - wHiddenAt < 8000) { wLog('ignored notification pause (app was just hidden)'); try { window.__rtRemSend && window.__rtRemSend(); } catch (e) { } return; }
-                            M.want = false; M.extPause = false; try { if (P && pReady) P.pauseVideo(); } catch (e) { }
-                        }
+                        else if (a === 'pause') { M.want = false; M.extPause = false; try { if (P && pReady) P.pauseVideo(); } catch (e) { } }
                     } catch (e) { }
                 });
-                setInterval(() => { try { if (window.EXAMA_WEB_BG && document.hidden) resumeIfNeeded(); } catch (e) { } }, 2000);   // in the background: if YouTube paused the song by itself and the student did not press pause, play again
+                setInterval(() => { try { if (window.EXAMA_WEB_BG && document.hidden) resumeIfNeeded(); } catch (e) { } }, 1500);   // in the background: if YouTube paused the song by itself and the student did not press pause, play again
                 document.addEventListener('visibilitychange', () => { if (document.hidden) wHiddenAt = Date.now(); wLog('page ' + (document.hidden ? 'HIDDEN' : 'visible')); });
                 ['exama-pause', 'exama-resume'].forEach(n => window.addEventListener(n, () => { if (n === 'exama-pause') wHiddenAt = Date.now(); wLog('app event ' + n); }));
                 window.addEventListener('exama-remote', ev => wLog('notification button: ' + (ev && ev.detail && ev.detail.action)));
@@ -48333,7 +48335,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       try {
         if (localStorage.getItem('rtNatWas') !== '1') return;
         var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('nbWhy'), nb = localStorage.getItem('rtNatBack'), er = localStorage.getItem('rtNatErrLast');
-        var wl = ''; try { wl = (JSON.parse(localStorage.getItem('rtWebLog') || '[]') || []).slice(-45).join(' | ').slice(-2400); localStorage.removeItem('rtWebLog'); } catch (e) { }
+        var wl = ''; try { wl = (JSON.parse(localStorage.getItem('rtWebLog') || '[]') || []).slice(-60).join(' | ').slice(-3400); localStorage.removeItem('rtWebLog'); } catch (e) { }
         ['rtNatWas', 'rtNatCall', 'nbWhy', 'rtNatBack', 'rtNatErrLast'].forEach(function (k) { localStorage.removeItem(k); });
         var s = nb ? String(nb).slice(0, 1000) : 'updatePlayerStatus NOT called';
         var ri = localStorage.getItem('rtRemInfo') || 'remote() was NEVER called'; localStorage.removeItem('rtRemInfo');
