@@ -21296,8 +21296,11 @@ window.__tpPaint = function () {
                         if (ch) { savePl(); if (document.getElementById('rt-pl')) pList(); }
                     } catch (e) { }
                 };
+                // TEMP diagnostics 2026-11-21: a small log of what the YouTube player does while the app is in the background (shown by the popup "Music debug 3"). Delete when music works.
+                const wLog = m => { try { const n = new Date(), z = x => (x < 10 ? '0' : '') + x; let a = []; try { a = JSON.parse(localStorage.getItem('rtWebLog') || '[]'); } catch (e) { } a.push(z(n.getMinutes()) + ':' + z(n.getSeconds()) + ' ' + m); if (a.length > 60) a = a.slice(-60); localStorage.setItem('rtWebLog', JSON.stringify(a)); } catch (e) { } };
                 const onState = e => {
                     const st = e && e.data;
+                    wLog('yt state ' + st + (document.hidden ? ' (page hidden)' : ''));
                     if (st === 1) { clearTimeout(startT); M.playing = true; M.errs = 0; M.extPause = false; mIco(true); refine(); nowInfo(); }
                     else if (st === 2) { M.playing = false; mIco(false); }
                     else if (st === 3) { if (M.want) M.playing = true; }
@@ -21344,7 +21347,7 @@ window.__tpPaint = function () {
                 const resumeIfNeeded = () => {
                     try {
                         if (!M.active || !M.want || M.extPause || !P || !pReady || !curVid) return;
-                        const st = P.getPlayerState(); if (st === 2 || st === 5 || st === -1) P.playVideo();
+                        const st = P.getPlayerState(); if (st === 2 || st === 5 || st === -1) { wLog('watchdog: yt state ' + st + ' -> playVideo' + (document.hidden ? ' (page hidden)' : '')); P.playVideo(); }
                     } catch (e) { }
                 };
                 document.addEventListener('visibilitychange', () => { setTimeout(resumeIfNeeded, document.hidden ? 300 : 700); setTimeout(resumeIfNeeded, document.hidden ? 1500 : 2000); });
@@ -21525,6 +21528,7 @@ window.__tpPaint = function () {
                             const f = window.EXAMA_WEB_BG && window.median && window.median.backgroundMedia && window.median.backgroundMedia.remote;
                             if (!f) return;
                             const s = M.q[M.i], n = M.q.length;
+                            try { wLog('remote send ' + (M.active && s ? 'playing=' + M.playing : 'inactive') + (document.hidden ? ' (page hidden)' : '')); } catch (e) { }
                             if (!M.active || !s) { f({ active: false }); return; }
                             const rr = f({ active: true, playing: !!M.playing, title: s.title || 'Song', artist: s.artist || 'Fitness Monitor', art: s.art || '', hasPrev: n > 1, hasNext: n > 1 });
                             try { window.__rtRemN = (window.__rtRemN || 0) + 1; const t0 = new Date().toLocaleTimeString(); Promise.resolve(rr).then(r => { try { localStorage.setItem('rtRemInfo', 'sent ' + window.__rtRemN + 'x, last ' + t0 + ', app answered ' + JSON.stringify(r)); } catch (e) { } }, er => { try { localStorage.setItem('rtRemInfo', 'sent ' + window.__rtRemN + 'x, last ' + t0 + ', ERROR ' + er); } catch (e) { } }); } catch (e) { }
@@ -21542,6 +21546,17 @@ window.__tpPaint = function () {
                     } catch (e) { }
                 });
                 setInterval(() => { try { if (window.EXAMA_WEB_BG && document.hidden) resumeIfNeeded(); } catch (e) { } }, 4000);   // in the background: if YouTube paused the song by itself and the student did not press pause, play again
+                document.addEventListener('visibilitychange', () => wLog('page ' + (document.hidden ? 'HIDDEN' : 'visible')));
+                ['exama-pause', 'exama-resume'].forEach(n => window.addEventListener(n, () => wLog('app event ' + n)));
+                window.addEventListener('exama-remote', ev => wLog('notification button: ' + (ev && ev.detail && ev.detail.action)));
+                let wLast = Date.now();
+                setInterval(() => {   // while the page is hidden: every 5 s what YouTube is doing. A big gap= means the page's JavaScript was frozen.
+                    try {
+                        const now = Date.now(), gap = Math.round((now - wLast) / 1000); wLast = now;
+                        if (!document.hidden || !M.active) return;
+                        wLog('tick gap=' + gap + 's yt=' + (P && pReady ? P.getPlayerState() : 'none') + ' pos=' + (P && pReady ? Math.round(P.getCurrentTime()) : '-') + ' want=' + M.want + ' playing=' + M.playing + ' ext=' + M.extPause);
+                    } catch (e) { }
+                }, 5000);
                 // ===== ANDROID NOTIFICATION / LOCK-SCREEN CONTROLS (needs the app with window.EXAMA_YT_NATIVE) =====
                 // When the app goes to the background the app calls window.getPlayerStatus() (see median-native script), which asks get() here: the song is paused in the page and handed to the
                 // app's native player (media_service.dart looks the YouTube audio up on the phone) together with the songs that follow, so the music goes on with the screen off and the
@@ -48298,13 +48313,14 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       try {
         if (localStorage.getItem('rtNatWas') !== '1') return;
         var a = localStorage.getItem('rtNatCall'), b = localStorage.getItem('nbWhy'), nb = localStorage.getItem('rtNatBack'), er = localStorage.getItem('rtNatErrLast');
+        var wl = ''; try { wl = (JSON.parse(localStorage.getItem('rtWebLog') || '[]') || []).slice(-45).join(' | ').slice(-2400); localStorage.removeItem('rtWebLog'); } catch (e) { }
         ['rtNatWas', 'rtNatCall', 'nbWhy', 'rtNatBack', 'rtNatErrLast'].forEach(function (k) { localStorage.removeItem(k); });
         var s = nb ? String(nb).slice(0, 1000) : 'updatePlayerStatus NOT called';
         var ri = localStorage.getItem('rtRemInfo') || 'remote() was NEVER called'; localStorage.removeItem('rtRemInfo');
-        var trTxt = new Promise(function (res) { try { var pr = W.flutter_inappwebview && W.flutter_inappwebview.callHandler('median', 'backgroundMedia.status', {}); if (pr && pr.then) pr.then(function (x) { res(x && x.trace ? String(x.trace).slice(0, 1200) : ''); }, function () { res(''); }); else res(''); } catch (e) { res(''); } setTimeout(function () { res(''); }, 2500); });
+        var trTxt = new Promise(function (res) { try { var pr = W.flutter_inappwebview && W.flutter_inappwebview.callHandler('median', 'backgroundMedia.status', {}); if (pr && pr.then) pr.then(function (x) { res(x && x.trace ? String(x.trace).slice(0, 2400) : ''); }, function () { res(''); }); else res(''); } catch (e) { res(''); } setTimeout(function () { res(''); }, 2500); });
         var dbgMsg = 'REMOTE: ' + ri + '. APP FLAGS: WEB_BG=' + String(W.EXAMA_WEB_BG) + ', YT_NATIVE=' + String(W.EXAMA_YT_NATIVE) + ', remote=' + String(!!(W.median && W.median.backgroundMedia && W.median.backgroundMedia.remote)) + '. getPlayerStatus: ' + (a || 'NOT called') + '. Hand-off: ' + (b || 'not reached') + '. App status on return: ' + s + '.' + (er ? ' APP ERROR: ' + String(er).slice(0, 1400) : '');
         /* 2026-11-20: showCustomAlert has ONE modal, so two calls overwrote each other and only the trace popup was seen. Now: 'Music debug' first, and after OK the app trace. */
-        trTxt.then(function (t) { try { if (!W.showCustomAlert) return; var p1 = W.showCustomAlert('Music debug', dbgMsg, 'info'); if (t && p1 && p1.then) p1.then(function () { W.showCustomAlert('Music debug 2 (app trace)', t, 'info'); }); } catch (e) { } });
+        trTxt.then(function (t) { try { if (!W.showCustomAlert) return; var seq = W.showCustomAlert('Music debug', dbgMsg, 'info'); if (!(seq && seq.then)) return; if (t) seq = seq.then(function () { return W.showCustomAlert('Music debug 2 (app trace)', t, 'info'); }); if (wl) seq = seq.then(function () { return W.showCustomAlert('Music debug 3 (page log)', wl, 'info'); }); } catch (e) { } });
       } catch (e) { }
     }, 2200);
   };
