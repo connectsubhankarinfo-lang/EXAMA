@@ -28,6 +28,7 @@ Change 2026-11-21: Run music debug popups / logs removed. YouTube lectures (Lect
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <script id="gl-app-flag">/* EXAMA app only: just marks that the page runs inside the app (the real loader now shows normally at app start). */(function(){try{if(/EXAMA_APP/i.test(navigator.userAgent)){window.__glInApp=true;document.documentElement.classList.add('gl-boot');setTimeout(function(){try{document.documentElement.classList.remove('gl-boot');}catch(e){}},30000);}}catch(e){}})();</script>
+<script id="bn-admin-pre">/* admin never gets the student bottom bar */(function(){try{if(localStorage.getItem('exama_role')==='admin')document.documentElement.classList.add('bn-admin');}catch(e){}})();</script>
 <style id="gl-boot-css">/* EXAMA app only (2026-11-17): until the loader has finished, the page behind it is the LOADER colour (#f8fafc) and not the dark #0f172a, so no black screen shows between the app logo and the website loader. Removed again by hideLoader (class gl-boot) when the loader is hidden. */html.gl-boot,html.gl-boot body{background-color:#f8fafc!important}</style>
 <script id="ar-ready">/* EXAMA app only: tells the app (the Lottie splash) when the home screen is REALLY loaded: the loader step is done AND the first students / exams / results data has arrived (or the person is not logged in). The app then fades the Lottie out, so no empty screen shows. H4 (2026-11-14): the signal now waits until the home view has really been drawn (the data callbacks run BEFORE the 150 ms debounced refreshUI, so the old 350 ms timer could fire on an empty page): at least 700 ms after the data, the visible view must have content, then 2 frames + 150 ms; never longer than 5 s. */(function(){var F=window.__arFlags={};window.__arMark=function(k){try{F[k]=1;window.__arCheck();}catch(e){}};window.__arCheck=function(){try{if(!window.__glInApp||F.done||!F.loader)return;if(window.loggedInMobile&&!(F.students&&F.exams&&F.results))return;F.done=1;var t0=Date.now(),V=['student-view','admin-view','login-view','admin-login-view'];function shown(){for(var i=0;i<V.length;i++){var e=document.getElementById(V[i]);if(e&&!e.classList.contains('hidden-view')&&e.getBoundingClientRect().height>0&&((e.innerText||'').trim().length>20))return true;}return false;}function send(){try{if(window.flutter_inappwebview&&window.flutter_inappwebview.callHandler)window.flutter_inappwebview.callHandler('median','splash.ready',{});}catch(e){}}function paint(){requestAnimationFrame(function(){requestAnimationFrame(function(){setTimeout(send,150);});});}function wait(){var el=Date.now()-t0;if(el>=5000||(el>=700&&shown())){paint();return;}setTimeout(wait,100);}setTimeout(wait,100);}catch(e){}};})();</script>
 <style id="al-pre-css">html.al-pre body>*{visibility:hidden}html.al-pre body>#al-lock,html.al-pre body>#al-pw{visibility:visible!important}</style>
@@ -5455,15 +5456,188 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
                     <div id="student-pending-exams" class="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3"></div>
                 </div>
 
-                <div class="relative flex items-center my-4 sm:my-6 mx-2">
-                    <div class="flex-grow border-t-[1.5px] border-dashed border-gray-200/80"></div>
-                    <span
-                        class="shrink-0 mx-4 text-[10px] sm:text-xs text-gray-400 font-bold tracking-[0.2em] uppercase"><i
-                            class="fa-solid fa-chart-line mr-1"></i> Analytics</span>
-                    <div class="flex-grow border-t-[1.5px] border-dashed border-gray-200/80"></div>
-                </div>
+                <!-- (exam performance curve + exam history now live on the Exam screen: #exams-view) -->
+            </div>
+        </div>
 
-                <!-- Performance & Overview (redesigned: responsive ring + stat tiles + score curve) -->
+
+<style id="bn-style">
+/* ===== Bottom navigation (student) ===== */
+:root{--bn-hh:72px}
+html.bn-on{--bn-h:calc(var(--bn-hh) + env(safe-area-inset-bottom,0px))}
+html.bn-on.bn-kb{--bn-h:0px}
+#bn{position:absolute;left:0;right:0;bottom:0;z-index:95;display:block;transform:translateY(calc(100% + 24px));opacity:0;visibility:hidden;transition:transform .38s cubic-bezier(.32,.72,0,1),opacity .24s ease,visibility 0s linear .38s;box-sizing:border-box;padding:7px max(12px,env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left));background:transparent;pointer-events:none}
+html.bn-on #bn{transform:none;opacity:1;visibility:visible;transition:transform .45s cubic-bezier(.22,1,.36,1),opacity .28s ease,visibility 0s}
+@media (prefers-reduced-motion:reduce){#bn,html.bn-on #bn{transition:none}}
+html.bn-kb #bn,html.bn-admin #bn{display:none!important}
+#bn .bn-in{position:relative;pointer-events:auto;display:flex;align-items:stretch;gap:4px;max-width:440px;height:58px;margin:0 auto;padding:5px;box-sizing:border-box;border-radius:26px;background:rgba(255,255,255,.78);-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%);border:1px solid rgba(255,255,255,.85);box-shadow:0 10px 26px -12px rgba(15,23,42,.22),0 2px 6px -2px rgba(15,23,42,.06)}
+#bn .bn-i{position:relative;z-index:1;flex:1 1 0;min-width:0;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:7px;color:#94a3b8;background:none;border:0;padding:0;border-radius:21px;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:flex-grow .3s cubic-bezier(.2,.8,.2,1),color .2s,background .25s,box-shadow .25s}
+#bn .bn-i::before{display:none}
+#bn .bn-i.on{flex-grow:2.1;color:#fff}
+@property --bn-c1{syntax:'<color>';inherits:true;initial-value:#4338ca}
+@property --bn-c2{syntax:'<color>';inherits:true;initial-value:#2563eb}
+#bn{--bn-c1:#4338ca;--bn-c2:#2563eb}
+#bn[data-t="exams"]{--bn-c1:#be185d;--bn-c2:#f43f5e}
+#bn[data-t="chat"]{--bn-c1:#17a392;--bn-c2:#0e7468}
+#bn[data-t="my-profile"]{--bn-c1:#4f46e5;--bn-c2:#7c3aed}
+#bn .bn-ind{position:absolute;z-index:0;top:5px;bottom:5px;left:0;width:0;border-radius:21px;pointer-events:none;opacity:0;background:linear-gradient(135deg,var(--bn-c1),var(--bn-c2));transition:left .34s cubic-bezier(.2,.8,.2,1),width .34s cubic-bezier(.2,.8,.2,1),opacity .2s ease,--bn-c1 .34s ease,--bn-c2 .34s ease}
+#bn .bn-ind.show{opacity:1}
+#bn .bn-ind.nt{transition:none}
+@media (prefers-reduced-motion:reduce){#bn .bn-ind,#bn .bn-i{transition:none}}
+#bn .bn-i svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+#bn .bn-i svg .f{transition:fill .2s}
+#bn .bn-i.on svg .f{fill:rgba(255,255,255,.24)}
+#bn .bn-l{display:none;font-size:12px;line-height:1;font-weight:800;letter-spacing:.02em;white-space:nowrap}
+#bn .bn-i.on .bn-l{display:block;animation:bnFade .25s ease-out both}
+#bn .bn-i:active svg,#bn .bn-i:active .bn-dp{transform:scale(.86)}
+#bn .bn-i:focus-visible{outline:2px solid #6366f1;outline-offset:-3px}
+#bn .bn-dp{position:relative;width:22px;height:22px;border-radius:50%;box-shadow:0 0 0 1.5px #cbd5e1;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#eef2ff;transition:box-shadow .2s,transform .25s cubic-bezier(.2,.8,.2,1)}
+#bn .bn-i.on .bn-dp{box-shadow:0 0 0 2px #fff}
+#bn .bn-dp img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
+#bn .bn-dp svg{width:16px;height:16px;color:#94a3b8}
+#bn .bn-dp.has img{display:block}
+#bn .bn-dp.has svg{display:none}
+/* screens leave room for the bar */
+#student-view .sd-exam-hub{display:none!important}
+html.bn-on #student-view>.overflow-y-auto{padding-bottom:calc(2.5rem + var(--bn-h))!important}
+html.bn-on #exams-view,html.bn-on #my-profile-view{bottom:0!important}
+html.bn-on #community-chat-view{bottom:0!important;padding-bottom:var(--bn-h)}
+html.bn-on #exams-view #ex2-scroll{padding-bottom:var(--bn-h)}
+html.bn-on #my-profile-view #my-profile-container{padding-bottom:calc(var(--bn-h) + 16px)!important}
+/* tab switch = quick cross-fade instead of the slide / zoom */
+@keyframes bnFade{from{opacity:0}to{opacity:1}}
+html.bn-tab body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______),
+html.bn-tab body .slide-left:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______),
+html.bn-tab body .fade-in:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){animation:bnFade .2s ease-out both!important}
+@media (prefers-reduced-motion:reduce){#bn .bn-i,#bn .bn-i svg,#bn .bn-i::before,#bn .bn-dp{transition:none}}
+
+/* ===== Exam screen ===== */
+#exams-view{background:#f4f5f9;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+#exams-view .ex2-hd{flex:none;position:relative;z-index:5;color:#fff;background:linear-gradient(135deg,#be185d 0%,#e11d48 52%,#f43f5e 100%);border-radius:0 0 28px 28px;padding:max(1.5rem,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 16px max(16px,env(safe-area-inset-left))}
+#exams-view .ex2-hd-in{max-width:880px;margin:0 auto}
+#exams-view .ex2-tt h2{font-size:22px;line-height:1.15;font-weight:900;letter-spacing:-.01em}
+#exams-view .ex2-tt p{font-size:12px;font-weight:600;opacity:.75;margin-top:3px}
+#exams-view .ex2-seg{display:flex;gap:4px;margin-top:14px;padding:4px;border-radius:16px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18)}
+#exams-view .ex2-seg button{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;height:38px;border-radius:12px;font-size:12px;font-weight:800;color:rgba(255,255,255,.85);background:transparent;border:0;transition:background .2s,color .2s;-webkit-tap-highlight-color:transparent}
+#exams-view .ex2-seg button i{font-size:12px}
+#exams-view .ex2-seg button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#exams-view .ex2-seg button.on{background:#fff;color:#be185d}
+#exams-view .ex2-seg button b{min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:10px;line-height:18px;font-weight:900;background:#fff;color:#be185d}
+#exams-view .ex2-seg button b[hidden]{display:none}
+#exams-view .ex2-in{max-width:880px;margin:0 auto;padding:16px max(14px,env(safe-area-inset-right)) 28px max(14px,env(safe-area-inset-left))}
+#exams-view .ex2-p{display:none}
+#exams-view .ex2-p.on{display:block;animation:bnFade .22s ease-out both}
+@media (max-width:380px){#exams-view .ex2-seg button i{display:none}}
+@media (prefers-reduced-motion:reduce){#exams-view .ex2-p.on{animation:none}}
+/* Performance & Overview lives in the Exams header */
+#exams-view .ex2-pv{margin-top:12px}
+#exams-view .ex2-pv [hidden]{display:none!important}
+#exams-view .ex2-ov{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:20px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.18)}
+#exams-view .ex2-pv .pv-ring{width:84px}
+#exams-view .ex2-pv .pv-trk{stroke:rgba(255,255,255,.22)}
+#exams-view .ex2-pv .pv-rt b{font-size:17px;color:#fff}
+#exams-view .ex2-pv .pv-rt span{font-size:8px;color:rgba(255,255,255,.7)}
+#exams-view .ex2-stats{flex:1;min-width:0;display:grid;grid-template-columns:1fr 1fr;gap:10px 8px}
+#exams-view .ex2-st{display:flex;align-items:center;gap:8px;min-width:0}
+#exams-view .ex2-st>i{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#fff;background:rgba(255,255,255,.18)}
+#exams-view .ex2-st div{min-width:0;display:flex;flex-direction:column}
+#exams-view .ex2-st b{font-size:16px;line-height:1.05;font-weight:900;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+#exams-view .ex2-st small{margin-top:3px;font-size:8.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#exams-view .ex2-row{display:flex;align-items:center;gap:8px;margin-top:10px}
+#exams-view .ex2-row .pv-delta{display:block;align-self:auto;flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;padding:6px 10px}
+#exams-view .ex2-row .pv-delta i{margin-right:5px}
+#exams-view .ex2-pv .pvs{flex:none;width:176px;max-width:none;margin:0;background:rgba(255,255,255,.16)}
+#exams-view .ex2-pv .pvs::before{background:#fff;border:0}
+#exams-view .ex2-pv .pvs button{padding:6px 2px;font-size:10.5px;color:rgba(255,255,255,.82)}
+#exams-view .ex2-pv .pvs button.on{color:#be185d}
+#exams-view .ex2-pv .pv-verdict{display:none}
+#exams-view .ex2-pv .pv-goalrow{margin-top:8px}
+#exams-view .ex2-pv .pv-goalbar{background:rgba(255,255,255,.22)}
+#exams-view .ex2-pv .pv-goalbar i{background:#fff}
+#exams-view .ex2-pv .pv-goaltxt{color:rgba(255,255,255,.82)}
+#exams-view .ex2-pv .pv-goaltxt b{color:#fff}
+#exams-view .ex2-seg{margin-top:12px}
+@media (max-width:360px){#exams-view .ex2-pv .pvs{width:150px}#exams-view .ex2-ov{gap:10px;padding:10px}}
+/* header overview folds away when the list scrolls (same behaviour as Lecture / Material Hub) */
+#exams-view .ex2-fold{display:grid;grid-template-rows:1fr;transition:grid-template-rows .42s cubic-bezier(.32,.72,0,1),opacity .3s}
+#exams-view .ex2-fold-in{min-height:0;overflow:hidden}
+#exams-view .ex2-hd.ex2-folded .ex2-fold{grid-template-rows:0fr;opacity:0}
+@media (prefers-reduced-motion:reduce){#exams-view .ex2-fold{transition:none}}
+/* Score curve card = same look as the exam cards */
+#exams-view .ex2-cc{position:relative;isolation:isolate;overflow:hidden;display:flex;flex-direction:column;gap:10px;margin-bottom:16px;padding:16px;border-radius:2rem;background:rgba(255,255,255,.8);-webkit-backdrop-filter:blur(40px);backdrop-filter:blur(40px);border:1px solid rgba(229,231,235,.6);box-shadow:0 8px 30px rgba(0,0,0,.04)}
+#exams-view .ex2-cc [hidden]{display:none!important}
+#exams-view .ex2-glow{position:absolute;z-index:-1;width:160px;height:160px;border-radius:50%;filter:blur(40px);pointer-events:none}
+#exams-view .ex2-glow.a{top:-40px;right:-40px;background:rgba(59,130,246,.15)}
+#exams-view .ex2-glow.b{bottom:-40px;left:-40px;background:rgba(34,211,238,.15)}
+#exams-view .ex2-cc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+#exams-view .ex2-cc-badge{display:inline-flex;align-items:center;gap:6px;min-width:0;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#475569;background:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.8);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+#exams-view .ex2-cc-badge i{flex:none;color:#94a3b8;font-size:9px}
+#exams-view .ex2-cc-badge span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#exams-view .ex2-cc-chip{flex:none;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;font-size:9px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#4338ca;background:#e0e7ff;border:1px solid #c7d2fe;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+#exams-view .ex2-cc-chip i{color:#818cf8}
+#exams-view .ex2-cc-t{margin:0;padding-right:8px;font-size:17px;font-weight:700;line-height:1.2;letter-spacing:-.01em;color:#1e293b}
+#exams-view .ex2-cc-leg{display:flex;gap:6px}
+#exams-view .ex2-cc-leg>span{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 4px;border-radius:4px;background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.8);box-shadow:0 1px 2px rgba(0,0,0,.05)}
+#exams-view .ex2-cc-leg i{font-size:11px}
+#exams-view .ex2-cc-leg em{font-style:normal;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#475569}
+#exams-view .ex2-cc-box{padding:12px 8px 6px;border-radius:16px;background:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.8);box-shadow:0 1px 2px rgba(0,0,0,.04)}
+#exams-view .ex2-cc .pv-cv{height:180px}
+#exams-view .ex2-cc .pv-empty{background:rgba(255,255,255,.85);border-radius:12px}
+/* History: light theme */
+#exams-view .ex2-sh{margin:2px 4px 10px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#6b7280}
+#exams-view #student-records-list>div{background:#fff;-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid #e5e7f0;box-shadow:0 1px 2px rgba(15,23,42,.04),0 6px 18px -10px rgba(49,46,129,.14);border-radius:22px;margin-bottom:0}
+#exams-view #student-records-list>div>.blur-3xl{opacity:.45}
+#exams-view #student-records-list .border-t{border-color:#eef0f6}
+#exams-view #student-records-list .rounded-xl.min-w-\[55px\]{background:#f7f8fd;border-color:#eceef8;box-shadow:none}
+#exams-view #student-records-list button.bg-gradient-to-r{background-image:none!important;background-color:#eef2ff!important;color:#4338ca!important;border:1px solid #c7d2fe!important;box-shadow:none!important}
+#exams-view #student-records-list button.bg-gradient-to-r:active{background-color:#e0e7ff!important}
+</style>
+
+<nav id="bn" aria-label="Main navigation"><div class="bn-in"><span class="bn-ind" aria-hidden="true"></span>
+<button type="button" class="bn-i" data-t="student" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="f" d="M3.5 10.8 12 3.5l8.5 7.3V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg><span class="bn-l">Home</span></button>
+<button type="button" class="bn-i" data-t="exams" aria-label="Exams" title="Exams"><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="f" x="5" y="4.5" width="14" height="16" rx="2.5"/><path d="M9 4.5v-1h6v1"/><path d="m8.8 13 2.2 2.2 4.2-4.6"/></svg><span class="bn-l">Exams</span></button>
+<button type="button" class="bn-i" data-t="chat" aria-label="Discus" title="Discus"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="f" d="M20 12a7.5 7.5 0 0 1-10.8 6.7L4 20l1.4-4.4A7.5 7.5 0 1 1 20 12z"/><path d="M9 12h.01M12 12h.01M15 12h.01" stroke-width="2.4"/></svg><span class="bn-l">Discus</span></button>
+<button type="button" class="bn-i" data-t="my-profile" aria-label="Profile" title="Profile"><span class="bn-dp" id="bn-dpw"><img id="bn-dp" alt="" referrerpolicy="no-referrer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.6-3.6 3.5-5.6 7-5.6s6.4 2 7 5.6"/></svg></span><span class="bn-l">Profile</span></button>
+</div></nav>
+
+        <!-- 2b. EXAM SCREEN (student bottom nav: Exams) -->
+        <div id="exams-view" class="hidden-view absolute inset-0 z-[80] flex flex-col slide-left">
+            <div class="ex2-hd"><div class="ex2-hd-in">
+                <div class="ex2-tt"><h2>Exams</h2><p id="ex2-date"></p></div>
+                <div class="ex2-fold"><div class="ex2-fold-in"><div id="perf-card" class="ex2-pv pv-sw">
+                    <div class="pv-main"><div class="ex2-ov">
+                        <div class="pv-ring" role="img" aria-label="Average score">
+                            <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="pv-trk" cx="60" cy="60" r="50"></circle><circle id="pv-arc" class="pv-arc" cx="60" cy="60" r="50" transform="rotate(-90 60 60)"></circle></svg>
+                            <div class="pv-rt"><b id="exam-avg-score">0%</b><span>Avg score</span></div>
+                        </div>
+                        <div class="ex2-stats" id="exam-stats-grid">
+                            <div class="ex2-st"><i class="fa-solid fa-file-pen"></i><div><b id="exam-total-attempts">0</b><small>Attempts</small></div></div>
+                            <div class="ex2-st"><i class="fa-solid fa-check-double"></i><div><b id="exam-pass-rate">0%</b><small>Pass rate</small></div></div>
+                            <div class="ex2-st"><i class="fa-solid fa-trophy"></i><div><b id="exam-top-ranks">0</b><small>Topper</small></div></div>
+                            <div class="ex2-st"><i class="fa-solid fa-star"></i><div><b id="pv-best">&ndash;</b><small>Best</small></div></div>
+                        </div>
+                    </div></div>
+                    <div class="ex2-row">
+                        <span id="pv-delta" class="pv-delta"><i class="fa-solid fa-hourglass-start"></i> No attempts yet</span>
+                        <div class="pvs" id="pv-seg" role="tablist" aria-label="Time period" style="--i:0">
+                            <button type="button" role="tab" class="on" aria-selected="true" data-p="week" onclick="window.pvSetPeriod('week')">Weekly</button>
+                            <button type="button" role="tab" aria-selected="false" data-p="month" onclick="window.pvSetPeriod('month')">Monthly</button>
+                            <button type="button" role="tab" aria-selected="false" data-p="life" onclick="window.pvSetPeriod('life')">Lifetime</button>
+                        </div>
+                    </div>
+                    <div id="pv-goalrow" class="pv-goalrow" hidden><div class="pv-goalbar"><i id="pv-goalfill"></i></div><span id="pv-goaltxt" class="pv-goaltxt"></span></div>
+                    <p id="pv-verdict" class="pv-verdict"></p>
+                </div>
+                </div></div>
+                <div class="ex2-seg" id="ex2-seg" role="tablist" aria-label="Exam sections">
+                    <button type="button" role="tab" class="on" data-t="up" onclick="exTab('up')"><i class="fa-regular fa-calendar-check"></i><span>Upcoming</span><b id="ex2-n" hidden></b></button>
+                    <button type="button" role="tab" data-t="hist" onclick="exTab('hist')"><i class="fa-solid fa-clock-rotate-left"></i><span>History</span></button>
+                </div>
+            </div></div>
+            <div id="ex2-scroll" class="flex-1 overflow-y-auto no-scrollbar"><div class="ex2-in">
+                <div id="ex2-p-up" class="ex2-p on" role="tabpanel">
+                    <div id="ex2-up" class="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3"></div>
+                </div>
                 <style id="pv-style">
                 .pv{--pv-c:#6366f1;container-type:inline-size;container-name:pv;position:relative;overflow:hidden;margin-bottom:16px;border-radius:24px;background:#fff;border:1px solid #e5e7f0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;-webkit-tap-highlight-color:transparent}
                 .pv [hidden]{display:none!important}
@@ -5540,76 +5714,34 @@ html:not(.is-tablet) #my-profile-view #mp-tabs::before{display:none!important}
                 @media (prefers-reduced-motion:reduce){.pvs::before,.pvs button{transition:none}}
                 @media (prefers-reduced-motion:reduce){.pv-arc,.pv-goalbar i,.pv-tile{transition:none}}
                 </style>
-                <div id="perf-card" class="pv pv-sw">
-                    <div class="pv-in">
-                        <div class="pv-hd">
-                            <div class="pv-ic"><i class="fa-solid fa-gauge-high"></i></div>
-                            <div class="pv-tt">
-                                <h3>Performance &amp; Overview</h3>
-                                <p id="pv-week">This Week &middot; Exam Curve</p>
-                            </div>
-                        </div>
-                        <div class="pv-main">
-                            <div class="pv-left">
-                                <div class="pv-hero">
-                                    <div class="pv-ring" role="img" aria-label="Average score this week">
-                                        <svg viewBox="0 0 120 120" aria-hidden="true">
-                                            <circle class="pv-trk" cx="60" cy="60" r="50"></circle>
-                                            <circle id="pv-arc" class="pv-arc" cx="60" cy="60" r="50" transform="rotate(-90 60 60)"></circle>
-                                        </svg>
-                                        <div class="pv-rt"><b id="exam-avg-score">0%</b><span>Avg score</span></div>
-                                    </div>
-                                    <div class="pv-sum">
-                                        <span id="pv-delta" class="pv-delta"><i class="fa-solid fa-hourglass-start"></i> No attempts yet</span>
-                                        <p id="pv-verdict" class="pv-verdict">Attempt an exam this week to see your score curve.</p>
-                                        <div id="pv-goalrow" class="pv-goalrow" hidden>
-                                            <div class="pv-goalbar"><i id="pv-goalfill"></i></div>
-                                            <span id="pv-goaltxt" class="pv-goaltxt"></span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="pv-tiles" id="exam-stats-grid">
-                                    <div class="pv-tile" style="--t:#3b82f6;--tb:#eff6ff"><span class="pv-ti"><i class="fa-solid fa-file-pen"></i></span><div class="pv-tv"><b id="exam-total-attempts">0</b><small>Attempts</small></div></div>
-                                    <div class="pv-tile" style="--t:#10b981;--tb:#ecfdf5"><span class="pv-ti"><i class="fa-solid fa-check-double"></i></span><div class="pv-tv"><b id="exam-pass-rate">0%</b><small>Pass rate</small></div></div>
-                                    <div class="pv-tile" style="--t:#f59e0b;--tb:#fffbeb"><span class="pv-ti"><i class="fa-solid fa-trophy"></i></span><div class="pv-tv"><b id="exam-top-ranks">0</b><small>Topper</small></div></div>
-                                    <div class="pv-tile" style="--t:#d946ef;--tb:#fdf4ff"><span class="pv-ti"><i class="fa-solid fa-star"></i></span><div class="pv-tv"><b id="pv-best">&ndash;</b><small>Best</small></div></div>
-                                </div>
-                            </div>
-                            <div class="pv-chart">
-                                <div class="pv-chd">
-                                    <span class="pv-ct"><i class="fa-solid fa-chart-simple"></i> Score curve</span>
-                                    <span class="pv-lg"><span><i style="background:#6366f1"></i>Pass</span><span><i style="background:#f43f5e"></i>Fail</span><span id="pv-lg-goal" hidden><i class="g"></i>Goal</span></span>
-                                </div>
-                                <div class="pv-cv">
-                                    <canvas id="studentChart"></canvas>
-                                    <div id="pv-empty" class="pv-empty"><i class="fa-solid fa-chart-column"></i><span id="pv-empty-t">No exams attempted this week yet</span></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="pv-segwrap">
-                            <div class="pvs" id="pv-seg" role="tablist" aria-label="Time period" style="--i:0">
-                                <button type="button" role="tab" class="on" aria-selected="true" data-p="week" onclick="window.pvSetPeriod('week')">Weekly</button>
-                                <button type="button" role="tab" aria-selected="false" data-p="month" onclick="window.pvSetPeriod('month')">Monthly</button>
-                                <button type="button" role="tab" aria-selected="false" data-p="life" onclick="window.pvSetPeriod('life')">Lifetime</button>
-                            </div>
+                <div id="ex2-p-hist" class="ex2-p" role="tabpanel">
+                <div class="ex2-cc" id="pv-curve-card">
+                    <i class="ex2-glow a"></i><i class="ex2-glow b"></i>
+                    <div class="ex2-cc-top">
+                        <span class="ex2-cc-badge"><i class="fa-regular fa-calendar-days"></i><span id="pv-week">This Week &middot; Exam Curve</span></span>
+                        <span class="ex2-cc-chip"><i class="fa-solid fa-chart-simple"></i> Score curve</span>
+                    </div>
+                    <h3 class="ex2-cc-t">Every exam, one bar</h3>
+                    <div class="ex2-cc-leg">
+                        <span><i class="fa-solid fa-circle" style="color:#6366f1"></i><em>Pass</em></span>
+                        <span><i class="fa-solid fa-circle" style="color:#f43f5e"></i><em>Fail</em></span>
+                        <span id="pv-lg-goal" hidden><i class="fa-solid fa-bullseye" style="color:#818cf8"></i><em>Goal</em></span>
+                    </div>
+                    <div class="ex2-cc-box">
+                        <div class="pv-cv">
+                            <canvas id="studentChart"></canvas>
+                            <div id="pv-empty" class="pv-empty"><i class="fa-solid fa-chart-column"></i><span id="pv-empty-t">No exams attempted this week yet</span></div>
                         </div>
                     </div>
                 </div>
-
-                <div class="relative flex items-center my-4 sm:my-6 mx-2">
-                    <div class="flex-grow border-t-[1.5px] border-dashed border-gray-200/80"></div>
-                    <span
-                        class="shrink-0 mx-4 text-[10px] sm:text-xs text-gray-400 font-bold tracking-[0.2em] uppercase"><i
-                            class="fa-solid fa-clock-rotate-left mr-1"></i> History</span>
-                    <div class="flex-grow border-t-[1.5px] border-dashed border-gray-200/80"></div>
-                </div>
-
-                <!-- Dynamic Records -->
+                <h4 class="ex2-sh">Exam history</h4>
+<!-- Dynamic Records -->
                 <div>
 
                     <div id="student-records-list" class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4"></div>
                 </div>
-            </div>
+                </div>
+            </div></div>
         </div>
 
         <!-- 3. ADMIN DASHBOARD -->
@@ -17734,14 +17866,14 @@ window.__tpPaint = function () {
                     'session-timer-view', 'nova-chat-view', 'video-hub-view',
                     'video-watch-view', 'syllabus-view', 'math-workout-view',
                     'student-directory-view', 'budget-manager-view', 'budget-track-view',
-                    'budget-room-view', 'budget-room-detail-view', 'my-profile-view', 'exam-calendar-view',
+                    'budget-room-view', 'budget-room-detail-view', 'my-profile-view', 'exams-view', 'exam-calendar-view',
                     'alarms-view', 'quotes-view', 'auto-quotes-view', 'motivation-view',
                     'nova-mentor-view', 'nova-class-view', 'nova-quiz-view', 'doubt-board-view'
                 ];
 
                 // 1. Work out where we are going, then hide the other views.
                 //    Going back to the dashboard: the open window zooms back into its button first, then hides.
-                const __reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                const __reduce = (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) || !!window.__bnSw;
                 const __home = (hash === 'student' || hash === 'admin');
                 const __dash = ['login-view', 'student-view', 'admin-view'];
                 const __iosD = ['student-view', 'admin-view'];
@@ -17859,6 +17991,10 @@ window.__tpPaint = function () {
                         break;
                     case 'student-directory':
                         if (typeof window.renderStudentDirectory === 'function') window.renderStudentDirectory();
+                        break;
+                    case 'exams':
+                        if (window.currentRole !== 'student') { history.replaceState(null, '', '#admin'); window.handleHashChange(); return; }
+                        if (typeof window.examsTabOpen === 'function') window.examsTabOpen();
                         break;
                     case 'chat':
                         window.loadChatData();
@@ -44778,9 +44914,9 @@ html.perf-lite body #student-view:not(#_):not(#__) [style*="backdrop-filter"]{-w
    Easing is a real damped spring (written as linear() by the script; older WebViews keep the cubic-bezier fallback).
    Lighter versions: html.perf-low (weak phones) and html.ap-lite (set automatically if frames are dropped) keep the window slide and
    the dim but leave the dashboard still. */
-:root{--ap-open:.34s;--ap-close:.28s;--ap-soft:.3s;
+:root{--ap-open:.48s;--ap-close:.4s;--ap-soft:.42s;
   --ap-ease-open:cubic-bezier(.32,.72,0,1);--ap-ease-close:cubic-bezier(.32,.72,0,1);
-  --ap-in-from:translate3d(0,100%,0);--ap-under-to:translate3d(0,6px,0) scale(.965)}
+  --ap-in-from:translate3d(0,100%,0);--ap-under-to:translate3d(0,8px,0) scale(.94)}
 html.ap-push{--ap-in-from:translate3d(100%,0,0);--ap-under-to:translate3d(-24%,0,0)}
 @keyframes apIn{from{transform:var(--ap-in-from)}to{transform:none}}
 @keyframes apOut{from{transform:none}to{transform:var(--ap-in-from)}}
@@ -44837,7 +44973,7 @@ html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):n
   }
   R.classList.add(STYLE==='push'?'ap-push':'ap-sheet');
   var ok=false;try{ok=!!(W.CSS&&CSS.supports&&CSS.supports('animation-timing-function','linear(0,1)'))}catch(e){}
-  var open=ok?spring(.30,.92):{ms:340,css:'cubic-bezier(.32,.72,0,1)'},close=ok?spring(.22,1):{ms:280,css:'cubic-bezier(.32,.72,0,1)'};
+  var open=ok?spring(.40,.95):{ms:480,css:'cubic-bezier(.32,.72,0,1)'},close=ok?spring(.30,1):{ms:400,css:'cubic-bezier(.32,.72,0,1)'};
   if(ok){
     var s=R.style;
     s.setProperty('--ap-ease-open',open.css);s.setProperty('--ap-open',open.ms+'ms');s.setProperty('--ap-soft',Math.round(open.ms*.9)+'ms');
@@ -48960,17 +49096,152 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   (function boot() { var n = 0, t = setInterval(function () { if (W.location.hash === '#fitness' && W.currentRole === 'student') { clearInterval(t); open(); } else if (++n > 40) clearInterval(t); }, 500); })();
 })();
 </script>
-<style id="no-press-anim">
-/* ===== No button press animation: tiles / cards / buttons react at once, nothing scales, fades or waits to "bounce back" ===== */
-html body .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),html body .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________) .xb-ic,html body .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________)::after,html body .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________)::before,
-html body .sd-tiles .glass-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),html body #ax-tiles .glass-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),
-html body .glass-card.cursor-pointer:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),html body .feature-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),html body button:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),
-html body #student-view .sd-tiles [onclick]:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),html body #admin-view .xb .xb-ic:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________){transition:none!important}
-html body .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active,html body .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active .xb-ic,
-html body .sd-tiles .glass-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active,html body .sd-tiles .glass-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active>div,
-html body .glass-card.cursor-pointer:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active,html body .feature-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active,html body button:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active,
-html body #student-view .sd-tiles [onclick]:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active,html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active,html body #admin-view .xb .xb-ic:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active{transform:none!important;opacity:1!important}
-</style>
+
+<script id="bn-script">
+(function () {
+  var W = window, D = document, R = D.documentElement;
+  var TABS = ['student', 'exams', 'chat', 'my-profile'];
+  function hash() { return (location.hash || '').replace('#', ''); }
+  function cur() { var h = hash(); return h === '' && W.currentRole === 'student' ? 'student' : h; }
+  function $(id) { return D.getElementById(id); }
+
+  /* ---- profile picture on the Profile tab ---- */
+  function syncDp() {
+    var src = $('student-nav-dp'), img = $('bn-dp'), box = $('bn-dpw');
+    if (!src || !img || !box) return;
+    var u = src.getAttribute('src') || '';
+    var real = W.currentRole === 'student' && u && !/name=Exama(&|$)/.test(u) && !/default-user/.test(u);
+    if (real) { if (img.getAttribute('src') !== u) img.setAttribute('src', u); box.classList.add('has'); }
+    else box.classList.remove('has');
+  }
+  (function () {
+    var img = $('bn-dp'); if (img) img.addEventListener('error', function () { $('bn-dpw').classList.remove('has'); });
+    var src = $('student-nav-dp');
+    if (src && W.MutationObserver) new MutationObserver(syncDp).observe(src, { attributes: true, attributeFilter: ['src'] });
+  })();
+
+  /* ---- show / highlight ---- */
+  /* sliding active pill: moves to the new tab (same curve as the tabs growing / shrinking) */
+  var lastAct = '';
+  function place(act) {
+    var bin = D.querySelector('#bn .bn-in'), ind = D.querySelector('#bn .bn-ind'); if (!bin || !ind) return;
+    var btns = bin.querySelectorAll('.bn-i'), idx = -1;
+    for (var i = 0; i < btns.length; i++) if (btns[i].classList.contains('on')) idx = i;
+    if (idx < 0) { ind.classList.remove('show'); ind.__p = 0; return; }
+    var cs = W.getComputedStyle(bin), pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0, gap = parseFloat(cs.columnGap) || parseFloat(cs.gap) || 0;
+    var inner = bin.clientWidth - pl - pr - gap * (btns.length - 1); if (inner <= 0) return;
+    var G = 2.1, unit = inner / (btns.length - 1 + G), first = !ind.__p;
+    if (first) ind.classList.add('nt');
+    ind.style.left = (pl + idx * (unit + gap)) + 'px'; ind.style.width = (unit * G) + 'px';
+    var nv = $('bn'); if (nv && act) nv.setAttribute('data-t', act);
+    if (first) { void ind.offsetWidth; ind.classList.remove('nt'); ind.__p = 1; }
+    ind.classList.add('show'); lastAct = act;
+  }
+  W.addEventListener('resize', function () { var i = D.querySelector('#bn .bn-ind'); if (i) { i.__p = 0; } place(lastAct); });
+  var last = '';
+  function sync() {
+    var adm = W.currentRole === 'admin' || (!W.currentRole && (function () { try { return localStorage.getItem('exama_role') === 'admin'; } catch (e) { return false; } })());
+    R.classList.toggle('bn-admin', adm);   /* admin never gets the bottom bar */
+    var h = cur(), show = !adm && W.currentRole === 'student' && TABS.indexOf(h) > -1;
+    var act = (h === 'my-profile' && W.__mpTarget) ? '' : h;
+    var key = show + '|' + act;
+    R.classList.toggle('bn-on', show);
+    if (key !== last) {
+      last = key;
+      var b = D.querySelectorAll('#bn .bn-i');
+      for (var i = 0; i < b.length; i++) {
+        var on = show && b[i].getAttribute('data-t') === act;
+        b[i].classList.toggle('on', on);
+        if (on) b[i].setAttribute('aria-current', 'page'); else b[i].removeAttribute('aria-current');
+      }
+      place(act);
+    }
+    syncDp();
+  }
+
+  /* ---- tap ---- */
+  function scrollTop(el) { if (el && el.scrollTo) el.scrollTo({ top: 0, behavior: 'smooth' }); }
+  function go(t) {
+    var h = cur();
+    if (t === 'my-profile') {
+      var viewingOther = !!W.__mpTarget; W.__mpTarget = null;
+      if (h === t) { if (viewingOther && W.renderMyProfile) W.renderMyProfile(); sync(); scrollTop(D.querySelector('#my-profile-view .overflow-y-auto')); return; }
+    } else if (h === t) {
+      if (t === 'student') scrollTop(D.querySelector('#student-view .overflow-y-auto'));
+      else if (t === 'exams') scrollTop($('ex2-scroll'));
+      return;
+    }
+    W.__bnSw = true; R.classList.add('bn-tab');
+    clearTimeout(W.__bnT); W.__bnT = setTimeout(function () { W.__bnSw = false; R.classList.remove('bn-tab'); }, 700);
+    location.hash = t;
+  }
+  D.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('#bn .bn-i'); if (!b) return;
+    go(b.getAttribute('data-t'));
+  });
+
+  /* ---- hide only while the on-screen keyboard is really open ---- */
+  function typing(t) { return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable); }
+  var base = 0;
+  function kb() {
+    var vv = W.visualViewport, h = vv ? vv.height : W.innerHeight;
+    if (!typing(D.activeElement) || h > base) base = h;
+    R.classList.toggle('bn-kb', typing(D.activeElement) && (base - h) > 130);
+  }
+  D.addEventListener('focusin', function () { setTimeout(kb, 300); });
+  D.addEventListener('focusout', function () { setTimeout(kb, 150); });
+  W.addEventListener('resize', kb); W.addEventListener('orientationchange', function () { base = 0; setTimeout(kb, 300); });
+  if (W.visualViewport) W.visualViewport.addEventListener('resize', kb);
+  kb();
+
+  W.addEventListener('hashchange', sync); W.addEventListener('popstate', sync);
+  setInterval(sync, 400); sync();
+
+  /* ---- Exam screen ---- */
+  var tab = 'up';
+  function mirror() {
+    var s = $('student-pending-exams'), d = $('ex2-up'); if (!s || !d) return;
+    var h = s.innerHTML;
+    if (d.__h !== h) {
+      d.innerHTML = h; d.__h = h;
+      var n = 0, ch = d.children;
+      for (var i = 0; i < ch.length; i++) if ((ch[i].className || '').indexOf('rounded-[2rem]') > -1) n++;
+      var bd = $('ex2-n'); if (bd) { bd.textContent = n; bd.hidden = !n; }
+    }
+  }
+  (function () { var s = $('student-pending-exams'); if (s && W.MutationObserver) new MutationObserver(mirror).observe(s, { childList: true, subtree: true }); mirror(); })();
+  (function () {
+    var sc = $('ex2-scroll'), hd = D.querySelector('#exams-view .ex2-hd'); if (!sc || !hd) return;
+    var folded = false, busy = false;
+    function set(f) { if (f !== folded) { folded = f; hd.classList.toggle('ex2-folded', f); } }
+    sc.addEventListener('scroll', function () {
+      if (busy) return; busy = true;
+      requestAnimationFrame(function () {
+        busy = false; var t = sc.scrollTop;
+        if (!folded) { var fi = hd.querySelector('.ex2-fold-in'); if (t > 40 && sc.scrollHeight - sc.clientHeight > (fi ? fi.offsetHeight : 120) + 90) set(true); }
+        else if (t < 8) set(false);
+      });
+    }, { passive: true });
+    W.__ex2Unfold = function () { set(false); };
+  })();
+  W.exTab = function (t) {
+    tab = t; if (W.__ex2Unfold) W.__ex2Unfold();
+    var bs = D.querySelectorAll('#ex2-seg button');
+    for (var i = 0; i < bs.length; i++) { var on = bs[i].getAttribute('data-t') === t; bs[i].classList.toggle('on', on); bs[i].setAttribute('aria-selected', on ? 'true' : 'false'); }
+    ['up', 'perf', 'hist'].forEach(function (k) { var p = $('ex2-p-' + k); if (p) p.classList.toggle('on', k === t); });
+    if (t === 'up') mirror();
+    if (t === 'hist' && typeof W.pvRender === 'function') { try { W.pvRender(); } catch (e) { } }
+    scrollTop($('ex2-scroll'));
+  };
+  W.examsTabOpen = function () {
+    var d = $('ex2-date');
+    if (d) { try { d.textContent = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) { } }
+    mirror();
+    if (tab === 'hist' && typeof W.pvRender === 'function') setTimeout(function () { try { W.pvRender(); } catch (e) { } }, 60);
+    sync();
+  };
+})();
+</script>
 </body>
 
 </html>
