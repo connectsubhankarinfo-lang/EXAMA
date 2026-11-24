@@ -49176,6 +49176,11 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
 })();
 </script>
 
+<style id="bn-imm-style">
+/* ===== bottom bar hides itself on full-screen screens (Snap Doubt camera, full-screen video, PDF / photo viewer, scanner, calls) ===== */
+html.bn-imm #bn{transform:translateY(calc(100% + 24px))!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;transition:transform .3s cubic-bezier(.32,.72,0,1),opacity .2s ease,visibility 0s linear .3s!important}
+@media (prefers-reduced-motion:reduce){html.bn-imm #bn{transition:none!important}}
+</style>
 <script id="bn-script">
 (function () {
   var W = window, D = document, R = D.documentElement;
@@ -49304,6 +49309,23 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 520);
   }
 
+  /* ---- full-screen screens: the bar slides away while any of these is open ---- */
+  var IMM_IDS = ['db-cam', 'fullscreen-image-modal', 'custom-pdf-viewer-modal', 'discus-video-modal', 'incoming-call-modal', 'alarm-ring', 'dscan'];
+  function opened(el) {
+    if (!el || el.classList.contains('hidden-view') || el.classList.contains('hidden') || el.classList.contains('wac-pip')) return false;   /* wac-pip = the small floating call window: bar stays */
+    if (!el.getClientRects().length) return false;
+    try { return W.getComputedStyle(el).visibility !== 'hidden'; } catch (e) { return true; }
+  }
+  function immersive() {
+    try {
+      if (D.fullscreenElement || D.webkitFullscreenElement) return true;                       /* tablet / desktop native full screen */
+      var np = $('native-player-container');
+      if (np && np.classList.contains('fixed') && opened($('video-watch-view'))) return true;   /* phone full-screen video (CSS full screen) */
+      for (var i = 0; i < IMM_IDS.length; i++) if (opened($(IMM_IDS[i]))) return true;
+    } catch (e) { }
+    return false;
+  }
+
   var last = '';
   function sync() {
     var adm = W.currentRole === 'admin' || (!W.currentRole && (function () { try { return localStorage.getItem('exama_role') === 'admin'; } catch (e) { return false; } })());
@@ -49315,6 +49337,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     var act = show ? ((h === 'my-profile' && W.__mpTarget) ? '' : h) : '';
     var key = show + '|' + act + '|' + wantKey + '|' + SCs.join(','), wasOn = R.classList.contains('bn-on');
     R.classList.toggle('bn-on', show); R.classList.toggle('bn-fab', !!(show && fs));
+    R.classList.toggle('bn-imm', !!(show && immersive()));
     if (key !== last) {
       last = key;
       ensureSC(SCs, wasOn);
@@ -49388,7 +49411,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     });
     h += '</div>';
     if (shown.length) h += '<button type="button" class="bnsc-rm" data-k="*">Remove all shortcuts</button>';
-    h += '<div class="bnsc-gs"><div><b>Swipe up</b> on the bar: Nova hands-free</div><div><b>Swipe left</b>: Solve It (doubts)</div><div><b>Swipe right</b>: Material Hub scan</div></div>';
+    h += '<div class="bnsc-gs"><div><b>Swipe up</b> on the bar: Nova hands-free</div><div><b>Swipe left</b>: Run Monitor</div><div><b>Swipe right</b>: Budget Manager</div><div>Shortcuts hide on screens with a floating button (Run, Solve It, Budget).</div></div>';
     pk.querySelector('.bnsc-sheet').innerHTML = h;
   }
   function closePicker() {
@@ -49431,10 +49454,11 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     if (curN() !== 'materials') { location.hash = 'materials'; setTimeout(run, 750); } else run();
   }
 
-  /* ---- swipe on the bar: up = Nova hands-free, left = Solve It, right = Material Hub scan ---- */
+  /* ---- swipe on the bar: up = Nova hands-free, left = Run Monitor, right = Budget Manager ---- */
   (function () {
     var nav = $('bn'); if (!nav) return;
     var sx = 0, sy = 0, st = 0, pid = null, swAt = 0;
+    function swipeGo(t) { if (curN() === t) return; go(t); }   /* already on that screen: do nothing */
     function buzz(p) { try { if (navigator.vibrate && !(W.__qp && W.__qp.hap === false)) navigator.vibrate(p); } catch (e) { } }
     nav.addEventListener('pointerdown', function (e) { if (e.pointerType === 'mouse' && e.button !== 0) return; pid = e.pointerId; sx = e.clientX; sy = e.clientY; st = Date.now(); });
     nav.addEventListener('pointercancel', function () { pid = null; });
@@ -49449,9 +49473,9 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
         swAt = Date.now(); buzz(18);
         try { if (typeof W.NovaShake === 'function') W.NovaShake(); else if (W.NovaAssistant && W.NovaAssistant.open) W.NovaAssistant.open(); } catch (x) { }
       } else if (!edge && dx < -60 && ax > ay * 1.8) {
-        swAt = Date.now(); buzz(18); go('doubt-board');
+        swAt = Date.now(); buzz(18); swipeGo('fitness');
       } else if (!edge && dx > 60 && ax > ay * 1.8) {
-        swAt = Date.now(); buzz(18); materialScan();
+        swAt = Date.now(); buzz(18); swipeGo('budget-manager');
       }
     });
     nav.addEventListener('click', function (e) { if (Date.now() - swAt < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
@@ -49495,6 +49519,8 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   kb();
 
   W.addEventListener('hashchange', sync); W.addEventListener('popstate', sync);
+  D.addEventListener('fullscreenchange', sync); D.addEventListener('webkitfullscreenchange', sync);
+  ['click', 'touchend'].forEach(function (ev) { D.addEventListener(ev, function () { setTimeout(sync, 60); setTimeout(sync, 320); }, true); });   /* a screen just opened or closed */
   setInterval(sync, 400); sync();
 
   /* ---- Exam screen ---- */
