@@ -5661,6 +5661,7 @@ html.bn-on :is(#notice-board-view,#target-calc-view,#materials-view,#fitness-vie
 #bnsc .bnsc-t:active{transform:scale(.96)}
 #bnsc .bnsc-t svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #bnsc .bnsc-t span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#bnsc .bnsc-t.dim{opacity:.45}
 #bnsc .bnsc-t.on{background:#eef2ff;border-color:#6366f1;color:#4338ca}
 #bnsc .bnsc-t.on::after{content:"";position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:#4338ca}
 #bnsc .bnsc-rm{display:block;width:100%;margin-top:12px;padding:12px;border:0;border-radius:14px;background:#f1f5f9;color:#475569;font:inherit;font-size:13px;font-weight:800;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -47264,7 +47265,7 @@ html.is-tablet .qs-b{padding-left:max(22px,calc(env(safe-area-inset-left,0px) + 
       ['Gestures', [SW('gst', 'fa-hand-pointer', '#5856d6', 'Gestures', 'Flip face-down to focus, long-press and edge swipe', function () { return Q.gst; }, setGst),
         SW('shk', 'fa-mobile-screen-button', '#af52de', 'Shake to talk', 'Shake the phone to talk to Nova hands-free', function () { return Q.shk; }, setShk, function () { return typeof W.DeviceMotionEvent !== 'undefined'; })]],
       ['Notifications', [SW('dnd', 'fa-moon', '#5e5ce6', 'Do Not Disturb', 'Pauses push notifications. SOS alerts always come through.', function () { return Q.dnd; }, setDnd)].concat(notif).concat(nativeNs)],
-      stu ? ['Bottom bar', [{ k: 'ac', ic: 'fa-thumbtack', c: '#5856d6', lb: 'Bottom bar shortcut', sub: 'Add your own screen to the bottom bar', val: function () { return (W.BNShortcut && W.BNShortcut.label()) || 'None'; }, act: function () { if (W.BNShortcut) W.BNShortcut.openPicker(); } }]] : null,
+      stu ? ['Bottom bar', [{ k: 'ac', ic: 'fa-thumbtack', c: '#5856d6', lb: 'Bottom bar shortcuts', sub: 'Add your own screens to the bottom bar', val: function () { return (W.BNShortcut && W.BNShortcut.label()) || 'None'; }, act: function () { if (W.BNShortcut) W.BNShortcut.openPicker(); } }]] : null,
       ['App update', [{ k: 'ac', ic: 'fa-cloud-arrow-down', c: '#007aff', lb: 'App update', subf: updSub, val: updVal, act: updAct }]],
       role ? ['Account', [
         stu ? { k: 'ac', ic: 'fa-key', c: '#ff9500', lb: 'Change password', act: function () { qsGo(function () { var m = D.getElementById('change-password-modal'); if (m) m.classList.remove('hidden-view'); }); } } : null,
@@ -49308,14 +49309,15 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     var adm = W.currentRole === 'admin' || (!W.currentRole && (function () { try { return localStorage.getItem('exama_role') === 'admin'; } catch (e) { return false; } })());
     R.classList.toggle('bn-admin', adm);   /* admin never gets the bottom bar */
     var h = curN(), show = !adm && W.currentRole === 'student' && !!h && !NO_NAV.test(h);
-    var SC = show ? curSC() : '';
-    var wantDyn = show && TABS.indexOf(h) < 0 && !(SC && h === SC && !FAB[h]) ? h : '', fs = wantDyn ? fabSrc(wantDyn) : null, wantKey = wantDyn ? wantDyn + (fs ? '#f' : '') : '';
+    var fabNow = show && FAB[h] ? fabSrc(h) : null;                 /* a screen with a corner floating button (Run, Solve It, Budget...) */
+    var SCs = show && !fabNow ? curSCs() : [];                       /* shortcuts are hidden there so the raised middle button has room */
+    var wantDyn = show && TABS.indexOf(h) < 0 && !(SCs.indexOf(h) > -1 && !FAB[h]) ? h : '', fs = wantDyn ? fabSrc(wantDyn) : null, wantKey = wantDyn ? wantDyn + (fs ? '#f' : '') : '';
     var act = show ? ((h === 'my-profile' && W.__mpTarget) ? '' : h) : '';
-    var key = show + '|' + act + '|' + wantKey + '|' + SC, wasOn = R.classList.contains('bn-on');
+    var key = show + '|' + act + '|' + wantKey + '|' + SCs.join(','), wasOn = R.classList.contains('bn-on');
     R.classList.toggle('bn-on', show); R.classList.toggle('bn-fab', !!(show && fs));
     if (key !== last) {
       last = key;
-      ensureSC(SC, wasOn);
+      ensureSC(SCs, wasOn);
       if (wantKey !== dynKey) {
         if (dyn) dynDrop(dyn);
         dyn = null; dynKey = '';
@@ -49332,40 +49334,61 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     syncDp();
   }
 
-  /* ---- the student's own shortcut button (Settings -> Bottom bar shortcut, or swipe right on the bar) ---- */
+  /* ---- the student's own shortcut buttons (Settings -> Bottom bar shortcut): as many as the screen has room for ---- */
   var SC_LIST = ['materials', 'video-hub', 'math-workout', 'nova-mentor', 'session-timer', 'fitness', 'notices', 'weekly-targets', 'budget-manager', 'target-calc', 'syllabus', 'doubt-board', 'leaderboard', 'exam-calendar'];
   var SC_FULL = { 'materials': 'Material Hub', 'video-hub': 'Lecture Hub', 'math-workout': 'Math Workout', 'nova-mentor': 'Nova Mentor', 'session-timer': 'Focus Sessions', 'fitness': 'Run Monitor', 'notices': 'Notice Board', 'weekly-targets': 'Weekly Targets', 'budget-manager': 'Budget', 'target-calc': 'Goal Planner', 'syllabus': 'Syllabus', 'doubt-board': 'Solve It', 'leaderboard': 'Leaderboard', 'exam-calendar': 'Exam Calendar' };
   function scKey() { return 'exama_bn_sc_' + (W.loggedInMobile || ''); }
-  function curSC() { try { var v = localStorage.getItem(scKey()); return v && SC_LIST.indexOf(v) > -1 ? v : ''; } catch (e) { return ''; } }
-  function svgFor(m) { return /^xi-/.test(m[1]) ? '<use href="#' + m[1] + '"/>' : m[1]; }
-  var scBtn = null, scNow = '';
-  function ensureSC(want, animate) {
-    if (want === scNow) return;
-    if (scBtn) { dynDrop(scBtn); scBtn = null; }
-    scNow = '';
-    if (!want) return;
-    var bi = bin(), m = meta(want), b = D.createElement('button');
-    b.type = 'button'; b.className = 'bn-i bn-sc' + (animate ? ' bn-new' : ''); b.setAttribute('data-t', want); b.setAttribute('aria-label', m[0]); b.title = m[0];
-    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + svgFor(m) + '</svg><span class="bn-l">' + esc(m[0]) + '</span>';
-    var ref = (dyn && dyn.parentNode === bi) ? dyn : bi.querySelector('.bn-i[data-t="chat"]');
-    bi.insertBefore(b, ref);
-    if (animate) { void b.offsetWidth; b.classList.remove('bn-new'); }
-    scBtn = b; scNow = want;
+  /* how many shortcuts fit: 4 tabs + 1 spare slot for the temporary screen button + the shortcuts, each button >= ~42px, the open one 2.1x wide */
+  function maxSC() {
+    var inner = (W.innerWidth || 360) - 20, n = Math.floor((inner - 42.2) / 46);
+    return Math.max(1, Math.min(5, n - 5));
   }
-  function setSC(v) {
-    try { if (v) localStorage.setItem(scKey(), v); else localStorage.removeItem(scKey()); } catch (e) { }
+  function allSCs() {
+    try {
+      var raw = localStorage.getItem(scKey()) || '', a;
+      if (raw.charAt(0) === '[') a = JSON.parse(raw); else a = raw ? [raw] : [];
+      var out = [];
+      a.forEach(function (k) { if (SC_LIST.indexOf(k) > -1 && out.indexOf(k) < 0) out.push(k); });
+      return out;
+    } catch (e) { return []; }
+  }
+  function curSCs() { return allSCs().slice(0, maxSC()); }
+  function svgFor(m) { return /^xi-/.test(m[1]) ? '<use href="#' + m[1] + '"/>' : m[1]; }
+  var scBtns = [], scNow = '';
+  function ensureSC(list, animate) {
+    var key = list.join(','); if (key === scNow) return;
+    scBtns.forEach(dynDrop); scBtns = []; scNow = '';
+    if (!list.length) return;
+    var bi = bin(), ref = (dyn && dyn.parentNode === bi) ? dyn : bi.querySelector('.bn-i[data-t="chat"]');
+    list.forEach(function (k) {
+      var m = meta(k), b = D.createElement('button');
+      b.type = 'button'; b.className = 'bn-i bn-sc' + (animate ? ' bn-new' : ''); b.setAttribute('data-t', k); b.setAttribute('aria-label', m[0]); b.title = m[0];
+      b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + svgFor(m) + '</svg><span class="bn-l">' + esc(m[0]) + '</span>';
+      bi.insertBefore(b, ref);
+      if (animate) { void b.offsetWidth; b.classList.remove('bn-new'); }
+      scBtns.push(b);
+    });
+    scNow = key;
+  }
+  function saveSCs(a) {
+    try { if (a.length) localStorage.setItem(scKey(), JSON.stringify(a)); else localStorage.removeItem(scKey()); } catch (e) { }
     last = ''; sync();
     try { W.dispatchEvent(new Event('exama-bn-shortcut')); } catch (e) { }
   }
-  function scLabel() { var v = curSC(); return v ? SC_FULL[v] : ''; }
+  function scLabel() { var a = curSCs(); return !a.length ? '' : a.length === 1 ? SC_FULL[a[0]] : a.length + ' screens'; }
+  var rzT = 0; W.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(function () { last = ''; sync(); if (pkOpen) pkPaint(); }, 160); });
 
   var pk = null, pkOpen = false;
   function pkPaint() {
-    var cur = curSC(), h = '<div class="bnsc-grab"></div><h3 class="bnsc-h">Bottom bar shortcut</h3><p class="bnsc-p">Pick one screen to keep one tap away in your bottom bar.</p><div class="bnsc-g">';
-    SC_LIST.forEach(function (k) { var m = meta(k); h += '<button type="button" class="bnsc-t' + (k === cur ? ' on' : '') + '" data-k="' + k + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + svgFor(m) + '</svg><span>' + esc(SC_FULL[k]) + '</span></button>'; });
+    var cur = allSCs(), mx = maxSC(), shown = cur.slice(0, mx), full = shown.length >= mx;
+    var h = '<div class="bnsc-grab"></div><h3 class="bnsc-h">Bottom bar shortcuts</h3><p class="bnsc-p">Your screen has room for <b>' + mx + '</b> shortcut' + (mx > 1 ? 's' : '') + ' &middot; <b>' + shown.length + '</b> added. Tap a screen to add or remove it.</p><div class="bnsc-g">';
+    SC_LIST.forEach(function (k) {
+      var m = meta(k), on = shown.indexOf(k) > -1;
+      h += '<button type="button" class="bnsc-t' + (on ? ' on' : (full ? ' dim' : '')) + '" data-k="' + k + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + svgFor(m) + '</svg><span>' + esc(SC_FULL[k]) + '</span></button>';
+    });
     h += '</div>';
-    if (cur) h += '<button type="button" class="bnsc-rm" data-k="">Remove shortcut</button>';
-    h += '<div class="bnsc-gs"><div><b>Swipe up</b> on the bar: Nova hands-free</div><div><b>Swipe left</b>: SOS (5-second countdown, you can cancel)</div><div><b>Swipe right</b>: this shortcut setting</div></div>';
+    if (shown.length) h += '<button type="button" class="bnsc-rm" data-k="*">Remove all shortcuts</button>';
+    h += '<div class="bnsc-gs"><div><b>Swipe up</b> on the bar: Nova hands-free</div><div><b>Swipe left</b>: Solve It (doubts)</div><div><b>Swipe right</b>: Material Hub scan</div></div>';
     pk.querySelector('.bnsc-sheet').innerHTML = h;
   }
   function closePicker() {
@@ -49373,25 +49396,42 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     pk.classList.remove('in'); pk.setAttribute('aria-hidden', 'true');
     setTimeout(function () { if (!pkOpen && pk) pk.classList.remove('show'); }, 320);
   }
+  function toastSC(a, b) { try { if (W.showToast) W.showToast(a, b, 'info'); } catch (x) { } }
   function openPicker() {
     if (W.currentRole !== 'student') return;
     if (!pk) {
       pk = D.createElement('div'); pk.id = 'bnsc'; pk.setAttribute('aria-hidden', 'true');
-      pk.innerHTML = '<div class="bnsc-scrim"></div><div class="bnsc-sheet" role="dialog" aria-label="Bottom bar shortcut"></div>';
+      pk.innerHTML = '<div class="bnsc-scrim"></div><div class="bnsc-sheet" role="dialog" aria-label="Bottom bar shortcuts"></div>';
       D.body.appendChild(pk);
       pk.addEventListener('click', function (e) {
         if (e.target.classList && e.target.classList.contains('bnsc-scrim')) { closePicker(); return; }
         var t = e.target.closest && e.target.closest('[data-k]'); if (!t) return;
-        var k = t.getAttribute('data-k'); setSC(k); closePicker();
-        try { if (W.showToast) W.showToast(k ? 'Shortcut added' : 'Shortcut removed', k ? SC_FULL[k] + ' is now in your bottom bar.' : 'Your bottom bar is back to the default.', 'info'); } catch (x) { }
+        var k = t.getAttribute('data-k'), a = allSCs().slice(0, maxSC());
+        if (k === '*') { saveSCs([]); pkPaint(); return; }
+        var i = a.indexOf(k);
+        if (i > -1) a.splice(i, 1);
+        else {
+          if (a.length >= maxSC()) { toastSC('Bottom bar is full', 'Your screen fits ' + maxSC() + ' shortcut' + (maxSC() > 1 ? 's' : '') + '. Remove one to add another.'); return; }
+          a.push(k);
+        }
+        saveSCs(a); pkPaint();
       });
     }
     pkPaint(); pkOpen = true; pk.classList.add('show'); pk.setAttribute('aria-hidden', 'false'); void pk.offsetHeight; pk.classList.add('in');
   }
   W.addEventListener('exama-back', function (e) { if (!pkOpen) return; closePicker(); try { e.preventDefault(); e.stopImmediatePropagation(); } catch (x) { } }, true);
-  W.BNShortcut = { get: curSC, set: setSC, label: scLabel, openPicker: openPicker, closePicker: closePicker };
+  W.BNShortcut = { get: curSCs, label: scLabel, openPicker: openPicker, closePicker: closePicker, max: maxSC };
 
-  /* ---- swipe on the bar: up = Nova hands-free, left = SOS, right = shortcut setting ---- */
+  /* ---- Material Hub scan: go to Material Hub, open its upload popup, open the scan camera ---- */
+  function materialScan() {
+    var run = function () {
+      try { if (typeof W.openMaterialUploadModal === 'function') W.openMaterialUploadModal(); } catch (x) { }
+      try { if (typeof W.openDocScanner === 'function') W.openDocScanner(); else toastSC('Scanner', 'The scanner is not ready yet. Try again in a moment.'); } catch (x) { }
+    };
+    if (curN() !== 'materials') { location.hash = 'materials'; setTimeout(run, 750); } else run();
+  }
+
+  /* ---- swipe on the bar: up = Nova hands-free, left = Solve It, right = Material Hub scan ---- */
   (function () {
     var nav = $('bn'); if (!nav) return;
     var sx = 0, sy = 0, st = 0, pid = null, swAt = 0;
@@ -49408,11 +49448,10 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
       if (dy < -34 && ay > ax * 1.3) {
         swAt = Date.now(); buzz(18);
         try { if (typeof W.NovaShake === 'function') W.NovaShake(); else if (W.NovaAssistant && W.NovaAssistant.open) W.NovaAssistant.open(); } catch (x) { }
-      } else if (!edge && dx < -90 && ax > ay * 1.8) {
-        swAt = Date.now(); buzz([40, 60, 40]);
-        try { if (typeof W.sosOpenConfirm === 'function') W.sosOpenConfirm(); } catch (x) { }
+      } else if (!edge && dx < -60 && ax > ay * 1.8) {
+        swAt = Date.now(); buzz(18); go('doubt-board');
       } else if (!edge && dx > 60 && ax > ay * 1.8) {
-        swAt = Date.now(); buzz(18); openPicker();
+        swAt = Date.now(); buzz(18); materialScan();
       }
     });
     nav.addEventListener('click', function (e) { if (Date.now() - swAt < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
