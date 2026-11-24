@@ -5511,6 +5511,21 @@ html.bn-tab body .slide-left:not(#_):not(#__):not(#___):not(#____):not(#_____):n
 html.bn-tab body .fade-in:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){animation:bnFade .2s ease-out both!important}
 @media (prefers-reduced-motion:reduce){#bn .bn-i,#bn .bn-i svg,#bn .bn-i::before,#bn .bn-dp{transition:none}}
 
+/* ---- v2: smoother bar + temporary button for the open screen ---- */
+#bn{--bn-e:cubic-bezier(.32,.72,0,1);--bn-d:.42s}
+#bn .bn-in{contain:layout style}
+#bn .bn-i{transition:flex-grow var(--bn-d) var(--bn-e),margin var(--bn-d) var(--bn-e),opacity .3s ease,transform var(--bn-d) var(--bn-e),color .25s ease}
+#bn .bn-i.bn-new,#bn .bn-i.bn-out{flex-grow:0;margin:0 -2px;opacity:0;transform:scale(.3);pointer-events:none;overflow:hidden}
+#bn .bn-ind{left:0;will-change:transform,width;transition:transform var(--bn-d) var(--bn-e),width var(--bn-d) var(--bn-e),opacity .2s ease,--bn-c1 .4s ease,--bn-c2 .4s ease}
+#bn .bn-ind.nt{transition:none}
+#bn .bn-l{overflow:hidden;text-overflow:ellipsis;max-width:100%}
+@keyframes bnPop{0%{transform:scale(.72)}55%{transform:scale(1.14)}100%{transform:scale(1)}}
+#bn .bn-i.on svg,#bn .bn-i.on .bn-dp{animation:bnPop .5s var(--bn-e) both}
+#bn .bn-i:active svg,#bn .bn-i:active .bn-dp{animation:none;transform:scale(.86)}
+/* every other screen keeps its content above the bar */
+html.bn-on :is(#notice-board-view,#target-calc-view,#materials-view,#fitness-view,#weekly-targets-view,#session-timer-view,#nova-chat-view,#video-hub-view,#video-watch-view,#syllabus-view,#math-workout-view,#student-directory-view,#budget-manager-view,#budget-track-view,#budget-room-view,#budget-room-detail-view,#exam-calendar-view,#leaderboard-view,#alarms-view,#quotes-view,#auto-quotes-view,#motivation-view,#nova-mentor-view,#nova-class-view,#doubt-board-view){padding-bottom:var(--bn-h)!important}
+@media (prefers-reduced-motion:reduce){#bn .bn-i,#bn .bn-ind{transition:none}#bn .bn-i.on svg,#bn .bn-i.on .bn-dp{animation:none}}
+
 /* ===== Exam screen ===== */
 #exams-view{background:#f4f5f9;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 #exams-view .ex2-hd{flex:none;position:relative;z-index:5;color:#fff;background:linear-gradient(135deg,#be185d 0%,#e11d48 52%,#f43f5e 100%);border-radius:0 0 28px 28px;padding:max(1.5rem,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 16px max(16px,env(safe-area-inset-left))}
@@ -5596,7 +5611,7 @@ html.bn-tab body .fade-in:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
 <nav id="bn" aria-label="Main navigation"><div class="bn-in"><span class="bn-ind" aria-hidden="true"></span>
 <button type="button" class="bn-i" data-t="student" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="f" d="M3.5 10.8 12 3.5l8.5 7.3V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg><span class="bn-l">Home</span></button>
 <button type="button" class="bn-i" data-t="exams" aria-label="Exams" title="Exams"><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="f" x="5" y="4.5" width="14" height="16" rx="2.5"/><path d="M9 4.5v-1h6v1"/><path d="m8.8 13 2.2 2.2 4.2-4.6"/></svg><span class="bn-l">Exams</span></button>
-<button type="button" class="bn-i" data-t="chat" aria-label="Discus" title="Discus"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="f" d="M20 12a7.5 7.5 0 0 1-10.8 6.7L4 20l1.4-4.4A7.5 7.5 0 1 1 20 12z"/><path d="M9 12h.01M12 12h.01M15 12h.01" stroke-width="2.4"/></svg><span class="bn-l">Discus</span></button>
+<button type="button" class="bn-i" data-t="chat" aria-label="Discus" title="Discus"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#xi-chat"/></svg><span class="bn-l">Discus</span></button>
 <button type="button" class="bn-i" data-t="my-profile" aria-label="Profile" title="Profile"><span class="bn-dp" id="bn-dpw"><img id="bn-dp" alt="" referrerpolicy="no-referrer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.6-3.6 3.5-5.6 7-5.6s6.4 2 7 5.6"/></svg></span><span class="bn-l">Profile</span></button>
 </div></nav>
 
@@ -49120,37 +49135,110 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     if (src && W.MutationObserver) new MutationObserver(syncDp).observe(src, { attributes: true, attributeFilter: ['src'] });
   })();
 
-  /* ---- show / highlight ---- */
-  /* sliding active pill: moves to the new tab (same curve as the tabs growing / shrinking) */
-  var lastAct = '';
+  /* ---- which screens get a bar, and what their temporary button looks like ---- */
+  /* No bar on exam screens. Add more hash names here (e.g. 'p2p', 'cbt') to hide it on other screens. */
+  var NO_NAV = /^(login|admin|admin-profile|active-exam|nova-quiz|exam-analysis|p2p|cbt|exam-room|wallet)$/;
+  var ALIAS = { 'notice-board': 'notices', 'watch-video': 'video-watch' };
+  var CAL = '<rect class="f" x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M8 3.8v3.4M16 3.8v3.4M4 10h16"/>';
+  var TRO = '<path class="f" d="M8 4.5h8v5a4 4 0 0 1-8 0z"/><path d="M8 6.5H5.5a2 2 0 0 0 2 3.2M16 6.5h2.5a2 2 0 0 1-2 3.2M12 13.5V17M8.5 19.5h7"/>';
+  var GEN = '<rect class="f" x="4.5" y="4.5" width="6" height="6" rx="1.8"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.8"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.8"/><rect x="13.5" y="13.5" width="6" height="6" rx="1.8"/>';
+  /* hash: [label, icon (home-grid symbol id or raw svg), colour 1, colour 2] */
+  var SCR = {
+    'materials': ['Materials', 'xi-materials', '#059669', '#10b981'],
+    'video-hub': ['Lectures', 'xi-lecture', '#be185d', '#ec4899'],
+    'video-watch': ['Watch', 'xi-lecture', '#be185d', '#ec4899'],
+    'math-workout': ['Math', 'xi-math', '#ea580c', '#fb923c'],
+    'nova-mentor': ['Mentor', 'xi-teacher', '#4f46e5', '#7c3aed'],
+    'nova-chat': ['Nova', 'xi-nova', '#4f46e5', '#7c3aed'],
+    'nova-class': ['Class', 'xi-nova', '#4f46e5', '#7c3aed'],
+    'session-timer': ['Focus', 'xi-focus', '#0369a1', '#0ea5e9'],
+    'fitness': ['Fitness', 'xi-run', '#e11d48', '#f43f5e'],
+    'notices': ['Notices', 'xi-board', '#b45309', '#f59e0b'],
+    'weekly-targets': ['Targets', 'xi-targets', '#0f766e', '#14b8a6'],
+    'budget-manager': ['Budget', 'xi-budget', '#15803d', '#22c55e'],
+    'budget-track': ['Track', 'xi-budget', '#15803d', '#22c55e'],
+    'budget-room': ['Room', 'xi-room', '#15803d', '#22c55e'],
+    'budget-room-detail': ['Room', 'xi-room', '#15803d', '#22c55e'],
+    'target-calc': ['Planner', 'xi-goal', '#6d28d9', '#8b5cf6'],
+    'syllabus': ['Syllabus', 'xi-syllabus', '#1d4ed8', '#3b82f6'],
+    'exam-calendar': ['Calendar', CAL, '#be185d', '#f43f5e'],
+    'leaderboard': ['Ranks', TRO, '#b45309', '#f59e0b'],
+    'doubt-board': ['Doubts', 'xi-solve', '#0369a1', '#0ea5e9'],
+    'student-directory': ['Students', 'xi-users', '#4338ca', '#2563eb'],
+    'alarms': ['Alarms', 'xi-alarm', '#ea580c', '#fb923c'],
+    'quotes': ['Quotes', 'xi-quote', '#6d28d9', '#8b5cf6'],
+    'auto-quotes': ['Quotes', 'xi-quote', '#6d28d9', '#8b5cf6'],
+    'motivation': ['Motivate', 'xi-quote', '#6d28d9', '#8b5cf6']
+  };
+  var COL = { 'student': ['#4338ca', '#2563eb'], 'exams': ['#be185d', '#f43f5e'], 'chat': ['#17a392', '#0e7468'], 'my-profile': ['#4f46e5', '#7c3aed'] };
+  function curN() {
+    var h = hash().split(/[\/?]/)[0];
+    if (h === '' && W.currentRole === 'student') h = 'student';
+    return ALIAS[h] || h;
+  }
+  function meta(h) {
+    var m = SCR[h]; if (m) return m;
+    var t = h.replace(/-/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }); if (t.length > 9) t = t.slice(0, 8) + '\u2026';
+    return [t, GEN, '#4338ca', '#2563eb'];
+  }
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  /* ---- sliding active pill (same curve + time as the buttons growing / shrinking, so they move as one) ---- */
+  var lastAct = '', binEl = null;
+  function bin() { return binEl || (binEl = D.querySelector('#bn .bn-in')); }
   function place(act) {
-    var bin = D.querySelector('#bn .bn-in'), ind = D.querySelector('#bn .bn-ind'); if (!bin || !ind) return;
-    var btns = bin.querySelectorAll('.bn-i'), idx = -1;
-    for (var i = 0; i < btns.length; i++) if (btns[i].classList.contains('on')) idx = i;
+    var bi = bin(), ind = D.querySelector('#bn .bn-ind'); if (!bi || !ind) return;
+    var all = bi.querySelectorAll('.bn-i'), btns = [], idx = -1, i;
+    for (i = 0; i < all.length; i++) if (!all[i].classList.contains('bn-out')) btns.push(all[i]);
+    for (i = 0; i < btns.length; i++) if (btns[i].classList.contains('on')) idx = i;
+    var nv = $('bn');
+    if (nv && act) { var c = COL[act] || (SCR[act] ? [SCR[act][2], SCR[act][3]] : COL.student); nv.style.setProperty('--bn-c1', c[0]); nv.style.setProperty('--bn-c2', c[1]); nv.setAttribute('data-t', act); }
     if (idx < 0) { ind.classList.remove('show'); ind.__p = 0; return; }
-    var cs = W.getComputedStyle(bin), pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0, gap = parseFloat(cs.columnGap) || parseFloat(cs.gap) || 0;
-    var inner = bin.clientWidth - pl - pr - gap * (btns.length - 1); if (inner <= 0) return;
+    var cs = W.getComputedStyle(bi), pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0, gap = parseFloat(cs.columnGap) || parseFloat(cs.gap) || 0;
+    var inner = bi.clientWidth - pl - pr - gap * (btns.length - 1); if (inner <= 0) return;
     var G = 2.1, unit = inner / (btns.length - 1 + G), first = !ind.__p;
     if (first) ind.classList.add('nt');
-    ind.style.left = (pl + idx * (unit + gap)) + 'px'; ind.style.width = (unit * G) + 'px';
-    var nv = $('bn'); if (nv && act) nv.setAttribute('data-t', act);
+    ind.style.transform = 'translateX(' + (pl + idx * (unit + gap)) + 'px)'; ind.style.width = (unit * G) + 'px';
     if (first) { void ind.offsetWidth; ind.classList.remove('nt'); ind.__p = 1; }
     ind.classList.add('show'); lastAct = act;
   }
   W.addEventListener('resize', function () { var i = D.querySelector('#bn .bn-ind'); if (i) { i.__p = 0; } place(lastAct); });
+
+  /* ---- the temporary button: grows in at the middle of the bar, shrinks away when the screen closes ---- */
+  var dyn = null, dynKey = '';
+  function dynAdd(h, animate) {
+    var bi = bin(), m = meta(h), b = D.createElement('button');
+    b.type = 'button'; b.className = 'bn-i bn-x' + (animate ? ' bn-new' : ''); b.setAttribute('data-t', h); b.setAttribute('aria-label', m[0]); b.title = m[0];
+    var ic = /^xi-/.test(m[1]) ? '<use href="#' + m[1] + '"/>' : m[1];
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ic + '</svg><span class="bn-l">' + esc(m[0]) + '</span>';
+    bi.insertBefore(b, bi.querySelector('.bn-i[data-t="chat"]'));   /* Home, Exams, [this], Discus, Profile = exactly the middle */
+    if (animate) { void b.offsetWidth; b.classList.remove('bn-new'); }
+    return b;
+  }
+  function dynDrop(b) {
+    b.classList.remove('on'); b.classList.add('bn-out'); b.removeAttribute('aria-current'); b.setAttribute('aria-hidden', 'true'); b.tabIndex = -1;
+    setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 520);
+  }
+
   var last = '';
   function sync() {
     var adm = W.currentRole === 'admin' || (!W.currentRole && (function () { try { return localStorage.getItem('exama_role') === 'admin'; } catch (e) { return false; } })());
     R.classList.toggle('bn-admin', adm);   /* admin never gets the bottom bar */
-    var h = cur(), show = !adm && W.currentRole === 'student' && TABS.indexOf(h) > -1;
-    var act = (h === 'my-profile' && W.__mpTarget) ? '' : h;
-    var key = show + '|' + act;
+    var h = curN(), show = !adm && W.currentRole === 'student' && !!h && !NO_NAV.test(h);
+    var wantDyn = show && TABS.indexOf(h) < 0 ? h : '';
+    var act = show ? ((h === 'my-profile' && W.__mpTarget) ? '' : h) : '';
+    var key = show + '|' + act + '|' + wantDyn, wasOn = R.classList.contains('bn-on');
     R.classList.toggle('bn-on', show);
     if (key !== last) {
       last = key;
+      if (wantDyn !== dynKey) {
+        if (dyn) dynDrop(dyn);
+        dyn = null; dynKey = '';
+        if (wantDyn) { dyn = dynAdd(wantDyn, wasOn); dynKey = wantDyn; }
+      }
       var b = D.querySelectorAll('#bn .bn-i');
       for (var i = 0; i < b.length; i++) {
-        var on = show && b[i].getAttribute('data-t') === act;
+        var on = show && !b[i].classList.contains('bn-out') && b[i].getAttribute('data-t') === act;
         b[i].classList.toggle('on', on);
         if (on) b[i].setAttribute('aria-current', 'page'); else b[i].removeAttribute('aria-current');
       }
@@ -49162,13 +49250,14 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   /* ---- tap ---- */
   function scrollTop(el) { if (el && el.scrollTo) el.scrollTo({ top: 0, behavior: 'smooth' }); }
   function go(t) {
-    var h = cur();
+    var h = curN();
     if (t === 'my-profile') {
       var viewingOther = !!W.__mpTarget; W.__mpTarget = null;
       if (h === t) { if (viewingOther && W.renderMyProfile) W.renderMyProfile(); sync(); scrollTop(D.querySelector('#my-profile-view .overflow-y-auto')); return; }
     } else if (h === t) {
       if (t === 'student') scrollTop(D.querySelector('#student-view .overflow-y-auto'));
       else if (t === 'exams') scrollTop($('ex2-scroll'));
+      else { var v = $((t === 'chat' ? 'community-chat' : t === 'notices' ? 'notice-board' : t) + '-view'); scrollTop(v && (v.querySelector('.overflow-y-auto') || v)); }
       return;
     }
     W.__bnSw = true; R.classList.add('bn-tab');
@@ -49176,7 +49265,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     location.hash = t;
   }
   D.addEventListener('click', function (e) {
-    var b = e.target.closest && e.target.closest('#bn .bn-i'); if (!b) return;
+    var b = e.target.closest && e.target.closest('#bn .bn-i'); if (!b || b.classList.contains('bn-out')) return;
     go(b.getAttribute('data-t'));
   });
 
