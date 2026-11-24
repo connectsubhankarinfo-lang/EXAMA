@@ -1187,10 +1187,12 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
         //  - isTabletDevice(): decided by the SMALLEST screen side, so a phone
         //    in landscape (~870px wide) is never mistaken for a tablet.
         //  - viewportSettled: one debounced "screen size/rotation changed" hook.
-        //  - AppFS: hides the system status bar (+ Android nav bar).
-        //      * Whole app  : Median Android  median.android.screen.fullScreen()
-        //      * Keyboard   : bars come back while the keyboard is open (Median advice)
-        //      * Viewers    : video / PDF / image also request it (needed in browsers)
+        //  - AppFS: three levels of system bars inside the app.
+        //      * Every screen : ONLY the Android navigation bar is hidden, the status bar stays
+        //                       (call  android.screen.navOnly  - needs the app update, see APP_NAV_HIDDEN)
+        //      * Viewers      : video / photo / PDF / run tracker / call / exam hide BOTH bars
+        //                       (median.android.screen.fullScreen()), and give them back when closed
+        //      * Keyboard     : bars come back while the keyboard is open (only while a viewer is open)
         // ==========================================================
         window.isTabletDevice = function () {
             return Math.min(window.innerWidth, window.innerHeight) >= 480;
@@ -1218,7 +1220,9 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
         window.AppFS = (function () {
             const owners = new Set();   // viewers that want fullscreen (video / pdf / image / native)
             let appWide = false;        // whole app stays fullscreen (set by init in Median)
-            let applied = false;        // native bars currently hidden
+            let applied = false;        // native bars currently hidden (navigation bar only, or both)
+            let level = '';             // what we last asked the phone for: '' (nothing yet) | 'none' | 'nav' | 'full'
+            let navOnlyOk = null;       // null = not tried, true = the app understood navOnly, false = old app
             let keyboardUp = false;
             let inited = false;
             let docFS = false;          // true while WE hold browser fullscreen
@@ -1230,6 +1234,11 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
                                         //         eats the first back gesture just to reveal them again)
                                         // false = only inside the video / PDF / image viewers, where a
                                         //         gesture-back double-tap is far less likely to matter
+            const APP_NAV_HIDDEN = true;  // true  = on every normal screen hide ONLY the Android navigation bar
+                                          //         (status bar stays). Viewers still hide both bars.
+                                          //         An app without the 'android.screen.navOnly' call answers "unknown call":
+                                          //         the page then keeps the normal bars, exactly as before.
+                                          // false = normal screens keep both bars
             const EDGE_BACK = true;     // true  = one-swipe back while the bars are hidden
             // ---------------------------------------------------------------------
 
@@ -1259,18 +1268,55 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
                 }, 300);
             }
 
-            function wantHidden() { return (appWide || owners.size > 0) && !keyboardUp; }
+            // Hide ONLY the navigation bar (status bar stays). The app answers {ok:false} if it is an old build.
+            function nativeNavOnly() {
+                const b = bridge();
+                try {
+                    if (b && b.android && b.android.screen && typeof b.android.screen.navOnly === 'function') {
+                        b.android.screen.navOnly(); navOnlyOk = true; return;
+                    }
+                    const h = window.flutter_inappwebview;
+                    if (h && typeof h.callHandler === 'function') {
+                        Promise.resolve(h.callHandler('median', 'android.screen.navOnly', {})).then(function (r) {
+                            if (r && r.ok === false) giveUpNavOnly(); else navOnlyOk = true;
+                        }).catch(giveUpNavOnly);
+                        return;
+                    }
+                } catch (e) { }
+                giveUpNavOnly();
+            }
+            function giveUpNavOnly() {      // old app: go back to the normal bars and stop asking
+                navOnlyOk = false;
+                if (level === 'nav') { level = 'none'; applied = false; nativeShow(); }
+            }
+
+            function wantLevel() {
+                if (appWide || owners.size > 0) return keyboardUp ? 'none' : 'full';   // a viewer is open: hide both bars
+                if (APP_NAV_HIDDEN && navOnlyOk !== false) return 'nav';               // every other screen: navigation bar only
+                return 'none';
+            }
+
+            function apply(want) {
+                level = want;
+                applied = want !== 'none';
+                if (want === 'full') nativeHide();
+                else if (want === 'nav') nativeNavOnly();
+                else nativeShow();
+            }
 
             function sync() {
                 if (!inMedian()) return;
-                const want = wantHidden();
-                if (want && !applied) { applied = true; nativeHide(); }
-                else if (!want && applied) { applied = false; nativeShow(); }
+                const want = wantLevel();
+                if (want === level) return;
+                if (want === 'none' && level === '') { level = 'none'; return; }   // bars never touched yet: nothing to give back
+                apply(want);
             }
 
             function reapply() {            // e.g. app came back from background
-                if (!inMedian() || !wantHidden()) return;
-                applied = true; nativeHide();
+                if (!inMedian()) return;
+                const want = wantLevel();
+                if (want === 'none') return;
+                apply(want);
             }
 
             function browserEnter() {
@@ -1461,6 +1507,7 @@ window.escJsAttr = function (x) { return window.escHtml(String(x == null ? '' : 
                 init: init,
                 setAppWide: setAppWide,
                 reapply: reapply,
+                level: function () { return level; },
                 isOwnFullscreenEvent: function () { return Date.now() - lastOwnChange < 1000; }
             };
         })();
