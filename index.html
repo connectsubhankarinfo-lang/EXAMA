@@ -20,6 +20,7 @@ Change 2026-11-17: NO BLACK SCREEN at app start. Script gl-app-flag now also add
 Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). ALARMS (2026-11-18): in the app the alarm ring screen is NATIVE (window.EXAMA_NATIVE_RING, alarm_ring_screen.dart): the page poll() no longer shows its own ring screen there (back-up only when window.__exactAlarmOk === false) and flushNative() tells the server what the student did on the native screen. Lock-screen / notification: when the app sets window.EXAMA_YT_NATIVE (app update 2026-11-18, media_service.dart) the page hands the playing song + the next songs to the native player through __rtMusicNative.get/back/resume; without it nothing is handed over. See FLUTTER_CONNECT.md section 0.7. Lecture Hub YouTube lectures use the SAME hand-off (lectureNativeUrl / ytLecId in the median-native script): with EXAMA_YT_NATIVE the app plays the lecture's audio in the background and the lecture continues in the page when the app is back; Run music back() only claims a song it handed over itself (natId).
 Change 2026-11-20: RUN MUSIC WEB BACKGROUND MODE (window.EXAMA_WEB_BG from the app shim): the song keeps playing in the page, the app shows the Android notification and sends its buttons back (event exama-remote); __rtRemSend() tells the app what plays. See FLUTTER_CONNECT.md section 0.7d.
 Change 2026-11-21: Run music debug popups / logs removed. YouTube lectures (Lecture Hub) now also keep playing in the background in web background mode (window.__lecRemote, __lecSrc, __lecSrcFor in the median-native script) and show the same Android notification (play / pause). remote() now also sends durationMs and positionMs (for the 6 hour track length fix in media_service.dart). See FLUTTER_CONNECT.md section 0.7e.
+Change 2026-11-25: dashboard tiles no longer spring back (style xb-fast + script xb-fast-js); the bottom bar shortcut picker (bn-sc-style, pkPaint) now looks like the Settings panel and no longer shows the 'hide on screens' text; Notification settings: the Preview an alert row was removed, Alarms and Calls are now alert types with their own style (Sound & vibration / Vibration only / Silent / Off) read by window.__npMode, only SOS stays always on. The sender (worker) and the native alarm / call screens must read notif_styles/<mobile> modes.alarm / modes.call to follow it when the app is closed.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -5692,30 +5693,45 @@ html.bn-on :is(#notice-board-view,#target-calc-view,#materials-view,#fitness-vie
 html.bn-on :is(#notice-board-view,#target-calc-view,#materials-view,#fitness-view,#weekly-targets-view,#session-timer-view,#video-hub-view,#video-watch-view,#syllabus-view,#student-directory-view,#budget-manager-view,#budget-track-view,#budget-room-view,#budget-room-detail-view,#exam-calendar-view,#leaderboard-view,#alarms-view,#quotes-view,#auto-quotes-view,#motivation-view,#nova-mentor-view,#nova-class-view)>:is(.overflow-y-auto,.vx-scroll,.vx-wmain,.qm-sheet,.nv-bd){padding-bottom:calc(var(--bn-h) + 16px)!important}
 </style>
 <style id="bn-sc-style">
-/* ===== bottom bar: swipe gestures + student shortcut picker ===== */
+/* ===== bottom bar: swipe gestures + student shortcut picker (same look as the Settings panel: grey sheet, white grouped lists, coloured icon tiles, green switches) ===== */
 #bn .bn-in{touch-action:none}
-#bnsc{position:fixed;inset:0;z-index:2147483400;display:none;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+#bnsc{position:fixed;inset:0;z-index:2147483400;display:none;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 #bnsc.show{display:block}
-#bnsc .bnsc-scrim{position:absolute;inset:0;background:rgba(15,23,42,.38);opacity:0;transition:opacity .25s ease}
+#bnsc .bnsc-scrim{position:absolute;inset:0;background:rgba(0,0,0,.4);opacity:0;transition:opacity .28s ease}
 #bnsc.in .bnsc-scrim{opacity:1}
-#bnsc .bnsc-sheet{position:absolute;left:50%;bottom:0;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;box-sizing:border-box;padding:10px 16px calc(16px + env(safe-area-inset-bottom,0px));border-radius:28px 28px 0 0;color:#0f172a;background:rgba(255,255,255,.96);-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);box-shadow:0 -14px 40px -16px rgba(15,23,42,.35);transform:translate(-50%,100%);transition:transform .34s cubic-bezier(.22,1,.36,1)}
+#bnsc .bnsc-sheet{position:absolute;left:50%;bottom:0;width:100%;max-width:540px;max-height:90vh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;box-sizing:border-box;padding:8px 14px calc(18px + env(safe-area-inset-bottom,0px));border-radius:28px 28px 0 0;color:#1c1c1e;background:#f2f2f7;box-shadow:0 -10px 40px -14px rgba(0,0,0,.35);transform:translate(-50%,100%);transition:transform .36s cubic-bezier(.32,.72,0,1)}
 #bnsc.in .bnsc-sheet{transform:translate(-50%,0)}
-#bnsc .bnsc-grab{width:38px;height:4px;border-radius:2px;background:#d3d8e2;margin:0 auto 12px}
-#bnsc .bnsc-h{margin:0;font-size:19px;line-height:1.15;font-weight:900;letter-spacing:-.02em}
-#bnsc .bnsc-p{margin:5px 0 14px;font-size:12.5px;line-height:1.45;color:#64748b}
-#bnsc .bnsc-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-#bnsc .bnsc-t{position:relative;display:flex;flex-direction:column;align-items:center;gap:8px;min-width:0;padding:14px 6px 12px;border-radius:18px;background:#f4f6fb;border:1.5px solid transparent;color:#334155;font:inherit;font-size:11.5px;font-weight:800;line-height:1.2;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .2s,border-color .2s,transform .15s}
-#bnsc .bnsc-t:active{transform:scale(.96)}
-#bnsc .bnsc-t svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-#bnsc .bnsc-t span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#bnsc .bnsc-t.dim{opacity:.45}
-#bnsc .bnsc-t.on{background:#eef2ff;border-color:#6366f1;color:#4338ca}
-#bnsc .bnsc-t.on::after{content:"";position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:#4338ca}
-#bnsc .bnsc-rm{display:block;width:100%;margin-top:12px;padding:12px;border:0;border-radius:14px;background:#f1f5f9;color:#475569;font:inherit;font-size:13px;font-weight:800;cursor:pointer;-webkit-tap-highlight-color:transparent}
-#bnsc .bnsc-gs{margin-top:14px;padding:12px 14px;border-radius:16px;background:#f8fafc;border:1px solid #e8ebf3;font-size:12px;line-height:1.5;color:#64748b}
-#bnsc .bnsc-gs div+div{margin-top:4px}
-#bnsc .bnsc-gs b{color:#0f172a;font-weight:800}
-@media (prefers-reduced-motion:reduce){#bnsc .bnsc-sheet,#bnsc .bnsc-scrim{transition:none}}
+#bnsc .bnsc-grab{width:36px;height:5px;border-radius:3px;background:rgba(60,60,67,.3);margin:2px auto 12px}
+#bnsc .bnsc-top{display:flex;align-items:center;gap:10px;margin:0 2px}
+#bnsc .bnsc-h{flex:1;min-width:0;margin:0;font-size:22px;line-height:1.15;font-weight:800;letter-spacing:-.02em}
+#bnsc .bnsc-done{flex:none;border:0;background:none;color:#007aff;font:inherit;font-size:17px;font-weight:600;padding:6px 4px;cursor:pointer}
+#bnsc .bnsc-done:active{opacity:.35}
+#bnsc .bnsc-p{margin:3px 4px 14px;font-size:13.5px;line-height:1.4;color:#6e6e73;font-weight:500}
+#bnsc .bnsc-pv{display:flex;align-items:center;justify-content:center;gap:6px;padding:12px;border-radius:18px;background:#fff;margin-bottom:6px}
+#bnsc .bnsc-pi{flex:1 1 0;min-width:0;max-width:44px;aspect-ratio:1/1;border-radius:12px;display:grid;place-items:center;font-size:14px;color:#8e8e93;background:rgba(120,120,128,.12);transition:background .25s,color .25s}
+#bnsc .bnsc-pi svg{width:55%;height:55%;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+#bnsc .bnsc-pi.on{color:#fff;background:var(--c,#007aff)}
+#bnsc .bnsc-pi.sl{background:none;border:1.5px dashed rgba(60,60,67,.28);color:rgba(60,60,67,.4);font-size:11px}
+#bnsc .bnsc-s{display:flex;align-items:center;justify-content:space-between;margin:18px 14px 7px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#8e8e93}
+#bnsc .bnsc-s em{font-style:normal;font-size:12px;font-weight:700;letter-spacing:0;color:#007aff;text-transform:none}
+#bnsc .bnsc-l{background:#fff;border-radius:18px;overflow:hidden}
+#bnsc .bnsc-r{display:flex;align-items:center;gap:12px;width:100%;min-height:54px;padding:10px 14px;margin:0;border:0;border-top:.5px solid rgba(60,60,67,.14);background:none;font:inherit;color:inherit;text-align:left;box-sizing:border-box;transition:background .15s,opacity .2s}
+#bnsc .bnsc-r:first-child{border-top:0}
+#bnsc button.bnsc-r{cursor:pointer}
+#bnsc button.bnsc-r:active{background:rgba(120,120,128,.1)}
+#bnsc .bnsc-r.dim{opacity:.4}
+#bnsc .bnsc-i{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex:none;font-size:15px;color:#fff;background:var(--c,#8e8e93)}
+#bnsc .bnsc-i svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+#bnsc .bnsc-t{flex:1;min-width:0}
+#bnsc .bnsc-t b{display:block;font-size:15px;font-weight:600}
+#bnsc .bnsc-t small{display:block;margin-top:2px;font-size:12px;line-height:1.3;color:#8e8e93;font-weight:500}
+#bnsc .bnsc-v{font-size:13.5px;color:#8e8e93;font-weight:500}
+#bnsc .bnsc-sw{position:relative;width:51px;height:31px;border-radius:16px;background:rgba(120,120,128,.3);flex:none;transition:background .2s}
+#bnsc .bnsc-sw::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}
+#bnsc .bnsc-r.on .bnsc-sw{background:#34c759}
+#bnsc .bnsc-r.on .bnsc-sw::after{transform:translateX(20px)}
+#bnsc .bnsc-red .bnsc-t b{color:#ff3b30}
+@media (prefers-reduced-motion:reduce){#bnsc .bnsc-sheet,#bnsc .bnsc-scrim,#bnsc .bnsc-sw,#bnsc .bnsc-sw::after,#bnsc .bnsc-pi{transition:none}}
 </style>
 <nav id="bn" aria-label="Main navigation"><div class="bn-in"><span class="bn-ind" aria-hidden="true"></span>
 <button type="button" class="bn-i" data-t="student" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="f" d="M3.5 10.8 12 3.5l8.5 7.3V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg><span class="bn-l">Home</span></button>
@@ -11299,7 +11315,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
             try {
                 unlockAudio(); const C = AC; if (!C) return; C.resume && C.resume();
                 const beep = () => { const o = C.createOscillator(), g = C.createGain(); o.frequency.value = 880; g.gain.value = 0.6; o.connect(g); g.connect(C.destination); o.start(); o.stop(C.currentTime + 0.25); };
-                beep(); tone = { C, iv: setInterval(beep, 700), vb: setInterval(() => navigator.vibrate && navigator.vibrate(400), 1000) };
+                const am = window.__npMode ? window.__npMode('alarm') : 'sound'; if (am === 'sound') beep(); tone = { C, iv: am === 'sound' ? setInterval(beep, 700) : 0, vb: (am === 'sound' || am === 'vibrate') ? setInterval(() => navigator.vibrate && navigator.vibrate(400), 1000) : 0 };
             } catch (e) {}
         }
         function showRing(r) {
@@ -29285,6 +29301,9 @@ function mpDrawTab(tab, body) {
                     // never ring for a call that is already over, or when no call screen is up
                     const liveNow = window.globalDiscusCallState;
                     if (!window.currentIncomingCall || (liveNow && liveNow.status !== 'ringing')) return;
+                    const cm = window.__npMode ? window.__npMode('call') : 'sound';   // Notification settings -> Calls
+                    if (cm === 'sound' || cm === 'vibrate') { clearInterval(window._callVibeIv); const cvb = () => { try { navigator.vibrate && navigator.vibrate([600, 400]); } catch (x) { } }; cvb(); window._callVibeIv = setInterval(cvb, 1500); }
+                    if (cm !== 'sound') return;
                     el.muted = false;
                     el.volume = 1;
                     el.currentTime = 0;
@@ -29305,6 +29324,7 @@ function mpDrawTab(tab, body) {
                 document.cookie = 'exama_seen_call=' + encodeURIComponent(k) + '; max-age=86400; path=/; SameSite=Lax';
             };
             function stopRingtone() {
+                clearInterval(window._callVibeIv); try { navigator.vibrate && navigator.vibrate(0); } catch (x) { }
                 clearTimeout(window._incomingCallTimer);
                 const el = document.getElementById('call-ringtone-audio');
                 if (el) { try { el.pause(); el.currentTime = 0; } catch (e) {} }
@@ -47367,7 +47387,9 @@ html.is-tablet .qs-b{padding-left:max(22px,calc(env(safe-area-inset-left,0px) + 
     { id: 'discus', ic: 'fa-comments', c: '#34c759', lb: 'Chat & Discuss', sub: 'Messages, replies and mentions' },
     { id: 'exam', ic: 'fa-file-pen', c: '#ff9500', lb: 'Exams & results', sub: 'New papers, results and reminders' },
     { id: 'session', ic: 'fa-video', c: '#007aff', lb: 'Live sessions', sub: 'Classes and focus sessions' },
-    { id: 'general', ic: 'fa-bullhorn', c: '#ff2d55', lb: 'Notices & updates', sub: 'Announcements and everything else' }
+    { id: 'general', ic: 'fa-bullhorn', c: '#ff2d55', lb: 'Notices & updates', sub: 'Announcements and everything else' },
+    { id: 'alarm', ic: 'fa-clock', c: '#af52de', lb: 'Alarms', sub: 'Study alarms and wake-ups' },
+    { id: 'call', ic: 'fa-phone', c: '#30b0c7', lb: 'Calls', sub: 'Incoming voice and video calls' }
   ];
   var NP_MODES = [
     { id: 'sound', lb: 'Sound', lg: 'Sound & vibration', sub: 'Plays a sound and vibrates', ic: 'fa-volume-high', c: '#007aff' },
@@ -47385,6 +47407,8 @@ html.is-tablet .qs-b{padding-left:max(22px,calc(env(safe-area-inset-left,0px) + 
     NP.q.on = q.on === true; if (/^\d\d:\d\d$/.test(q.from || '')) NP.q.from = q.from; if (/^\d\d:\d\d$/.test(q.to || '')) NP.q.to = q.to;
   })();
   Q.np = NP;
+  /* alert style of one type ('sound' | 'vibrate' | 'silent' | 'off'); the alarm ring and the call ring read it (SOS ignores it, always on) */
+  window.__npMode = function (k) { try { var m = NP.modes[k]; return m === 'vibrate' || m === 'silent' || m === 'off' ? m : 'sound'; } catch (e) { return 'sound'; } };
   function npPublish() {
     try {
       var m = window.loggedInMobile; if (!m || !window.rtdb) return;
@@ -47402,10 +47426,10 @@ html.is-tablet .qs-b{padding-left:max(22px,calc(env(safe-area-inset-left,0px) + 
   function npPerm() { try { return (!npInApp() && ('Notification' in window)) ? Notification.permission : ''; } catch (e) { return ''; } }
   function npStatus() { if (npPerm() === 'denied') return 'blocked'; if (Q.dnd) return 'paused'; if (npQuietNow()) return 'quiet'; return 'on'; }
   function npShort() { return { on: 'On', paused: 'Paused', quiet: 'Quiet', blocked: 'Blocked' }[npStatus()]; }
-  /* used by the push handler (foreground pushes). SOS, calls and alarms are never blocked here. */
+  /* used by the push handler (foreground pushes). SOS is never blocked here; alarms and calls only when their style is Off. */
   window.__qpNotifBlock = function (d) {
     try {
-      var c = d && d.pushCategory; if (c === 'sos' || c === 'call' || c === 'alarm') return false;
+      var c = d && d.pushCategory; if (c === 'sos') return false; if (c === 'call' || c === 'alarm') return NP.modes[c] === 'off';
       var t = (c === 'discus' || c === 'exam' || c === 'session') ? c : 'general';
       return NP.modes[t] === 'off' || npQuietNow();
     } catch (e) { return false; }
@@ -47420,12 +47444,11 @@ html.is-tablet .qs-b{padding-left:max(22px,calc(env(safe-area-inset-left,0px) + 
     h += '</div><p class="np-ft">SOS alerts always come through Do Not Disturb.</p></section>';
     h += '<section class="qs-c"><h3>Alert style</h3><div class="qs-l">';
     NP_TYPES.forEach(function (t) { h += npNav('type:' + t.id, t.ic, t.c, t.lb, t.sub, true); });
-    h += '<div class="qs-r np-lock">' + npIc('#8e8e93', 'fa-lock') + '<span class="qs-t"><b>SOS, calls & alarms</b><small>Never affected by these settings</small></span><span class="qs-v">Always on</span></div>';
+    h += '<div class="qs-r np-lock">' + npIc('#ff3b30', 'fa-triangle-exclamation') + '<span class="qs-t"><b>SOS emergency</b><small>Always on, never affected by these settings</small></span><span class="qs-v">Always on</span></div>';
     h += '</div><p class="np-ft">Tap a type to choose how its alerts reach you.</p></section>';
     h += '<section class="qs-c"><h3>Quiet hours</h3><div class="qs-l">' + npSw('quiet', 'fa-bed', '#5856d6', 'Quiet hours', 'Silence alerts at set times');
     h += '<div class="np-tw" id="np-tw"><div class="qs-r"><span class="qs-t"><b>From</b></span><input type="time" class="np-time" id="np-t-from" data-t="from" aria-label="Quiet hours start"></div><div class="qs-r"><span class="qs-t"><b>To</b></span><input type="time" class="np-time" id="np-t-to" data-t="to" aria-label="Quiet hours end"></div></div>';
     h += '</div><p class="np-ft" id="np-qn"></p></section>';
-    h += '<section class="qs-c"><h3>Try it</h3><div class="qs-l">' + npNav('prev', 'fa-paper-plane', '#0a84ff', 'Preview an alert', 'See and feel how a notification looks', false) + '</div></section>';
     h += '<section class="qs-c"><div class="qs-l np-red">' + npNav('reset', 'fa-rotate-left', '#8e8e93', 'Reset notification settings', 'Alert styles and quiet hours', false) + '</div></section></div>';
     npBody.innerHTML = h;
   }
@@ -47441,7 +47464,7 @@ html.is-tablet .qs-b{padding-left:max(22px,calc(env(safe-area-inset-left,0px) + 
     var tw = D.getElementById('np-tw'); if (tw) tw.style.display = NP.q.on ? 'block' : 'none';
     ['from', 'to'].forEach(function (k) { var i = D.getElementById('np-t-' + k); if (i && D.activeElement !== i) i.value = NP.q[k]; });
     var qn = D.getElementById('np-qn');
-    if (qn) qn.textContent = NP.q.on ? 'Alerts are silenced from ' + npFmt(NP.q.from) + ' to ' + npFmt(NP.q.to) + '. SOS, calls and alarms always come through.' : 'Silence alerts automatically at the times you choose.';
+    if (qn) qn.textContent = NP.q.on ? 'Alerts are silenced from ' + npFmt(NP.q.from) + ' to ' + npFmt(NP.q.to) + '. SOS alerts, alarms and calls still come through.' : 'Silence alerts automatically at the times you choose.';
     var st = npStatus(), hero = D.getElementById('np-hero');
     var M = {
       on: ['fa-bell', 'linear-gradient(145deg,#4cd964,#28a745)', 'rgba(52,199,89,.22)', 'Notifications are on', 'Alerts reach you the way you set them below.'],
@@ -47472,13 +47495,6 @@ html.is-tablet .qs-b{padding-left:max(22px,calc(env(safe-area-inset-left,0px) + 
     setTimeout(function () { if (!npSheet.classList.contains('in')) npSheet.classList.remove('show'); }, 320);
   }
   function npBack() { if (npSheet.classList.contains('in')) { npSheetClose(); return true; } if (npIsOpen) { npHide(); return true; } return false; }
-  function npPreview() {
-    var m = NP.modes.general, sub = m === 'off' ? 'Notices &amp; updates are turned off, so you won\u2019t get alerts like this.' : 'This is how an alert looks' + (m === 'silent' ? ' (silent).' : m === 'vibrate' ? ' (vibration only).' : '.');
-    npBn.innerHTML = '<span class="np-bn-ic"><i class="fa-solid fa-graduation-cap"></i></span><span class="np-bn-t"><span class="np-bn-r"><b>EXAMA</b><em>now</em></span><strong>Preview alert</strong><span>' + sub + '</span></span>';
-    npBn.classList.remove('in'); void npBn.offsetHeight; npBn.classList.add('in'); npBn.setAttribute('aria-hidden', 'false');
-    if (m === 'sound' || m === 'vibrate') vib([40, 60, 40]);
-    clearTimeout(npBnT); npBnT = setTimeout(function () { npBn.classList.remove('in'); npBn.setAttribute('aria-hidden', 'true'); }, 3600);
-  }
   function npReset() { NP_TYPES.forEach(function (t) { NP.modes[t.id] = 'sound'; }); NP.q.on = false; NP.q.from = '22:00'; NP.q.to = '07:00'; npSave(); vib(10); npPaint(); refresh(); }
   npBody.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('[data-a]'); if (!b) return; var a = b.getAttribute('data-a');
@@ -47486,7 +47502,6 @@ html.is-tablet .qs-b{padding-left:max(22px,calc(env(safe-area-inset-left,0px) + 
     else if (a === 'perm') { try { if (Notification.permission === 'default') Notification.requestPermission().then(refresh); else if (window.showToast) window.showToast('Notifications', 'Change this in your phone or browser app settings.', 'info'); } catch (x) { } }
     else if (a === 'quiet') { NP.q.on = !NP.q.on; npSave(); vib(10); npPaint(); refresh(); }
     else if (a.indexOf('type:') === 0) npSheetOpen(a.slice(5));
-    else if (a === 'prev') npPreview();
     else if (a === 'reset') npReset();
   });
   npBody.addEventListener('change', function (e) {
@@ -49451,17 +49466,38 @@ html.bn-imm #bn{transform:translateY(calc(100% + 24px))!important;opacity:0!impo
   var rzT = 0; W.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(function () { last = ''; sync(); if (pkOpen) pkPaint(); }, 160); });
 
   var pk = null, pkOpen = false;
+  /* picker: one colour + one short hint per screen (colours follow the Settings panel tiles) */
+  var PKC = { 'materials': '#8e8e93', 'video-hub': '#ff375f', 'math-workout': '#ff9500', 'nova-mentor': '#af52de', 'session-timer': '#ff6b2c', 'fitness': '#ff3b30', 'notices': '#ffb400', 'weekly-targets': '#30b0c7', 'budget-manager': '#34c759', 'target-calc': '#5856d6', 'syllabus': '#007aff', 'doubt-board': '#e8590c', 'leaderboard': '#c98a00', 'exam-calendar': '#32ade6' };
+  var PKS = { 'materials': 'Notes, PDFs and papers', 'video-hub': 'Recorded lectures', 'math-workout': 'Daily practice', 'nova-mentor': 'Your AI mentor', 'session-timer': 'Focus and study together', 'fitness': 'Track your runs', 'notices': 'Announcements', 'weekly-targets': 'Goals for the week', 'budget-manager': 'Money and expenses', 'target-calc': 'Plan your marks', 'syllabus': 'Chapter progress', 'doubt-board': 'Ask and answer doubts', 'leaderboard': 'Ranks and scores', 'exam-calendar': 'Exam dates' };
+  function pkSvg(k) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + svgFor(meta(k)) + '</svg>'; }
   function pkPaint() {
-    var cur = allSCs(), mx = maxSC(), shown = cur.slice(0, mx), full = shown.length >= mx;
-    var h = '<div class="bnsc-grab"></div><h3 class="bnsc-h">Bottom bar shortcuts</h3><p class="bnsc-p">Your screen has room for <b>' + mx + '</b> shortcut' + (mx > 1 ? 's' : '') + ' &middot; <b>' + shown.length + '</b> added. Tap a screen to add or remove it.</p><div class="bnsc-g">';
-    SC_LIST.forEach(function (k) {
-      var m = meta(k), on = shown.indexOf(k) > -1;
-      h += '<button type="button" class="bnsc-t' + (on ? ' on' : (full ? ' dim' : '')) + '" data-k="' + k + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + svgFor(m) + '</svg><span>' + esc(SC_FULL[k]) + '</span></button>';
+    var sh = pk.querySelector('.bnsc-sheet'), cur = allSCs(), mx = maxSC(), shown = cur.slice(0, mx), full = shown.length >= mx, i;
+    if (sh.getAttribute('data-mx') !== String(mx)) {
+      var h = '<div class="bnsc-grab"></div><div class="bnsc-top"><h3 class="bnsc-h">Bottom bar shortcuts</h3><button type="button" class="bnsc-done" data-k="x">Done</button></div>';
+      h += '<p class="bnsc-p">Choose up to <b>' + mx + '</b> screen' + (mx > 1 ? 's' : '') + ' for quick access from the bar.</p><div class="bnsc-pv" id="bnsc-pv"></div>';
+      h += '<h4 class="bnsc-s">Screens<em id="bnsc-n"></em></h4><div class="bnsc-l">';
+      SC_LIST.forEach(function (k) {
+        h += '<button type="button" class="bnsc-r" data-k="' + k + '" role="switch" aria-checked="false"><span class="bnsc-i" style="--c:' + (PKC[k] || '#8e8e93') + '">' + pkSvg(k) + '</span><span class="bnsc-t"><b>' + esc(SC_FULL[k]) + '</b><small>' + esc(PKS[k] || '') + '</small></span><span class="bnsc-sw"></span></button>';
+      });
+      h += '</div><div class="bnsc-l bnsc-red" id="bnsc-rmw" style="margin-top:16px"><button type="button" class="bnsc-r" data-k="*"><span class="bnsc-i" style="--c:#8e8e93"><i class="fa-solid fa-rotate-left"></i></span><span class="bnsc-t"><b>Remove all shortcuts</b></span></button></div>';
+      h += '<h4 class="bnsc-s">Swipe on the bar</h4><div class="bnsc-l">';
+      [['fa-arrow-up', '#af52de', 'Swipe up', 'Nova hands-free'], ['fa-arrow-left', '#ff3b30', 'Swipe left', 'Run Monitor'], ['fa-arrow-right', '#34c759', 'Swipe right', 'Budget Manager']].forEach(function (g) {
+        h += '<div class="bnsc-r"><span class="bnsc-i" style="--c:' + g[1] + '"><i class="fa-solid ' + g[0] + '"></i></span><span class="bnsc-t"><b>' + g[2] + '</b></span><span class="bnsc-v">' + g[3] + '</span></div>';
+      });
+      h += '</div>';
+      sh.innerHTML = h; sh.setAttribute('data-mx', String(mx));
+    }
+    /* live bar preview: Home, Exams, your shortcuts / empty slots, Discus, Profile */
+    var pv = '<span class="bnsc-pi"><i class="fa-solid fa-house"></i></span><span class="bnsc-pi"><i class="fa-solid fa-clipboard-check"></i></span>';
+    for (i = 0; i < mx; i++) { var k = shown[i]; pv += k ? '<span class="bnsc-pi on" style="--c:' + (PKC[k] || '#007aff') + '">' + pkSvg(k) + '</span>' : '<span class="bnsc-pi sl"><i class="fa-solid fa-plus"></i></span>'; }
+    pv += '<span class="bnsc-pi"><i class="fa-solid fa-comments"></i></span><span class="bnsc-pi"><i class="fa-solid fa-user"></i></span>';
+    var pe = sh.querySelector('#bnsc-pv'); if (pe) pe.innerHTML = pv;
+    var ne = sh.querySelector('#bnsc-n'); if (ne) ne.textContent = shown.length + ' of ' + mx;
+    Array.prototype.forEach.call(sh.querySelectorAll('.bnsc-r[data-k]'), function (b) {
+      var kk = b.getAttribute('data-k'); if (kk === '*') return;
+      var on = shown.indexOf(kk) > -1; b.classList.toggle('on', on); b.classList.toggle('dim', !on && full); b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
-    h += '</div>';
-    if (shown.length) h += '<button type="button" class="bnsc-rm" data-k="*">Remove all shortcuts</button>';
-    h += '<div class="bnsc-gs"><div><b>Swipe up</b> on the bar: Nova hands-free</div><div><b>Swipe left</b>: Run Monitor</div><div><b>Swipe right</b>: Budget Manager</div><div>Shortcuts hide on screens with a floating button (Run, Solve It, Budget).</div></div>';
-    pk.querySelector('.bnsc-sheet').innerHTML = h;
+    var rw = sh.querySelector('#bnsc-rmw'); if (rw) rw.style.display = shown.length ? '' : 'none';
   }
   function closePicker() {
     if (!pk || !pkOpen) return; pkOpen = false;
@@ -49479,6 +49515,7 @@ html.bn-imm #bn{transform:translateY(calc(100% + 24px))!important;opacity:0!impo
         if (e.target.classList && e.target.classList.contains('bnsc-scrim')) { closePicker(); return; }
         var t = e.target.closest && e.target.closest('[data-k]'); if (!t) return;
         var k = t.getAttribute('data-k'), a = allSCs().slice(0, maxSC());
+        if (k === 'x') { closePicker(); return; }
         if (k === '*') { saveSCs([]); pkPaint(); return; }
         var i = a.indexOf(k);
         if (i > -1) a.splice(i, 1);
@@ -49651,6 +49688,27 @@ html.bn-imm #bn{transform:translateY(calc(100% + 24px))!important;opacity:0!impo
     if (tab === 'hist' && typeof W.pvRender === 'function') setTimeout(function () { try { W.pvRender(); } catch (e) { } }, 60);
     sync();
   };
+})();
+</script>
+<style id="xb-fast">
+/* ===== Dashboard buttons v8: no spring delay =====
+   The pressed tile used to spring back (overshoot curve, 0.14 - 0.4 s) while the new screen was already opening.
+   Now press and release are both very fast with no overshoot, and the moment a tile is tapped (class xb-go, ~0.65 s) it returns to rest at once, so nothing bounces under the opening screen. */
+html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________){transition:transform .09s ease-out,box-shadow .09s ease,background-color .09s ease,background .09s ease!important}
+html body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):active{transition-duration:.04s!important}
+html body #student-view .sd-tiles .xb .xb-ic:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________){transition:transform .09s ease-out!important}
+html body #student-view .sd-tiles .glass-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________){transition:transform .09s ease-out,box-shadow .09s ease,background-color .09s ease!important}
+html.xb-go body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),
+html.xb-go body #student-view .sd-tiles .xb .xb-ic:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),
+html.xb-go body #student-view .sd-tiles .glass-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),
+html.vw-busy body #student-view .sd-tiles .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),
+html.vw-busy body #student-view .sd-tiles .xb .xb-ic:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________),
+html.vw-busy body #student-view .sd-tiles .glass-card:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________){transition:none!important}
+</style>
+<script id="xb-fast-js">
+/* a tapped dashboard tile snaps back to rest immediately (no spring) while the screen opens */
+(function(){var R=document.documentElement,t=0;
+document.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('#student-view .sd-tiles .xb,#student-view .sd-tiles .glass-card');if(!b)return;R.classList.add('xb-go');clearTimeout(t);t=setTimeout(function(){R.classList.remove('xb-go')},650);},true);
 })();
 </script>
 </body>
