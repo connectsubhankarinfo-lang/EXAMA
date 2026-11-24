@@ -20,7 +20,9 @@ Change 2026-11-17: NO BLACK SCREEN at app start. Script gl-app-flag now also add
 Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorage rtPl_<mobile> + Firebase RTDB run_playlists/<mobile>, test mode test_run_playlists). Songs are YouTube links played by a hidden YouTube player: NOTHING is downloaded or saved to Drive (the paste-link field, the download button and the Drive music folder are no longer used by the page). A song is removed by swiping it (no question). window.__rtYtAdd(id) (used by Share in) adds a YouTube id straight to the logged-in student's own list. Keep __rtYtAdd, __rtMusic, __rtMusicNative, __rtNatUrl (the lecture hand-off calls them). The Drive script is only used to SEARCH YouTube (?action=ytsearch). ALARMS (2026-11-18): in the app the alarm ring screen is NATIVE (window.EXAMA_NATIVE_RING, alarm_ring_screen.dart): the page poll() no longer shows its own ring screen there (back-up only when window.__exactAlarmOk === false) and flushNative() tells the server what the student did on the native screen. Lock-screen / notification: when the app sets window.EXAMA_YT_NATIVE (app update 2026-11-18, media_service.dart) the page hands the playing song + the next songs to the native player through __rtMusicNative.get/back/resume; without it nothing is handed over. See FLUTTER_CONNECT.md section 0.7. Lecture Hub YouTube lectures use the SAME hand-off (lectureNativeUrl / ytLecId in the median-native script): with EXAMA_YT_NATIVE the app plays the lecture's audio in the background and the lecture continues in the page when the app is back; Run music back() only claims a song it handed over itself (natId).
 Change 2026-11-20: RUN MUSIC WEB BACKGROUND MODE (window.EXAMA_WEB_BG from the app shim): the song keeps playing in the page, the app shows the Android notification and sends its buttons back (event exama-remote); __rtRemSend() tells the app what plays. See FLUTTER_CONNECT.md section 0.7d.
 Change 2026-11-21: Run music debug popups / logs removed. YouTube lectures (Lecture Hub) now also keep playing in the background in web background mode (window.__lecRemote, __lecSrc, __lecSrcFor in the median-native script) and show the same Android notification (play / pause). remote() now also sends durationMs and positionMs (for the 6 hour track length fix in media_service.dart). See FLUTTER_CONNECT.md section 0.7e.
-===== END NOTES ===== -->
+===== END NOTES ===== 
+Change 2026-11-24: NATIVE STUDENT HOME + BOTTOM BAR (app only). New script native-ui-bridge (end of <body>) + style native-ui-css. When the app says hello (window.__exNative.hello, every 1.5 s) the page adds class exama-nui to <html> (hides the web bottom bar #bn visually, keeps class bn-on so screens keep their bottom space) and sends the bottom-bar state (handler exama_native_state) and the Home texts (handler exama_native_dash) to the app, which draws the student Home screen and the bottom bar natively ON TOP of the page. The page's own Home (#student-view) stays underneath and is still the source of every number: the script READS these ids, so do NOT rename them: daily-quote-text, sd-ex-title, sd-ex-sub, sd-ex-pill, sd-slide-notice, sd-nt-title, sd-slide-remind, sd-rm-title, sd-rm-sub, sd-rm-pill, student-greeting, student-name-display, student-nav-dp, student-weekly-avg, student-total-avg, student-weekly-exam-rank, student-total-exam-rank, student-weekly-study-rank, student-total-study-rank, student-front-today-study, student-front-today-run, card-back-dp, card-back-name, card-back-batch, card-back-exams, card-back-study, dash-notice-badge, .chat-unread-badge, report-timeframe-modal(-content), functions openSettingsMenu, openFeatureDoc, openWallet. If the app stops saying hello the page returns to its own Home + bar after ~5 s. A visual change to the Home screen or the bottom bar now needs the app update too (Flutter files lib/features/student_native/*) - see FLUTTER_CONNECT.md section 0.10.
+-->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
@@ -5511,21 +5513,6 @@ html.bn-tab body .slide-left:not(#_):not(#__):not(#___):not(#____):not(#_____):n
 html.bn-tab body .fade-in:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){animation:bnFade .2s ease-out both!important}
 @media (prefers-reduced-motion:reduce){#bn .bn-i,#bn .bn-i svg,#bn .bn-i::before,#bn .bn-dp{transition:none}}
 
-/* ---- v2: smoother bar + temporary button for the open screen ---- */
-#bn{--bn-e:cubic-bezier(.32,.72,0,1);--bn-d:.42s}
-#bn .bn-in{contain:layout style}
-#bn .bn-i{transition:flex-grow var(--bn-d) var(--bn-e),margin var(--bn-d) var(--bn-e),opacity .3s ease,transform var(--bn-d) var(--bn-e),color .25s ease}
-#bn .bn-i.bn-new,#bn .bn-i.bn-out{flex-grow:0;margin:0 -2px;opacity:0;transform:scale(.3);pointer-events:none;overflow:hidden}
-#bn .bn-ind{left:0;will-change:transform,width;transition:transform var(--bn-d) var(--bn-e),width var(--bn-d) var(--bn-e),opacity .2s ease,--bn-c1 .4s ease,--bn-c2 .4s ease}
-#bn .bn-ind.nt{transition:none}
-#bn .bn-l{overflow:hidden;text-overflow:ellipsis;max-width:100%}
-@keyframes bnPop{0%{transform:scale(.72)}55%{transform:scale(1.14)}100%{transform:scale(1)}}
-#bn .bn-i.on svg,#bn .bn-i.on .bn-dp{animation:bnPop .5s var(--bn-e) both}
-#bn .bn-i:active svg,#bn .bn-i:active .bn-dp{animation:none;transform:scale(.86)}
-/* every other screen keeps its content above the bar */
-html.bn-on :is(#notice-board-view,#target-calc-view,#materials-view,#fitness-view,#weekly-targets-view,#session-timer-view,#nova-chat-view,#video-hub-view,#video-watch-view,#syllabus-view,#math-workout-view,#student-directory-view,#budget-manager-view,#budget-track-view,#budget-room-view,#budget-room-detail-view,#exam-calendar-view,#leaderboard-view,#alarms-view,#quotes-view,#auto-quotes-view,#motivation-view,#nova-mentor-view,#nova-class-view,#doubt-board-view){padding-bottom:var(--bn-h)!important}
-@media (prefers-reduced-motion:reduce){#bn .bn-i,#bn .bn-ind{transition:none}#bn .bn-i.on svg,#bn .bn-i.on .bn-dp{animation:none}}
-
 /* ===== Exam screen ===== */
 #exams-view{background:#f4f5f9;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 #exams-view .ex2-hd{flex:none;position:relative;z-index:5;color:#fff;background:linear-gradient(135deg,#be185d 0%,#e11d48 52%,#f43f5e 100%);border-radius:0 0 28px 28px;padding:max(1.5rem,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 16px max(16px,env(safe-area-inset-left))}
@@ -5608,25 +5595,10 @@ html.bn-on :is(#notice-board-view,#target-calc-view,#materials-view,#fitness-vie
 #exams-view #student-records-list button.bg-gradient-to-r:active{background-color:#e0e7ff!important}
 </style>
 
-<style id="bn-fab-style">
-/* ===== v3: a screen with a corner floating button -> that button becomes the raised, curved-out middle button of the bar ===== */
-html.bn-on.bn-fab:not(.bn-kb){--bn-h:calc(var(--bn-hh) + 20px + env(safe-area-inset-bottom,0px))}
-html.bn-on.bn-fab:not(.bn-kb) :is(#rt-fab,#bm-fab,#room-fab,#doubt-board-view .db-fab){visibility:hidden!important;pointer-events:none!important}
-#bn .bn-i.bn-fab{overflow:visible;color:#fff;background:none;box-shadow:none;-webkit-tap-highlight-color:transparent}
-#bn .bn-fbk{position:absolute;left:50%;top:-27px;width:70px;height:70px;margin-left:-35px;border-radius:50%;background:rgba(255,255,255,.97);box-shadow:0 -5px 14px -6px rgba(15,23,42,.24),inset 0 0 0 1px rgba(255,255,255,.9)}
-#bn .bn-fbc{position:absolute;left:50%;top:-20px;width:56px;height:56px;margin-left:-28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,var(--f1,#4338ca),var(--f2,#2563eb));box-shadow:0 8px 16px -6px rgba(15,23,42,.5),inset 0 1px 0 rgba(255,255,255,.35);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
-#bn .bn-fbc i{font-size:22px!important;line-height:1;transform:none!important}
-#bn .bn-fbc svg{width:27px;height:27px}
-#bn .bn-i.bn-fab:active .bn-fbc{transform:scale(.9)}
-#bn .bn-i.bn-fab:active svg{transform:none}
-#bn .bn-i.bn-fab:focus-visible{outline:none}
-#bn .bn-i.bn-fab:focus-visible .bn-fbc{box-shadow:0 0 0 3px #fff,0 0 0 5px #6366f1}
-@media (prefers-reduced-motion:reduce){#bn .bn-fbc{transition:none}}
-</style>
 <nav id="bn" aria-label="Main navigation"><div class="bn-in"><span class="bn-ind" aria-hidden="true"></span>
 <button type="button" class="bn-i" data-t="student" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="f" d="M3.5 10.8 12 3.5l8.5 7.3V19a1.5 1.5 0 0 1-1.5 1.5h-4v-6h-6v6H5A1.5 1.5 0 0 1 3.5 19z"/></svg><span class="bn-l">Home</span></button>
 <button type="button" class="bn-i" data-t="exams" aria-label="Exams" title="Exams"><svg viewBox="0 0 24 24" aria-hidden="true"><rect class="f" x="5" y="4.5" width="14" height="16" rx="2.5"/><path d="M9 4.5v-1h6v1"/><path d="m8.8 13 2.2 2.2 4.2-4.6"/></svg><span class="bn-l">Exams</span></button>
-<button type="button" class="bn-i" data-t="chat" aria-label="Discus" title="Discus"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#xi-chat"/></svg><span class="bn-l">Discus</span></button>
+<button type="button" class="bn-i" data-t="chat" aria-label="Discus" title="Discus"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="f" d="M20 12a7.5 7.5 0 0 1-10.8 6.7L4 20l1.4-4.4A7.5 7.5 0 1 1 20 12z"/><path d="M9 12h.01M12 12h.01M15 12h.01" stroke-width="2.4"/></svg><span class="bn-l">Discus</span></button>
 <button type="button" class="bn-i" data-t="my-profile" aria-label="Profile" title="Profile"><span class="bn-dp" id="bn-dpw"><img id="bn-dp" alt="" referrerpolicy="no-referrer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.6-3.6 3.5-5.6 7-5.6s6.4 2 7 5.6"/></svg></span><span class="bn-l">Profile</span></button>
 </div></nav>
 
@@ -34078,7 +34050,7 @@ async function loadDay(key) {
             </div>
 
             <!-- Floating Action Button -->
-            <button id="bm-fab" onclick="window.openAddTransactionModal()"
+            <button onclick="window.openAddTransactionModal()"
                 class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full flex items-center justify-center shadow-xl active:scale-90 transition-transform z-50 group border border-green-400">
                 <i class="fa-solid fa-plus text-xl group-hover:rotate-90 transition-transform duration-300"></i>
             </button>
@@ -49150,130 +49122,37 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     if (src && W.MutationObserver) new MutationObserver(syncDp).observe(src, { attributes: true, attributeFilter: ['src'] });
   })();
 
-  /* ---- which screens get a bar, and what their temporary button looks like ---- */
-  /* No bar on exam screens. Add more hash names here (e.g. 'p2p', 'cbt') to hide it on other screens. */
-  var NO_NAV = /^(login|admin|admin-profile|active-exam|nova-quiz|exam-analysis|p2p|cbt|exam-room|wallet)$/;
-  var ALIAS = { 'notice-board': 'notices', 'watch-video': 'video-watch' };
-  var CAL = '<rect class="f" x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M8 3.8v3.4M16 3.8v3.4M4 10h16"/>';
-  var TRO = '<path class="f" d="M8 4.5h8v5a4 4 0 0 1-8 0z"/><path d="M8 6.5H5.5a2 2 0 0 0 2 3.2M16 6.5h2.5a2 2 0 0 1-2 3.2M12 13.5V17M8.5 19.5h7"/>';
-  var GEN = '<rect class="f" x="4.5" y="4.5" width="6" height="6" rx="1.8"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.8"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.8"/><rect x="13.5" y="13.5" width="6" height="6" rx="1.8"/>';
-  /* hash: [label, icon (home-grid symbol id or raw svg), colour 1, colour 2] */
-  var SCR = {
-    'materials': ['Materials', 'xi-materials', '#059669', '#10b981'],
-    'video-hub': ['Lectures', 'xi-lecture', '#be185d', '#ec4899'],
-    'video-watch': ['Watch', 'xi-lecture', '#be185d', '#ec4899'],
-    'math-workout': ['Math', 'xi-math', '#ea580c', '#fb923c'],
-    'nova-mentor': ['Mentor', 'xi-teacher', '#4f46e5', '#7c3aed'],
-    'nova-chat': ['Nova', 'xi-nova', '#4f46e5', '#7c3aed'],
-    'nova-class': ['Class', 'xi-nova', '#4f46e5', '#7c3aed'],
-    'session-timer': ['Focus', 'xi-focus', '#0369a1', '#0ea5e9'],
-    'fitness': ['Fitness', 'xi-run', '#e11d48', '#f43f5e'],
-    'notices': ['Notices', 'xi-board', '#b45309', '#f59e0b'],
-    'weekly-targets': ['Targets', 'xi-targets', '#0f766e', '#14b8a6'],
-    'budget-manager': ['Budget', 'xi-budget', '#15803d', '#22c55e'],
-    'budget-track': ['Track', 'xi-budget', '#15803d', '#22c55e'],
-    'budget-room': ['Room', 'xi-room', '#15803d', '#22c55e'],
-    'budget-room-detail': ['Room', 'xi-room', '#15803d', '#22c55e'],
-    'target-calc': ['Planner', 'xi-goal', '#6d28d9', '#8b5cf6'],
-    'syllabus': ['Syllabus', 'xi-syllabus', '#1d4ed8', '#3b82f6'],
-    'exam-calendar': ['Calendar', CAL, '#be185d', '#f43f5e'],
-    'leaderboard': ['Ranks', TRO, '#b45309', '#f59e0b'],
-    'doubt-board': ['Doubts', 'xi-solve', '#0369a1', '#0ea5e9'],
-    'student-directory': ['Students', 'xi-users', '#4338ca', '#2563eb'],
-    'alarms': ['Alarms', 'xi-alarm', '#ea580c', '#fb923c'],
-    'quotes': ['Quotes', 'xi-quote', '#6d28d9', '#8b5cf6'],
-    'auto-quotes': ['Quotes', 'xi-quote', '#6d28d9', '#8b5cf6'],
-    'motivation': ['Motivate', 'xi-quote', '#6d28d9', '#8b5cf6']
-  };
-  var COL = { 'student': ['#4338ca', '#2563eb'], 'exams': ['#be185d', '#f43f5e'], 'chat': ['#17a392', '#0e7468'], 'my-profile': ['#4f46e5', '#7c3aed'] };
-  function curN() {
-    var h = hash().split(/[\/?]/)[0];
-    if (h === '' && W.currentRole === 'student') h = 'student';
-    return ALIAS[h] || h;
-  }
-  function meta(h) {
-    var m = SCR[h]; if (m) return m;
-    var t = h.replace(/-/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }); if (t.length > 9) t = t.slice(0, 8) + '\u2026';
-    return [t, GEN, '#4338ca', '#2563eb'];
-  }
-  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-
-  /* ---- sliding active pill (same curve + time as the buttons growing / shrinking, so they move as one) ---- */
-  var lastAct = '', binEl = null;
-  function bin() { return binEl || (binEl = D.querySelector('#bn .bn-in')); }
+  /* ---- show / highlight ---- */
+  /* sliding active pill: moves to the new tab (same curve as the tabs growing / shrinking) */
+  var lastAct = '';
   function place(act) {
-    var bi = bin(), ind = D.querySelector('#bn .bn-ind'); if (!bi || !ind) return;
-    var all = bi.querySelectorAll('.bn-i'), btns = [], idx = -1, i;
-    for (i = 0; i < all.length; i++) if (!all[i].classList.contains('bn-out')) btns.push(all[i]);
-    for (i = 0; i < btns.length; i++) if (btns[i].classList.contains('on')) idx = i;
-    var nv = $('bn');
-    if (nv && act) { var c = COL[act] || (SCR[act] ? [SCR[act][2], SCR[act][3]] : COL.student); nv.style.setProperty('--bn-c1', c[0]); nv.style.setProperty('--bn-c2', c[1]); nv.setAttribute('data-t', act); }
+    var bin = D.querySelector('#bn .bn-in'), ind = D.querySelector('#bn .bn-ind'); if (!bin || !ind) return;
+    var btns = bin.querySelectorAll('.bn-i'), idx = -1;
+    for (var i = 0; i < btns.length; i++) if (btns[i].classList.contains('on')) idx = i;
     if (idx < 0) { ind.classList.remove('show'); ind.__p = 0; return; }
-    var cs = W.getComputedStyle(bi), pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0, gap = parseFloat(cs.columnGap) || parseFloat(cs.gap) || 0;
-    var inner = bi.clientWidth - pl - pr - gap * (btns.length - 1); if (inner <= 0) return;
+    var cs = W.getComputedStyle(bin), pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0, gap = parseFloat(cs.columnGap) || parseFloat(cs.gap) || 0;
+    var inner = bin.clientWidth - pl - pr - gap * (btns.length - 1); if (inner <= 0) return;
     var G = 2.1, unit = inner / (btns.length - 1 + G), first = !ind.__p;
     if (first) ind.classList.add('nt');
-    ind.style.transform = 'translateX(' + (pl + idx * (unit + gap)) + 'px)'; ind.style.width = (unit * G) + 'px';
+    ind.style.left = (pl + idx * (unit + gap)) + 'px'; ind.style.width = (unit * G) + 'px';
+    var nv = $('bn'); if (nv && act) nv.setAttribute('data-t', act);
     if (first) { void ind.offsetWidth; ind.classList.remove('nt'); ind.__p = 1; }
     ind.classList.add('show'); lastAct = act;
   }
   W.addEventListener('resize', function () { var i = D.querySelector('#bn .bn-ind'); if (i) { i.__p = 0; } place(lastAct); });
-
-  /* ---- the temporary button: grows in at the middle of the bar, shrinks away when the screen closes ---- */
-  var dyn = null, dynKey = '';
-  /* screens whose corner floating button moves into the bar: hash -> [button selector, colour 1, colour 2] */
-  var FAB = {
-    'fitness': ['#rt-fab', '#be123c', '#f43f5e'],
-    'budget-manager': ['#bm-fab', '#16a34a', '#059669'],
-    'budget-room-detail': ['#room-fab', '#16a34a', '#059669'],
-    'doubt-board': ['#doubt-board-view .db-fab', '#f2491b', '#ff8a3d']
-  };
-  function fabSrc(h) {
-    var f = FAB[h]; if (!f) return null;
-    var el = D.querySelector(f[0]); if (!el) return null;
-    try { if (W.getComputedStyle(el).display === 'none') return null; } catch (e) { }
-    return el;
-  }
-  function fabFill(b, h, src) {
-    var f = FAB[h], ico = src.querySelector('svg,i'), lb = src.getAttribute('aria-label') || src.getAttribute('title') || '';
-    b.className += ' bn-fab';
-    if (lb) { b.setAttribute('aria-label', lb); b.title = lb; }
-    b.innerHTML = '<span class="bn-fbk" aria-hidden="true"></span><span class="bn-fbc" style="--f1:' + f[1] + ';--f2:' + f[2] + '">' + (ico ? ico.outerHTML : '<i class="fa-solid fa-plus"></i>') + '</span>';
-  }
-  function dynAdd(h, animate, fs) {
-    var bi = bin(), m = meta(h), b = D.createElement('button');
-    b.type = 'button'; b.className = 'bn-i bn-x' + (animate ? ' bn-new' : ''); b.setAttribute('data-t', h); b.setAttribute('aria-label', m[0]); b.title = m[0];
-    var ic = /^xi-/.test(m[1]) ? '<use href="#' + m[1] + '"/>' : m[1];
-    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ic + '</svg><span class="bn-l">' + esc(m[0]) + '</span>';
-    if (fs) fabFill(b, h, fs);
-    bi.insertBefore(b, bi.querySelector('.bn-i[data-t="chat"]'));   /* Home, Exams, [this], Discus, Profile = exactly the middle */
-    if (animate) { void b.offsetWidth; b.classList.remove('bn-new'); }
-    return b;
-  }
-  function dynDrop(b) {
-    b.classList.remove('on'); b.classList.add('bn-out'); b.removeAttribute('aria-current'); b.setAttribute('aria-hidden', 'true'); b.tabIndex = -1;
-    setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 520);
-  }
-
   var last = '';
   function sync() {
     var adm = W.currentRole === 'admin' || (!W.currentRole && (function () { try { return localStorage.getItem('exama_role') === 'admin'; } catch (e) { return false; } })());
     R.classList.toggle('bn-admin', adm);   /* admin never gets the bottom bar */
-    var h = curN(), show = !adm && W.currentRole === 'student' && !!h && !NO_NAV.test(h);
-    var wantDyn = show && TABS.indexOf(h) < 0 ? h : '', fs = wantDyn ? fabSrc(wantDyn) : null, wantKey = wantDyn ? wantDyn + (fs ? '#f' : '') : '';
-    var act = show ? ((h === 'my-profile' && W.__mpTarget) ? '' : h) : '';
-    var key = show + '|' + act + '|' + wantKey, wasOn = R.classList.contains('bn-on');
-    R.classList.toggle('bn-on', show); R.classList.toggle('bn-fab', !!(show && fs));
+    var h = cur(), show = !adm && W.currentRole === 'student' && TABS.indexOf(h) > -1;
+    var act = (h === 'my-profile' && W.__mpTarget) ? '' : h;
+    var key = show + '|' + act;
+    R.classList.toggle('bn-on', show);
     if (key !== last) {
       last = key;
-      if (wantKey !== dynKey) {
-        if (dyn) dynDrop(dyn);
-        dyn = null; dynKey = '';
-        if (wantDyn) { dyn = dynAdd(wantDyn, wasOn, fs); dynKey = wantKey; }
-      }
       var b = D.querySelectorAll('#bn .bn-i');
       for (var i = 0; i < b.length; i++) {
-        var on = show && !b[i].classList.contains('bn-out') && !b[i].classList.contains('bn-fab') && b[i].getAttribute('data-t') === act;
+        var on = show && b[i].getAttribute('data-t') === act;
         b[i].classList.toggle('on', on);
         if (on) b[i].setAttribute('aria-current', 'page'); else b[i].removeAttribute('aria-current');
       }
@@ -49285,14 +49164,13 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   /* ---- tap ---- */
   function scrollTop(el) { if (el && el.scrollTo) el.scrollTo({ top: 0, behavior: 'smooth' }); }
   function go(t) {
-    var h = curN();
+    var h = cur();
     if (t === 'my-profile') {
       var viewingOther = !!W.__mpTarget; W.__mpTarget = null;
       if (h === t) { if (viewingOther && W.renderMyProfile) W.renderMyProfile(); sync(); scrollTop(D.querySelector('#my-profile-view .overflow-y-auto')); return; }
     } else if (h === t) {
       if (t === 'student') scrollTop(D.querySelector('#student-view .overflow-y-auto'));
       else if (t === 'exams') scrollTop($('ex2-scroll'));
-      else { var v = $((t === 'chat' ? 'community-chat' : t === 'notices' ? 'notice-board' : t) + '-view'); scrollTop(v && (v.querySelector('.overflow-y-auto') || v)); }
       return;
     }
     W.__bnSw = true; R.classList.add('bn-tab');
@@ -49300,8 +49178,7 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
     location.hash = t;
   }
   D.addEventListener('click', function (e) {
-    var b = e.target.closest && e.target.closest('#bn .bn-i'); if (!b || b.classList.contains('bn-out')) return;
-    if (b.classList.contains('bn-fab')) { var fsrc = fabSrc(curN()); if (fsrc) fsrc.click(); return; }
+    var b = e.target.closest && e.target.closest('#bn .bn-i'); if (!b) return;
     go(b.getAttribute('data-t'));
   });
 
@@ -49367,6 +49244,184 @@ html body #admin-view .xb:not(#_):not(#__):not(#___):not(#____):not(#_____):not(
   };
 })();
 </script>
+<!-- ===== native-ui-bridge (EXAMA app only) =====
+     Lets the Flutter app draw the student Home screen and the bottom bar natively.
+     - Does NOTHING in a normal browser (needs the EXAMA_APP user agent).
+     - The app says "hello" every 1.5 s. When it stops, the website switches back to its own
+       Home screen and bottom bar after ~5 s (safety net).
+     - Names the app depends on: window.__exNative (hello, go, tab), handlers
+       exama_native_state / exama_native_dash, class exama-nui on <html>. -->
+<style id="native-ui-css">
+html.exama-nui #bn{visibility:hidden!important;pointer-events:none!important;transition:none!important}
+</style>
+<script id="native-ui-bridge">
+(function () {
+  var W = window, D = document, R = D.documentElement;
+  if (!/EXAMA_APP/.test(navigator.userAgent || '')) return;
+  var TABS = ['student', 'exams', 'chat', 'my-profile'];
+  var on = false, lastHello = 0, lastNav = '', lastNavAt = 0, lastDash = '', lastDashAt = 0, tNav = 0, tDash = 0;
+
+  function $(id) { return D.getElementById(id); }
+  function txt(id) { var e = $(id); return e ? String(e.textContent || '').replace(/\s+/g, ' ').trim() : ''; }
+  function send(name, obj) {
+    try { var f = W.flutter_inappwebview; if (f && f.callHandler) f.callHandler(name, JSON.stringify(obj)); } catch (e) { }
+  }
+  function hash() { return (location.hash || '').replace('#', ''); }
+  function cur() { var h = hash(); return h === '' && W.currentRole === 'student' ? 'student' : h; }
+
+  /* picture address the app can load (blob: / data: addresses only work inside the page) */
+  function pic(src) {
+    var u = src ? (src.getAttribute('src') || '') : '';
+    if (/^(blob:|data:)/.test(u)) {
+      try { u = localStorage.getItem('exama_dp_' + W.loggedInMobile) || ''; } catch (e) { u = ''; }
+      if (/^(blob:|data:)/.test(u)) u = '';
+    }
+    return u;
+  }
+
+  /* something of the website (menu, pop-up, loader) covers the Home screen? */
+  function covered() {
+    var sv = $('student-view'); if (!sv) return true;
+    var pts = [[.5, .5], [.5, .3], [.5, .72], [.15, .5], [.85, .5]], n = 0;
+    for (var i = 0; i < pts.length; i++) {
+      var e = D.elementFromPoint(W.innerWidth * pts[i][0], W.innerHeight * pts[i][1]);
+      if (e && !sv.contains(e) && !(e.closest && e.closest('#bn'))) n++;
+    }
+    return n >= 2;
+  }
+
+  function navState() {
+    var student = W.currentRole === 'student';
+    var h = cur(), show = student && TABS.indexOf(h) > -1;
+    var act = show ? ((h === 'my-profile' && W.__mpTarget) ? '' : h) : '';
+    var dp = '';
+    if (student) {
+      var u = pic($('student-nav-dp'));
+      if (u && !/name=Exama(&|$)/.test(u) && !/default-user/.test(u)) dp = u;
+    }
+    return { show: show, act: act, dp: dp, covered: (show && act === 'student') ? covered() : false };
+  }
+
+  function pushNav(force) {
+    var s = navState(), j = JSON.stringify(s), now = Date.now();
+    if (force || j !== lastNav || now - lastNavAt > 2000) { lastNav = j; lastNavAt = now; send('exama_native_state', s); }
+  }
+
+  function slides() {
+    var out = [{ kind: 'quote', title: txt('daily-quote-text') || 'The beautiful thing about learning is that no one can take it away from you.' }];
+    var xp = $('sd-ex-pill');
+    out.push({ kind: 'exam', title: txt('sd-ex-title'), sub: txt('sd-ex-sub'), pill: (xp && xp.style.display !== 'none') ? txt('sd-ex-pill') : '' });
+    var n = $('sd-slide-notice');
+    if (n && !n.hidden) out.push({ kind: 'notice', title: txt('sd-nt-title'), href: 'notices' });
+    var r = $('sd-slide-remind'), rp = $('sd-rm-pill');
+    if (r && !r.hidden) out.push({ kind: 'remind', title: txt('sd-rm-title'), sub: txt('sd-rm-sub'), pill: (rp && rp.style.display !== 'none') ? txt('sd-rm-pill') : '' });
+    return out;
+  }
+
+  function dashState() {
+    var cb = D.querySelector('.chat-unread-badge'), nb = $('dash-notice-badge');
+    return {
+      greeting: txt('student-greeting'),
+      name: txt('student-name-display') || 'Student',
+      dp: pic($('student-nav-dp')),
+      slides: slides(),
+      avg: txt('student-weekly-avg').replace('%', '').trim(),
+      avgLife: txt('student-total-avg'),
+      rank: txt('student-weekly-exam-rank'),
+      rankLife: txt('student-total-exam-rank'),
+      study: txt('student-weekly-study-rank'),
+      studyLife: txt('student-total-study-rank'),
+      todayStudy: txt('student-front-today-study').replace(/\s*Hrs\s*$/i, ''),
+      todayRun: txt('student-front-today-run').replace(/\s*km\s*$/i, ''),
+      back: {
+        dp: pic($('card-back-dp')),
+        name: txt('card-back-name'),
+        batch: txt('card-back-batch'),
+        exams: txt('card-back-exams'),
+        study: txt('card-back-study')
+      },
+      chatUnread: (cb && !cb.classList.contains('hidden')) ? (parseInt(cb.textContent, 10) || 0) : 0,
+      noticeDot: !!(nb && !nb.classList.contains('hidden'))
+    };
+  }
+
+  function pushDash(force) {
+    var s = dashState(), j = JSON.stringify(s), now = Date.now();
+    if (force || j !== lastDash) { lastDash = j; lastDashAt = now; send('exama_native_dash', s); }
+  }
+
+  function start() {
+    if (on) return;
+    on = true; R.classList.add('exama-nui');
+    lastNav = ''; lastDash = '';
+    pushNav(true); pushDash(true);
+    tNav = setInterval(function () { pushNav(false); }, 250);
+    tDash = setInterval(function () { pushDash(false); }, 1000);
+  }
+  function stop() {
+    if (!on) return;
+    on = false; R.classList.remove('exama-nui');
+    clearInterval(tNav); clearInterval(tDash);
+  }
+  setInterval(function () { if (on && Date.now() - lastHello > 5000) stop(); }, 1000);
+  W.addEventListener('hashchange', function () { if (on) { pushNav(false); setTimeout(function () { pushNav(false); }, 120); } });
+
+  /* ---- taps coming from the app ---- */
+  function go(k) {
+    k = String(k || '');
+    try {
+      if (k.indexOf('hash:') === 0) { var h = k.slice(5); if (h === 'my-profile') W.__mpTarget = null; location.hash = h; }
+      else if (k === 'settings') { if (W.openSettingsMenu) W.openSettingsMenu(); }
+      else if (k === 'doc') { if (W.openFeatureDoc) W.openFeatureDoc(); }
+      else if (k === 'profile') { W.__mpTarget = null; location.hash = 'my-profile'; }
+      else if (k === 'wallet') { if (W.openWallet) W.openWallet(); }
+      else if (k === 'report') {
+        var m = $('report-timeframe-modal');
+        if (m) {
+          m.classList.remove('hidden'); m.classList.add('flex');
+          var c = $('report-timeframe-modal-content'); if (c) c.classList.remove('translate-y-full');
+        }
+      }
+    } catch (e) { }
+    setTimeout(function () { pushNav(true); }, 60);
+    setTimeout(function () { pushNav(true); }, 260);
+    setTimeout(function () { pushNav(true); }, 650);
+  }
+
+  function tab(t) {
+    t = String(t || ''); if (TABS.indexOf(t) < 0) return;
+    var h = cur();
+    try {
+      if (t === 'my-profile') {
+        var other = !!W.__mpTarget; W.__mpTarget = null;
+        if (h === t) {
+          if (other && W.renderMyProfile) W.renderMyProfile();
+          var sc = D.querySelector('#my-profile-view .overflow-y-auto'); if (sc && sc.scrollTo) sc.scrollTo({ top: 0, behavior: 'smooth' });
+          pushNav(true); return;
+        }
+      } else if (h === t) {
+        if (t === 'exams') { var ex = $('ex2-scroll'); if (ex && ex.scrollTo) ex.scrollTo({ top: 0, behavior: 'smooth' }); }
+        return;
+      }
+      W.__bnSw = true; R.classList.add('bn-tab');
+      clearTimeout(W.__bnT); W.__bnT = setTimeout(function () { W.__bnSw = false; R.classList.remove('bn-tab'); }, 700);
+      location.hash = t;
+    } catch (e) { }
+    setTimeout(function () { pushNav(true); }, 60);
+    setTimeout(function () { pushNav(true); }, 260);
+  }
+
+  W.__exNative = {
+    version: 1,
+    hello: function () { lastHello = Date.now(); start(); },
+    go: go,
+    tab: tab,
+    snapshot: dashState,
+    nav: navState
+  };
+})();
+</script>
+
 </body>
 
 </html>
