@@ -21,6 +21,7 @@ Change 2026-11-18: RUN MUSIC is now a PERSONAL playlist per student (localStorag
 Change 2026-11-20: RUN MUSIC WEB BACKGROUND MODE (window.EXAMA_WEB_BG from the app shim): the song keeps playing in the page, the app shows the Android notification and sends its buttons back (event exama-remote); __rtRemSend() tells the app what plays. See FLUTTER_CONNECT.md section 0.7d.
 Change 2026-11-21: Run music debug popups / logs removed. YouTube lectures (Lecture Hub) now also keep playing in the background in web background mode (window.__lecRemote, __lecSrc, __lecSrcFor in the median-native script) and show the same Android notification (play / pause). remote() now also sends durationMs and positionMs (for the 6 hour track length fix in media_service.dart). See FLUTTER_CONNECT.md section 0.7e.
 Change 2026-11-25: dashboard tiles no longer spring back (style xb-fast + script xb-fast-js); the bottom bar shortcut picker (bn-sc-style, pkPaint) now looks like the Settings panel and no longer shows the 'hide on screens' text; Notification settings: the Preview an alert row was removed, Alarms and Calls are now alert types with their own style (Sound & vibration / Vibration only / Silent / Off) read by window.__npMode, only SOS stays always on. The sender (worker) and the native alarm / call screens must read notif_styles/<mobile> modes.alarm / modes.call to follow it when the app is closed.
+Change 2026-11-25 (b): screen open / close rebuilt as an iOS push (window slides in from the right, the page under it moves 30% left and dims, soft edge shadow; window -> window = soft rise). Screens, the bottom bar pill / raised button and tab switches share one clock: --ios-dur (.42s) + --ios-ease (cubic-bezier(.32,.72,0,1)) and --ios-tab (.3s for Home / Exams / Discus / Profile). Style ios-sync + apple-motion block.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -18056,7 +18057,7 @@ window.__tpPaint = function () {
                     const el = document.getElementById(v);
                     if (!el) return;
                     const wasOpen = !el.classList.contains('hidden-view');
-                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'vw-under', 'vw-prep'); // Reset animation state
+                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'vw-under', 'vw-prep', 'view-soft'); // Reset animation state
                     if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
                         __leaveEls.push(el);
@@ -18102,6 +18103,7 @@ window.__tpPaint = function () {
                             }
                         }
                         targetEl.classList.add('view-enter');
+                        if (!__keepUnder && !__home && !__reduce) targetEl.classList.add('view-soft');   // window -> window: nothing sits under it, so a soft rise instead of a slide
                         if (__home && __leaving) targetEl.classList.add('view-back');
                         if (!__reduce) {
                             // 'vw-busy' (GPU hints + no live blur on the dashboard) lasts exactly as long as the motion, not longer
@@ -45058,10 +45060,10 @@ html.perf-lite body #student-view:not(#_):not(#__) [style*="backdrop-filter"]{-w
    Easing is a real damped spring (written as linear() by the script; older WebViews keep the cubic-bezier fallback).
    Lighter versions: html.perf-low (weak phones) and html.ap-lite (set automatically if frames are dropped) keep the window slide and
    the dim but leave the dashboard still. */
-:root{--ap-open:.48s;--ap-close:.4s;--ap-soft:.42s;
+:root{--ap-open:.42s;--ap-close:.42s;--ap-soft:.42s;
   --ap-ease-open:cubic-bezier(.32,.72,0,1);--ap-ease-close:cubic-bezier(.32,.72,0,1);
   --ap-in-from:translate3d(0,100%,0);--ap-under-to:translate3d(0,8px,0) scale(.94)}
-html.ap-push{--ap-in-from:translate3d(100%,0,0);--ap-under-to:translate3d(-24%,0,0)}
+html.ap-push{--ap-in-from:translate3d(100%,0,0);--ap-under-to:translate3d(-30%,0,0)}
 @keyframes apIn{from{transform:var(--ap-in-from)}to{transform:none}}
 @keyframes apOut{from{transform:none}to{transform:var(--ap-in-from)}}
 @keyframes apUnder{from{transform:none}to{transform:var(--ap-under-to)}}
@@ -45097,8 +45099,8 @@ html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):n
 <script id="apple-motion-js">
 (function(){
   var W=window,D=document,R=D.documentElement;
-  var STYLE='sheet';   /* 'sheet' = rises from the bottom (default)   |   'push' = slides in from the right */
-  var DIM=.4;          /* how dark the dashboard gets behind an open window (0 - 1) */
+  var STYLE='push';   /* 'sheet' = rises from the bottom (default)   |   'push' = slides in from the right */
+  var DIM=.2;          /* how dark the dashboard gets behind an open window (0 - 1) */
 
   /* damped spring 0 -> 1 as a CSS linear() easing + the time it needs to settle
      (response = seconds per swing, zeta = damping: 1 = no overshoot, below 1 = a little bounce) */
@@ -45117,8 +45119,8 @@ html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):n
   }
   R.classList.add(STYLE==='push'?'ap-push':'ap-sheet');
   var ok=false;try{ok=!!(W.CSS&&CSS.supports&&CSS.supports('animation-timing-function','linear(0,1)'))}catch(e){}
-  var open=ok?spring(.40,.95):{ms:480,css:'cubic-bezier(.32,.72,0,1)'},close=ok?spring(.30,1):{ms:400,css:'cubic-bezier(.32,.72,0,1)'};
-  if(ok){
+  var open={ms:420,css:'cubic-bezier(.32,.72,0,1)'},close={ms:420,css:'cubic-bezier(.32,.72,0,1)'};   /* iOS push curve; the bottom bar uses the very same time + curve (--ios-dur / --ios-ease) */
+  if(true){
     var s=R.style;
     s.setProperty('--ap-ease-open',open.css);s.setProperty('--ap-open',open.ms+'ms');s.setProperty('--ap-soft',Math.round(open.ms*.9)+'ms');
     s.setProperty('--ap-ease-close',close.css);s.setProperty('--ap-close',close.ms+'ms');
@@ -49711,6 +49713,29 @@ html.vw-busy body #student-view .sd-tiles .glass-card:not(#_):not(#__):not(#___)
 document.addEventListener('click',function(e){var b=e.target&&e.target.closest&&e.target.closest('#student-view .sd-tiles .xb,#student-view .sd-tiles .glass-card');if(!b)return;R.classList.add('xb-go');clearTimeout(t);t=setTimeout(function(){R.classList.remove('xb-go')},650);},true);
 })();
 </script>
+<style id="ios-sync">
+/* ===== iOS navigation: ONE clock for screens and the bottom bar =====
+   --ios-dur / --ios-ease drive the window push (apple-motion block), the bar's sliding pill, the raised middle button and the screen icon pop,
+   so everything starts in the same frame (router + bar both run on the same hashchange) and lands in the same frame.
+   Bottom bar tab switches (Home / Exams / Discus / Profile) use one shorter shared time (--ios-tab) for the screen fade AND the pill. */
+:root{--ios-dur:.42s;--ios-ease:cubic-bezier(.32,.72,0,1);--ios-tab:.3s}
+#bn{--bn-d:var(--ios-dur);--bn-e:var(--ios-ease)}
+html.bn-tab #bn{--bn-d:var(--ios-tab)}
+html.bn-on #bn{transition:transform var(--ios-dur) var(--ios-ease),opacity .28s ease,visibility 0s}
+#bn .bn-i.on svg,#bn .bn-i.on .bn-dp{animation:bnPop var(--bn-d) var(--bn-e) both}
+#bn .bn-i.on .bn-l{animation:bnFade var(--bn-d) var(--bn-e) both}
+@keyframes iosTab{from{opacity:.4;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
+/* tab switch: the new screen settles in with the pill (beats the older push rule, which used to slide tabs in over an empty page) */
+html.bn-tab body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________),
+html.bn-tab body .slide-left:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________),
+html.bn-tab body .fade-in:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________){animation:iosTab var(--ios-tab) var(--ios-ease) both!important}
+/* window -> window (no dashboard under it): soft rise, never a slide over blank */
+html body .view-enter.view-soft:not(#student-view):not(#admin-view):not(#login-view):not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________){animation:apSoft var(--ap-open) var(--ap-ease-open) backwards!important}
+/* iOS depth: a soft edge shadow on the moving window, only while it moves */
+html.vw-busy body .view-enter:not(#student-view):not(#admin-view):not(#login-view),
+html.vw-busy body .view-leave{box-shadow:-14px 0 34px -12px rgba(0,0,0,.28)}
+@media (prefers-reduced-motion:reduce){html.bn-tab body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________),html.bn-tab body .slide-left:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________),html.bn-tab body .fade-in:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________){animation:none!important}}
+</style>
 </body>
 
 </html>
