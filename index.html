@@ -49980,6 +49980,7 @@ html.is-tablet #discus-video-modal.wac-full .wac-top{padding-top:max(2.2rem,env(
 #wac-route .cx-p button.cx-on{color:#00a884}
 #wac-route .cx-i{width:24px;text-align:center;font-size:18px}
 #wac-route .cx-ck{margin-left:auto;color:#00a884}
+#exama-audio-btn,#exama-audio-menu{display:none!important}
 </style>
 <script id="cx-fix-js">
 (function () {
@@ -50200,6 +50201,20 @@ html.is-tablet #discus-video-modal.wac-full .wac-top{padding-top:max(2.2rem,env(
     } else setRoute({ id: list[0].id, type: list[0].type, name: list[0].name });
   }
 
+  /* screen share: ask the app if it can, and pass the call frame's requests on to the app */
+  function ssProbe() {
+    app('screenshare.status', {}).then(function (r) { W.EXAMA_SCREENSHARE = !!(r && r.supported === true); }).catch(function () { });
+  }
+  setTimeout(ssProbe, 1500); setTimeout(ssProbe, 6000);
+  W.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || d.examaSs == null || typeof d.fn !== 'string' || !/^screenshare\.(status|start|stop|frame)$/.test(d.fn)) return;
+    var ok = Array.prototype.some.call(D.querySelectorAll('iframe'), function (f) { return f.contentWindow === e.source && /(^|\.)8x8\.vc\//.test((f.src || '').replace(/^https?:\/\//, '')); });
+    if (!ok) return;
+    app(d.fn, d.args || {}).then(function (r) { e.source.postMessage({ examaSsReply: d.examaSs, result: r }, '*'); })
+      .catch(function () { e.source.postMessage({ examaSsReply: d.examaSs, result: null }, '*'); });
+  });
+
   /* hook into WAC once it exists */
   var t = setInterval(function () {
     var A = wac(); if (!A || !A.attach || !A.flip) return; clearInterval(t);
@@ -50207,6 +50222,7 @@ html.is-tablet #discus-video-modal.wac-full .wac-top{padding-top:max(2.2rem,env(
     var oa = A.attach;
     A.attach = function (api, st) {
       oa.apply(this, arguments);
+      ssProbe();
       try { api.addEventListener('filmstripDisplayChanged', function (e) { S.fsVis = !!(e && e.visible); }); } catch (e) { }
       loadRoutes();
     };
