@@ -22,6 +22,11 @@ Change 2026-11-20: RUN MUSIC WEB BACKGROUND MODE (window.EXAMA_WEB_BG from the a
 Change 2026-11-21: Run music debug popups / logs removed. YouTube lectures (Lecture Hub) now also keep playing in the background in web background mode (window.__lecRemote, __lecSrc, __lecSrcFor in the median-native script) and show the same Android notification (play / pause). remote() now also sends durationMs and positionMs (for the 6 hour track length fix in media_service.dart). See FLUTTER_CONNECT.md section 0.7e.
 Change 2026-11-25: dashboard tiles no longer spring back (style xb-fast + script xb-fast-js); the bottom bar shortcut picker (bn-sc-style, pkPaint) now looks like the Settings panel and no longer shows the 'hide on screens' text; Notification settings: the Preview an alert row was removed, Alarms and Calls are now alert types with their own style (Sound & vibration / Vibration only / Silent / Off) read by window.__npMode, only SOS stays always on. The sender (worker) and the native alarm / call screens must read notif_styles/<mobile> modes.alarm / modes.call to follow it when the app is closed.
 Change 2026-11-25 (b): screen open / close rebuilt as an iOS push (window slides in from the right, the page under it moves 30% left and dims, soft edge shadow; window -> window = soft rise). Screens, the bottom bar pill / raised button and tab switches share one clock: --ios-dur (.42s) + --ios-ease (cubic-bezier(.32,.72,0,1)) and --ios-tab (.3s for Home / Exams / Discus / Profile). Style ios-sync + apple-motion block.
+Change 2026-11-25 (c): Join Run bar lifted above the bottom bar (style fix-2026-11-25-c); Discus list no longer scrolls by itself after opening; Run music: tap a search result to play it now (ytPlayNow, temporary, not saved; the + button still adds); screen + bottom bar clock .38s / tabs .26s.
+Change 2026-11-25 (g): bottom-bar pill zooms instead of sliding (place() adds class zm + a fading ghost pill; buttons snap size; keyframes bnZoomIn / bnZoomOut in style fix-2026-11-25-c).
+Change 2026-11-25 (f): bottom-bar tab switch no longer plays its animation twice (incoming screen tagged vw-tab so its animation keeps the same name after html.bn-tab is removed; nested fade-in / slide-left keep their normal animation during bn-tab).
+Change 2026-11-25 (e): Apple ZOOM instead of the side slide: windows grow out of the tapped dashboard button (transform-origin set in __vwOpenRect) and shrink back into it, the page under scales to .94, window -> window and tabs zoom from .94 (keyframes apIn / apOut / apSoft / apUnder / apReturn / iosTab in style fix-2026-11-25-c).
+Change 2026-11-25 (d): screens, bottom-bar pill and tab switches now run on ONE spring (CSS linear(), set in apple-motion-js: --ios-dur / --ios-ease / --ios-tab are written from the same spring); heavy screen set-up starts at 60 % of the motion; tab screens fade + settle from 98.5 %.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -18057,7 +18062,7 @@ window.__tpPaint = function () {
                     const el = document.getElementById(v);
                     if (!el) return;
                     const wasOpen = !el.classList.contains('hidden-view');
-                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'vw-under', 'vw-prep', 'view-soft'); // Reset animation state
+                    el.classList.remove('view-enter', 'view-zoom', 'view-back', 'view-leave', 'vw-under', 'vw-prep', 'view-soft', 'vw-tab'); // Reset animation state
                     if (__home && wasOpen && !__reduce && __dash.indexOf(v) === -1) {
                         __leaving = true;
                         __leaveEls.push(el);
@@ -21487,7 +21492,7 @@ window.__tpPaint = function () {
                 const plLs = () => 'rtPl_' + mobKey();
                 const plDirty = () => 'rtPlD_' + mobKey();
                 const plDb = () => (window.isGlobalTestMode ? 'test_run_playlists/' : 'run_playlists/') + mobKey();
-                const slim = () => M.q.map(s => ({ id: s.id, t: String(s.title || '').slice(0, 150), a: String(s.artist || '').slice(0, 100) }));
+                const slim = () => M.q.filter(s => !s.tmp).map(s => ({ id: s.id, t: String(s.title || '').slice(0, 150), a: String(s.artist || '').slice(0, 100) }));
                 const fromStore = x => ({ id: x && x.id, title: x && x.t, artist: x && x.a });
                 const loadLocal = () => { try { const a = JSON.parse(localStorage.getItem(plLs()) || '[]'); return Array.isArray(a) ? a.filter(x => x && idOk(x.id)) : []; } catch (e) { return []; } };
                 const saveLocal = () => { try { localStorage.setItem(plLs(), JSON.stringify(slim())); } catch (e) { } };
@@ -21759,7 +21764,7 @@ window.__tpPaint = function () {
                     if (busy) return '<span style="' + base + 'background:rgba(255,255,255,.12)"><i class="fa-solid fa-spinner fa-spin"></i></span>';
                     return '<button type="button" data-yt-add="' + pEsc(id) + '" aria-label="Add to my playlist" style="' + base + 'background:linear-gradient(135deg,#f43f5e,#dc2626)"><i class="fa-solid fa-plus"></i></button>';
                 };
-                const ytRow = it => '<div style="display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin-bottom:4px">'
+                const ytRow = it => '<div data-yt-play="' + pEsc(it.id) + '" style="cursor:pointer;display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;margin-bottom:4px">'
                     + '<img loading="lazy" draggable="false" alt="" src="' + pEsc(it.thumb || thumb(it.id)) + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover;background:#18181b;flex:none">'
                     + '<div style="min-width:0;flex:1"><p class="truncate" style="font-size:12px;font-weight:900;color:#fff">' + pEsc(it.title) + '</p><p class="truncate" style="font-size:9px;font-weight:900;letter-spacing:.2em;margin-top:4px;color:rgba(255,255,255,.4);text-transform:uppercase">' + pEsc(it.channel || '') + (it.dur ? ' &bull; ' + pEsc(it.dur) : '') + '</p></div>'
                     + ytCircle(it.id) + '</div>';
@@ -21812,6 +21817,15 @@ window.__tpPaint = function () {
                     if (document.getElementById('rt-pl')) pList();
                 };
                 window.__rtYtAdd = ytAdd;
+                // tap a search result = play it right now; it is NOT added to the playlist and is never saved (the + button still adds it)
+                const ytPlayNow = async (id, it) => {
+                    it = it || {}; if (!idOk(id)) return;
+                    ensureList(); try { await plP; } catch (e) { }
+                    const have = M.q.findIndex(x => x.id === id && !x.tmp); if (have >= 0) return playAt(have);
+                    if (M.q.length && M.q[M.q.length - 1].tmp) M.q.pop();
+                    M.q.push(Object.assign(normSong({ id: id, title: it.title || '', artist: it.channel || '' }), { tmp: true }));
+                    playAt(M.q.length - 1);
+                };
 
                 // ===== WEB BACKGROUND MODE (2026-11-20, needs the app with window.EXAMA_WEB_BG) =====
                 // The song keeps playing in THIS page (the hidden YouTube player). The app keeps the WebView awake, hides the "app is in the background" state from the YouTube frame
@@ -21941,6 +21955,7 @@ window.__tpPaint = function () {
                         if (e.target === p || e.target.closest('#rt-pl-x')) return window.closeRunPlaylist();
                         if (e.target.closest('#rt-pl-go')) { const q = document.getElementById('rt-pl-q'); if (q) q.blur(); pList(); const t = pQuery(); if (t) ytSearch(t, true); return; }
                         const ya = e.target.closest('[data-yt-add]'); if (ya) { const id = ya.getAttribute('data-yt-add'), it = YS.items.find(x => x.id === id) || {}; ytAdd(id, { title: it.title, artist: it.channel }); return; }
+                        const yp = e.target.closest('[data-yt-play]'); if (yp) { const id = yp.getAttribute('data-yt-play'); ytPlayNow(id, YS.items.find(x => x.id === id)); return; }
                         if (e.target.closest('[data-yt-go]')) { const t = pQuery(); if (t) ytSearch(t, true); return; }
                         const r = e.target.closest('[data-i]'); if (!r) return;
                         const i = parseInt(r.getAttribute('data-i'), 10);
@@ -31322,6 +31337,8 @@ YOUR DIRECTIVES:
                     if (e.cancelable) e.preventDefault();
                 } else {
                     isPulling = false;
+                    ptrEl.style.transition = 'transform 0.2s ease';
+                    ptrEl.style.transform = 'translate(-50%, -150%)';
                 }
             }, { passive: false });
 
@@ -31332,7 +31349,7 @@ YOUR DIRECTIVES:
                 const deltaY = ptrCurrentY - ptrStartY;
                 ptrEl.style.transition = 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
 
-                if (deltaY * 0.4 > 60) {
+                if (deltaY * 0.4 > 40) {
                     isRefreshing = true;
                     ptrEl.style.transform = `translate(-50%, 30px)`;
                     ptrIcon.classList.add('fa-spin');
@@ -31343,11 +31360,26 @@ YOUR DIRECTIVES:
                 }
             });
 
+            // the phone / app cancelled the touch in the middle of a pull: put the arrow away
+            document.getElementById('app').addEventListener('touchcancel', () => {
+                if (!isPulling || isRefreshing) return;
+                isPulling = false;
+                ptrEl.style.transition = 'transform 0.2s ease';
+                ptrEl.style.transform = 'translate(-50%, -150%)';
+            }, { passive: true });
+
             function executeAppRefresh() {
                 if (navigator.vibrate) navigator.vibrate(50);
                 setTimeout(() => {
-                    window.location.reload();
+                    try { window.location.reload(); } catch (e) { }
                 }, 400);
+                // safety: if the page did not reload after 5 s, un-stick the arrow so the next pull works
+                setTimeout(() => {
+                    isRefreshing = false;
+                    ptrIcon.classList.remove('fa-spin');
+                    ptrEl.style.transition = 'transform 0.3s ease';
+                    ptrEl.style.transform = 'translate(-50%, -150%)';
+                }, 5000);
             }
 
             // ==========================================
@@ -45119,18 +45151,20 @@ html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):n
   }
   R.classList.add(STYLE==='push'?'ap-push':'ap-sheet');
   var ok=false;try{ok=!!(W.CSS&&CSS.supports&&CSS.supports('animation-timing-function','linear(0,1)'))}catch(e){}
-  var open={ms:420,css:'cubic-bezier(.32,.72,0,1)'},close={ms:420,css:'cubic-bezier(.32,.72,0,1)'};   /* iOS push curve; the bottom bar uses the very same time + curve (--ios-dur / --ios-ease) */
+  var open={ms:380,css:'cubic-bezier(.32,.72,0,1)'},close={ms:340,css:'cubic-bezier(.32,.72,0,1)'};
+  if(ok){try{open=spring(.34,1);close=spring(.3,1);}catch(e){}}   /* critically damped spring = the Apple feel: fast start, long soft landing, no bounce */   /* iOS push curve; the bottom bar uses the very same time + curve (--ios-dur / --ios-ease) */
   if(true){
     var s=R.style;
     s.setProperty('--ap-ease-open',open.css);s.setProperty('--ap-open',open.ms+'ms');s.setProperty('--ap-soft',Math.round(open.ms*.9)+'ms');
     s.setProperty('--ap-ease-close',close.css);s.setProperty('--ap-close',close.ms+'ms');
+    s.setProperty('--ios-dur',open.ms+'ms');s.setProperty('--ios-ease',open.css);s.setProperty('--ios-tab',Math.round(open.ms*.62)+'ms');
   }
   /* the router hides a closing window / the dashboard under an opening window after these many ms: just after the spring has settled */
   W.__vwHideMs=close.ms+90;W.__vwUnderMs=open.ms+120;
   W.__apSprings={open:open,close:close};
   /* the router starts the heavy screen set-up this long after the window begins to open: wait until the slide is almost finished,
      so the main thread is idle for every frame of the motion (this beats the per-device values the page sets by default) */
-  try{Object.defineProperty(W,'__vwSettle',{get:function(){return Math.round(open.ms*.9)},set:function(){},configurable:true})}catch(e){}
+  try{Object.defineProperty(W,'__vwSettle',{get:function(){return Math.round(open.ms*.6)},set:function(){},configurable:true})}catch(e){}
 
   /* ---------- the dim behind the window: one plain layer, only its opacity animates (GPU) ---------- */
   var scrim=null;
@@ -45156,8 +45190,8 @@ html.perf-low body #admin-view.view-enter.view-back:not(#_):not(#__):not(#___):n
   function dimIn(){if(D.querySelector('.vw-under'))scrimTo(DIM,open,true)}
 
   /* hooks the router calls; this look does not need to know which tile was tapped */
-  W.__vwOpenRect=dimIn;
-  W.__vwClear=dimIn;
+  W.__vwOpenRect=function(el,o,base){dimIn();try{el.style.transformOrigin=(o.x-base.left)+'px '+(o.y-base.top)+'px'}catch(e){}};
+  W.__vwClear=function(el){dimIn();try{if(el)el.style.transformOrigin=''}catch(e){}};
   W.__vwLeave=function(wins,dash){
     var sc=getScrim();
     if(sc&&dash&&sc.style.display==='none'){sc.style.opacity=String(DIM);sc.style.display='block'}   /* it was hidden under the open window: bring it back, then fade out */
@@ -49331,7 +49365,10 @@ html.bn-imm #bn{transform:translateY(calc(100% + 24px))!important;opacity:0!impo
     var inner = bi.clientWidth - pl - pr - gap * (btns.length - 1); if (inner <= 0) return;
     var G = 2.1, unit = inner / (btns.length - 1 + G), first = !ind.__p;
     if (first) ind.classList.add('nt');
-    ind.style.transform = 'translateX(' + (pl + idx * (unit + gap)) + 'px)'; ind.style.width = (unit * G) + 'px';
+    var tx = 'translateX(' + (pl + idx * (unit + gap)) + 'px)';
+    if (!first && ind.style.transform && ind.style.transform !== tx) { try { var gh = ind.cloneNode(false); gh.className = 'bn-ind show bn-ghost'; bi.appendChild(gh); setTimeout(function () { try { gh.remove(); } catch (e) { } }, 450); } catch (e) { } }   /* old pill zooms away */
+    ind.style.transform = tx; ind.style.width = (unit * G) + 'px';
+    if (!first) { ind.classList.remove('zm'); void ind.offsetWidth; ind.classList.add('zm'); }   /* new pill zooms in (no sliding) */
     if (first) { void ind.offsetWidth; ind.classList.remove('nt'); ind.__p = 1; }
     ind.classList.add('show'); lastAct = act;
   }
@@ -49585,6 +49622,7 @@ html.bn-imm #bn{transform:translateY(calc(100% + 24px))!important;opacity:0!impo
     W.__bnSw = true; R.classList.add('bn-tab');
     clearTimeout(W.__bnT); W.__bnT = setTimeout(function () { W.__bnSw = false; R.classList.remove('bn-tab'); }, 700);
     location.hash = t;
+    [40, 160, 380].forEach(function (ms) { setTimeout(function () { try { D.querySelectorAll('#app > [id$="-view"].view-enter:not(.hidden-view):not(.view-leave):not(.vw-under)').forEach(function (v) { v.classList.add('vw-tab'); }); } catch (e) { } }, ms); });
   }
   D.addEventListener('click', function (e) {
     var b = e.target.closest && e.target.closest('#bn .bn-i'); if (!b || b.classList.contains('bn-out')) return;
@@ -49735,6 +49773,38 @@ html body .view-enter.view-soft:not(#student-view):not(#admin-view):not(#login-v
 html.vw-busy body .view-enter:not(#student-view):not(#admin-view):not(#login-view),
 html.vw-busy body .view-leave{box-shadow:-14px 0 34px -12px rgba(0,0,0,.28)}
 @media (prefers-reduced-motion:reduce){html.bn-tab body .view-enter:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________),html.bn-tab body .slide-left:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________),html.bn-tab body .fade-in:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________){animation:none!important}}
+</style>
+<style id="fix-2026-11-25-c">
+/* APPLE ZOOM: windows grow out of the tapped button (or the centre) and shrink back into it; the page under steps back a little. Tabs zoom the same way. One spring clock (see apple-motion-js). */
+@keyframes apIn{from{opacity:0;transform:scale(.8)}40%{opacity:1}to{opacity:1;transform:none}}
+@keyframes apOut{from{opacity:1;transform:none}60%{opacity:0}to{opacity:0;transform:scale(.8)}}
+@keyframes apSoft{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+@keyframes apUnder{from{transform:none}to{transform:scale(.94)}}
+@keyframes apReturn{from{transform:scale(.94)}to{transform:none}}
+html.ap-push,html.ap-sheet{--ap-under-to:scale(.94)}
+html body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______),html body #student-view.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______),html body #admin-view.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){transform-origin:50% 50%!important}
+html.vw-busy body .view-enter:not(#student-view):not(#admin-view):not(#login-view):not(#_),html.vw-busy body .view-leave:not(#_){box-shadow:none!important}
+@keyframes iosTab{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+/* BOTTOM BAR = ZOOM, NOT SLIDE: the pill appears at the new tab with a zoom and the old pill zooms away; buttons snap to their size (the zoom is the animation) */
+@keyframes bnZoomIn{from{opacity:0;scale:.55}to{opacity:1;scale:1}}
+@keyframes bnZoomOut{from{opacity:1;scale:1}to{opacity:0;scale:.7}}
+#bn .bn-ind:not(#_):not(#__){transition:opacity .2s ease,--bn-c1 .4s ease,--bn-c2 .4s ease!important}
+#bn .bn-ind.zm:not(#_){animation:bnZoomIn var(--ios-tab) var(--ios-ease) both}
+#bn .bn-ind.bn-ghost:not(#_){animation:bnZoomOut var(--ios-tab) var(--ios-ease) both;pointer-events:none;transition:none!important}
+#bn .bn-i:not(.bn-new):not(.bn-out):not(#_){transition:opacity .2s ease,color .2s ease!important}
+/* TAB SWITCH PLAYED TWICE: when html.bn-tab was removed (700 ms) the screen and its cards switched to another animation and replayed it. The incoming screen now keeps the SAME animation (vw-tab) and nested cards keep their normal one the whole time. */
+html body .view-enter.vw-tab:not(.view-leave):not(.vw-under):not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________){animation:iosTab var(--ios-tab) var(--ios-ease) both!important}
+html.bn-tab body .fade-in:not(.view-enter):not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________){animation:exFadeUp .46s var(--ex-out) forwards!important}
+html.bn-tab body .slide-left:not(.view-enter):not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________){animation:exSlideIn .52s var(--ex-ease) forwards!important}
+
+/* Join Run bar sat inside #fitness-view (z 80), so the bottom bar (z 95) covered it: lift it above the bar (a bit more when the raised middle button is on) */
+html.bn-on #rt-join{bottom:calc(var(--bn-h) + 14px)!important}
+html.bn-on.bn-fab #rt-join{bottom:calc(var(--bn-h) + 40px)!important}
+/* Discus: the list used to slide down by itself after opening (smooth scroll + the scroll-to-bottom timers): jump instead */
+#chat-messages,#community-chat-view .overflow-y-auto,#community-chat-view .no-scrollbar{scroll-behavior:auto!important}
+/* one clock for screens + bottom bar, a little quicker; no permanent GPU layer on every scroll list (less memory, fewer dropped frames on weak phones) */
+:root{--ios-dur:.38s;--ios-tab:.26s}
+.overflow-y-auto,.no-scrollbar{will-change:auto!important}
 </style>
 </body>
 
