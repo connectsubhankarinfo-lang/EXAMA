@@ -28,6 +28,7 @@ Change 2026-11-25 (h): bottom-bar glitch fixes - the zooming-out ghost pill kept
 Change 2026-11-25 (f): bottom-bar tab switch no longer plays its animation twice (incoming screen tagged vw-tab so its animation keeps the same name after html.bn-tab is removed; nested fade-in / slide-left keep their normal animation during bn-tab).
 Change 2026-11-25 (e): Apple ZOOM instead of the side slide: windows grow out of the tapped dashboard button (transform-origin set in __vwOpenRect) and shrink back into it, the page under scales to .94, window -> window and tabs zoom from .94 (keyframes apIn / apOut / apSoft / apUnder / apReturn / iosTab in style fix-2026-11-25-c).
 Change 2026-11-25 (d): screens, bottom-bar pill and tab switches now run on ONE spring (CSS linear(), set in apple-motion-js: --ios-dur / --ios-ease / --ios-tab are written from the same spring); heavy screen set-up starts at 60 % of the motion; tab screens fade + settle from 98.5 %.
+Change 2026-11-25 (d): LECTURE HUB VIDEO POP OUT (Picture-in-Picture, app only; needs the app update that has the call pip.supported / pip.set / pip.enter). New style + script id exama-pip at the very end of the file (before the closing body tag): a Pop out button in the lecture player header (#vx-pip-btn); while a lecture plays the page tells the app (pip.set) so pressing Home opens Android's floating window; while the window is open the app sends the event exama-pip and the page adds class exama-in-pip to the html element (only the video fills the small window). An old app answers "unknown call", then nothing is shown and nothing changes. See FLUTTER_CONNECT.md section 0.14.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -22104,7 +22105,7 @@ const stats=km=>{const sec=runSec(),c=Math.round(km*60);return "Time "+tWords(se
 const leftTxt=(g,km)=>{const l=g-(base+km);if(!(g>0)||l<=0)return "";return " "+(l<1?(Math.max(10,Math.round(l*100)*10))+" meters":numKm(l))+" to go for today's goal.";};
 const goalMsg=km=>"Goal complete! You reached today's goal of "+numKm(goalKm())+". Distance "+numKm(km)+". "+stats(km)+(base>0?" Today's total is "+numKm(base+km)+".":"")+" Great job!";
 let duckV=null;   // music goes quiet while Nova speaks, then comes back
-const duck=on=>{try{const M=window.__rtMusic;if(!M||!M.yt||!M.yt.getVolume||!M.yt.setVolume)return;if(on){if(duckV==null){duckV=M.yt.getVolume();M.yt.setVolume(Math.max(5,Math.round(duckV*.25)));}}else if(duckV!=null){M.yt.setVolume(duckV);duckV=null;}}catch(e){}};
+const duck=on=>{try{if(window.__rtDuckSet){window.__rtDuckSet('nova',!!on);return;}const M=window.__rtMusic;if(!M||!M.yt||!M.yt.getVolume||!M.yt.setVolume)return;if(on){if(duckV==null){duckV=M.yt.getVolume();M.yt.setVolume(Math.max(5,Math.round(duckV*.25)));}}else if(duckV!=null){M.yt.setVolume(duckV);duckV=null;}}catch(e){}};
 const vq=[];let vbusy=0,vT=0;
 const vNext=()=>{if(vbusy||!vq.length)return;const t=vq.shift();vbusy=1;duck(true);let done=0;const fin=()=>{if(done)return;done=1;clearTimeout(vT);vbusy=0;if(!vq.length)duck(false);vNext();};vT=setTimeout(fin,Math.min(30000,t.length*110+7000));try{window.NovaSpeak(t,fin);}catch(e){fin();}};
 const vSay=t=>{if(vq.length>1)vq.shift();vq.push(t);vNext();};
@@ -35299,20 +35300,50 @@ try{var so=screen.orientation;if(o){so&&so.lock&&so.lock('portrait').catch(funct
 </script>
 <script id="run-walkie">
 /* WALKIE-TALKIE for Run Monitor: hold the button to talk, release to listen. Uses the same 8x8 Jitsi service as Discus calls (audio only,
-   hidden, everyone muted until they press). Run music pauses while anyone talks and resumes after. */
+   hidden, everyone muted until they press). Run music is NEVER paused: its volume fades down while anyone talks (like a phone call) and fades back up after. */
 (function () {
   const $ = id => document.getElementById(id);
-  const W = { api: null, joined: false, me: null, talking: false, others: new Set(), paused: false, rt: null, last: 0, room: '', safety: null, ac: null };
+  const W = { api: null, joined: false, me: null, talking: false, others: new Set(), oAt: {}, paused: false, rt: null, last: 0, room: '', safety: null, ac: null, base: null, fd: null, rtOn: false };
   const running = () => !!(window.__rt && window.__rt.st === 'running');
   const group = () => String(window.__rtGroup ? window.__rtGroup() : (window.loggedInMobile || '')).replace(/\W/g, '');
   const mates = () => window.__rtMates || [];
   const beep = (f, d) => { try { W.ac = W.ac || new (window.AudioContext || window.webkitAudioContext)(); const C = W.ac; C.resume && C.resume(); const o = C.createOscillator(), g = C.createGain(); o.frequency.value = f; g.gain.value = .25; o.connect(g); g.connect(C.destination); o.start(); o.stop(C.currentTime + d); } catch (e) { } };
 
-  function duck(on) {                       // music: pause while anyone talks, resume 0.9 s after silence
-    const M = window.__rtMusic; if (!M || !M.yt) return; clearTimeout(W.rt);
-    if (on) { if (M.playing && !W.paused) { try { M.yt.pauseVideo(); W.paused = true; } catch (e) { } } }
-    else if (W.paused) W.rt = setTimeout(() => { if (!W.talking && !W.others.size && W.paused) { try { M.yt.playVideo(); } catch (e) { } W.paused = false; } }, 900);
+  /* MUSIC DUCKING (2026-11-25). The song is never paused (YouTube refuses to restart a paused song in the background).
+     While anyone talks (me, a mate, or Nova speaking) the volume fades down to DUCK x the normal level, like a phone call / GPS voice.
+     0.9 s after the last one stops it fades back up to the level it had. One shared helper: window.__rtDuckSet(who, on). */
+  const DUCK = 0.2;                         // 20 % of the normal volume while someone talks
+  const owners = new Set();                 // who wants the music quiet right now: 'walkie', 'nova'
+  function fade(to, ms, done) {
+    const M = window.__rtMusic; clearInterval(W.fd);
+    if (!M || !M.yt) { done && done(); return; }
+    let from; try { from = M.yt.getVolume(); } catch (e) { done && done(); return; }
+    const steps = Math.max(1, Math.round(ms / 50)); let n = 0;
+    W.fd = setInterval(() => {
+      n++; try { M.yt.setVolume(Math.round(from + (to - from) * Math.min(1, n / steps))); } catch (e) { }
+      if (n >= steps) { clearInterval(W.fd); W.fd = null; done && done(); }
+    }, 50);
   }
+  function applyDuck() {
+    const M = window.__rtMusic; clearTimeout(W.rt); W.rtOn = false;
+    if (owners.size) {                                                   // someone talks: go quiet (remember the real level once)
+      if (W.base == null) {
+        if (!M || !M.yt) return;
+        let v; try { v = M.yt.getVolume(); } catch (e) { return; }
+        if (!(v > 0)) return;                                            // music is muted anyway: nothing to lower
+        W.base = v;
+      }
+      fade(Math.max(4, Math.round(W.base * DUCK)), 350);
+    } else if (W.base != null) {                                         // everyone stopped: come back after 0.9 s
+      W.rtOn = true;
+      W.rt = setTimeout(() => {
+        W.rtOn = false; if (owners.size) return;
+        const b = W.base; fade(b, 700, () => { if (!owners.size && W.base === b) W.base = null; });
+      }, 900);
+    }
+  }
+  window.__rtDuckSet = (who, on) => { on ? owners.add(who) : owners.delete(who); applyDuck(); };
+  function duck(on) { window.__rtDuckSet('walkie', !!on); }
   function paint() {
     document.querySelectorAll('.rt-ptt').forEach(b => {
       b.classList.toggle('on', running() && mates().length > 0);
@@ -35337,7 +35368,7 @@ try{var so=screen.orientation;if(o){so&&so.lock&&so.lock('portrait').catch(funct
       a.addListener('participantMuted', e => {                       // everyone is muted unless pressing -> "unmuted" = talking
         if (!e || e.id === W.me || (e.mediaType && e.mediaType !== 'audio')) return;
         const muted = e.isMuted !== undefined ? e.isMuted : e.muted;
-        muted ? W.others.delete(e.id) : W.others.add(e.id);
+        muted ? W.others.delete(e.id) : (W.others.add(e.id), W.oAt[e.id] = Date.now());
         duck(W.others.size > 0 || W.talking); paint();
       });
       a.addListener('participantLeft', e => { if (e) W.others.delete(e.id); duck(W.others.size > 0 || W.talking); paint(); });
@@ -35368,6 +35399,9 @@ try{var so=screen.orientation;if(o){so&&so.lock&&so.lock('portrait').catch(funct
   mount();
   setInterval(() => {                                               // join when running with mates, leave 15 s after the run ends
     mount(); paint();
+    let stale = false; W.others.forEach(id => { if (Date.now() - (W.oAt[id] || 0) > 70000) { W.others.delete(id); stale = true; } });   // a mate whose app closed while talking
+    if (stale && !W.talking && !W.others.size) duck(false);
+    if (!owners.size && W.base != null && !W.rtOn && !W.fd) applyDuck();   // safety: never stay quiet
     if (running()) { W.last = Date.now(); if (mates().length && !W.api) connect(); }
     else if (W.api && Date.now() - W.last > 15000) disconnect();
   }, 1000);
@@ -49827,6 +49861,96 @@ html.bn-on.bn-fab #rt-join{bottom:calc(var(--bn-h) + 40px)!important}
 :root{--ios-dur:.38s;--ios-tab:.26s}
 .overflow-y-auto,.no-scrollbar{will-change:auto!important}
 </style>
+<style id="exama-pip-css">
+/* 2026-11-25: Lecture Hub video Pop out (Picture-in-Picture, app only). Only active while the html element has the class exama-in-pip (set by script exama-pip). */
+html.exama-in-pip #video-watch-view{position:fixed!important;inset:0!important;z-index:2147483000!important;transform:none!important;animation:none!important;transition:none!important;background:#000!important}
+html.exama-in-pip #video-watch-view .vx-wtop,html.exama-in-pip #video-watch-view .vx-info,html.exama-in-pip #video-watch-view .vx-side{display:none!important}
+html.exama-in-pip #video-watch-view .vx-wmain,html.exama-in-pip #video-watch-view .vx-wcol{display:block!important;position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-height:none!important;padding:0!important;margin:0!important;overflow:hidden!important;background:#000!important}
+html.exama-in-pip #native-player-container{position:absolute!important;inset:0!important;top:0!important;left:0!important;width:100%!important;height:100%!important;max-height:none!important;aspect-ratio:auto!important;transform:none!important;margin:0!important;border-radius:0!important;background:#000!important}
+html.exama-in-pip #native-player-container .vjs-control-bar,html.exama-in-pip #native-player-container .vjs-big-play-button{display:none!important}
+html.exama-in-pip #bn{display:none!important}
+</style>
+<script id="exama-pip">
+/* 2026-11-25: Lecture Hub video Pop out (Picture-in-Picture). App only: a normal browser never shows the button and never calls the app.
+   The app answers pip.supported = true only on Android 8+ with an app version that has this feature; an old app answers "unknown call". */
+(function () {
+  'use strict';
+  var W = window, D = document, H = D.documentElement;
+  var cap = null;        // null = not known yet, true / false = the app answered
+  var probing = false;
+  var want = false;      // what the app was told last: "a lecture is playing"
+
+  function isApp() { return /EXAMA_APP/i.test(navigator.userAgent || ''); }
+  function call(fn, args) {
+    try {
+      var h = W.flutter_inappwebview;
+      if (!h || !h.callHandler) return Promise.resolve(null);
+      return Promise.resolve(h.callHandler('median', fn, args || {})).catch(function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+  function toast(t, m) { try { if (W.showToast) W.showToast(t, m, 'info'); } catch (e) { } }
+  function watchOpen() {
+    var v = D.getElementById('video-watch-view');
+    return !!v && !v.classList.contains('hidden-view');
+  }
+  function playing() {
+    try {
+      var p = W.vjsPlayer;
+      if (p && typeof p.paused === 'function') return !p.paused() && !p.ended();
+    } catch (e) { }
+    var c = D.getElementById('native-player-container');
+    return !!(c && c.querySelector('iframe'));   // Drive preview player: its state cannot be read, treat it as playing
+  }
+  function probe() {
+    if (probing || cap !== null) return;
+    probing = true;
+    call('pip.supported').then(function (r) {
+      probing = false;
+      if (r === null) return;                                  // the app was not ready yet: ask again later
+      cap = !!(r && r.ok === true && r.supported === true);    // old app: ok false (unknown call) = no
+    });
+  }
+  function ensureButton() {
+    var top = D.querySelector('#video-watch-view .vx-wtop');
+    if (!top || D.getElementById('vx-pip-btn')) return;
+    var b = D.createElement('button');
+    b.type = 'button'; b.id = 'vx-pip-btn'; b.className = 'vx-iconbtn';
+    b.title = 'Pop out'; b.setAttribute('aria-label', 'Pop out video');
+    b.innerHTML = '<i class="fa-solid fa-up-right-from-square"></i>';
+    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); popOut(); });
+    var fs = D.getElementById('icon-video-fullscreen');
+    fs = fs && fs.parentNode;
+    if (fs && fs.parentNode === top) top.insertBefore(b, fs); else top.appendChild(b);
+  }
+  function popOut() {
+    want = true;
+    call('pip.set', { on: true, w: 16, h: 9 }).then(function () { return call('pip.enter'); }).then(function (r) {
+      if (!r || r.entered !== true) toast('Pop out not available', 'Your phone did not open the floating window. Allow Picture-in-picture for EXAMA in the phone settings.');
+    });
+  }
+  function sync() {
+    var w = watchOpen() && playing();
+    if (w === want) return;
+    want = w;
+    call('pip.set', { on: w, w: 16, h: 9 }).then(function (r) { if (r === null || r.ok === false) want = !w; });
+  }
+
+  // the app tells us the floating window opened / closed
+  W.addEventListener('exama-pip', function (ev) {
+    var on = !!(ev && ev.detail && ev.detail.on);
+    if (on && watchOpen()) H.classList.add('exama-in-pip'); else H.classList.remove('exama-in-pip');
+    try { W.dispatchEvent(new Event('resize')); } catch (e) { }
+  });
+
+  setInterval(function () {
+    if (!isApp()) return;
+    if (cap === null) { probe(); return; }
+    if (cap !== true) return;
+    ensureButton();
+    sync();
+  }, 1500);
+})();
+</script>
 </body>
 
 </html>
