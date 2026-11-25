@@ -23,6 +23,8 @@ Change 2026-11-21: Run music debug popups / logs removed. YouTube lectures (Lect
 Change 2026-11-25: dashboard tiles no longer spring back (style xb-fast + script xb-fast-js); the bottom bar shortcut picker (bn-sc-style, pkPaint) now looks like the Settings panel and no longer shows the 'hide on screens' text; Notification settings: the Preview an alert row was removed, Alarms and Calls are now alert types with their own style (Sound & vibration / Vibration only / Silent / Off) read by window.__npMode, only SOS stays always on. The sender (worker) and the native alarm / call screens must read notif_styles/<mobile> modes.alarm / modes.call to follow it when the app is closed.
 Change 2026-11-25 (b): screen open / close rebuilt as an iOS push (window slides in from the right, the page under it moves 30% left and dims, soft edge shadow; window -> window = soft rise). Screens, the bottom bar pill / raised button and tab switches share one clock: --ios-dur (.42s) + --ios-ease (cubic-bezier(.32,.72,0,1)) and --ios-tab (.3s for Home / Exams / Discus / Profile). Style ios-sync + apple-motion block.
 Change 2026-11-25 (c): Join Run bar lifted above the bottom bar (style fix-2026-11-25-c); Discus list no longer scrolls by itself after opening; Run music: tap a search result to play it now (ytPlayNow, temporary, not saved; the + button still adds); screen + bottom bar clock .38s / tabs .26s.
+Change 2026-11-25 (g): bottom-bar pill zooms instead of sliding (place() adds class zm + a fading ghost pill; buttons snap size; keyframes bnZoomIn / bnZoomOut in style fix-2026-11-25-c).
+Change 2026-11-25 (h): bottom-bar glitch fixes - the zooming-out ghost pill kept the NEW colour while the new pill faded from the OLD one (colours looked swapped); a leaving button shrank slowly so the pill sat off the icons; the zoom replayed (blink) when the pill did not move; a quick second tap made the ghost pop to full size. On raised-button screens (Run, Budget Manager, Solve It) the old pill stayed stuck behind the icons (its zoom-in animation kept opacity 1 after 'show' was removed): it now zooms away and comes back with a zoom. See place() in bn-script + style fix-2026-11-25-c.
 Change 2026-11-25 (f): bottom-bar tab switch no longer plays its animation twice (incoming screen tagged vw-tab so its animation keeps the same name after html.bn-tab is removed; nested fade-in / slide-left keep their normal animation during bn-tab).
 Change 2026-11-25 (e): Apple ZOOM instead of the side slide: windows grow out of the tapped dashboard button (transform-origin set in __vwOpenRect) and shrink back into it, the page under scales to .94, window -> window and tabs zoom from .94 (keyframes apIn / apOut / apSoft / apUnder / apReturn / iosTab in style fix-2026-11-25-c).
 Change 2026-11-25 (d): screens, bottom-bar pill and tab switches now run on ONE spring (CSS linear(), set in apple-motion-js: --ios-dur / --ios-ease / --ios-tab are written from the same spring); heavy screen set-up starts at 60 % of the motion; tab screens fade + settle from 98.5 %.
@@ -49357,14 +49359,35 @@ html.bn-imm #bn{transform:translateY(calc(100% + 24px))!important;opacity:0!impo
     var all = bi.querySelectorAll('.bn-i'), btns = [], idx = -1, i;
     for (i = 0; i < all.length; i++) if (!all[i].classList.contains('bn-out')) btns.push(all[i]);
     for (i = 0; i < btns.length; i++) if (btns[i].classList.contains('on')) idx = i;
-    var nv = $('bn');
+    var nv = $('bn'), oc1 = '', oc2 = '';
+    if (nv) { try { var ncs = W.getComputedStyle(nv); oc1 = ncs.getPropertyValue('--bn-c1'); oc2 = ncs.getPropertyValue('--bn-c2'); } catch (e) { } }   /* old pill colours, read BEFORE they change (the zooming-out ghost keeps them) */
     if (nv && act) { var c = COL[act] || (SCR[act] ? [SCR[act][2], SCR[act][3]] : COL.student); nv.style.setProperty('--bn-c1', c[0]); nv.style.setProperty('--bn-c2', c[1]); nv.setAttribute('data-t', act); }
-    if (idx < 0) { ind.classList.remove('show'); ind.__p = 0; return; }
+    function ghost() {   /* a copy of the pill zooms away at its old place, with its OLD colours, starting from its current look */
+      try {
+        var ics = W.getComputedStyle(ind), go = parseFloat(ics.opacity), gs = parseFloat(String(ics.scale).split(' ')[0]);
+        if (!(go > .02)) return;
+        var gh = ind.cloneNode(false); gh.className = 'bn-ind show bn-ghost';
+        if (oc1) gh.style.setProperty('--bn-c1', oc1); if (oc2) gh.style.setProperty('--bn-c2', oc2);
+        gh.style.setProperty('--gh-o', go); gh.style.setProperty('--gh-s', isNaN(gs) ? 1 : gs);
+        bi.appendChild(gh); setTimeout(function () { try { gh.remove(); } catch (e) { } }, 450);
+      } catch (e) { }
+    }
+    if (idx < 0) {   /* no active button (Run / Budget / Solve It raised middle button...): the pill zooms away. 'zm' must be removed too: its forwards-filled animation kept opacity 1, so the pill stayed on screen at its old place */
+      if (ind.__p && !ind.__hid) ghost();
+      ind.classList.remove('show'); ind.classList.remove('zm'); if (ind.__p) ind.__hid = 1;
+      return;
+    }
     var cs = W.getComputedStyle(bi), pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0, gap = parseFloat(cs.columnGap) || parseFloat(cs.gap) || 0;
     var inner = bi.clientWidth - pl - pr - gap * (btns.length - 1); if (inner <= 0) return;
     var G = 2.1, unit = inner / (btns.length - 1 + G), first = !ind.__p;
     if (first) ind.classList.add('nt');
-    ind.style.transform = 'translateX(' + (pl + idx * (unit + gap)) + 'px)'; ind.style.width = (unit * G) + 'px';
+    var px = pl + idx * (unit + gap), pw = unit * G, tx = 'translateX(' + px + 'px)';
+    /* only a REAL move (or coming back after being hidden) replays the zoom (same place again = no blink) */
+    var wasHid = !!ind.__hid; ind.__hid = 0;
+    var moved = !first && (wasHid || Math.abs((ind.__x || 0) - px) > .5 || Math.abs((ind.__w || 0) - pw) > .5);
+    if (moved && !wasHid) ghost();
+    ind.style.transform = tx; ind.style.width = pw + 'px'; ind.__x = px; ind.__w = pw;
+    if (moved) { ind.classList.remove('zm'); void ind.offsetWidth; ind.classList.add('zm'); }   /* new pill zooms in (no sliding) */
     if (first) { void ind.offsetWidth; ind.classList.remove('nt'); ind.__p = 1; }
     ind.classList.add('show'); lastAct = act;
   }
@@ -49781,6 +49804,15 @@ html.ap-push,html.ap-sheet{--ap-under-to:scale(.94)}
 html body .vw-under:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______),html body #student-view.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______),html body #admin-view.view-back:not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______){transform-origin:50% 50%!important}
 html.vw-busy body .view-enter:not(#student-view):not(#admin-view):not(#login-view):not(#_),html.vw-busy body .view-leave:not(#_){box-shadow:none!important}
 @keyframes iosTab{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+/* BOTTOM BAR = ZOOM, NOT SLIDE: the pill appears at the new tab with a zoom and the old pill zooms away; buttons snap to their size (the zoom is the animation) */
+@keyframes bnZoomIn{from{opacity:0;scale:.55}to{opacity:1;scale:1}}
+@keyframes bnZoomOut{from{opacity:var(--gh-o,1);scale:var(--gh-s,1)}to{opacity:0;scale:.7}}
+#bn .bn-ind:not(#_):not(#__){transition:opacity .2s ease!important}   /* no colour fade: the old pill is a separate ghost that keeps its own colour */
+#bn .bn-ind.zm:not(#_){animation:bnZoomIn var(--ios-tab) var(--ios-ease) both}
+#bn .bn-ind.bn-ghost:not(#_){animation:bnZoomOut var(--ios-tab) var(--ios-ease) both;pointer-events:none;transition:none!important}
+#bn .bn-i:not(.bn-new):not(.bn-out):not(#_){transition:opacity .2s ease,color .2s ease!important}
+/* a button that leaves (temporary screen button / shortcuts) snaps shut like the others snap open (its scale + fade stay smooth so the raised middle button shrinks away instead of popping) - it used to shrink slowly while the pill had already zoomed in at the final place, so the pill sat off the icons for ~0.4 s */
+#bn .bn-i.bn-out:not(#_){transition:opacity .22s ease,transform .26s var(--bn-e,ease)!important}
 /* TAB SWITCH PLAYED TWICE: when html.bn-tab was removed (700 ms) the screen and its cards switched to another animation and replayed it. The incoming screen now keeps the SAME animation (vw-tab) and nested cards keep their normal one the whole time. */
 html body .view-enter.vw-tab:not(.view-leave):not(.vw-under):not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________){animation:iosTab var(--ios-tab) var(--ios-ease) both!important}
 html.bn-tab body .fade-in:not(.view-enter):not(#_):not(#__):not(#___):not(#____):not(#_____):not(#______):not(#_______):not(#________):not(#_________):not(#__________){animation:exFadeUp .46s var(--ex-out) forwards!important}
