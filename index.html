@@ -49862,6 +49862,10 @@ html.bn-on.bn-fab #rt-join{bottom:calc(var(--bn-h) + 40px)!important}
 .overflow-y-auto,.no-scrollbar{will-change:auto!important}
 </style>
 <style id="exama-pip-css">
+/* 2026-11-27: while the lecture video is full screen, everything else is switched off (no layout cost = no lag when the screen turns) */
+.exama-vfs-hide{display:none!important}
+html.exama-vfs #video-watch-view .vx-wtop,html.exama-vfs #video-watch-view .vx-info,html.exama-vfs #video-watch-view .vx-side{display:none!important}
+html.exama-vfs #video-watch-view,html.exama-vfs #video-watch-view .vx-wmain,html.exama-vfs #video-watch-view .vx-wcol{overflow:hidden!important}
 /* 2026-11-27: lecture player header = [close] [title always centred] [empty spacer]. Full screen and Pop out live in the player's own control bar. */
 #video-watch-view .vx-wtop{display:grid!important;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;column-gap:12px}
 #video-watch-view .vx-wtop h3{grid-column:2;flex:none;min-width:0;text-align:center}
@@ -50008,6 +50012,32 @@ html.exama-in-pip #bn{display:none!important}
     setOri('portrait');
     setTimeout(function () { if (flagSetter()) setOri('auto'); }, 700);
   }
+  var H = D.documentElement, warned = false;
+  function warnOld() {      // tells the owner why the screen did not turn (once)
+    if (warned) return; warned = true;
+    try { if (W.showToast) W.showToast('Screen rotation', 'This app version cannot turn the screen yet. Update the app (orientation.set).', 'info'); } catch (e) { }
+  }
+  function vfsOn() {
+    try {
+      if (W.isTabletDevice && W.isTabletDevice()) return;
+      H.classList.add('exama-vfs');
+      var n = D.getElementById('video-watch-view');
+      while (n && n !== D.body && n.parentNode) {
+        var p = n.parentNode;
+        for (var c = p.firstElementChild; c; c = c.nextElementSibling) {
+          if (c !== n && !/^(SCRIPT|STYLE|LINK|META)$/.test(c.tagName)) c.classList.add('exama-vfs-hide');
+        }
+        n = p;
+      }
+    } catch (e) { }
+  }
+  function vfsOff() {
+    try {
+      H.classList.remove('exama-vfs');
+      var l = D.querySelectorAll('.exama-vfs-hide');
+      for (var i = 0; i < l.length; i++) l[i].classList.remove('exama-vfs-hide');
+    } catch (e) { }
+  }
   function player() { return D.getElementById('native-player-container'); }
   function videoIsFull() {
     var c = player();
@@ -50023,14 +50053,16 @@ html.exama-in-pip #bn{display:none!important}
 
     var enter2 = function () {
       var self = this, args = arguments;
-      if (W._vidAutoCall || !isApp() || cap === false || vBusy) return vBusy ? undefined : enter.apply(self, args);
+      if (vBusy) return;
+      if (W._vidAutoCall || !isApp() || cap === false) { var r0 = enter.apply(self, args); vfsOn(); if (isApp() && cap === false && !W._vidAutoCall) warnOld(); return r0; }
       vBusy = true;
       setOri('landscape').then(function (ok) {
-        if (!ok) { vBusy = false; enter.apply(self, args); return; }
+        if (!ok) { vBusy = false; enter.apply(self, args); vfsOn(); warnOld(); return; }
         vLocked = true;
         waitLandscape(900, function () {
           vBusy = false;
           if (!videoIsFull()) enter.apply(self, args);   // the auto-rotate may already have opened it
+          vfsOn();
           W._vidAutoEntered = false;
         });
       });
@@ -50039,6 +50071,7 @@ html.exama-in-pip #bn{display:none!important}
     W._enterCSSFullscreen = enter2;
 
     W._exitCSSFullscreen = function () {
+      vfsOff();
       var r = exit.apply(this, arguments);
       if (vLocked) { vLocked = false; giveBack(function () { return !vLocked; }); }
       return r;
@@ -50082,6 +50115,7 @@ html.exama-in-pip #bn{display:none!important}
   // safety net: if the full screen ended in any other way (back button, viewer closed), give rotation back
   setInterval(function () {
     if (!isApp()) return;
+    if (H.classList.contains('exama-vfs') && !videoIsFull()) vfsOff();
     if (vLocked && !vBusy && !videoIsFull()) { vLocked = false; giveBack(function () { return !vLocked; }); }
     var m = D.getElementById('custom-pdf-viewer-modal');
     if (pLocked && !pBusy && (!m || m.classList.contains('hidden-view') || (W.pdfViewMode || 0) !== 2)) { pLocked = false; giveBack(function () { return !pLocked; }); }
