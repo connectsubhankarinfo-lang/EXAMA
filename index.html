@@ -8074,7 +8074,7 @@ html.is-tablet #feature-doc-view .gd-hero{padding-top:calc(max(2.25rem,env(safe-
             <div class="vx-wtop hdr-p">
                 <button onclick="closeWatchView()" class="vx-iconbtn" aria-label="Close"><i class="fa-solid fa-chevron-down"></i></button>
                 <h3 id="watch-header-title">Now Playing</h3>
-                <button onclick="toggleVideoFullscreen()" class="vx-iconbtn" title="Full Screen"><i class="fa-solid fa-expand" id="icon-video-fullscreen"></i></button>
+                <span class="vx-wtop-sp" aria-hidden="true"></span>
             </div>
             <div class="vx-wmain no-scrollbar">
                 <div class="vx-wcol no-scrollbar">
@@ -49862,6 +49862,15 @@ html.bn-on.bn-fab #rt-join{bottom:calc(var(--bn-h) + 40px)!important}
 .overflow-y-auto,.no-scrollbar{will-change:auto!important}
 </style>
 <style id="exama-pip-css">
+/* 2026-11-27: lecture player header = [close] [title always centred] [empty spacer]. Full screen and Pop out live in the player's own control bar. */
+#video-watch-view .vx-wtop{display:grid!important;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;column-gap:12px}
+#video-watch-view .vx-wtop h3{grid-column:2;flex:none;min-width:0;text-align:center}
+#video-watch-view .vx-wtop .vx-wtop-sp{grid-column:3;width:40px;height:40px;display:block}
+/* the player's own Pop out button (added by script exama-pip, app only) */
+.video-js .vjs-exama-pip{cursor:pointer;flex:none;width:4em;display:flex;align-items:center;justify-content:center;color:#fff;background:none;border:0;padding:0;outline:0}
+.video-js .vjs-exama-pip svg{width:1.6em;height:1.6em;fill:currentColor;display:block;pointer-events:none}
+.video-js .vjs-exama-pip:active{opacity:.6}
+html.exama-pip-ok .video-js .vjs-picture-in-picture-control{display:none!important}
 /* 2026-11-25: Lecture Hub video Pop out (Picture-in-Picture, app only). Only active while the html element has the class exama-in-pip (set by script exama-pip). */
 html.exama-in-pip #video-watch-view{position:fixed!important;inset:0!important;z-index:2147483000!important;transform:none!important;animation:none!important;transition:none!important;background:#000!important}
 html.exama-in-pip #video-watch-view .vx-wtop,html.exama-in-pip #video-watch-view .vx-info,html.exama-in-pip #video-watch-view .vx-side{display:none!important}
@@ -49908,19 +49917,23 @@ html.exama-in-pip #bn{display:none!important}
       probing = false;
       if (r === null) return;                                  // the app was not ready yet: ask again later
       cap = !!(r && r.ok === true && r.supported === true);    // old app: ok false (unknown call) = no
+      if (cap) { H.classList.add('exama-pip-ok'); ensureButton(); }
     });
   }
+  var PIP_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 7h-8v6h8V7zm2-4H3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16.01H3V4.98h18v14.03z"/></svg>';
   function ensureButton() {
-    var top = D.querySelector('#video-watch-view .vx-wtop');
-    if (!top || D.getElementById('vx-pip-btn')) return;
+    // the Pop out button lives in the video player's own control bar, left of its full screen button
+    var bar = D.querySelector('#native-player-container .vjs-control-bar');
+    if (!bar || bar.querySelector('.vjs-exama-pip')) return;
     var b = D.createElement('button');
-    b.type = 'button'; b.id = 'vx-pip-btn'; b.className = 'vx-iconbtn';
+    b.type = 'button'; b.className = 'vjs-control vjs-button vjs-exama-pip';
     b.title = 'Pop out'; b.setAttribute('aria-label', 'Pop out video');
-    b.innerHTML = '<i class="fa-solid fa-up-right-from-square"></i>';
-    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); popOut(); });
-    var fs = D.getElementById('icon-video-fullscreen');
-    fs = fs && fs.parentNode;
-    if (fs && fs.parentNode === top) top.insertBefore(b, fs); else top.appendChild(b);
+    b.innerHTML = PIP_SVG + '<span class="vjs-control-text" aria-live="polite">Pop out</span>';
+    function go(e) { e.preventDefault(); e.stopPropagation(); popOut(); }
+    b.addEventListener('click', go);
+    b.addEventListener('touchend', function (e) { e.stopPropagation(); }, { passive: true });
+    var fs = bar.querySelector('.vjs-fullscreen-control');
+    if (fs) bar.insertBefore(b, fs); else bar.appendChild(b);
   }
   function popOut() {
     want = true;
@@ -49942,6 +49955,11 @@ html.exama-in-pip #bn{display:none!important}
     try { W.dispatchEvent(new Event('resize')); } catch (e) { }
   });
 
+  try {
+    var pc = D.getElementById('native-player-container');
+    if (pc && W.MutationObserver) new MutationObserver(function () { if (cap === true) ensureButton(); }).observe(pc, { childList: true, subtree: true });
+  } catch (e) { }
+
   setInterval(function () {
     if (!isApp()) return;
     if (cap === null) { probe(); return; }
@@ -49949,6 +49967,125 @@ html.exama-in-pip #bn{display:none!important}
     ensureButton();
     sync();
   }, 1500);
+})();
+</script>
+<script id="exama-rot">
+/* 2026-11-27: REAL screen rotation for the lecture video full screen and the web PDF reader landscape mode (app only).
+   Tapping full screen asks the app to turn the phone to landscape (call orientation.set, like YouTube); leaving gives rotation back.
+   An old app answers "unknown call": then nothing is changed and the old CSS-rotated full screen is used. A normal browser is not touched. */
+(function () {
+  'use strict';
+  var W = window, D = document;
+  var cap = null;            // null = not tried, true = the app understood orientation.set, false = old app
+  var vLocked = false, vBusy = false;   // video: we forced landscape / a full screen start is waiting for the turn
+  var pLocked = false, pBusy = false;   // PDF reader: same
+  W._exNoAutoUntil = 0;
+
+  function isApp() { return /EXAMA_APP/i.test(navigator.userAgent || ''); }
+  function call(fn, args) {
+    try {
+      var h = W.flutter_inappwebview;
+      if (!h || !h.callHandler) return Promise.resolve(null);
+      return Promise.resolve(h.callHandler('median', fn, args || {})).catch(function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+  function setOri(mode) {    // resolves true when the app did it
+    return call('orientation.set', { mode: mode }).then(function (r) {
+      if (r && r.ok === true) { cap = true; return true; }
+      if (r && r.ok === false) cap = false;
+      return false;
+    });
+  }
+  function waitLandscape(ms, cb) {
+    var t0 = Date.now();
+    (function tick() {
+      if (W.innerWidth > W.innerHeight || Date.now() - t0 > ms) setTimeout(cb, 60);
+      else setTimeout(tick, 50);
+    })();
+  }
+  function giveBack(flagSetter) {   // leaving full screen: back to portrait, then the phone's own auto-rotate again
+    W._exNoAutoUntil = Date.now() + 2500;
+    setOri('portrait');
+    setTimeout(function () { if (flagSetter()) setOri('auto'); }, 700);
+  }
+  function player() { return D.getElementById('native-player-container'); }
+  function videoIsFull() {
+    var c = player();
+    return !!((c && c.classList.contains('fixed')) || D.fullscreenElement || D.webkitFullscreenElement);
+  }
+
+  function install() {
+    // ---- lecture video ----
+    var enter = W._enterCSSFullscreen, exit = W._exitCSSFullscreen, auto = W.handleVideoAutoRotate;
+    var pdf = W.togglePdfFullscreen;
+    if (!enter || !exit || !auto || !pdf) return false;
+    if (enter.__exRot) return true;
+
+    var enter2 = function () {
+      var self = this, args = arguments;
+      if (W._vidAutoCall || !isApp() || cap === false || vBusy) return vBusy ? undefined : enter.apply(self, args);
+      vBusy = true;
+      setOri('landscape').then(function (ok) {
+        if (!ok) { vBusy = false; enter.apply(self, args); return; }
+        vLocked = true;
+        waitLandscape(900, function () {
+          vBusy = false;
+          if (!videoIsFull()) enter.apply(self, args);   // the auto-rotate may already have opened it
+          W._vidAutoEntered = false;
+        });
+      });
+    };
+    enter2.__exRot = true;
+    W._enterCSSFullscreen = enter2;
+
+    W._exitCSSFullscreen = function () {
+      var r = exit.apply(this, arguments);
+      if (vLocked) { vLocked = false; giveBack(function () { return !vLocked; }); }
+      return r;
+    };
+
+    // after we turned the phone back to portrait, the sensor must not push the video into full screen again at once
+    W.handleVideoAutoRotate = function () {
+      if (Date.now() < W._exNoAutoUntil) return;
+      return auto.apply(this, arguments);
+    };
+
+    // ---- web PDF reader (mode 2 = landscape reading) ----
+    W.togglePdfFullscreen = function () {
+      var self = this, args = arguments, before = W.pdfViewMode || 0;
+      var manual = !W._pdfAutoCall && isApp() && cap !== false;
+      if (manual && before === 1) {            // going into landscape reading: turn the phone first
+        if (pBusy) return;
+        pBusy = true;
+        setOri('landscape').then(function (ok) {
+          if (!ok) { pBusy = false; pdf.apply(self, args); return; }
+          pLocked = true;
+          waitLandscape(900, function () {
+            pBusy = false;
+            if ((W.pdfViewMode || 0) === before) pdf.apply(self, args);   // the auto-rotate may already be there
+          });
+        });
+        return;
+      }
+      var r = pdf.apply(self, args);
+      if (manual && before === 2 && (W.pdfViewMode || 0) !== 2 && pLocked) { pLocked = false; giveBack(function () { return !pLocked; }); }
+      return r;
+    };
+    return true;
+  }
+
+  // the page script is a deferred module: it defines the functions after this script ran, so wait for them
+  var tries = 0, iv = setInterval(function () {
+    if (install() || ++tries > 200) clearInterval(iv);
+  }, 300);
+
+  // safety net: if the full screen ended in any other way (back button, viewer closed), give rotation back
+  setInterval(function () {
+    if (!isApp()) return;
+    if (vLocked && !vBusy && !videoIsFull()) { vLocked = false; giveBack(function () { return !vLocked; }); }
+    var m = D.getElementById('custom-pdf-viewer-modal');
+    if (pLocked && !pBusy && (!m || m.classList.contains('hidden-view') || (W.pdfViewMode || 0) !== 2)) { pLocked = false; giveBack(function () { return !pLocked; }); }
+  }, 1000);
 })();
 </script>
 <style id="cx-fix-css">
@@ -50236,6 +50373,77 @@ html.is-tablet #discus-video-modal.wac-full .wac-top{padding-top:max(2.2rem,env(
     A.canShare = function () { return oc.apply(this, arguments) || !!W.EXAMA_SCREENSHARE; };   // the app sets this when native screen capture exists
     var oend = A.end;
     if (oend) A.end = async function () { selfStop(); return oend.apply(this, arguments); };
+  }, 300);
+})();
+</script>
+
+<!-- cn-fix 2026-11-26: ONE speaker control in the call (bottom bar only) + "call in progress" notification with End button -->
+<script>
+(function () {
+  var W = window, D = document;
+  function app(fn, data) {
+    var h = W.flutter_inappwebview;
+    if (h && typeof h.callHandler === 'function') return Promise.resolve(h.callHandler('median', fn, data || {}));
+    return Promise.reject(new Error('no app'));
+  }
+
+  /* 1) one speaker / audio-output control only: the round button in the bottom call bar (#wac-b-route).
+        The app shim's own pill is removed (not just hidden) every time it is built again. */
+  function dropPill() {
+    ['exama-audio-btn', 'exama-audio-menu'].forEach(function (id) {
+      var e = D.getElementById(id); if (e && e.parentNode) e.parentNode.removeChild(e);
+    });
+  }
+  dropPill(); setInterval(dropPill, 1200);
+
+  /* 2) "Call in progress" notification (built by the app, so it also shows with the phone locked / app in background) */
+  var N = { key: '', live: false, off: false };
+  function info() {
+    var A = W.WAC, st = A && A.st;
+    if (!A || !A.active || !st) return null;
+    var el = D.getElementById('wac-name');
+    return {
+      on: true,
+      title: ((el && el.textContent) || 'Discus call').trim() || 'Discus call',
+      mode: st.mode === 'video' ? 'video' : 'audio',
+      joined: !!st.joined,
+      startedAt: st.startedAt || 0,
+      people: (st.remote ? st.remote.size : 0) + 1,
+      muted: !!st.muted,
+      minimized: !!A.minimized
+    };
+  }
+  function send(o) {
+    if (N.off) return;
+    app('call.notif', o).then(function (r) {
+      if (r && r.ok === false && /unknown call/i.test(String(r.error || ''))) N.off = true;   // old app: stop asking
+    }).catch(function () { });
+  }
+  function tick() {
+    var o = info();
+    if (!o) { if (N.live) { N.live = false; N.key = ''; send({ on: false }); } return; }
+    var k = [o.title, o.mode, o.joined, o.startedAt, o.people, o.muted].join('|');
+    if (k !== N.key || !N.live) { N.key = k; N.live = true; send(o); }
+  }
+  setInterval(tick, 1000);
+
+  /* the End button on the notification: the app sends the page event "exama-call-end" */
+  W.addEventListener('exama-call-end', function () {
+    try { if (W.WAC && W.WAC.active) W.closeDiscusVideoCall(); } catch (e) { }
+  });
+  /* optional: a Mute button (the app may send "exama-call-mute") */
+  W.addEventListener('exama-call-mute', function () {
+    try { if (W.WAC && W.WAC.active && W.WAC.toggleMic) W.WAC.toggleMic(); } catch (e) { }
+  });
+
+  /* hang up on screen = take the notification away at once (do not wait for the 1 s tick) */
+  var t = setInterval(function () {
+    var A = W.WAC; if (!A || !A.end || A.__cnWrapped) return; clearInterval(t); A.__cnWrapped = true;
+    var oe = A.end;
+    A.end = async function () {
+      try { return await oe.apply(this, arguments); }
+      finally { if (N.live) { N.live = false; N.key = ''; send({ on: false }); } }
+    };
   }, 300);
 })();
 </script>
