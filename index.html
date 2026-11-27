@@ -18264,6 +18264,7 @@ window.__tpPaint = function () {
                     case 'watch-video':
                     case 'doubt-board':
                     case 'budget-track':
+                        if (typeof window.ensureBudgetListener === 'function') window.ensureBudgetListener();   // also when the app opens straight on a budget screen (no hashchange)
                         // Simply opens the view, handled globally above.
                         break;
                     default:
@@ -19921,7 +19922,45 @@ window.__tpPaint = function () {
                 }
             }
             window.dbSendMaterial = async function (obj) { if (isFirebaseConfigured) { const __ref = await addDoc(collection(db, window.getCollectionName("materials")), obj); return __ref && __ref.id; } else { window.materialsDB.unshift({ id: Math.random().toString(), ...obj }); renderStudyMaterials(); } }
-            window.dbSendFitnessLog = async function (obj) { if (isFirebaseConfigured) { const __r = await addDoc(collection(db, window.getCollectionName("fitness_logs")), obj); return __r && __r.id; } else { const __id = Math.random().toString(); window.fitnessDB.unshift({ id: __id, ...obj }); renderFitnessMonitor(); return __id; } }
+            // FIX (2026-11-27): the run is first copied to this phone (localStorage), its id is made at once, and we wait for the server for at most
+            // 8 seconds. Before, "await addDoc" waited for ever on a weak network (outdoors!), nothing was reported and the run was lost.
+            // A run that the server has not confirmed stays in 'exama_fl_pending' and is sent again by rtFlushPendingRuns() (same id = no duplicate).
+            const __FLK = 'exama_fl_pending';
+            const __flRead = () => { try { return JSON.parse(localStorage.getItem(__FLK) || '[]') || []; } catch (e) { return []; } };
+            const __flWrite = a => { try { localStorage.setItem(__FLK, JSON.stringify(a.slice(-20))); } catch (e) { } };
+            window.dbSendFitnessLog = async function (obj) {
+                if (isFirebaseConfigured) {
+                    window.__runQueued = false;
+                    const __col = window.getCollectionName("fitness_logs");
+                    const __ref = doc(collection(db, __col));
+                    const __p = __flRead(); __p.push({ id: __ref.id, col: __col, obj: obj }); __flWrite(__p);
+                    const __w = setDoc(__ref, obj);
+                    __w.then(() => __flWrite(__flRead().filter(x => x && x.id !== __ref.id))).catch(() => { });
+                    const __r = await Promise.race([__w.then(() => 'ok'), new Promise(res => setTimeout(() => res('slow'), 8000))]);
+                    if (__r === 'slow') {
+                        window.__runQueued = true;
+                        __w.catch(e => { console.error('run upload failed later', e); if (window.showToast) window.showToast('Run not uploaded yet', 'It is kept on this phone and will upload by itself.', 'error'); });
+                    }
+                    return __ref.id;
+                } else { const __id = Math.random().toString(); window.fitnessDB.unshift({ id: __id, ...obj }); renderFitnessMonitor(); return __id; }
+            };
+            window.rtFlushPendingRuns = async function () {
+                if (typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured || !window.loggedInMobile || window.__flFlushing) return;
+                const me = String(window.loggedInMobile), mine = __flRead().filter(x => x && x.obj && x.col && String(x.obj.mobile) === me);
+                if (!mine.length) return;
+                window.__flFlushing = true;
+                try {
+                    for (const it of mine) {
+                        try {
+                            await Promise.race([setDoc(doc(db, it.col, it.id), it.obj), new Promise((_, no) => setTimeout(() => no(new Error('slow')), 15000))]);
+                            __flWrite(__flRead().filter(x => x && x.id !== it.id));
+                            if (window.showToast) window.showToast('Run uploaded', 'Your saved run reached the server.', 'success');
+                        } catch (e) { console.warn('saved run not sent yet:', e && e.message); }
+                    }
+                } finally { window.__flFlushing = false; }
+            };
+            window.addEventListener('online', () => setTimeout(() => { try { window.rtFlushPendingRuns(); } catch (e) { } }, 1500));
+            setTimeout(() => { try { window.rtFlushPendingRuns(); } catch (e) { } }, 9000);
             window.dbSubmitResult = async function (obj) {
                 if (isFirebaseConfigured) {
                     const existing = window.resultsDB.find(r => r.examId === obj.examId && r.mobile === obj.mobile);
@@ -21270,6 +21309,7 @@ window.__tpPaint = function () {
                     const h = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2;
                     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
                 };
+                const rtPt = (p, fresh) => { try { const g = S.segs || (S.segs = []); let s = g[g.length - 1]; if (fresh || !s) g.push([[p.lat, p.lon]]); else s.push([p.lat, p.lon]); } catch (e) { } };   // FIX: route points come from the GPS fixes themselves
                 const KF = { v: -1, lat: 0, lon: 0, ts: 0 };      // Kalman filter: smooths GPS noise using each fix's accuracy
                 const kfReset = () => { KF.v = -1; };
                 const kfProc = (lat, lon, acc, t) => {
@@ -21334,14 +21374,14 @@ window.__tpPaint = function () {
                     const p = { lat: c.latitude, lon: c.longitude, t: pos.timestamp || Date.now() };
                     { const f = kfProc(p.lat, p.lon, acc, p.t); p.lat = f.lat; p.lon = f.lon; }
                     if (S.st === 'countdown') { S.fix = p; return; }   // GPS warms up during 3-2-1; nothing is measured yet
-                    if (S.st === 'waiting') { S.st = 'running'; S.t0 = Date.now(); S.paused = 0; S.last = p; setUI('running'); msg(bgOn ? 'You can lock your phone. Your run keeps tracking.' : 'Keep this screen open while you run.'); return; }   // timer starts at the first good GPS fix
-                    if (!S.last) { S.last = p; return; }
+                    if (S.st === 'waiting') { S.st = 'running'; S.t0 = Date.now(); S.paused = 0; S.last = p; rtPt(p, true); setUI('running'); msg(bgOn ? 'You can lock your phone. Your run keeps tracking.' : 'Keep this screen open while you run.'); return; }   // timer starts at the first good GPS fix
+                    if (!S.last) { S.last = p; rtPt(p, true); return; }
                     const d = hav(S.last, p), dt = (p.t - S.last.t) / 1000;
                     if (dt <= 0) return;
                     if (d < Math.max(2, Math.min(acc, 12) * 0.4)) return;                 // GPS jitter while standing still: ignore
                     if (c.speed != null && c.speed < 0.4 && d < 8) return;
-                    if (d / dt > MAX_V) { S.last = p; S.fast++; msg('Moving too fast for a run. Those parts are not counted.'); return; }   // car / bike / GPS jump
-                    S.dist += d; S.last = p; S.splits = S.splits || []; while (S.dist >= (S.splits.length + 1) * 1000) S.splits.push(Math.round(elapsed()));
+                    if (d / dt > MAX_V) { S.last = p; rtPt(p, true); S.fast++; msg('Moving too fast for a run. Those parts are not counted.'); return; }   // car / bike / GPS jump
+                    S.dist += d; S.last = p; rtPt(p, false); S.splits = S.splits || []; while (S.dist >= (S.splits.length + 1) * 1000) S.splits.push(Math.round(elapsed()));
                 };
                 const onErr = e => {
                     if (e && e.code === 1) { fail('Location is blocked. Allow location for Exama in your phone settings, then try again.'); }
@@ -21372,13 +21412,13 @@ window.__tpPaint = function () {
                     if (S.watch != null) { try { navigator.geolocation.clearWatch(S.watch); } catch (e) { } }
                     S.watch = null; clearInterval(S.timer); S.timer = null; unlock(); setLocked(false); if (window.rtSayStop) window.rtSayStop();
                     clearTimeout(S.cd); S.cd = null; S.fix = null; { const co = $('rt-count'); if (co) { co.classList.add('hidden'); co.classList.remove('flex'); } }
-                    S.st = 'idle'; S.dist = 0; S.last = null; S.t0 = 0; S.paused = 0; S.fast = 0; S.ts = 0; kfReset();
+                    S.st = 'idle'; S.dist = 0; S.last = null; S.t0 = 0; S.paused = 0; S.fast = 0; S.ts = 0; S.segs = []; kfReset();
                     gps('bg-gray-500', 'GPS off'); setUI('idle'); paint(); msg(IDLE_MSG);
                 };
                 const fail = t => { end(); if (window.showCustomAlert) window.showCustomAlert('GPS Run', t, 'info'); else alert(t); };
 
                 // ----- public actions -----
-                window.openRunTracker = function () { const v = $('run-tracker'); if (!v) return; v.classList.remove('hidden'); setUI(S.st); paint(); if (S.st === 'idle') msg(IDLE_MSG); if (window.__rtMusicSync) window.__rtMusicSync(); };
+                window.openRunTracker = function () { try { if (window.rtFlushPendingRuns) window.rtFlushPendingRuns(); } catch (e) { } const v = $('run-tracker'); if (!v) return; v.classList.remove('hidden'); setUI(S.st); paint(); if (S.st === 'idle') msg(IDLE_MSG); if (window.__rtMusicSync) window.__rtMusicSync(); };
                 window.closeRunTracker = async function () {
                     const v = $('run-tracker'); if (!v || S.locked) return;
                     if (S.st !== 'idle' && S.dist > 20) {
@@ -21398,7 +21438,7 @@ window.__tpPaint = function () {
                 const afterCount = () => {                               // GO is done: start measuring
                     const co = $('rt-count'); if (co) { co.classList.add('hidden'); co.classList.remove('flex'); }
                     if (S.st !== 'countdown') return;
-                    if (S.fix) { S.st = 'running'; S.t0 = Date.now(); S.paused = 0; S.last = S.fix; setUI('running'); msg(bgOn ? 'You can lock your phone. Your run keeps tracking.' : 'Keep this screen open while you run.'); }
+                    if (S.fix) { S.st = 'running'; S.t0 = Date.now(); S.paused = 0; S.last = S.fix; rtPt(S.fix, true); setUI('running'); msg(bgOn ? 'You can lock your phone. Your run keeps tracking.' : 'Keep this screen open while you run.'); }
                     else { S.st = 'waiting'; setUI('waiting'); msg('Finding your GPS location. Stay outside, the timer starts by itself.'); }
                     paint();
                 };
@@ -21427,7 +21467,7 @@ window.__tpPaint = function () {
                     if (S.st !== 'idle') return;
                     cdAudio(); if (window.rtVoicePrep) window.rtVoicePrep();
                     if (!navigator.geolocation) return fail('This device does not support GPS in the app.');
-                    S.st = 'countdown'; S.dist = 0; S.last = null; S.fix = null; S.ts = 0; kfReset(); S.t0 = 0; S.paused = 0; S.fast = 0; S.splits = [];
+                    S.st = 'countdown'; S.dist = 0; S.last = null; S.fix = null; S.ts = 0; kfReset(); S.t0 = 0; S.paused = 0; S.fast = 0; S.splits = []; S.segs = [];
                     setUI('countdown'); gps('bg-amber-400', 'Searching'); msg('Finding your GPS location.');
                     lock();
                     S.watch = startGeo();   // GPS starts warming up now
@@ -21452,8 +21492,8 @@ window.__tpPaint = function () {
                     const paceMin = time / distance, pm = Math.floor(paceMin), pace = pm + ':' + Math.round((paceMin - pm) * 60).toString().padStart(2, '0').replace(/^60$/, '59');
                     const cals = Math.round(distance * 60);
                     const __ts = Date.now(); try { const __id = await window.dbSendFitnessLog({ mobile: window.loggedInMobile, distance, time, pace, cals, date: window.formatDateDDMMYYYY(), timestamp: __ts, source: 'gps', splits: spC.map((c, i) => c - (i ? spC[i - 1] : 0)), avgSpeed: Math.round(distance / (time / 60) * 10) / 10, shape: shp || null, route: rte || null }); window.__lastSavedRun = { id: __id || null, timestamp: __ts }; }
-                    catch (e) { console.error('run save', e); return alertMsg('Could not save the run. Please try again.'); }
-                    if (window.showToast) window.showToast('Run Saved! 🏃', distance.toFixed(2) + ' km in ' + mmss(sec) + ' (' + pace + ' /km)', 'success');
+                    catch (e) { console.error('run save', e); return alertMsg('The run could not be sent right now. It is kept on this phone and will be saved by itself when the internet is back.'); }
+                    if (window.showToast) window.showToast('Run Saved! 🏃', distance.toFixed(2) + ' km in ' + mmss(sec) + ' (' + pace + ' /km)' + (window.__runQueued ? ' · uploads when online' : ''), 'success');
                     try { if (window.renderFitnessMonitor) window.renderFitnessMonitor(); } catch (e) { }   // refresh Latest run + Week Curve right away
                     const v = $('run-tracker'); if (v) v.classList.add('hidden'); if (window.__rtMusicSync) window.__rtMusicSync();
                 };
@@ -22144,8 +22184,8 @@ window.rtMapToggle=function(){on=!on;const v=$('run-tracker');if(v)v.classList.t
  if(on)load(()=>{init();setTimeout(()=>{map.invalidateSize();follow=1;const b=$('rt-recenter');if(b)b.style.display='none';draw();},80);});};
 const focus=a=>{if(!map||!R.pos)return;const z=map.getZoom()<16?17:map.getZoom(),pt=map.project(R.pos,z);pt.y+=Math.round(map.getSize().y*0.17);map.setView(map.unproject(pt,z),z,{animate:!!a});};
 window.rtMapCenter=function(){follow=1;const b=$('rt-recenter');if(b)b.style.display='none';focus(1);};
-window.__rtRouteSnap=function(){return R.segs.map(sg=>sg.slice());};
-window.__rtShape=function(){try{let pts=[];R.segs.forEach(sg=>sg.forEach(p=>pts.push(p)));if(pts.length<4)return null;const N=60;if(pts.length>N){const o=[];for(let i=0;i<N;i++)o.push(pts[Math.round(i*(pts.length-1)/(N-1))]);pts=o;}const c=Math.cos(pts[0][0]*Math.PI/180),xy=pts.map(p=>[p[1]*c,-p[0]]);let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;xy.forEach(q=>{x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1]);});const sc=100/(Math.max(x1-x0,y1-y0)||1),out=[];xy.forEach(q=>{out.push(Math.round((q[0]-x0)*sc),Math.round((q[1]-y0)*sc));});return out;}catch(e){return null;}};
+window.__rtRouteSnap=function(){const cnt=a=>a.reduce((n,g)=>n+g.length,0),own=R.segs.map(sg=>sg.slice());let alt=[];try{alt=((S().segs)||[]).map(sg=>sg.slice());}catch(e){}return cnt(alt)>cnt(own)?alt:own;};   /* FIX: the GPS-fix route wins when the 1 s map timer missed points (phone locked) */
+window.__rtShape=function(){try{let pts=[];window.__rtRouteSnap().forEach(sg=>sg.forEach(p=>pts.push(p)));if(pts.length<4)return null;const N=60;if(pts.length>N){const o=[];for(let i=0;i<N;i++)o.push(pts[Math.round(i*(pts.length-1)/(N-1))]);pts=o;}const c=Math.cos(pts[0][0]*Math.PI/180),xy=pts.map(p=>[p[1]*c,-p[0]]);let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;xy.forEach(q=>{x0=Math.min(x0,q[0]);x1=Math.max(x1,q[0]);y0=Math.min(y0,q[1]);y1=Math.max(y1,q[1]);});const sc=100/(Math.max(x1-x0,y1-y0)||1),out=[];xy.forEach(q=>{out.push(Math.round((q[0]-x0)*sc),Math.round((q[1]-y0)*sc));});return out;}catch(e){return null;}};
 const locate=()=>{if(S().st!=='idle'||!navigator.geolocation)return;navigator.geolocation.getCurrentPosition(p=>{if(S().st!=='idle')return;R.pos=[p.coords.latitude,p.coords.longitude];draw();},()=>{},{enableHighAccuracy:true,timeout:10000,maximumAge:30000});};
 (function(){const tr=$('run-tracker'),fv=$('fitness-view');let was=null;
  const fs=()=>{const open=!!tr&&!tr.classList.contains('hidden')&&!(fv&&fv.classList.contains('hidden-view'));if(open===was)return;was=open;
@@ -22286,6 +22326,7 @@ window.rtCardShare = async function () {
     if (!r && window.showToast) window.showToast('Could not share', 'Use Download instead.', 'error');
 };
 window.rtCardClose = function () {
+    try { camClose(); } catch (e) { }
     const p = $('rt-share'); if (p) p.remove(); blob = null; rTok++; clearTimeout(bTimer);
     if (cur && cur.localUrl) { try { URL.revokeObjectURL(cur.localUrl); } catch (e) { } cur.localUrl = ''; }
     cur = null;
@@ -22334,15 +22375,39 @@ async function saveLink(d, link) {
     const l = findLog(d);
     if (isFirebaseConfigured) {
         if (!l || !l.id) throw new Error('run not found yet');
-        await updateDoc(doc(db, window.getCollectionName('fitness_logs'), String(l.id)), { photoUrl: link });
+        await Promise.race([updateDoc(doc(db, window.getCollectionName('fitness_logs'), String(l.id)), { photoUrl: link }), new Promise(r => setTimeout(r, 8000))]);   // FIX: never wait for ever on a slow network (the phone keeps the change and sends it later)
     }
     if (l) l.photoUrl = link;   // keep the local list in step right away
+}
+// FIX (2026-11-27): Discuss and Material Hub upload to the Google Apps Script as plain text JSON (no preflight) and use a folder that the script knows
+// ('chat_img', 'material'). The Run photo used a NEW folder name ('run'); if the script does not know it, the upload fails. Now: try 'run' first,
+// then fall back to 'chat_img' (the Discuss folder), with a time limit and one more try, and show the real error in the console.
+async function rtUploadRunPhoto(file) {
+    const api = window.EXAMA_DRIVE_API; if (!api) throw new Error('upload address missing');
+    const b64 = await new Promise((res, no) => { const r = new FileReader(); r.onload = () => res(String(r.result || '').split(',')[1] || ''); r.onerror = () => no(new Error('could not read the photo')); r.readAsDataURL(file); });
+    if (!b64) throw new Error('empty photo');
+    const folders = ['run', 'chat_img', 'chat_img'];
+    let lastErr = null;
+    for (let i = 0; i < folders.length; i++) {
+        const ac = window.AbortController ? new AbortController() : null, tm = ac ? setTimeout(() => ac.abort(), 60000) : 0;
+        try {
+            const res = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fileName: file.name || ('run_' + Date.now() + '.jpg'), mimeType: file.type || 'image/jpeg', base64: b64, folderType: folders[i] }), signal: ac ? ac.signal : undefined });
+            clearTimeout(tm);
+            const data = await res.json();
+            const url = data && (data.url || data.viewUrl || data.fileUrl || data.downloadUrl);
+            if (data && data.success && url) return url;
+            lastErr = new Error((data && data.error) || 'upload failed');
+        } catch (e) { clearTimeout(tm); lastErr = e; }
+        console.warn('run photo upload try ' + (i + 1) + ' (' + folders[i] + ') failed:', lastErr && lastErr.message);
+        await new Promise(r => setTimeout(r, 700));
+    }
+    throw lastErr || new Error('upload failed');
 }
 async function uploadPhoto(d) {
     if (!d.photoFile || d.upBusy) return; d.upBusy = true;
     if (cur === d) setStatus('Saving your photo\u2026');
     try {
-        const link = await window.uploadFileToDrive(d.photoFile, 'run', false, { skipCompress: true });   // 'run' = Run Monitor photo folder
+        const link = await rtUploadRunPhoto(d.photoFile);   // same Google Apps Script upload as Discuss / Material Hub
         if (!link) throw new Error('no link returned');
         await saveLink(d, link);
         d.photoUrl = link;
@@ -22368,8 +22433,106 @@ async function applyPhoto(file) {
         await uploadPhoto(d);
     } catch (e) { console.error('run photo', e); d.busy = false; if (cur === d) setStatus('That photo could not be used. Please try again.', 'err'); }
 }
-window.rtCardPick = function (k) { const i = $('rtc-cam'); if (i) i.click(); };
-window.rtCardFile = function (input) { const f = input && input.files && input.files[0]; try { input.value = ''; } catch (e) { } if (f) applyPhoto(f); };
+window.rtCardPick = function (k) { camOpen(); };   // FIX: our own camera screen (like Doubt Scan) instead of the phone's camera app
+window.rtCardFile = function (input) { try { camClose(); } catch (e) { } const f = input && input.files && input.files[0]; try { input.value = ''; } catch (e) { } if (f) applyPhoto(f); };
+
+// ---------- custom in-app camera for the run photo (same idea as Doubt Scan's "Snap your doubt", made for runs) ----------
+// Live preview, big shutter, flip front / back camera, gallery button, Retake / Use photo. The picture is cut to exactly what the screen shows.
+const cam = { stream: null, face: 'user', blob: null, url: '' };
+function camCss() {
+    if (document.getElementById('rt-cam-css')) return;
+    const s = document.createElement('style'); s.id = 'rt-cam-css';
+    s.textContent = '#rt-cam{position:fixed;inset:0;z-index:150;background:#000;color:#fff;display:flex;flex-direction:column;overflow:hidden;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}'
+        + '#rt-cam video,#rt-cam .rc-shot{position:absolute;inset:0;width:100%;height:100%;background:#000}'
+        + '#rt-cam video{object-fit:cover}#rt-cam video.mir{transform:scaleX(-1)}'
+        + '#rt-cam .rc-shot{object-fit:contain;display:none}#rt-cam.review .rc-shot{display:block}#rt-cam.review video,#rt-cam.review .rc-fr{display:none}'
+        + '#rt-cam .rc-top{position:relative;z-index:3;display:flex;align-items:center;gap:12px;padding:max(14px,calc(env(safe-area-inset-top,0px) + 8px)) 16px 14px;background:linear-gradient(to bottom,rgba(0,0,0,.55),rgba(0,0,0,0))}'
+        + '#rt-cam .rc-top b{flex:1;font-size:16px;font-weight:900;letter-spacing:-.01em}#rt-cam .rc-top small{display:block;font-size:11px;font-weight:700;opacity:.75;margin-top:2px}'
+        + '#rt-cam .rc-top button{width:42px;height:42px;border-radius:14px;border:0;background:rgba(255,255,255,.18);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}'
+        + '#rt-cam.review .rc-top .rc-sw,#rt-cam.review .rc-tip,#rt-cam.review .rc-ctl{display:none}'
+        + '#rt-cam .rc-fr{position:absolute;z-index:1;left:50%;top:50%;width:min(84%,440px);aspect-ratio:9/14;max-height:66%;transform:translate(-50%,-52%);pointer-events:none}'
+        + '#rt-cam .rc-fr i{position:absolute;width:30px;height:30px;border:0 solid rgba(255,255,255,.95)}'
+        + '#rt-cam .rc-fr i:nth-child(1){left:0;top:0;border-width:3px 0 0 3px;border-top-left-radius:14px}#rt-cam .rc-fr i:nth-child(2){right:0;top:0;border-width:3px 3px 0 0;border-top-right-radius:14px}'
+        + '#rt-cam .rc-fr i:nth-child(3){left:0;bottom:0;border-width:0 0 3px 3px;border-bottom-left-radius:14px}#rt-cam .rc-fr i:nth-child(4){right:0;bottom:0;border-width:0 3px 3px 0;border-bottom-right-radius:14px}'
+        + '#rt-cam .rc-tip{position:absolute;z-index:2;left:0;right:0;bottom:calc(150px + max(4px,env(safe-area-inset-bottom,0px)));text-align:center;font-size:12.5px;font-weight:700}'
+        + '#rt-cam .rc-tip span{display:inline-block;background:rgba(0,0,0,.45);padding:7px 14px;border-radius:999px}'
+        + '#rt-cam .rc-bar{position:absolute;z-index:3;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:space-between;padding:22px 26px calc(22px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(0,0,0,.65),rgba(0,0,0,0))}'
+        + '#rt-cam .rc-ctl{display:flex;align-items:center;justify-content:space-between;width:100%}'
+        + '#rt-cam .rc-g{width:46px;height:46px;border-radius:14px;border:2px solid rgba(255,255,255,.9);background:rgba(255,255,255,.14);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center}'
+        + '#rt-cam .rc-sh{width:74px;height:74px;border-radius:50%;border:4px solid #fff;background:transparent;padding:0;display:flex;align-items:center;justify-content:center}'
+        + '#rt-cam .rc-sh::after{content:"";width:56px;height:56px;border-radius:50%;background:#fff;transition:transform .12s}#rt-cam .rc-sh:active::after{transform:scale(.86)}'
+        + '#rt-cam .rc-sp{width:46px;height:46px;flex-shrink:0}'
+        + '#rt-cam .rc-rv{display:none;width:100%;gap:12px}#rt-cam.review .rc-rv{display:flex}'
+        + '#rt-cam .rc-rv button{flex:1;border:0;border-radius:16px;padding:15px;font-size:14.5px;font-weight:900;background:rgba(255,255,255,.18);color:#fff}'
+        + '#rt-cam .rc-rv .go{background:linear-gradient(135deg,#f43f5e,#dc2626)}'
+        + '#rt-cam .rc-err{position:absolute;z-index:2;left:24px;right:24px;top:50%;transform:translateY(-50%);text-align:center;display:none;flex-direction:column;align-items:center;gap:12px;font-size:14px;font-weight:700;line-height:1.4}'
+        + '#rt-cam.err .rc-err{display:flex}#rt-cam.err .rc-fr,#rt-cam.err .rc-tip,#rt-cam.err .rc-sh{display:none}'
+        + '#rt-cam .rc-err i{font-size:34px;opacity:.8}#rt-cam .rc-err button{border:0;border-radius:14px;background:#fff;color:#18181b;font-weight:900;font-size:13.5px;padding:12px 20px;min-width:200px}'
+        + '#rt-cam .rc-err button.ghost{background:rgba(255,255,255,.18);color:#fff}';
+    document.head.appendChild(s);
+}
+function camStop() { if (cam.stream) { try { cam.stream.getTracks().forEach(t => t.stop()); } catch (e) { } cam.stream = null; } const v = $('rt-cam-v'); if (v) v.srcObject = null; }
+function camReview(on) {
+    const c = $('rt-cam'); if (!c) return; c.classList.toggle('review', !!on);
+    if (!on) { if (cam.url) { try { URL.revokeObjectURL(cam.url); } catch (e) { } } cam.url = ''; cam.blob = null; const im = $('rt-cam-shot'); if (im) im.removeAttribute('src'); const v = $('rt-cam-v'); if (v && v.paused) v.play().catch(() => { }); }
+}
+function camErr(m) { const c = $('rt-cam'); if (!c) return; const e = $('rt-cam-msg'); if (e) e.textContent = m; c.classList.add('err'); }
+async function camStart() {
+    const c = $('rt-cam'), v = $('rt-cam-v'); if (!c || !v) return; camStop(); c.classList.remove('err');
+    const md = navigator.mediaDevices;
+    if (!md || !md.getUserMedia) return camErr('Live camera is not available here. Use your phone camera or pick from gallery.');
+    try {
+        let st;
+        try { st = await md.getUserMedia({ video: { facingMode: { ideal: cam.face }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
+        catch (e1) { if (e1 && (e1.name === 'NotAllowedError' || e1.name === 'SecurityError')) throw e1; st = await md.getUserMedia({ video: true, audio: false }); }   // simple fallback for phones that refuse the size
+        if (!$('rt-cam')) { st.getTracks().forEach(t => t.stop()); return; }   // closed while the permission question was open
+        cam.stream = st; v.classList.toggle('mir', cam.face === 'user'); v.srcObject = st; await v.play().catch(() => { });
+    } catch (e) { camErr((e && e.name === 'NotAllowedError') ? 'Camera permission is off. Allow it, or use your phone camera or gallery.' : 'Could not start the camera. Use your phone camera or pick from gallery.'); }
+}
+function camOpen() {
+    if (!cur || $('rt-cam')) return;
+    camCss();
+    const r = document.createElement('div'); r.id = 'rt-cam'; r.setAttribute('role', 'dialog'); r.setAttribute('aria-label', 'Snap your run');
+    r.innerHTML = '<video id="rt-cam-v" autoplay playsinline muted></video><img id="rt-cam-shot" class="rc-shot" alt="Captured photo">'
+        + '<div class="rc-fr"><i></i><i></i><i></i><i></i></div>'
+        + '<div class="rc-top"><button type="button" data-a="close" aria-label="Close camera"><i class="fa-solid fa-xmark"></i></button><b>Snap your run<small>This photo becomes your run card</small></b><button type="button" class="rc-sw" data-a="flip" aria-label="Switch camera"><i class="fa-solid fa-camera-rotate"></i></button></div>'
+        + '<div class="rc-err"><i class="fa-solid fa-camera"></i><span id="rt-cam-msg"></span><button type="button" data-a="native">Use phone camera</button><button type="button" class="ghost" data-a="gallery">Choose from gallery</button></div>'
+        + '<div class="rc-tip"><span>Smile, you just ran!</span></div>'
+        + '<div class="rc-bar"><div class="rc-ctl"><button type="button" class="rc-g" data-a="gallery" aria-label="Pick from gallery"><i class="fa-solid fa-image"></i></button><button type="button" class="rc-sh" data-a="shot" aria-label="Take photo"></button><span class="rc-sp"></span></div>'
+        + '<div class="rc-rv"><button type="button" data-a="retake"><i class="fa-solid fa-rotate-left"></i> Retake</button><button type="button" class="go" data-a="use"><i class="fa-solid fa-check"></i> Use photo</button></div></div>';
+    r.addEventListener('click', e => {
+        const b = e.target.closest && e.target.closest('[data-a]'); if (!b) return; const a = b.getAttribute('data-a');
+        if (a === 'close') camClose();
+        else if (a === 'flip') { cam.face = cam.face === 'user' ? 'environment' : 'user'; camStart(); }
+        else if (a === 'shot') camShot();
+        else if (a === 'retake') camReview(false);
+        else if (a === 'use') camUse();
+        else if (a === 'gallery') { const i = $('rtc-gal'); if (i) i.click(); }
+        else if (a === 'native') { const i = $('rtc-cam'); if (i) i.click(); }
+    });
+    document.body.appendChild(r);
+    camStart();
+}
+function camClose() { const c = $('rt-cam'); camStop(); if (cam.url) { try { URL.revokeObjectURL(cam.url); } catch (e) { } } cam.url = ''; cam.blob = null; if (c) c.remove(); }
+function camShot() {
+    const v = $('rt-cam-v'); if (!cam.stream || !v || !v.videoWidth) return;
+    const vw = v.videoWidth, vh = v.videoHeight, ew = v.clientWidth || vw, eh = v.clientHeight || vh, k = Math.max(ew / vw, eh / vh);   // object-fit: cover
+    const sw = ew / k, sh = eh / k, sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+    const cv = document.createElement('canvas'); cv.width = Math.round(sw); cv.height = Math.round(sh); cv.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    cv.toBlob(b => {
+        if (!b) { if (window.showToast) window.showToast('Photo failed', 'Try again.', 'error'); return; }
+        cam.blob = b; cam.url = URL.createObjectURL(b); const im = $('rt-cam-shot'); if (im) im.src = cam.url; v.pause(); camReview(true);
+        try { navigator.vibrate && navigator.vibrate(20); } catch (e) { }
+    }, 'image/jpeg', 0.95);
+}
+function camUse() {
+    const b = cam.blob; if (!b) return;
+    const f = new File([b], 'run_' + (window.loggedInMobile || 'x') + '_' + Date.now() + '.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+    camClose(); applyPhoto(f);
+}
+window.addEventListener('hashchange', camClose); window.addEventListener('pagehide', camStop);
+document.addEventListener('visibilitychange', () => { if (!$('rt-cam')) return; if (document.hidden) camStop(); else if (!cam.blob) camStart(); });
+window.addEventListener('exama-back', e => { if (!$('rt-cam')) return; camClose(); try { e.preventDefault(); e.stopImmediatePropagation(); } catch (x) { } }, true);   // phone Back button closes the camera first
 
 // download the saved photo from Drive as a same-origin blob (needed so the canvas can export the card)
 function fetchBlob(u) {
@@ -22402,7 +22565,7 @@ function open(d, o) {
         + (d.canEdit ? '<div style="width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px;align-items:center">'
             + '<button type="button" onclick="window.rtCardPick(\'cam\')" style="' + BT + 'width:100%;background:#fff;color:#09090b"><i class="fa-solid fa-camera" style="margin-right:8px"></i><span id="rtc-cam-t">TAKE PHOTO</span></button>'
             + '<p id="rtc-status" style="font-size:12px;font-weight:600;text-align:center;line-height:1.35;min-height:16px;color:rgba(255,255,255,.65)">Take a photo to personalise your run card.</p>'
-            + '<input id="rtc-cam" type="file" accept="image/*" capture="environment" onchange="window.rtCardFile(this)" style="display:none"></div>' : '<p id="rtc-status" style="font-size:12px;font-weight:600;text-align:center;min-height:16px;color:rgba(255,255,255,.65)"></p>')
+            + '<input id="rtc-cam" type="file" accept="image/*" capture="environment" onchange="window.rtCardFile(this)" style="display:none"><input id="rtc-gal" type="file" accept="image/*" onchange="window.rtCardFile(this)" style="display:none"></div>' : '<p id="rtc-status" style="font-size:12px;font-weight:600;text-align:center;min-height:16px;color:rgba(255,255,255,.65)"></p>')
         + '<div style="display:flex;gap:10px;width:100%;max-width:420px;justify-content:center"><button type="button" onclick="window.rtCardDownload()" style="' + BT + 'flex:1;background:linear-gradient(135deg,#f43f5e,#dc2626);color:#fff"><i class="fa-solid fa-download" style="margin-right:8px"></i><span id="rtc-dl-t">DOWNLOAD</span></button>'
         + '<button type="button" onclick="window.rtCardShare()" style="' + BT + 'flex:1;background:#fff;color:#09090b"><i class="fa-solid fa-share-nodes" style="margin-right:8px"></i><span id="rtc-sh-t">SHARE</span></button>'
         + '</div></div>';
@@ -24529,7 +24692,7 @@ let gT = 0; const gIv = setInterval(() => { if (++gT > 80) return clearInterval(
                     <div class="mpf-media${photo ? '' : ' np'}" style="--bg:${pal}">
                         ${photo ? `<img src="${esc(photo)}" alt="Run photo" loading="lazy" decoding="async" draggable="false" onerror="this.style.display='none'">` : '<div class="mpf-dots"></div>'}
                         <div class="mpf-shade"></div>
-                        ${route ? `<div class="mpf-route ${photo ? 'sm' : 'big'}">${route}</div>` : (photo ? '' : `<div class="mpf-ph">${ico('activity', 72)}</div>`)}
+                        ${route ? `<div class="mpf-route ${photo ? 'sm' : 'big'}">${route}</div>` : (photo ? '' : `<div class="mpf-ph" style="flex-direction:column;gap:10px">${ico('activity', 72)}<span style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.85">Route not recorded</span></div>`)}
                         <div class="mpf-dist"><b>${km.toFixed(2)}</b><span>km</span></div>
                     </div>
                     <div class="mpf-stats">${stat('clock', '#0a84ff', feedFmtT(l.time), 'Time')}${stat('activity', '#34c759', pace, 'Pace /km')}${stat('flame', '#ff2d55', esc(String(cals)), 'Calories')}</div>
@@ -32144,34 +32307,50 @@ YOUR DIRECTIVES:
                     return;
                 }
 
-                const btn = event.currentTarget;
+                // FIX (2026-11-27): the button is found by itself (the old code read the global click "event", which can be missing),
+                // a second tap while saving is ignored, and the save no longer waits for the server for ever.
+                const btn = document.querySelector('#budget-add-modal-content button[onclick*="saveBudgetTransaction"]') || (window.event && window.event.currentTarget) || { innerHTML: '', disabled: false };
+                if (btn.disabled) return;
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
                 btn.disabled = true;
 
+                let queued = false;
                 try {
                     if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured && window.loggedInMobile) {
-                        const budgetRef = collection(db, window.getCollectionName("students"), window.loggedInMobile, "budget");
-                        await addDoc(budgetRef, {
+                        if (window.ensureBudgetListener) window.ensureBudgetListener();   // the list must be live, or a saved transaction never shows up
+                        const stuCol = window.getCollectionName("students"), now = Date.now();
+                        const meObj = (window.studentsDB || []).find(s => s.mobile === window.loggedInMobile);
+                        // ONE atomic write: the transfer (my side + the other student's side) is saved together or not at all
+                        const batch = writeBatch(db);
+                        batch.set(doc(collection(db, stuCol, window.loggedInMobile, "budget")), {
                             amount: Number(amount),
                             title: title.trim(),
                             type: type,
                             method: method,
                             category: category,
                             transferTo: transferTo,
-                            timestamp: Date.now()
+                            timestamp: now
                         });
-
-                        // Handle transfer simulation in Firebase
                         if (type === 'transfer') {
-                            const targetBudgetRef = collection(db, window.getCollectionName("students"), transferTo, "budget");
-                            await addDoc(targetBudgetRef, {
+                            batch.set(doc(collection(db, stuCol, transferTo, "budget")), {
                                 amount: Number(amount),
-                                title: `Transfer from ${window.studentsDB.find(s => s.mobile === window.loggedInMobile)?.name || window.loggedInMobile}`,
+                                title: `Transfer from ${(meObj && meObj.name) || window.loggedInMobile}`,
                                 type: 'income',
                                 method: method,
                                 category: 'Transfer',
                                 transferFrom: window.loggedInMobile,
-                                timestamp: Date.now()
+                                timestamp: now
+                            });
+                        }
+                        const commit = batch.commit();
+                        // Firestore only answers when the SERVER has the data. On a slow / offline phone that can take for ever, so after 5 s we
+                        // continue: the phone keeps the transaction and sends it by itself as soon as the network is back.
+                        const res = await Promise.race([commit.then(() => 'ok'), new Promise(r => setTimeout(() => r('slow'), 5000))]);
+                        if (res === 'slow') {
+                            queued = true;
+                            commit.catch(err => {
+                                console.error('Budget sync error:', err);
+                                if (window.showToast) window.showToast('Transaction could not be sent', (err && err.code === 'permission-denied') ? 'The database refused it (permission).' : 'Please add it again.', 'error');
                             });
                         }
                     } else {
@@ -32192,11 +32371,14 @@ YOUR DIRECTIVES:
                     window.closeAddTransactionModal();
                     document.getElementById('budget-amount').value = '';
                     document.getElementById('budget-title').value = '';
-                    if (window.showToast) window.showToast('Transaction saved!', 'success');
+                    if (window.showToast) window.showToast(queued ? 'Saved on this phone' : 'Transaction saved!', queued ? 'It will upload when the internet is back.' : '', 'success');
                     if (window.renderBudgetDashboard) window.renderBudgetDashboard();
                 } catch (e) {
                     console.error("Budget save error:", e);
-                    if (window.showToast) window.showToast('Error saving transaction', 'error');
+                    const why = (e && e.code === 'permission-denied')
+                        ? (type === 'transfer' ? 'The database does not allow a transfer to that student.' : 'The database refused this transaction (permission).')
+                        : 'Check your internet and try again.';
+                    if (window.showToast) window.showToast('Could not save transaction', why, 'error');
                 } finally {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i> Save Transaction';
                     btn.disabled = false;
@@ -32250,30 +32432,40 @@ YOUR DIRECTIVES:
                 }
             };
 
-            window.setupBudgetListener = function () {
-                if (!isFirebaseConfigured || !window.loggedInMobile) return;
-                const q = query(collection(db, window.getCollectionName("students"), window.loggedInMobile, "budget"));
-                onSnapshot(q, (snap) => {
+            // FIX (2026-11-27): the live list was only started by a "hashchange" and the flag was set even when nobody was logged in yet,
+            // so a transaction could be saved but never shown (cold start on #budget-manager, or another student logging in on the same phone).
+            // ensureBudgetListener() is safe to call any time: it (re)starts the list only when needed, for the logged-in student.
+            window.ensureBudgetListener = function () {
+                if (typeof isFirebaseConfigured === 'undefined' || !isFirebaseConfigured || !window.loggedInMobile) return;
+                const me = String(window.loggedInMobile);
+                if (window.budgetListenerStarted && window.__budgetListenerMobile === me) return;
+                try { if (window.__budgetUnsub) window.__budgetUnsub(); } catch (e) { }
+                window.budgetsDB = [];
+                window.budgetListenerStarted = true;
+                window.__budgetListenerMobile = me;
+                const q = query(collection(db, window.getCollectionName("students"), me, "budget"));
+                window.__budgetUnsub = onSnapshot(q, (snap) => {
                     window.budgetsDB = [];
-                    snap.forEach(doc => {
-                        window.budgetsDB.push({ id: doc.id, ...doc.data() });
+                    snap.forEach(d => {
+                        window.budgetsDB.push({ id: d.id, ...d.data() });
                     });
                     if (window.location.hash.includes('budget-manager')) {
                         window.renderBudgetDashboard();
                     }
+                }, (err) => {
+                    console.warn('Budget list failed:', err && err.message);
+                    window.budgetListenerStarted = false;   // try again the next time the screen opens
                 });
             };
+            window.setupBudgetListener = window.ensureBudgetListener;
 
             // Trigger setup when navigating to the budget view
             window.addEventListener('hashchange', () => {
                 if (window.location.hash.includes('budget-manager')) {
-                    if (!window.budgetListenerStarted) {
-                        window.budgetListenerStarted = true;
-                        window.setupBudgetListener();
-                    } else {
-                        window.renderBudgetDashboard();
-                    }
+                    window.ensureBudgetListener();
+                    window.renderBudgetDashboard();
                 } else if (window.location.hash.includes('budget-track')) {
+                    window.ensureBudgetListener();
                     window.renderBudgetTrackView();
                 }
             });
