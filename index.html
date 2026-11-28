@@ -29,6 +29,7 @@ Change 2026-11-25 (f): bottom-bar tab switch no longer plays its animation twice
 Change 2026-11-25 (e): Apple ZOOM instead of the side slide: windows grow out of the tapped dashboard button (transform-origin set in __vwOpenRect) and shrink back into it, the page under scales to .94, window -> window and tabs zoom from .94 (keyframes apIn / apOut / apSoft / apUnder / apReturn / iosTab in style fix-2026-11-25-c).
 Change 2026-11-25 (d): screens, bottom-bar pill and tab switches now run on ONE spring (CSS linear(), set in apple-motion-js: --ios-dur / --ios-ease / --ios-tab are written from the same spring); heavy screen set-up starts at 60 % of the motion; tab screens fade + settle from 98.5 %.
 Change 2026-11-25 (d): LECTURE HUB VIDEO POP OUT (Picture-in-Picture, app only; needs the app update that has the call pip.supported / pip.set / pip.enter). New style + script id exama-pip at the very end of the file (before the closing body tag): a Pop out button in the lecture player header (#vx-pip-btn); while a lecture plays the page tells the app (pip.set) so pressing Home opens Android's floating window; while the window is open the app sends the event exama-pip and the page adds class exama-in-pip to the html element (only the video fills the small window). An old app answers "unknown call", then nothing is shown and nothing changes. See FLUTTER_CONNECT.md section 0.14.
+Change 2026-11-28 (Nova Research v3): Nova panel + continue-chat redesigned (style nr-css-v3; header with status, user bubbles, typing dots, quick follow-up chips Explain simpler / Give an example / Quiz me / Exam points, docked input with send button that is locked while Nova is answering; wide screens pin the panel at the right, phones keep it first and the input sticks above the bottom bar). The Wikipedia card now sits ABOVE the web results with no 'From Wikipedia' heading (short text + Show more, small 'Full article' link keeps the source). nr-js: resHtml, startWiki, ohHtml, setBusy, toTurn, sizePanel; ids nr-wk / nr-gg / nr-thread / nr-fq unchanged, old .nr-fu is now .nr-dk.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -41094,6 +41095,9 @@ Write a short normal introduction before the blocks and a one-line closing after
        ------------------------------------------------------------------ */
     var GOOGLE_CX = window.NOVA_RESEARCH_CX || '8233b8db26b434928';
 
+    /* Web results from Tavily (needs the nova-search-proxy worker, see nova-search-worker.js). If it is not reachable the old Google widget is used instead. */
+    var SEARCH_URL = window.NOVA_SEARCH_URL || 'https://nova-search-proxy.connect-subhankar-info.workers.dev/';
+
     var AVATAR = 'https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true';
     var $ = function (i) { return document.getElementById(i); };
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -41243,7 +41247,7 @@ Write a short normal introduction before the blocks and a one-line closing after
                 .then(function (d) { clearTimeout(to); res(d); }, function (e) { clearTimeout(to); rej(e); });
         });
     }
-    function wikiUrl(t) { return 'https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=' + enc(t) + '&gsrlimit=1&prop=extracts%7Cpageimages%7Cinfo&exintro=1&explaintext=1&piprop=thumbnail&pithumbsize=240&inprop=url'; }
+    function wikiUrl(t) { return 'https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=' + enc(t) + '&gsrlimit=1&prop=extracts%7Cpageimages%7Cinfo%7Cdescription&exintro=1&explaintext=1&piprop=thumbnail&pithumbsize=320&inprop=url'; }
     function booksUrl(t) { return 'https://openlibrary.org/search.json?q=' + enc(t) + '&limit=10&fields=key,title,author_name,first_publish_year,cover_i'; }
 
 
@@ -41296,13 +41300,58 @@ Write a short normal introduction before the blocks and a one-line closing after
             + '<div class="nr-h"><h4>Free study sources</h4></div><div class="nr-tiles">' + SRC.map(tile).join('') + '</div>'
             + '<p class="nr-note">Type a topic above, then tap a source to search it there. With an empty box a tap opens the source.</p>';
     }
+    /* ---------- v3 helpers: answer header, busy state, scrolling, panel height ---------- */
+    var CHIPS = [
+        ['fa-feather-pointed', 'Explain simpler', 'Explain the same answer in much simpler words, as if I am new to this topic.', '#7c3aed'],
+        ['fa-lightbulb', 'Give an example', 'Give me one clear real-life example of this.', '#d97706'],
+        ['fa-bolt', 'Quiz me', 'Ask me 3 quick practice questions on this, with the answers at the end.', '#16a34a'],
+        ['fa-list-check', 'Exam points', 'Give me the most important exam points on this as a short list.', '#1a73e8']
+    ];
+    function ohHtml(i, sub, loading, cls) {
+        return '<div class="nr-oh"><span class="nr-av"><img src="' + AVATAR + '" alt=""></span><div><b>' + (i > 0 ? 'Nova' : 'Nova Overview') + '</b><small' + (loading ? ' id="nr-m' + i + '"' : '') + (cls ? ' class="' + cls + '"' : '') + '>' + sub + '</small></div>'
+            + (loading ? '<span class="nr-typing" aria-hidden="true"><i></i><i></i><i></i></span>' : '') + '</div>';
+    }
+    function pending() { return S.turns.some(function (t) { return !t.ok && !t.err; }); }
+    function setBusy() {
+        var pend = pending(), dk = document.querySelector('#nr-res .nr-dk'); if (dk) dk.classList.toggle('busy', pend);
+        var sb = $('nr-fs'); if (sb) sb.disabled = pend;
+        [].forEach.call(document.querySelectorAll('#nr-res .nr-dkc button'), function (b) { b.disabled = pend; });
+        var st = $('nr-pst'); if (st) st.textContent = pend ? 'Thinking\u2026' : (S.turns.length ? 'Ask me anything else' : 'Your study assistant');
+    }
+    /* bring a new turn into view: inside the panel when the panel scrolls by itself (wide screens), on the page otherwise */
+    function toTurn(el) {
+        var th = $('nr-thread');
+        try {
+            if (th && th.scrollHeight > th.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(th).overflowY)) { th.scrollTo({ top: Math.max(0, el.offsetTop - th.offsetTop - 4), behavior: 'smooth' }); return; }
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (e) { try { el.scrollIntoView(); } catch (x) { } }
+    }
+    /* on wide screens the Nova panel is pinned and as tall as the visible page: tell the CSS how tall that is */
+    function sizePanel() {
+        var r = $('nr-root'); if (!r || r.clientHeight < 80) return;
+        var bn = 0; try { bn = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bn-h')) || 0; } catch (e) { }
+        r.style.setProperty('--nr-ph', Math.max(240, r.clientHeight - bn - 28) + 'px');
+    }
+    function watchSize(root) {
+        if (S.ro) return; S.ro = 1;
+        try { if (window.ResizeObserver) new ResizeObserver(sizePanel).observe(root); } catch (e) { }
+        window.addEventListener('resize', sizePanel);
+        window.addEventListener('orientationchange', function () { setTimeout(sizePanel, 250); });
+        sizePanel();
+    }
+
     function resHtml() {
-        return '<div class="nr-w nr-wa"><div class="nr-t-web"><div class="nr-pills">' + pill('img', 'fa-regular fa-image', 'Images', '#7c3aed') + pill('yt', 'fa-brands fa-youtube', 'Videos', '#dc2626') + pill('g', 'fa-brands fa-google', 'Open in Google', '#2563eb') + '</div></div>'
+        return '<div class="nr-w nr-wa">'
+            + '<section id="nr-wk" class="nr-t-web"></section>'
             + '<section id="nr-gg" class="nr-t-web" hidden></section></div><div class="nr-w nr-wb">'
+            + '<header class="nr-wbh"><span class="av"><img src="' + AVATAR + '" alt=""></span><div class="tx"><b>Nova</b><small id="nr-pst">Your study assistant</small></div>'
+            + '<button type="button" class="nr-wbx" data-a="chat" aria-label="Continue in Nova chat" title="Continue in Nova chat"><i class="fa-solid fa-up-right-from-square"></i><span>Open chat</span></button></header>'
             + '<div id="nr-ask" class="nr-ask nr-t-ans"><img src="' + AVATAR + '" alt=""><h4>Ask Nova to explain this</h4><p>Nova reads Google and writes a short answer with sources. It runs only when you tap the button.</p><button type="button" class="nr-askbtn" data-a="asknova"><i class="fa-solid fa-wand-magic-sparkles"></i>Ask Nova</button><button type="button" class="nr-asklink" data-a="chat">Open Nova chat instead</button></div>'
             + '<div id="nr-thread" class="nr-t-ans" aria-live="polite"></div>'
-            + '<div class="nr-fu nr-t-ans" hidden><i class="fa-solid fa-wand-magic-sparkles"></i><input id="nr-fq" type="text" enterkeyhint="send" autocomplete="off" maxlength="300" placeholder="Ask Nova a follow-up" aria-label="Ask Nova a follow-up"><button type="button" data-a="fu" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button></div>'
-            + '</div><div class="nr-w nr-wc"><section id="nr-wk" class="nr-t-more"></section><section id="nr-bk" class="nr-t-more"></section>'
+            + '<div class="nr-dk nr-t-ans" hidden><div class="nr-dkc" role="group" aria-label="Quick follow-ups">'
+            + CHIPS.map(function (c) { return '<button type="button" data-a="chip" data-q="' + esc(c[2]) + '" data-l="' + esc(c[1]) + '" style="--c:' + c[3] + '"><i class="fa-solid ' + c[0] + '"></i>' + esc(c[1]) + '</button>'; }).join('')
+            + '</div><div class="nr-dkr"><input id="nr-fq" type="text" enterkeyhint="send" autocomplete="off" maxlength="300" placeholder="Ask a follow-up\u2026" aria-label="Ask Nova a follow-up"><button type="button" class="send" id="nr-fs" data-a="fu" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></div></div>'
+            + '</div><div class="nr-w nr-wc"><section id="nr-bk" class="nr-t-more"></section>'
             + '<div class="nr-h nr-t-more"><h4>Search this topic on</h4></div><div class="nr-pills nr-t-more">' + SRC.map(function (s) { return pill('src', s.i, s.n, s.c, ' data-id="' + s.id + '"'); }).join('') + '</div></div>';
     }
 
@@ -41324,7 +41373,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     /* ---------- one answer card ---------- */
     function shell(i, t, follow) {
         return '<article class="nr-turn" id="nr-t' + i + '">' + (follow ? '<div class="nr-q">' + esc(t.label) + '</div>' : '')
-            + '<div class="nr-ov" id="nr-o' + i + '"><div class="nr-oh"><img src="' + AVATAR + '" alt=""><div><b>Nova Overview</b><small id="nr-m' + i + '">' + ST_TXT[0] + '</small></div></div>'
+            + '<div class="nr-ov" id="nr-o' + i + '">' + ohHtml(i, ST_TXT[0], true)
             + '<div class="nr-b2"><div class="nr-sk" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div></div></article>';
     }
     function startStatus(i) {
@@ -41344,7 +41393,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         var sp = splitRelated(withCites(p.text, gm)), body = htmlCites(md(sp.text), ch);
         t.plain = sp.text.replace(/\u27e6[\d,]+\u27e7/g, '').trim();
         var grounded = ch.length > 0 || qs.length > 0;
-        ov.innerHTML = '<div class="nr-oh"><img src="' + AVATAR + '" alt=""><div><b>Nova Overview</b><small>' + (grounded ? 'Checked with Google Search' : 'Answered by Nova') + '</small></div></div>'
+        ov.innerHTML = ohHtml(i, grounded ? 'Checked with Google Search' : 'Answered by Nova', false, grounded ? 'ok' : '')
             + '<div class="nr-b2">' + body + '</div>' + srcRow(ch) + '<div id="nr-sp' + i + '"></div>'
             + (sp.rel.length ? '<div class="nr-rel"><span class="nr-lbl">Ask next</span>' + sp.rel.map(function (q) { return '<button type="button" data-a="rel" data-q="' + esc(q) + '"><span>' + esc(q) + '</span><i class="fa-solid fa-angle-right"></i></button>'; }).join('') + '</div>' : '')
             + '<div class="nr-act">' + Object.keys(ACT).map(function (k) { return '<button type="button" data-a="act" data-k="' + k + '"><i class="fa-solid ' + ACT[k][1] + '"></i>' + ACT[k][0] + '</button>'; }).join('') + '<button type="button" data-a="copy" data-i="' + i + '"><i class="fa-regular fa-copy"></i>Copy</button><button type="button" data-a="listen" data-i="' + i + '"><i class="fa-solid fa-volume-high"></i>Listen</button><button type="button" data-a="share" data-i="' + i + '"><i class="fa-solid fa-share-nodes"></i>Share</button><button type="button" data-a="save" data-i="' + i + '"><i class="fa-regular fa-bookmark"></i>Save</button></div>';
@@ -41362,7 +41411,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     function paintErr(i) {
         var t = S.turns[i], ov = $('nr-o' + i); if (!t || !ov) return;
         var m = t.err && t.err.message || '', msg = m === 'offline' ? 'You are offline. Connect to the internet and try again.' : m === 'timeout' ? 'Nova took too long to answer. Try again.' : 'Nova could not answer right now. Try again in a moment.';
-        ov.innerHTML = '<div class="nr-oh"><img src="' + AVATAR + '" alt=""><div><b>Nova Overview</b><small>No answer yet</small></div></div><div class="nr-b2"><div class="nr-err">' + esc(msg) + '<button type="button" data-a="retry" data-i="' + i + '">Try again</button></div></div>';
+        ov.innerHTML = ohHtml(i, 'No answer yet', false, '') + '<div class="nr-b2"><div class="nr-err">' + esc(msg) + '<button type="button" data-a="retry" data-i="' + i + '">Try again</button></div></div>';
     }
     function historyFor(i, prompt) {
         var c = [];
@@ -41372,14 +41421,14 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     function runTurn(prompt, label, follow, again) {
         var tok = S.tok, i, t;
-        if (again != null) { i = again; t = S.turns[i]; if (!t) return; t.ok = false; t.err = null; var ov = $('nr-o' + i); if (ov) ov.innerHTML = '<div class="nr-oh"><img src="' + AVATAR + '" alt=""><div><b>Nova Overview</b><small id="nr-m' + i + '">' + ST_TXT[0] + '</small></div></div><div class="nr-b2"><div class="nr-sk" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>'; }
+        if (again != null) { i = again; t = S.turns[i]; if (!t) return; t.ok = false; t.err = null; var ov = $('nr-o' + i); if (ov) ov.innerHTML = ohHtml(i, ST_TXT[0], true) + '<div class="nr-b2"><div class="nr-sk" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>'; }
         else { i = S.turns.length; t = { prompt: prompt, label: label, raw: '', ok: false, ctl: null, tm: null }; S.turns.push(t); var th = $('nr-thread'); if (th) th.insertAdjacentHTML('beforeend', shell(i, t, follow)); }
-        stopStatus(t); startStatus(i);
-        if (follow && again == null) { var el = $('nr-t' + i); if (el && el.scrollIntoView) { try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); } } }
+        stopStatus(t); startStatus(i); setBusy();
+        if (follow && again == null) { var el = $('nr-t' + i); if (el) toTurn(el); }
         ask(historyFor(i, t.prompt), t).then(function (p) {
-            if (tok !== S.tok) return; stopStatus(t); t.raw = p.text; t.p = p; t.ok = true; paint(i);
+            if (tok !== S.tok) return; stopStatus(t); t.raw = p.text; t.p = p; t.ok = true; paint(i); setBusy();
         }, function (e) {
-            if (tok !== S.tok) return; stopStatus(t); t.err = e; paintErr(i);
+            if (tok !== S.tok) return; stopStatus(t); t.err = e; paintErr(i); setBusy();
         });
     }
 
@@ -41391,9 +41440,13 @@ Write a short normal introduction before the blocks and a one-line closing after
             var pg = d && d.query && d.query.pages, k = pg && Object.keys(pg)[0], p = k && pg[k];
             if (!p || !p.extract || p.extract.length < 40) { box.innerHTML = ''; return; }
             var url = p.fullurl || ('https://en.wikipedia.org/wiki/' + enc(String(p.title || '').replace(/ /g, '_'))), th = p.thumbnail && p.thumbnail.source;
-            var paras = String(p.extract).split(/\n+/).filter(Boolean).map(function (t) { return '<p>' + esc(t) + '</p>'; }).join('');
-            box.innerHTML = '<div class="nr-h"><h4>From Wikipedia</h4></div><article class="nr-wiki">' + (th && /^https:\/\//.test(th) ? '<img src="' + esc(th) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '')
-                + '<h5>' + esc(p.title) + '</h5>' + paras + '<button type="button" class="nr-wkbtn" data-a="url" data-u="' + esc(url) + '"><i class="fa-brands fa-wikipedia-w"></i>Open in Wikipedia</button></article>';
+            var parts = String(p.extract).split(/\n+/).filter(Boolean), paras = parts.map(function (t) { return '<p>' + esc(t) + '</p>'; }).join('');
+            var long = String(p.extract).length > 460 || parts.length > 2;
+            box.innerHTML = '<article class="nr-wiki' + (long ? ' long' : '') + '"><div class="nr-wkh"><div class="nr-wkt"><h5>' + esc(p.title) + '</h5>' + (p.description ? '<span class="nr-wkd">' + esc(p.description) + '</span>' : '') + '</div>'
+                + (th && /^https:\/\//.test(th) ? '<img src="' + esc(th) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '') + '</div>'
+                + '<div class="nr-wkx">' + paras + '</div>'
+                + '<div class="nr-wkf">' + (long ? '<button type="button" class="nr-wkm" data-a="wkmore" aria-expanded="false"><span>Show more</span><i class="fa-solid fa-chevron-down"></i></button>' : '')
+                + '<button type="button" class="nr-wkl" data-a="url" data-u="' + esc(url) + '" aria-label="Open the full article on Wikipedia"><i class="fa-brands fa-wikipedia-w"></i>Full article</button></div></article>';
         }, function () { if (tok === S.tok) box.innerHTML = ''; });
     }
     function startBooks(q) {
@@ -41435,13 +41488,32 @@ Write a short normal introduction before the blocks and a one-line closing after
         try {
             var gn = 'nrg' + (++cseN); google.search.cse.element.render({ div: 'nr-gcse', tag: 'searchresults-only', gname: gn });
             var el = google.search.cse.element.getElement(gn); if (el) el.execute(q);
-            pullGoogle(); try { var mo = new MutationObserver(pullGoogle); mo.observe(document.body, { childList: true }); setTimeout(function () { mo.disconnect(); }, 15000); } catch (e2) { }
+            pullGoogle(); try { var b2 = $('nr-gcse'); new MutationObserver(function () { fav(b2); }).observe(b2, { childList: true, subtree: true }); } catch (e3) { } try { var mo = new MutationObserver(pullGoogle); mo.observe(document.body, { childList: true }); setTimeout(function () { mo.disconnect(); }, 15000); } catch (e2) { }
             watchGoogle(q);
         } catch (e) { gFallback('Google results could not be shown here.'); }
     }
-    function startGoogle(q) {
+    function bt(x) { return esc(x).replace(/\u0001/g, '<b>').replace(/\u0002/g, '</b>'); }
+    function brItem(r) {
+        var h = r.host || hostOf(r.url);
+        return '<article class="nr-br"><div class="nr-bm"><a class="nr-bl" data-ext="1" href="' + esc(r.url) + '"><div class="nr-fv"><img alt="" src="https://www.google.com/s2/favicons?sz=64&domain=' + enc(h) + '"><span>' + esc(h) + '</span></div><h5>' + bt(r.title) + '</h5></a>'
+            + '<p>' + (r.age ? '<span class="nr-ag">' + esc(r.age) + ' \u2014 </span>' : '') + bt(r.desc) + '</p></div>'
+            + (r.thumb && /^https:\/\//.test(r.thumb) ? '<a data-ext="1" href="' + esc(r.url) + '" tabindex="-1" aria-hidden="true"><img class="nr-bt" alt="" loading="lazy" referrerpolicy="no-referrer" src="' + esc(r.thumb) + '"></a>' : '') + '</article>';
+    }
+    function drawBrave(q, page) {
+        var tok = S.tok, box = $('nr-gg'); if (!box) return;
+        box.hidden = false; box.innerHTML = '<div id="nr-brv"><div class="nr-sk" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>';
+        fj(SEARCH_URL + (SEARCH_URL.indexOf('?') < 0 ? '?' : '&') + 'q=' + enc(q) + '&offset=' + page, 15000).then(function (d) {
+            if (tok !== S.tok) return;
+            var a = (d && d.results) || []; if (!a.length) throw new Error('none');
+            var big = a.length > 10, last = (!big && d.more) ? Math.min(4, page + 1) : page, pg = '';
+            if (last > 0) { pg = '<div class="nr-pg">'; for (var i = 0; i <= last; i++) pg += '<button type="button" class="' + (i === page ? 'on' : '') + '" data-a="bpage" data-p="' + i + '">' + (i + 1) + '</button>'; pg += '</div>'; }
+            var el = $('nr-brv'); if (el) el.innerHTML = a.slice(0, 10).map(brItem).join('') + (big ? '<div id="nr-bm2" hidden>' + a.slice(10).map(brItem).join('') + '</div><div class="nr-pg"><button type="button" class="nr-mr" data-a="bmore">More results</button></div>' : '') + pg + '<small class="nr-pw">Results from ' + esc(d.src || 'web search') + '</small>';
+        }).catch(function () { if (tok !== S.tok) return; startCse(q); });
+    }
+    function startGoogle(q) { if (SEARCH_URL) drawBrave(q, 0); else startCse(q); }
+    function startCse(q) {
         var box = $('nr-gg'); if (!box || !GOOGLE_CX) return;
-        box.hidden = false; box.innerHTML = '<div class="nr-h"><h4>Google results</h4><small>Powered by Google</small></div><div id="nr-gcse"></div>';
+        box.hidden = false; box.innerHTML = '<div id="nr-gcse"></div>';
         if (window.google && google.search && google.search.cse && google.search.cse.element) { drawGoogle(q); return; }
         S.pendingQ = q;
         if (S.cse === 1) { watchGoogle(q); return; }
@@ -41472,7 +41544,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         runTurn(prompt, label || prompt, true);
     }
     function followFromBox() {
-        var i = $('nr-fq'); if (!i) return; var v = i.value.trim(); if (v.length < 2) return;
+        var i = $('nr-fq'); if (!i) return; var v = i.value.trim(); if (v.length < 2 || pending()) return;
         i.value = ''; try { i.blur(); } catch (e) { }
         follow(v, v);
     }
@@ -41519,6 +41591,8 @@ Write a short normal introduction before the blocks and a one-line closing after
         else if (a === 'copy') copy(+b.getAttribute('data-i'), b);
         else if (a === 'retry') { var ix = +b.getAttribute('data-i'), tt = S.turns[ix]; if (tt) runTurn(tt.prompt, tt.label, ix > 0, ix); }
         else if (a === 'url') go(b.getAttribute('data-u'));
+        else if (a === 'chip') { if (!pending()) follow(b.getAttribute('data-q'), b.getAttribute('data-l')); }
+        else if (a === 'wkmore') { var wk = b.closest('.nr-wiki'); if (wk) { var wo = wk.classList.toggle('open'); b.setAttribute('aria-expanded', wo ? 'true' : 'false'); var ws = b.querySelector('span'); if (ws) ws.textContent = wo ? 'Show less' : 'Show more'; } }
         else if (a === 'mic') mic();
         else if (a === 'tab') setTab(b.getAttribute('data-t'));
         else if (a === 'asknova') askNova();
@@ -41528,6 +41602,8 @@ Write a short normal introduction before the blocks and a one-line closing after
         else if (a === 'share') share(+b.getAttribute('data-i'));
         else if (a === 'save') save(+b.getAttribute('data-i'), b);
         else if (a === 'unsave') { var sa = getSaved(); sa.splice(+b.getAttribute('data-i'), 1); sv('novaResearchSaved', sa); var hh = $('nr-home'); if (hh) hh.innerHTML = homeHtml(); }
+        else if (a === 'bmore') { var m2 = $('nr-bm2'); if (m2) m2.hidden = false; if (b.parentNode) b.parentNode.removeChild(b); }
+        else if (a === 'bpage') { if (S.q) { drawBrave(S.q, +b.getAttribute('data-p') || 0); var gg = $('nr-gg'); if (gg && gg.scrollIntoView) { try { gg.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { gg.scrollIntoView(); } } } }
         else if (a === 'sub') { var si = $('nr-q'); if (si) { si.value = b.getAttribute('data-s') + ' '; syncX(); si.focus(); } }
     }
     function onKey(e) {
@@ -41541,15 +41617,21 @@ Write a short normal introduction before the blocks and a one-line closing after
         if (!S.q) return;
         if (S.turns.length) { setTab('ans'); return; }
         var c = $('nr-ask'); if (c) c.hidden = true;
-        var fu = document.querySelector('#nr-res .nr-fu'); if (fu) fu.hidden = false;
+        var fu = document.querySelector('#nr-res .nr-dk'); if (fu) fu.hidden = false;
         setTab('ans'); runTurn(S.q, S.q, false);
     }
     function fold(on) {
         var hd = document.querySelector('#nova-research-view .nv-hd'); if (!hd || hd.classList.contains('nr-fold') === on) return;
         hd.classList.toggle('nr-fold', on); S.lock = Date.now() + 420;
     }
+    function fav(box) {
+        [].forEach.call(box.querySelectorAll('.gsc-webResult.gsc-result:not([data-fv])'), function (r) {
+            r.setAttribute('data-fv', '1'); var a = r.querySelector('a.gs-title'), u = a ? (a.getAttribute('data-ctorig') || a.getAttribute('href') || '') : '', h = hostOf(u); if (!h) return;
+            var d = document.createElement('div'); d.className = 'nr-fv'; d.innerHTML = '<img alt="" src="https://www.google.com/s2/favicons?sz=64&domain=' + enc(h) + '"><span>' + esc(h) + '</span>'; r.insertBefore(d, r.firstChild);
+        });
+    }
     function pullGoogle() {
-        var box = $('nr-gcse'); if (!box) return;
+        var box = $('nr-gcse'); if (!box) return; fav(box);
         [].forEach.call(document.querySelectorAll('.gsc-results-wrapper-overlay'), function (w) { if (!box.contains(w)) box.appendChild(w); });
         [].forEach.call(document.querySelectorAll('.gsc-modal-background-image,.gsc-modal-background-image-visible'), function (x) { x.style.display = 'none'; });
     }
@@ -41580,7 +41662,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     function mount() {
         var root = $('nr-root'); if (!root) return;
-        bindHeader();
+        bindHeader(); watchSize(root);
         if (!root.getAttribute('data-nr')) {
             root.setAttribute('data-nr', '1');
             root.innerHTML = '<div class="nr-hero" id="nr-hero"><h3>What do you want to learn?</h3><p>Ask anything. Nova answers first, then Google, Wikipedia and books, all on one page.</p></div>'
@@ -42099,9 +42181,205 @@ html:has(#nova-mentor-view:not(.hidden-view)) #nova-fab,html:has(#nova-research-
 @media(min-width:700px){
 #nr-res:not([hidden]){display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:0 22px;align-items:start}
 .nr-wa{grid-column:1;grid-row:1;order:0}.nr-wc{grid-column:1;grid-row:2;order:0}
-.nr-wb{grid-column:2;grid-row:1/span 2;order:0;position:sticky;top:10px;max-height:calc(100dvh - 150px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding-bottom:4px}.nr-wb::-webkit-scrollbar{display:none}
+.nr-wb{grid-column:2;grid-row:1/span 2;order:0;position:sticky;top:10px;max-height:calc(100dvh - 150px)}.nr-wb #nr-thread{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .nr-tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* web results laid out like a Google / Edge results page */
+#nr-res #nr-gcse{background:transparent;border:0;border-radius:0;padding:0;min-height:60px;overflow:visible}
+#nr-res #nr-gcse .gsc-webResult.gsc-result{border:0!important;border-bottom:1px solid #e6ebf2!important;border-radius:0!important;background:transparent!important;padding:14px 2px 16px!important;margin:0!important}
+#nr-res #nr-gcse .gsc-webResult.gsc-result:hover{background:transparent!important}
+#nr-res #nr-gcse .gs-title,#nr-res #nr-gcse .gs-title *{font-size:19px;font-weight:400;line-height:1.3;color:#1a0dab;text-decoration:none}
+#nr-res #nr-gcse .gs-title:hover,#nr-res #nr-gcse .gs-title:hover *{text-decoration:underline}
+#nr-res #nr-gcse .gsc-url-top{display:none!important}
+#nr-res #nr-gcse .gs-snippet{font-size:14px;line-height:1.58;color:#4d5156}
+#nr-res #nr-gcse .gsc-cursor-box{margin:16px 0 4px;text-align:center}
+#nr-res #nr-gcse .gsc-cursor-page{display:inline-block;min-width:34px;padding:7px 11px;margin:0 2px;border-radius:99px;color:#1a0dab;font-size:14px;text-decoration:none}
+#nr-res #nr-gcse .gsc-cursor-current-page{background:#e8f0fe;color:#1a73e8;font-weight:700}
+.nr-fv{display:flex;align-items:center;gap:10px;margin-bottom:5px;font-size:13px;line-height:1.2;color:#202124}
+.nr-fv img{flex:none;width:24px;height:24px;border-radius:50%;background:#f1f3f4;padding:4px;box-sizing:border-box}
+.nr-fv span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:520px){#nr-res #nr-gcse .gs-title,#nr-res #nr-gcse .gs-title *{font-size:17.5px}}
+/* Nova chat: answer and follow-up box live in one container, input docked at the bottom */
+.nr-wb{display:flex;flex-direction:column;overflow:hidden;margin-bottom:16px;border:1.5px solid transparent;border-radius:26px;background:linear-gradient(#fff,#fff) padding-box,linear-gradient(135deg,#4285f4,#9b72f3,#f4a6c7) border-box;box-shadow:0 20px 40px -30px rgba(26,115,232,.7)}
+.nr-wb .nr-ov{border:0;border-radius:0;background:transparent;box-shadow:none}
+.nr-wb .nr-turn{margin:0}.nr-wb .nr-turn+.nr-turn{border-top:1px solid #edf2f7}
+.nr-wb .nr-q{margin:14px 14px 0 auto}
+.nr-wb .nr-ask{margin:0;border:0;border-radius:0}
+.nr-wb .nr-fu{flex:none;margin:0;gap:8px;padding:10px 12px 10px 14px;border:0;border-top:1px solid #e6ebf5;border-radius:0;background:#f7f9fd}
+.nr-wb .nr-fu>i{display:none}
+.nr-wb .nr-fu input{height:44px;padding:0 16px;border:1.5px solid #dbe6fb;border-radius:99px;background:#fff}
+.nr-wb .nr-fu input:focus{border-color:var(--nrA)}
+.nr-wb .nr-fu:focus-within{border-color:#e6ebf5}
+.nr-wb .nr-fu button{width:44px;height:44px;border-radius:50%;background:var(--nrG)}
+/* Brave results */
+.nr-br{display:flex;align-items:flex-start;gap:14px;padding:14px 2px 16px;border-bottom:1px solid #e6ebf2}
+.nr-bm{flex:1;min-width:0}
+.nr-bl{display:block;color:inherit;text-decoration:none}
+.nr-bl h5{margin:0;font-size:19px;font-weight:400;line-height:1.3;color:#1a0dab;overflow-wrap:anywhere}
+.nr-bl:hover h5{text-decoration:underline}
+.nr-br p{margin:5px 0 0;font-size:14px;line-height:1.58;color:#4d5156;overflow-wrap:anywhere}
+.nr-br p b{font-weight:600;color:#202124}.nr-ag{color:#70757a}
+.nr-bt{flex:none;width:92px;height:92px;border-radius:12px;object-fit:cover;background:#eef2f7;display:block}
+.nr-pg{display:flex;justify-content:center;gap:6px;margin:16px 0 4px}
+.nr-pg button{min-width:36px;height:36px;border:0;border-radius:99px;background:transparent;color:#1a0dab;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.nr-pg button.on{background:#e8f0fe;color:#1a73e8}
+.nr-pg .nr-mr{height:40px;padding:0 24px;border:1px solid #cfdcf7;background:#fff;color:#1a73e8}
+.nr-pw{display:block;margin:8px 2px 0;font-size:11.5px;text-align:center;color:var(--mut)}
+@media(max-width:520px){.nr-bl h5{font-size:17.5px}.nr-bt{width:72px;height:72px}}
 @media(prefers-reduced-motion:reduce){.nr-tile,.nr-ch{transition:none!important}}
+</style>
+<style id="nr-css-v3">/* ===== Nova Research v3 (2026-11-28): Nova chat panel, continue-chat dock, Wikipedia card above the web results =====
+   Scope: only #nova-research-view. Layout: phones / small tablets = one column (Nova panel, then Wikipedia + web results, then books);
+   wide screens and landscape phones = two columns (web on the left, Nova panel pinned on the right). */
+.nv-rs{--nrLine:#e4ebf7}
+#nova-research-view .nr-wb,#nova-research-view .nr-wb *,#nova-research-view .nr-wb *:before,#nova-research-view .nr-wb *:after,#nova-research-view .nr-wiki,#nova-research-view .nr-wiki *{box-sizing:border-box}
+
+/* ---------- Nova panel ---------- */
+.nr-wb{position:relative;display:flex;flex-direction:column;margin:0 0 18px;border:1.5px solid transparent;border-radius:28px;overflow:hidden;background:linear-gradient(#fff,#fff) padding-box,linear-gradient(135deg,#4285f4,#9b72f3,#f4a6c7) border-box;box-shadow:0 26px 50px -34px rgba(26,115,232,.75),0 2px 8px rgba(15,23,42,.04)}
+@supports (overflow:clip){.nr-wb{overflow:clip}}
+.nr-wbh{flex:none;display:flex;align-items:center;gap:12px;padding:14px 14px 14px 16px;background:linear-gradient(120deg,#eef4ff 0%,#f4f0ff 62%,#fdf0f6 100%);border-bottom:1px solid #e8eefb}
+.nr-wbh .av{position:relative;flex:none;width:42px;height:42px}
+.nr-wbh .av img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover;border:2px solid #fff;background:#fff;box-shadow:0 6px 14px -6px rgba(26,115,232,.65)}
+.nr-wbh .av:after{content:"";position:absolute;right:0;bottom:0;width:12px;height:12px;border-radius:50%;background:#22c55e;border:2px solid #fff}
+.nr-wbh .tx{flex:1;min-width:0}
+.nr-wbh .tx b{display:block;font-size:16px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:var(--ink)}
+.nr-wbh .tx small{display:block;margin-top:2px;font-size:12.5px;font-weight:600;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nr-wbx{flex:none;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border:1px solid #d3e0fa;border-radius:99px;background:rgba(255,255,255,.85);color:#1451b8;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:transform .25s var(--ios),background .2s}
+.nr-wbx i{font-size:11.5px}
+.nr-wbx:active{transform:scale(.95)}
+@media(hover:hover){.nr-wbx:hover{background:#fff}}
+.nr-wbx:focus-visible,.nr-dkc button:focus-visible,.nr-dkr .send:focus-visible,.nr-wkm:focus-visible,.nr-wkl:focus-visible{outline:2px solid var(--nrA);outline-offset:2px}
+
+/* ---------- start card (before Nova is asked) ---------- */
+.nr-wb .nr-ask{padding:30px 22px 24px;background:radial-gradient(110% 80% at 50% 0%,#eef4ff 0%,#fff 66%)}
+.nr-ask img{width:68px;height:68px;border:3px solid #fff;box-shadow:0 0 0 2px #cfe0ff,0 14px 26px -12px rgba(26,115,232,.6)}
+.nr-ask h4{margin:16px 0 6px;font-size:19px}
+.nr-askbtn{margin-top:18px;padding:13px 26px;font-size:15px;box-shadow:0 14px 24px -14px rgba(26,115,232,.9)}
+.nr-asklink{margin-top:10px;padding:10px 18px;border:1.5px solid #d3e0fa;border-radius:99px;background:#fff;color:#1451b8}
+
+/* ---------- conversation ---------- */
+.nr-wb #nr-thread{padding:4px 0 6px}
+.nr-wb .nr-turn{margin:0;padding:0 0 6px;scroll-margin-top:8px}
+.nr-wb .nr-turn+.nr-turn{border-top:0}
+.nr-wb .nr-q{width:fit-content;max-width:84%;margin:14px 14px 4px auto;padding:10px 15px;border:0;border-radius:20px 20px 6px 20px;background:var(--nrG);color:#fff;font-size:14.5px;font-weight:600;line-height:1.45;overflow-wrap:anywhere;box-shadow:0 10px 20px -14px rgba(26,115,232,.95);animation:nrIn .35s var(--ios) both}
+.nr-wb .nr-ov{margin:10px 12px 4px;border:1px solid var(--nrLine);border-radius:22px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04),0 14px 28px -24px rgba(26,115,232,.55);animation:nrIn .4s var(--ios) both}
+.nr-oh{display:flex;align-items:center;gap:10px;padding:14px 16px 2px;background:none}
+.nr-oh .nr-av{flex:none;display:block;width:32px;height:32px;padding:2px;border-radius:50%;background:linear-gradient(135deg,#4285f4,#9b72f3,#f4a6c7)}
+.nr-oh .nr-av img{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover;border:2px solid #fff;background:#fff;box-shadow:none}
+.nr-oh>div{flex:1;min-width:0}
+.nr-oh b{font-size:14.5px}
+.nr-oh small{display:inline-flex;align-items:center;gap:6px;margin-top:2px;font-size:12px;font-weight:600;color:var(--mut)}
+.nr-oh small.ok{color:#15803d}
+.nr-oh small.ok:before{content:"\f058";font-family:"Font Awesome 6 Free","Font Awesome 5 Free";font-weight:900;font-size:11px}
+.nr-typing{flex:none;display:inline-flex;align-items:center;gap:4px;padding:9px 12px;border-radius:99px;background:#eef4ff}
+.nr-typing i{display:block;width:6px;height:6px;border-radius:50%;background:var(--nrA);animation:nrTy 1.1s ease-in-out infinite}
+.nr-typing i:nth-child(2){animation-delay:.15s}.nr-typing i:nth-child(3){animation-delay:.3s}
+@keyframes nrTy{0%,60%,100%{transform:translateY(0);opacity:.35}30%{transform:translateY(-4px);opacity:1}}
+
+.nr-wb .nr-b2{padding:8px 16px 4px;font-size:15px;line-height:1.68;color:#1b2b3d}
+.nr-wb .nr-b2>p:first-child{font-size:16.5px;line-height:1.55;font-weight:600;letter-spacing:-.005em;color:var(--ink)}
+.nr-wb .nr-b2 b{color:#0f3d91}
+.nr-wb .nr-b2 li{padding-left:22px;margin-bottom:8px}
+.nr-wb .nr-b2 ul>li:before{left:5px;top:.7em;width:7px;height:7px;background:var(--nrG)}
+.nr-wb .nr-tip{border-radius:16px}
+.nr-wb .nr-srcs{padding:4px 16px 10px}
+.nr-wb .nr-s{border-radius:99px;background:#f3f7ff;border-color:#dbe6fb}
+.nr-wb .nr-rel{padding:4px 16px 12px}
+.nr-wb .nr-rel button{padding:12px 14px;border:1px solid #dbe6fb;border-radius:16px;background:#f5f9ff;color:#17407f}
+@media(hover:hover){.nr-wb .nr-rel button:hover{background:#e9f1ff}}
+.nr-wb .nr-act{padding:10px 14px 14px;border-top:1px solid #eef2f9}
+.nr-wb .nr-act button{padding:8px 14px;background:#f1f6ff;color:#1451b8}
+.nr-wb .nr-act button.on{background:var(--nrG);color:#fff}
+
+/* ---------- continue-chat dock ---------- */
+.nr-dk{flex:none;position:relative;z-index:3;padding:10px 12px 12px;background:rgba(255,255,255,.94);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid #e6ecf7}
+.nr-dk[hidden]{display:none!important}
+.nr-dkc{display:flex;gap:8px;overflow-x:auto;margin:0 -12px 10px;padding:0 12px 2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.nr-dkc::-webkit-scrollbar{display:none}
+.nr-dkc button{flex:none;display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border:1px solid #d9e4fb;border-radius:99px;background:#fff;color:#1b3f86;font-family:inherit;font-size:12.5px;font-weight:700;line-height:1;white-space:nowrap;cursor:pointer;transition:transform .25s var(--ios),background .2s,opacity .2s}
+.nr-dkc button i{font-size:12px;color:var(--c,#1a73e8)}
+.nr-dkc button:active{transform:scale(.95)}
+@media(hover:hover){.nr-dkc button:hover:not(:disabled){background:#f0f5ff}}
+.nr-dkr{display:flex;align-items:center;gap:8px;padding:5px 5px 5px 18px;border:1.5px solid #d3e0fa;border-radius:99px;background:#fff;transition:border-color .2s,box-shadow .2s}
+.nr-dkr:focus-within{border-color:var(--nrA);box-shadow:0 0 0 4px rgba(26,115,232,.12)}
+.nr-dkr input{flex:1;min-width:0;height:42px;border:0;outline:0;background:transparent;font-family:inherit;font-size:16px;font-weight:600;color:var(--ink);-webkit-appearance:none;appearance:none}
+.nr-dkr input::placeholder{color:#8aa0b4;font-weight:500}
+.nr-dkr .send{flex:none;display:flex;align-items:center;justify-content:center;width:42px;height:42px;border:0;border-radius:50%;background:var(--nrG);color:#fff;font-size:15px;cursor:pointer;box-shadow:0 10px 18px -10px rgba(26,115,232,.95);transition:transform .25s var(--ios),opacity .2s}
+.nr-dkr .send:active{transform:scale(.92)}
+.nr-dk.busy .nr-dkc button,.nr-dkr .send:disabled{opacity:.45;cursor:default}
+.nr-dk.busy .nr-dkr .send{box-shadow:none}
+
+/* ---------- Wikipedia card (shown above the web results, no section title) ---------- */
+#nr-wk{margin:0 0 14px}
+#nr-wk:empty{display:none;margin:0}
+.nr-wiki{padding:18px 18px 14px;border:1px solid #e1e9f6;border-radius:26px;background:linear-gradient(180deg,#fff,#fbfdff);box-shadow:0 18px 36px -30px rgba(26,115,232,.7);animation:nrIn .45s var(--ios) both}
+.nr-wkh{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.nr-wkt{flex:1;min-width:0}
+.nr-wiki .nr-wkt h5{margin:0;font-size:21px;font-weight:800;letter-spacing:-.025em;line-height:1.2;color:var(--ink);overflow-wrap:anywhere}
+.nr-wkd{display:block;margin-top:5px;font-size:13px;font-weight:600;line-height:1.35;color:var(--mut)}
+.nr-wiki .nr-wkh img{float:none;flex:none;width:88px;max-width:30%;height:88px;margin:0;object-fit:cover;border-radius:18px;background:#eaf0f5;box-shadow:0 10px 18px -12px rgba(15,23,42,.55)}
+.nr-wkx{position:relative;margin-top:12px}
+.nr-wiki .nr-wkx p{margin:0 0 10px;font-size:14.5px;line-height:1.68;color:#2b4257;overflow-wrap:anywhere}
+.nr-wiki.long:not(.open) .nr-wkx{max-height:126px;overflow:hidden}
+.nr-wiki.long:not(.open) .nr-wkx:after{content:"";position:absolute;left:0;right:0;bottom:0;height:3.4em;background:linear-gradient(rgba(255,255,255,0),#fff);pointer-events:none}
+.nr-wkf{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
+.nr-wkm,.nr-wkl{display:inline-flex;align-items:center;gap:8px;height:38px;border:0;border-radius:99px;padding:0 15px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:transform .25s var(--ios),background .2s}
+.nr-wkm{background:#eef4ff;color:#1451b8}
+.nr-wkm i{font-size:11px;transition:transform .3s var(--ios)}
+.nr-wiki.open .nr-wkm i{transform:rotate(180deg)}
+.nr-wkl{margin-left:auto;background:transparent;color:#475569;padding-right:4px}
+.nr-wkm:active,.nr-wkl:active{transform:scale(.95)}
+
+/* ---------- layout: one column on phones and small tablets ---------- */
+@media(max-width:899px){
+.nr-dk{position:sticky;bottom:var(--bn-h,0px)}
+}
+@media(min-width:700px) and (max-width:899px) and (min-height:521px){
+#nr-res:not([hidden]){display:flex;flex-direction:column;max-width:720px;margin:0 auto}
+.nr-wb{order:1;position:relative;top:auto;max-height:none}
+.nr-wa{order:2}.nr-wc{order:3}
+.nr-wb #nr-thread{overflow:visible;max-height:none}
+}
+
+/* ---------- layout: two columns on wide screens and landscape phones ---------- */
+@media(min-width:900px),(orientation:landscape) and (max-height:520px) and (min-width:640px){
+#nr-res:not([hidden]){display:grid;grid-template-columns:minmax(0,1.3fr) minmax(340px,1fr);gap:0 24px;align-items:start;max-width:none;margin:0}
+.nr-wa{grid-column:1;grid-row:1;order:0}
+.nr-wc{grid-column:1;grid-row:2;order:0}
+.nr-wb{grid-column:2;grid-row:1/span 2;order:0;position:sticky;top:10px;max-height:var(--nr-ph,calc(100dvh - 170px))}
+.nr-wb #nr-thread{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.nr-dk{position:static}
+}
+@media(min-width:1000px){
+#nr-root.nv-bd{max-width:1180px}
+#nr-res:not([hidden]){grid-template-columns:minmax(0,1.25fr) minmax(400px,1fr);gap:0 28px}
+.nr-wb .nr-b2{padding-left:18px;padding-right:18px;font-size:15.5px}
+.nr-wb .nr-b2>p:first-child{font-size:17px}
+}
+
+/* ---------- small phones ---------- */
+@media(max-width:380px){
+.nr-wbx span{display:none}.nr-wbx{width:36px;padding:0;justify-content:center}
+.nr-wb{border-radius:24px}
+.nr-wb .nr-ov{margin:8px 8px 4px;border-radius:20px}
+.nr-wb .nr-b2{padding:8px 14px 4px;font-size:14.5px}
+.nr-wb .nr-b2>p:first-child{font-size:16px}
+.nr-wb .nr-q{max-width:90%;font-size:14px}
+.nr-wbh{padding:12px}
+.nr-wbh .av{width:38px;height:38px}
+.nr-wiki{padding:15px 14px 12px;border-radius:22px}
+.nr-wiki .nr-wkt h5{font-size:19px}
+.nr-wiki .nr-wkh img{width:72px;height:72px;border-radius:15px}
+}
+
+/* ---------- short landscape phones: keep it compact ---------- */
+@media(orientation:landscape) and (max-height:520px){
+.nr-wbh{padding:8px 12px}.nr-wbh .av{width:32px;height:32px}.nr-wbh .tx b{font-size:14.5px}.nr-wbh .tx small{display:none}
+.nr-wb .nr-ask{padding:16px}.nr-ask img{width:48px;height:48px}.nr-ask h4{margin:10px 0 4px;font-size:16px}.nr-askbtn{margin-top:12px;padding:10px 20px}
+.nr-dkc{display:none}.nr-dk{padding:8px 10px}.nr-dkr input,.nr-dkr .send{height:38px}.nr-dkr .send{width:38px}
+.nr-wb .nr-b2>p:first-child{font-size:15.5px}
+}
+@media(prefers-reduced-motion:reduce){.nr-typing i,.nr-wb .nr-q,.nr-wb .nr-ov,.nr-wiki{animation:none!important}}
 </style>
 <style id="xb-liquid-glass">/* ===== Student dashboard, Academics: Apple "Liquid Glass" tiles =====
    Scope: only the Academics section (.xb-sec.xb-lg). Four layers make the glass:
