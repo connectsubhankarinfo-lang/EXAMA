@@ -50673,6 +50673,50 @@ html.is-tablet #discus-video-modal.wac-full .wac-top{padding-top:max(2.2rem,env(
   }, 300);
 })();
 </script>
+<!-- ===== kb-sync (2026-11-28): smooth keyboard in the APP, no gap =====
+     The app (keyboard_sync.dart) no longer resizes the WebView for the keyboard. It calls window.__kb(px) on every
+     frame while the keyboard moves. The page follows by shrinking #app by --kb. Normal browser: __kb is never called,
+     nothing changes. To switch off: set window.EXAMA_KB_SYNC = false before this block, or remove the app edit. -->
+<style id="kb-sync-css">
+html.kb-app #app{height:calc(100dvh - var(--kb,0px))!important;min-height:0!important}
+html.kb-open #bn{display:none!important}
+html.bn-on.kb-open{--bn-h:0px}
+</style>
+<script id="kb-sync">
+(function () {
+  if (window.EXAMA_KB_SYNC === false) return;
+  var R = document.documentElement, D = document, W = window;
+  var cur = -1, want = 0, raf = 0, settle = 0;
+  function typing(t) { return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable); }
+  function navFlag() { try { R.classList.toggle('bn-kb', cur > 130 && !!typing(D.activeElement)); } catch (e) { } }
+  function reveal() {
+    try {
+      var a = D.activeElement; if (!typing(a) || cur <= 0) return;
+      var r = a.getBoundingClientRect(), lim = W.innerHeight - cur - 8;
+      if (r.bottom > lim || r.top < 0) a.scrollIntoView({ block: 'nearest' });
+    } catch (e) { }
+  }
+  function apply() {
+    raf = 0;
+    if (want === cur) return;
+    cur = want;
+    R.style.setProperty('--kb', cur + 'px');
+    R.classList.toggle('kb-open', cur > 130);
+    navFlag();
+    clearTimeout(settle); settle = setTimeout(reveal, 120);
+  }
+  W.__kb = function (px) {
+    try {
+      px = Number(px) || 0; if (px < 0) px = 0;
+      want = px; R.classList.add('kb-app');
+      if (!raf) { raf = 1; requestAnimationFrame(apply); }
+    } catch (e) { }
+  };
+  /* the older script keeps its own bn-kb flag from visualViewport (which no longer changes in the app): set it again after it ran */
+  D.addEventListener('focusin', function () { setTimeout(navFlag, 340); });
+  D.addEventListener('focusout', function () { setTimeout(navFlag, 190); });
+})();
+</script>
 </body>
 
 </html>
