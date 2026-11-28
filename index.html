@@ -30,6 +30,9 @@ Change 2026-11-25 (e): Apple ZOOM instead of the side slide: windows grow out of
 Change 2026-11-25 (d): screens, bottom-bar pill and tab switches now run on ONE spring (CSS linear(), set in apple-motion-js: --ios-dur / --ios-ease / --ios-tab are written from the same spring); heavy screen set-up starts at 60 % of the motion; tab screens fade + settle from 98.5 %.
 Change 2026-11-25 (d): LECTURE HUB VIDEO POP OUT (Picture-in-Picture, app only; needs the app update that has the call pip.supported / pip.set / pip.enter). New style + script id exama-pip at the very end of the file (before the closing body tag): a Pop out button in the lecture player header (#vx-pip-btn); while a lecture plays the page tells the app (pip.set) so pressing Home opens Android's floating window; while the window is open the app sends the event exama-pip and the page adds class exama-in-pip to the html element (only the video fills the small window). An old app answers "unknown call", then nothing is shown and nothing changes. See FLUTTER_CONNECT.md section 0.14.
 Change 2026-11-28 (Nova Research v3): Nova panel + continue-chat redesigned (style nr-css-v3; header with status, user bubbles, typing dots, quick follow-up chips Explain simpler / Give an example / Quiz me / Exam points, docked input with send button that is locked while Nova is answering; wide screens pin the panel at the right, phones keep it first and the input sticks above the bottom bar). The Wikipedia card now sits ABOVE the web results with no 'From Wikipedia' heading (short text + Show more, small 'Full article' link keeps the source). nr-js: resHtml, startWiki, ohHtml, setBusy, toTurn, sizePanel; ids nr-wk / nr-gg / nr-thread / nr-fq unchanged, old .nr-fu is now .nr-dk.
+Change 2026-11-28 (Nova Research v5): (1) web results use Tavily ADVANCED search (nr-js: SEARCH_DEPTH, wUrl sends depth / search_depth / chunks / max / favicon; videos stay basic). The worker must forward these to Tavily: see nova-search-worker.js. Raw Tavily fields (content, favicon) are also accepted (normWeb). Nova now reads up to 720 characters per result. (2) PHONES only (below 700px): the Nova answer looks like Google's AI Overview (sparkle + "Nova Overview", answer cut with a Show more button, swipeable source cards with site icon, Ask a follow-up box, "Dive deeper in Nova chat" button; ovCheck / ovOpen, classes nr-clip / nr-ovf / nr-open). (3) TABLETS only (700-1199px wide): Nova is a full-height side pane on the right like Copilot in Microsoft Edge (close X in the pane header, header button .nr-pn opens it again, choice saved in localStorage novaResearchPaneOff; view classes nr-has-res / nr-pane-off; sizePanel sets --nr-vh). Desktop 1200px+ and short landscape phones keep the v3/v4 layout. (4) Videos: light card on every screen (red YouTube play button, channel under each video); when the card is 680px+ wide the other videos are an "up next" list beside the player. Style nr-css-v5.
+Change 2026-11-28 (Nova Research v6): QUICK ANSWER box at the top of the results (section #nr-ia, class nr-wi; #nr-res gets class ia-on while it shows). Maths is worked out in the page by a small safe parser (calc / mathPrep / fmtNum: + - x / ^ % of, sqrt, cbrt, log, ln, abs, !, pi; no eval). Meanings, translations and short facts show Tavily's advanced answer (wUrl adds answer=advanced; the worker returns it as "answer"; wantsQuick decides which questions get the box). Nova is told the box's answer on its first turn (extraCtx) so both agree. Videos: no box around them any more, heading "Videos / From YouTube", rail runs edge to edge on phones. Web results: no "Web results" heading; each result is a card with site icon, site name, link path (siteName / crumb), title and a 3-line snippet. Style nr-css-v6.
+Change 2026-11-28 (v6b): Nova Research home: removed the 'What do you want to learn?' hero (mount) and the 'Pick a subject' row (homeHtml). It now starts with Recent / Saved answers / Try asking / Free study sources.
 ===== END NOTES ===== -->
 <link rel="preconnect" href="https://cdn.tailwindcss.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com">
@@ -10181,7 +10184,7 @@ setInterval(() => { attach(); tiles(); }, 1500);
             </div>
         </div>
         <div id="nova-research-view" class="hidden-view absolute inset-0 z-[85] flex flex-col slide-left nv-v nv-rs">
-            <div class="nv-hd hdr-r nr-hd"><button type="button" class="bk" onclick="safeBack()" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button><div><h2>Nova Research</h2><p>AI search for study</p></div><button type="button" class="nr-hb nr-ho" data-a="opensearch" aria-label="Show search"><i class="fa-solid fa-magnifying-glass"></i></button><button type="button" class="nr-hb" data-a="new" aria-label="New search"><i class="fa-solid fa-rotate-left"></i></button><div class="nr-hs"><div class="nr-hs-in"><div class="nr-sf" id="nr-sf" role="search"><i class="fa-solid fa-magnifying-glass"></i><input id="nr-q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="Search a topic or ask a question" aria-label="Search a topic or ask a question"><button type="button" class="nr-x" id="nr-x" data-a="clear" aria-label="Clear"><i class="fa-solid fa-xmark"></i></button><button type="button" class="nr-mc" id="nr-mic" data-a="mic" aria-label="Voice search"><i class="fa-solid fa-microphone"></i></button><button type="button" class="nr-go" data-a="go" aria-label="Search"><i class="fa-solid fa-arrow-right"></i><span>Search</span></button></div></div></div></div>
+            <div class="nv-hd hdr-r nr-hd"><button type="button" class="bk" onclick="safeBack()" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></button><div><h2>Nova Research</h2><p>AI search for study</p></div><button type="button" class="nr-hb nr-ho" data-a="opensearch" aria-label="Show search"><i class="fa-solid fa-magnifying-glass"></i></button><button type="button" class="nr-hb nr-pn" data-a="pane" data-v="on" aria-label="Open the Nova panel" title="Nova"><i class="fa-solid fa-wand-magic-sparkles"></i></button><button type="button" class="nr-hb" data-a="new" aria-label="New search"><i class="fa-solid fa-rotate-left"></i></button><div class="nr-hs"><div class="nr-hs-in"><div class="nr-sf" id="nr-sf" role="search"><i class="fa-solid fa-magnifying-glass"></i><input id="nr-q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="Search a topic or ask a question" aria-label="Search a topic or ask a question"><button type="button" class="nr-x" id="nr-x" data-a="clear" aria-label="Clear"><i class="fa-solid fa-xmark"></i></button><button type="button" class="nr-mc" id="nr-mic" data-a="mic" aria-label="Voice search"><i class="fa-solid fa-microphone"></i></button><button type="button" class="nr-go" data-a="go" aria-label="Search"><i class="fa-solid fa-arrow-right"></i><span>Search</span></button></div></div></div></div>
             <div class="nv-bd" id="nr-root"></div>
         </div>
         <div id="nova-quiz-view" class="hidden-view absolute inset-0 z-[85] flex flex-col slide-left nv-v nv-quiz">
@@ -41095,6 +41098,10 @@ Write a short normal introduction before the blocks and a one-line closing after
     /* Web results and YouTube videos come only from Tavily, through the nova-search-proxy Cloudflare worker (see nova-search-worker.js).
        Nova's answer is also written from those Tavily results. Set window.NOVA_SEARCH_URL before this script to use another worker address. */
     var SEARCH_URL = window.NOVA_SEARCH_URL || 'https://nova-search-proxy.connect-subhankar-info.workers.dev/';
+    /* v5: Tavily ADVANCED search for the web results that Nova reads (2 credits per search, about 800-character snippets, up to 3 per site).
+       The worker forwards depth / max / chunks / favicon to Tavily as search_depth / max_results / chunks_per_source / include_favicon.
+       Videos only need links, so they stay on basic (1 credit). Set window.NOVA_SEARCH_DEPTH = 'basic' before this script to save credits. */
+    var SEARCH_DEPTH = window.NOVA_SEARCH_DEPTH || 'advanced';
 
     var AVATAR = 'https://github.com/connectsubhankarinfo-lang/EXAMA/blob/main/NOVA%20Mentor.jpg?raw=true';
     var $ = function (i) { return document.getElementById(i); };
@@ -41267,7 +41274,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.id === 'nv-qi') { e.preventDefault(); var q = e.target.value.trim(); if (q.length > 1) window.NovaResearch.open(q); } });
 
     /* ---------- state ---------- */
-    var S = { q: '', turns: [], tok: 0, web: null, webP: null, vids: null, vi: 0 };
+    var S = { q: '', turns: [], tok: 0, web: null, webP: null, vids: null, vi: 0, ans: '', calc: null };
     var ST_TXT = ['Searching the web\u2026', 'Reading the results\u2026', 'Writing the answer\u2026'];
     var ACT = {};
 
@@ -41282,7 +41289,7 @@ Write a short normal introduction before the blocks and a one-line closing after
 
     function homeHtml() {
         var rec = getRecent();
-        return '<div class="nr-h" style="margin-top:6px"><h4>Pick a subject</h4></div><div class="nr-sjs">' + SUBJ.map(sj).join('') + '</div>' + (rec.length ? '<div class="nr-h"><h4>Recent</h4><button type="button" data-a="rm">Clear</button></div><div class="nr-chips">' + rec.map(function (r) { return '<button type="button" class="nr-ch" data-a="q" data-q="' + esc(r) + '"><i class="fa-solid fa-clock-rotate-left"></i>' + esc(r) + '</button>'; }).join('') + '</div>' : '')
+        return (rec.length ? '<div class="nr-h"><h4>Recent</h4><button type="button" data-a="rm">Clear</button></div><div class="nr-chips">' + rec.map(function (r) { return '<button type="button" class="nr-ch" data-a="q" data-q="' + esc(r) + '"><i class="fa-solid fa-clock-rotate-left"></i>' + esc(r) + '</button>'; }).join('') + '</div>' : '')
             + savedHtml() + '<div class="nr-h"><h4>Try asking</h4></div><div class="nr-chips">' + TRY.map(function (r) { return '<button type="button" class="nr-ch" data-a="q" data-q="' + esc(r) + '"><i class="fa-solid fa-magnifying-glass"></i>' + esc(r) + '</button>'; }).join('') + '</div>'
             + '<div class="nr-h"><h4>Free study sources</h4></div><div class="nr-tiles">' + SRC.map(tile).join('') + '</div>'
             + '<p class="nr-note">Type a topic above, then tap a source to search it there. With an empty box a tap opens the source.</p>';
@@ -41318,6 +41325,8 @@ Write a short normal introduction before the blocks and a one-line closing after
         var r = $('nr-root'); if (!r || r.clientHeight < 80) return;
         var bn = 0; try { bn = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bn-h')) || 0; } catch (e) { }
         r.style.setProperty('--nr-ph', Math.max(240, r.clientHeight - bn - 28) + 'px');
+        r.style.setProperty('--nr-vh', Math.max(280, r.clientHeight - bn) + 'px');
+        ovCheck();
     }
     function watchSize(root) {
         if (S.ro) return; S.ro = 1;
@@ -41328,17 +41337,20 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
 
     function resHtml() {
-        return '<div class="nr-w nr-wa">'
+        return '<section id="nr-ia" class="nr-w nr-wi" aria-live="polite" hidden></section><div class="nr-w nr-wa">'
             + '<section id="nr-wk" class="nr-t-web"></section>'
             + '<section id="nr-yt" class="nr-yt nr-t-web" hidden></section>'
-            + '<section id="nr-gg" class="nr-t-web" hidden></section></div><div class="nr-w nr-wb">'
+            + '<section id="nr-gg" class="nr-t-web" hidden></section></div><div class="nr-w nr-wb nr-clip" role="complementary" aria-label="Nova">'
             + '<header class="nr-wbh"><span class="av"><img src="' + AVATAR + '" alt=""></span><div class="tx"><b>Nova</b><small id="nr-pst">Your study assistant</small></div>'
-            + '<button type="button" class="nr-wbx" data-a="chat" aria-label="Continue in Nova chat" title="Continue in Nova chat"><i class="fa-solid fa-up-right-from-square"></i><span>Open chat</span></button></header>'
+            + '<button type="button" class="nr-wbx" data-a="chat" aria-label="Continue in Nova chat" title="Continue in Nova chat"><i class="fa-solid fa-up-right-from-square"></i><span>Open chat</span></button>'
+            + '<button type="button" class="nr-wbc" data-a="pane" data-v="off" aria-label="Close the Nova panel" title="Close"><i class="fa-solid fa-xmark"></i></button></header>'
             + '<div id="nr-ask" class="nr-ask nr-t-ans"><img src="' + AVATAR + '" alt=""><h4>Ask Nova to explain this</h4><p>Nova reads the top web results and writes a short answer with sources. It runs only when you tap the button.</p><button type="button" class="nr-askbtn" data-a="asknova"><i class="fa-solid fa-wand-magic-sparkles"></i>Ask Nova</button><button type="button" class="nr-asklink" data-a="chat">Open Nova chat instead</button></div>'
             + '<div id="nr-thread" class="nr-t-ans" aria-live="polite"></div>'
+            + '<button type="button" class="nr-ovm" data-a="ovmore" aria-label="Show the full Nova answer"><span>Show more</span><i class="fa-solid fa-chevron-down"></i></button>'
             + '<div class="nr-dk nr-t-ans" hidden><div class="nr-dkc" role="group" aria-label="Quick follow-ups">'
             + CHIPS.map(function (c) { return '<button type="button" data-a="chip" data-q="' + esc(c[2]) + '" data-l="' + esc(c[1]) + '" style="--c:' + c[3] + '"><i class="fa-solid ' + c[0] + '"></i>' + esc(c[1]) + '</button>'; }).join('')
             + '</div><div class="nr-dkr"><input id="nr-fq" type="text" enterkeyhint="send" autocomplete="off" maxlength="300" placeholder="Ask a follow-up\u2026" aria-label="Ask Nova a follow-up"><button type="button" class="send" id="nr-fs" data-a="fu" aria-label="Send"><i class="fa-solid fa-arrow-up"></i></button></div></div>'
+            + '<button type="button" class="nr-dive" data-a="chat"><span class="nr-spk" aria-hidden="true"></span>Dive deeper in Nova chat<i class="fa-solid fa-arrow-right"></i></button>'
             + '</div><div class="nr-w nr-wc"><section id="nr-bk" class="nr-t-more"></section>'
             + '<div class="nr-h nr-t-more"><h4>Search this topic on</h4></div><div class="nr-pills nr-t-more">' + SRC.map(function (s) { return pill('src', s.i, s.n, s.c, ' data-id="' + s.id + '"'); }).join('') + '</div></div>';
     }
@@ -41348,9 +41360,11 @@ Write a short normal introduction before the blocks and a one-line closing after
         if (h) h.hidden = !!res; if (r) r.hidden = !res; if (hero) hero.hidden = !!res;
         var dk = $('nr-dock'); if (dk) dk.hidden = !res;
         var root = $('nr-root'); if (root) root.scrollTop = 0;
+        var v = $('nova-research-view'); if (v) { v.classList.toggle('nr-has-res', !!res); v.classList.toggle('nr-pane-off', !!res && !!ld('novaResearchPaneOff', false)); }
+        if (res) setTimeout(sizePanel, 30);
     }
     function goHome() {
-        S.tok++; S.turns.forEach(function (t) { stopStatus(t); try { if (t.ctl) t.ctl.abort(); } catch (e) { } }); S.turns = []; S.q = ''; S.web = null; S.webP = null; S.vids = null;
+        S.tok++; S.turns.forEach(function (t) { stopStatus(t); try { if (t.ctl) t.ctl.abort(); } catch (e) { } }); S.turns = []; S.q = ''; S.web = null; S.webP = null; S.vids = null; S.ans = ''; S.calc = null;
         var inp = $('nr-q'); if (inp) inp.value = ''; syncX();
         var h = $('nr-home'); if (h) h.innerHTML = homeHtml();
         var r = $('nr-res'); if (r) r.innerHTML = '';
@@ -41372,7 +41386,9 @@ Write a short normal introduction before the blocks and a one-line closing after
 
     function srcRow(src, used) {
         var idx = used.length ? used : src.slice(0, 5).map(function (_, k) { return k + 1; }), a = [];
-        idx.forEach(function (n) { var c = src[n - 1]; if (!c || !/^https?:\/\//i.test(c.url || '')) return; a.push('<a class="nr-s" data-ext="1" href="' + esc(c.url) + '"><em>' + n + '</em><span>' + esc(c.title || hostOf(c.url)) + '</span></a>'); });
+        idx.forEach(function (n) { var c = src[n - 1]; if (!c || !/^https?:\/\//i.test(c.url || '')) return; var h = String(c.host || hostOf(c.url)).replace(/^www\./, '');
+            a.push('<a class="nr-s" data-ext="1" href="' + esc(c.url) + '"><em>' + n + '</em><span>' + esc(c.title || h) + '</span><small class="nr-sd"><i class="nr-sfi">' + esc((h.charAt(0) || '?').toUpperCase())
+                + (c.fav && /^https:\/\//.test(c.fav) ? '<img alt="" loading="lazy" referrerpolicy="no-referrer" src="' + esc(c.fav) + '" onerror="this.remove()">' : '') + '</i>' + esc(h) + '</small></a>'); });
         return a.length ? '<div class="nr-srcs"><span class="nr-lbl">' + (used.length ? 'Sources' : 'Web results used') + '</span><div class="nr-srow">' + a.slice(0, 8).join('') + '</div></div>' : '';
     }
     function paint(i) {
@@ -41386,7 +41402,31 @@ Write a short normal introduction before the blocks and a one-line closing after
         ov.innerHTML = ohHtml(i, grounded ? 'Based on web results' : 'Answered by Nova', false, grounded ? 'ok' : '')
             + '<div class="nr-b2">' + body + '</div>' + srcRow(src, used)
             + (sp.rel.length ? '<div class="nr-rel"><span class="nr-lbl">Ask next</span>' + sp.rel.map(function (q) { return '<button type="button" data-a="rel" data-q="' + esc(q) + '"><span>' + esc(q) + '</span><i class="fa-solid fa-angle-right"></i></button>'; }).join('') + '</div>' : '')
-            + '<div class="nr-act">' + Object.keys(ACT).map(function (k) { return '<button type="button" data-a="act" data-k="' + k + '"><i class="fa-solid ' + ACT[k][1] + '"></i>' + ACT[k][0] + '</button>'; }).join('') + '<button type="button" data-a="copy" data-i="' + i + '"><i class="fa-regular fa-copy"></i>Copy</button><button type="button" data-a="listen" data-i="' + i + '"><i class="fa-solid fa-volume-high"></i>Listen</button><button type="button" data-a="share" data-i="' + i + '"><i class="fa-solid fa-share-nodes"></i>Share</button><button type="button" data-a="save" data-i="' + i + '"><i class="fa-regular fa-bookmark"></i>Save</button></div>';
+            + '<div class="nr-act">' + Object.keys(ACT).map(function (k) { return '<button type="button" data-a="act" data-k="' + k + '"><i class="fa-solid ' + ACT[k][1] + '"></i>' + ACT[k][0] + '</button>'; }).join('') + '<button type="button" data-a="copy" data-i="' + i + '"><i class="fa-regular fa-copy"></i>Copy</button><button type="button" data-a="listen" data-i="' + i + '"><i class="fa-solid fa-volume-high"></i>Listen</button><button type="button" data-a="share" data-i="' + i + '"><i class="fa-solid fa-share-nodes"></i>Share</button><button type="button" data-a="save" data-i="' + i + '"><i class="fa-regular fa-bookmark"></i>Save</button></div>'
+            + '<p class="nr-disc">Nova can make mistakes. Check important facts in the sources.</p>';
+        ovCheck();
+    }
+    /* v5 phones: the first Nova answer is cut like Google's AI Overview, with a Show more button */
+    var MQ_PHONE = '(max-width:699px) and (min-height:521px),(max-width:639px)';
+    var MQ_TAB = '(min-width:700px) and (max-width:1199px) and (min-height:521px)';
+    function mq(q) { try { return window.matchMedia(q).matches; } catch (e) { return false; } }
+    function ovCheck() {
+        var wb = document.querySelector('#nr-res .nr-wb'), th = $('nr-thread'); if (!wb || !th) return;
+        if (!mq(MQ_PHONE) || wb.classList.contains('nr-open')) { wb.classList.remove('nr-ovf'); return; }
+        wb.classList.add('nr-clip');
+        var ovf = S.turns.length > 0 && th.scrollHeight > th.clientHeight + 8;
+        wb.classList.toggle('nr-ovf', ovf);
+        if (!ovf && S.turns.some(function (t) { return t.ok; })) { wb.classList.remove('nr-clip'); wb.classList.add('nr-open'); }
+    }
+    function ovOpen() {
+        var wb = document.querySelector('#nr-res .nr-wb'); if (!wb) return;
+        wb.classList.remove('nr-ovf', 'nr-clip'); wb.classList.add('nr-open');
+    }
+    /* v5 tablets: Nova lives in a side pane (like Copilot in Edge) that can be closed and opened again */
+    function paneSet(off) {
+        var v = $('nova-research-view'); if (!v) return;
+        v.classList.toggle('nr-pane-off', !!off); sv('novaResearchPaneOff', !!off);
+        if (!off) setTimeout(function () { var th = $('nr-thread'); if (th) th.scrollTop = th.scrollHeight; }, 60);
     }
     function paintErr(i) {
         var t = S.turns[i], ov = $('nr-o' + i); if (!t || !ov) return;
@@ -41402,7 +41442,7 @@ Write a short normal introduction before the blocks and a one-line closing after
     /* the Tavily results that Nova may use: numbered [1]..[6], the same numbers the source links show */
     function ctxOf(src) {
         if (!src || !src.length) return '';
-        return '\n\nWEB RESULTS:\n' + src.map(function (r, k) { return '[' + (k + 1) + '] ' + String(r.title || '').slice(0, 110) + ' (' + (r.host || hostOf(r.url)) + ')\n' + String(r.desc || '').replace(/\s+/g, ' ').slice(0, 340); }).join('\n');
+        return '\n\nWEB RESULTS:\n' + src.map(function (r, k) { return '[' + (k + 1) + '] ' + String(r.title || '').slice(0, 110) + ' (' + (r.host || hostOf(r.url)) + ')\n' + String(r.full || r.desc || '').replace(/\s+/g, ' ').slice(0, 720); }).join('\n');
     }
     function waitWeb() {
         if (!S.webP) return Promise.resolve([]);
@@ -41417,7 +41457,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         waitWeb().then(function () {
             if (tok !== S.tok) return null;
             t.src = (S.web || []).slice(0, 6);
-            return ask(historyFor(i, t.prompt + suffix() + ctxOf(t.src)), t);
+            return ask(historyFor(i, t.prompt + suffix() + ctxOf(t.src) + (i === 0 ? extraCtx() : '')), t);
         }).then(function (p) {
             if (!p || tok !== S.tok) return; stopStatus(t); t.raw = p.text; t.p = p; t.ok = true; paint(i); setBusy();
         }, function (e) {
@@ -41458,14 +41498,39 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     /* ---------- web results: Tavily only (no Google) ---------- */
     var WEB_SHOW = 8;
-    function wUrl(q) { return SEARCH_URL + (SEARCH_URL.indexOf('?') < 0 ? '?' : '&') + 'q=' + enc(q); }
+    function wUrl(q, depth) {
+        depth = depth || SEARCH_DEPTH;
+        return SEARCH_URL + (SEARCH_URL.indexOf('?') < 0 ? '?' : '&') + 'q=' + enc(q) + '&depth=' + enc(depth) + '&search_depth=' + enc(depth)
+            + (depth === 'advanced' ? '&chunks=3&max=10&answer=advanced' : '') + '&favicon=1';
+    }
+    /* accept both the worker's own fields (desc, fav, host) and raw Tavily fields (content, favicon) */
+    function normWeb(r) {
+        if (!r || !r.title || !/^https?:\/\//i.test(r.url || '')) return null;
+        var full = String(r.desc || r.content || r.snippet || '').replace(/\s*\[\s*(\.\.\.|…)\s*\]\s*/g, ' … ').replace(/\s+/g, ' ').trim();
+        return { title: String(r.title).trim(), url: r.url, host: r.host || hostOf(r.url), fav: r.fav || r.favicon || '', full: full, desc: full.length > 300 ? full.slice(0, 297).replace(/\s+\S*$/, '') + '…' : full };
+    }
     function brItem(r) {
         var h = String(r.host || hostOf(r.url)).replace(/^www\./, ''), ini = esc((h.charAt(0) || '?').toUpperCase());
-        return '<article class="nr-br"><div class="nr-bm"><a class="nr-bl" data-ext="1" href="' + esc(r.url) + '"><div class="nr-fv"><span class="nr-fi">' + ini
+        return '<article class="nr-br nr-br6"><a class="nr-bl" data-ext="1" href="' + esc(r.url) + '"><div class="nr-fv"><span class="nr-fi">' + ini
             + (r.fav && /^https:\/\//.test(r.fav) ? '<img alt="" loading="lazy" referrerpolicy="no-referrer" src="' + esc(r.fav) + '" onerror="this.remove()">' : '')
-            + '</span><span>' + esc(h) + '</span></div><h5>' + esc(r.title) + '</h5></a><p>' + esc(r.desc) + '</p></div></article>';
+            + '</span><span class="nr-fvt"><b>' + esc(siteName(h)) + '</b><small>' + esc(crumb(r.url, h)) + '</small></span></div><h5>' + esc(r.title) + '</h5></a>'
+            + (r.desc ? '<p>' + esc(r.desc) + '</p>' : '') + '</article>';
     }
-    function webHead() { return '<div class="nr-h"><h4>Web results</h4><small>Tavily</small></div>'; }
+    /* "en.wikipedia.org" -> "Wikipedia", "ncert.nic.in" -> "Ncert" */
+    function siteName(h) {
+        var parts = String(h || '').toLowerCase().replace(/^(www|m|en|mobile|amp)\./, '').split('.');
+        if (parts.length > 2 && /^(co|ac|gov|nic|org|net|edu|res|gen|ind|com)$/.test(parts[parts.length - 2])) parts.pop();
+        var n = parts.length > 1 ? parts[parts.length - 2] : parts[0];
+        return n ? n.charAt(0).toUpperCase() + n.slice(1) : String(h || '');
+    }
+    /* "site.org › biology › photosynthesis" */
+    function crumb(u, h) {
+        try {
+            var segs = new URL(u).pathname.split('/').filter(Boolean).slice(0, 3).map(function (x) { try { x = decodeURIComponent(x); } catch (e) { } return x.replace(/\.(html?|php|aspx?)$/i, '').replace(/[-_+]+/g, ' ').slice(0, 30); }).filter(Boolean);
+            return [h].concat(segs).join(' \u203a ');
+        } catch (e) { return h; }
+    }
+    function webHead() { return ''; } /* v6: no 'Web results' heading */
     function paintWeb(a) {
         var box = $('nr-gg'); if (!box) return;
         var first = a.slice(0, WEB_SHOW), rest = a.slice(WEB_SHOW);
@@ -41483,12 +41548,13 @@ Write a short normal introduction before the blocks and a one-line closing after
         var tok = S.tok, box = $('nr-gg'); S.web = null;
         if (!box) { S.webP = Promise.resolve([]); return; }
         box.hidden = false; box.innerHTML = webHead() + '<div id="nr-brv"><div class="nr-sk" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>';
-        S.webP = fj(wUrl(q), 20000).then(function (d) {
-            var a = ((d && d.results) || []).filter(function (r) { return r && r.title && /^https?:\/\//i.test(r.url || ''); });
+        S.webP = fj(wUrl(q), 25000).then(function (d) {
+            var a = ((d && d.results) || []).map(normWeb).filter(Boolean);
+            if (tok === S.tok) { S.ans = String((d && d.answer) || '').trim(); paintQuick(a); }
             if (!a.length) throw new Error('none');
             return a;
         }).then(function (a) { if (tok === S.tok) { S.web = a; paintWeb(a); } return a; },
-            function (e) { if (tok === S.tok) paintWebErr(e); return []; });
+            function (e) { if (tok === S.tok) { paintWebErr(e); if (!S.ans) paintQuick([]); } return []; });
     }
 
     /* ---------- YouTube showcase (videos from Tavily, shown before the web results) ---------- */
@@ -41502,11 +41568,11 @@ Write a short normal introduction before the blocks and a one-line closing after
         var box = $('nr-yt'), v = S.vids; if (!box || !v || !v.length) return;
         var c = v[S.vi] || v[0];
         box.hidden = false;
-        box.innerHTML = '<div class="nr-vs"><div class="nr-vhd"><span class="nr-vlogo"><i class="fa-brands fa-youtube"></i></span><div><b>Watch</b><small>Videos on this topic</small></div><button type="button" class="nr-vmore" data-a="yt">More on YouTube</button></div>'
+        box.innerHTML = '<div class="nr-vs"><div class="nr-vhd"><span class="nr-vlogo"><i class="fa-brands fa-youtube"></i></span><div><b>Videos</b><small>From YouTube</small></div><button type="button" class="nr-vmore" data-a="yt">More on YouTube</button></div>'
             + '<div class="nr-vstage" id="nr-vstage">' + vidStage(c, false) + '</div>'
             + '<div class="nr-vinfo"><div>' + vidInfo(c) + '</div><button type="button" class="nr-vopen" data-a="vopen" aria-label="Open this video in YouTube"><i class="fa-solid fa-arrow-up-right-from-square"></i><span>Open</span></button></div>'
             + (v.length > 1 ? '<div class="nr-vrail" role="listbox" aria-label="More videos">' + v.map(function (x, k) {
-                return '<button type="button" role="option" aria-selected="' + (k === S.vi ? 'true' : 'false') + '" class="nr-vc' + (k === S.vi ? ' on' : '') + '" data-a="vsel" data-i="' + k + '"><span class="th"><img alt="" loading="lazy" src="https://i.ytimg.com/vi/' + x.id + '/mqdefault.jpg" referrerpolicy="no-referrer">' + (k === S.vi ? '<span class="np"><i class="fa-solid fa-play"></i>Now</span>' : '') + '</span><b>' + esc(x.title) + '</b></button>';
+                return '<button type="button" role="option" aria-selected="' + (k === S.vi ? 'true' : 'false') + '" class="nr-vc' + (k === S.vi ? ' on' : '') + '" data-a="vsel" data-i="' + k + '"><span class="th"><img alt="" loading="lazy" src="https://i.ytimg.com/vi/' + x.id + '/mqdefault.jpg" referrerpolicy="no-referrer">' + (k === S.vi ? '<span class="np"><i class="fa-solid fa-play"></i>Now</span>' : '') + '</span><span class="tx"><b>' + esc(x.title) + '</b>' + (x.ch ? '<small>' + esc(x.ch) + '</small>' : '') + '</span></button>';
             }).join('') + '</div>' : '') + '</div>';
     }
     /* tapping a video in the rail plays it in the big player; the rail keeps its scroll position */
@@ -41525,9 +41591,9 @@ Write a short normal introduction before the blocks and a one-line closing after
     }
     function startVideos(q) {
         var tok = S.tok, box = $('nr-yt'); S.vids = null; S.vi = 0; if (!box) return;
-        box.hidden = false; box.innerHTML = '<div class="nr-vs nr-vsk" aria-hidden="true"><div class="nr-vhd"><span class="nr-vlogo"><i class="fa-brands fa-youtube"></i></span><div><b>Watch</b><small>Finding videos\u2026</small></div></div><div class="nr-vstage"></div><div class="nr-vrail"><i></i><i></i><i></i></div></div>';
+        box.hidden = false; box.innerHTML = '<div class="nr-vs nr-vsk" aria-hidden="true"><div class="nr-vhd"><span class="nr-vlogo"><i class="fa-brands fa-youtube"></i></span><div><b>Videos</b><small>Finding videos\u2026</small></div></div><div class="nr-vstage"></div><div class="nr-vrail"><i></i><i></i><i></i></div></div>';
         function none() { if (tok !== S.tok) return; box.innerHTML = ''; box.hidden = true; }
-        fj(wUrl(topicOf(q) + ' explained') + '&kind=video', 20000).then(function (d) {
+        fj(wUrl(topicOf(q) + ' explained', 'basic') + '&kind=video', 20000).then(function (d) {
             if (tok !== S.tok) return;
             var seen = {}, a = [];
             ((d && (d.videos || d.results)) || []).forEach(function (r) {
@@ -41538,6 +41604,125 @@ Write a short normal introduction before the blocks and a one-line closing after
             if (!a.length) return none();
             S.vids = a.slice(0, 8); S.vi = 0; paintVideos();
         }, none);
+    }
+
+
+    /* ---------- v6: quick answer box at the top (like Google's answer box) ----------
+       Maths ("1+1", "25% of 640", "sqrt 144", "5!") is worked out here in the page: exact, instant, no credits.
+       Meanings, translations and short facts show Tavily's ADVANCED answer, which comes with the same web search (include_answer). */
+    var FN = { sqrt: Math.sqrt, cbrt: function (x) { return x < 0 ? -Math.pow(-x, 1 / 3) : Math.pow(x, 1 / 3); }, log: function (x) { return Math.log(x) / Math.LN10; }, ln: Math.log, abs: Math.abs };
+    function mathPrep(q) {
+        var s = String(q || '').toLowerCase().trim();
+        s = s.replace(/^(what\s+is|what's|whats|calculate|compute|evaluate|solve|find)\s+/, '').replace(/^(the\s+)?(value\s+of\s+)/, '').replace(/[?=\s]+$/, '');
+        s = s.replace(/square\s+root\s+of\s*/g, 'sqrt ').replace(/cube\s+root\s+of\s*/g, 'cbrt ').replace(/√/g, 'sqrt ').replace(/∛/g, 'cbrt ')
+            .replace(/(\d)\s*[x×✕]\s*(?=[\d(.])/g, '$1*').replace(/÷/g, '/').replace(/[−–]/g, '-')
+            .replace(/\bplus\b/g, '+').replace(/\bminus\b/g, '-').replace(/\b(times|into|multiplied\s+by)\b/g, '*').replace(/\bdivided\s+by\b/g, '/')
+            .replace(/\bto\s+the\s+power\s+(of\s+)?/g, '^').replace(/\bsquared\b/g, '^2').replace(/\bcubed\b/g, '^3').replace(/\*\*/g, '^')
+            .replace(/(\d+(?:\.\d+)?)\s*(?:%|percent)\s*of\s*/g, '($1/100)*').replace(/π/g, 'pi').replace(/(\d),(?=\d)/g, '$1');
+        return s.trim();
+    }
+    function calc(q) {
+        var s = mathPrep(q); if (!s || s.length > 120 || !/\d/.test(s)) return null;
+        var tk = [], i = 0, m, nums = 0, special = 0;
+        while (i < s.length) {
+            var c = s.charAt(i), rest = s.slice(i);
+            if (/\s/.test(c)) { i++; continue; }
+            if ((m = /^(\d+(?:\.\d+)?|\.\d+)/.exec(rest))) { tk.push({ t: 'n', v: parseFloat(m[1]) }); i += m[1].length; nums++; continue; }
+            if ((m = /^[a-z]+/.exec(rest))) {
+                var w = m[0];
+                if (w === 'pi') tk.push({ t: 'n', v: Math.PI }); else if (w === 'e') tk.push({ t: 'n', v: Math.E });
+                else if (FN.hasOwnProperty(w)) { tk.push({ t: 'f', v: w }); special++; } else return null;
+                i += w.length; continue;
+            }
+            if ('+-*/^%!()'.indexOf(c) >= 0) { tk.push({ t: c }); if (c === '!' || c === '^' || c === '%') special++; i++; continue; }
+            return null;
+        }
+        if (nums < 2 && !special) return null;
+        var p = 0;
+        function pk() { return tk[p] && tk[p].t; }
+        function need(t) { if (pk() !== t) throw 0; p++; }
+        function expr() { var v = term(); while (pk() === '+' || pk() === '-') { var o = tk[p++].t, r = term(); v = o === '+' ? v + r : v - r; } return v; }
+        function term() {
+            var v = unary();
+            while (pk() === '*' || pk() === '/' || pk() === '(' || pk() === 'f') {
+                var o = pk(); if (o === '(' || o === 'f') { v = v * unary(); continue; }
+                p++; var r = unary(); v = o === '*' ? v * r : v / r;
+            }
+            return v;
+        }
+        function unary() { if (pk() === '-') { p++; return -unary(); } if (pk() === '+') { p++; return unary(); } return power(); }
+        function power() { var b = post(); if (pk() === '^') { p++; return Math.pow(b, unary()); } return b; }
+        function post() {
+            var v = prim();
+            while (pk() === '!' || pk() === '%') {
+                if (tk[p++].t === '%') { v = v / 100; continue; }
+                if (v < 0 || v > 170 || Math.floor(v) !== v) throw 0; var f = 1; for (var k = 2; k <= v; k++) f *= k; v = f;
+            }
+            return v;
+        }
+        function prim() {
+            var t = tk[p]; if (!t) throw 0;
+            if (t.t === 'n') { p++; return t.v; }
+            if (t.t === '(') { p++; var v = expr(); need(')'); return v; }
+            if (t.t === 'f') { p++; var a; if (pk() === '(') { p++; a = expr(); need(')'); } else a = post(); return FN[t.v](a); }
+            throw 0;
+        }
+        try { var v = expr(); if (p !== tk.length || typeof v !== 'number' || !isFinite(v)) return null; return { expr: s, v: v }; } catch (e) { return null; }
+    }
+    function fmtNum(v) {
+        if (v !== 0 && (Math.abs(v) >= 1e15 || Math.abs(v) < 1e-9)) return v.toExponential(8).replace(/\.?0+e/, 'e').replace('e+', ' × 10^').replace('e-', ' × 10^-');
+        var r = +v.toPrecision(12);
+        try { return r.toLocaleString('en-IN', { maximumFractionDigits: 10 }); } catch (e) { return String(r); }
+    }
+    function prettyExpr(s) {
+        return String(s).replace(/\s+/g, '').replace(/\*/g, ' × ').replace(/\//g, ' ÷ ').replace(/\+/g, ' + ').replace(/(\d|\))-/g, '$1 − ')
+            .replace(/sqrt/g, '√').replace(/cbrt/g, '∛').replace(/pi/g, 'π').replace(/\(\s*(\d+(?:\.\d+)?)\s÷\s100\)\s×\s/g, '$1% of ');
+    }
+    var QA_RE = /\b(meaning|means|mean|translate|translation|define|definition|synonyms?|antonyms?|opposite|plural|full\s+form|stands?\s+for|spelling|pronounce|pronunciation|capital|currency|population|who|when|where|which|how\s+(many|much|far|old|long|tall|big|fast)|what\s+(is|are|was|were|does|do)|what's|convert|in\s+(bengali|bangla|hindi|english|tamil|telugu|marathi|gujarati|urdu|odia|oriya|kannada|malayalam|punjabi|sanskrit|assamese|nepali))\b/i;
+    function wantsQuick(q) {
+        q = String(q || ''); var w = q.trim().split(/\s+/).length;
+        return w <= 14 && (QA_RE.test(q) || (/[ऀ-ॿঀ-৿]/.test(q) && w <= 8));
+    }
+    function iaBox(on) { var b = $('nr-ia'), r = $('nr-res'); if (b) b.hidden = !on; if (r) r.classList.toggle('ia-on', !!on); return b; }
+    function paintCalc(c) {
+        var b = iaBox(true); if (!b) return;
+        var out = fmtNum(c.v);
+        b.innerHTML = '<article class="nr-ia nr-iam"><div class="nr-iah"><span class="nr-iai"><i class="fa-solid fa-calculator"></i></span><b>Calculator</b><small>Worked out exactly</small></div>'
+            + '<div class="nr-iax">' + esc(prettyExpr(c.expr)) + ' =</div><div class="nr-iar">' + esc(out) + '</div>'
+            + '<div class="nr-iaf"><button type="button" data-a="iacopy" data-v="' + esc(out.replace(/,/g, '')) + '"><i class="fa-regular fa-copy"></i>Copy</button></div></article>';
+    }
+    function paintQuickLoading() {
+        var b = iaBox(true); if (!b) return;
+        b.innerHTML = '<article class="nr-ia ld" aria-hidden="true"><div class="nr-iah"><span class="nr-iai"><i class="fa-solid fa-bolt"></i></span><b>Quick answer</b><small>Searching…</small></div><div class="nr-sk"><i></i><i></i><i></i></div></article>';
+    }
+    function paintQuick(a) {
+        if (S.calc) return;
+        var b = $('nr-ia'); if (!b) return;
+        var ans = String(S.ans || '').trim();
+        if (!ans || !wantsQuick(S.q)) { iaBox(false); b.innerHTML = ''; return; }
+        iaBox(true);
+        var src = (a || [])[0], long = ans.length > 380;
+        var sl = '';
+        if (src) {
+            var h = String(src.host || hostOf(src.url)).replace(/^www\./, '');
+            sl = '<a class="nr-iasrc" data-ext="1" href="' + esc(src.url) + '"><i class="nr-sfi">' + esc((h.charAt(0) || '?').toUpperCase())
+                + (src.fav && /^https:\/\//.test(src.fav) ? '<img alt="" loading="lazy" referrerpolicy="no-referrer" src="' + esc(src.fav) + '" onerror="this.remove()">' : '') + '</i><span>' + esc(h) + '</span></a>';
+        }
+        b.innerHTML = '<article class="nr-ia' + (long ? ' long' : '') + '"><div class="nr-iah"><span class="nr-iai"><i class="fa-solid fa-bolt"></i></span><b>Quick answer</b><small>From the web</small></div>'
+            + '<div class="nr-iat">' + md(ans) + '</div>'
+            + '<div class="nr-iaf">' + (long ? '<button type="button" data-a="iamore" aria-expanded="false"><span>Show more</span><i class="fa-solid fa-chevron-down"></i></button>' : '')
+            + sl + '<button type="button" data-a="iacopy" data-v="' + esc(ans) + '"><i class="fa-regular fa-copy"></i>Copy</button></div></article>';
+    }
+    /* what Nova is also told on the first answer, so it agrees with the box */
+    function extraCtx() {
+        if (S.calc) return '\n\nCALCULATOR (exact): ' + S.calc.expr + ' = ' + fmtNum(S.calc.v);
+        if (S.ans) return '\n\nSEARCH SUMMARY: ' + String(S.ans).replace(/\s+/g, ' ').slice(0, 700);
+        return '';
+    }
+    function copyText(txt, btn) {
+        function done() { if (btn) { var old = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check"></i>Copied'; setTimeout(function () { btn.innerHTML = old; }, 1500); } }
+        try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done, function () { fallbackCopy(txt, done); }); return; } } catch (e) { }
+        fallbackCopy(txt, done);
     }
 
     /* ---------- actions ---------- */
@@ -41551,11 +41736,13 @@ Write a short normal introduction before the blocks and a one-line closing after
         S.turns = []; S.q = q; pushRecent(q);
         var r = $('nr-res'); if (r) { r.innerHTML = resHtml(); r.setAttribute('data-tab', P.auto ? 'ans' : 'web'); setTab(P.auto ? 'ans' : 'web'); }
         show(true);
+        S.ans = ''; S.calc = calc(q); if (S.calc) paintCalc(S.calc); else if (wantsQuick(q)) paintQuickLoading();
         startWiki(q); startBooks(q); startWeb(q); startVideos(q);
         if (P.auto) askNova();
     }
     function follow(prompt, label) {
         prompt = String(prompt || '').trim(); if (prompt.length < 2 || !S.q) return;
+        ovOpen(); if (mq(MQ_TAB) && $('nova-research-view') && $('nova-research-view').classList.contains('nr-pane-off')) paneSet(false);
         runTurn(prompt, label || prompt, true);
     }
     function followFromBox() {
@@ -41617,6 +41804,10 @@ Write a short normal introduction before the blocks and a one-line closing after
         else if (a === 'unsave') { var sa = getSaved(); sa.splice(+b.getAttribute('data-i'), 1); sv('novaResearchSaved', sa); var hh = $('nr-home'); if (hh) hh.innerHTML = homeHtml(); }
         else if (a === 'bmore') { var m2 = $('nr-bm2'); if (m2) m2.hidden = false; if (b.parentNode) b.parentNode.removeChild(b); }
         else if (a === 'bretry') { if (S.q) startWeb(S.q); }
+        else if (a === 'ovmore') ovOpen();
+        else if (a === 'iacopy') copyText(b.getAttribute('data-v') || '', b);
+        else if (a === 'iamore') { var ia = b.closest('.nr-ia'); if (ia) { var io = ia.classList.toggle('open'); b.setAttribute('aria-expanded', io ? 'true' : 'false'); var isp = b.querySelector('span'); if (isp) isp.textContent = io ? 'Show less' : 'Show more'; } }
+        else if (a === 'pane') paneSet(b.getAttribute('data-v') === 'off');
         else if (a === 'vplay') setVideo(S.vi, true);
         else if (a === 'vsel') setVideo(+b.getAttribute('data-i') || 0, true);
         else if (a === 'vopen') { var vv = S.vids && S.vids[S.vi]; if (vv) go('https://www.youtube.com/watch?v=' + vv.id); }
@@ -41670,8 +41861,7 @@ Write a short normal introduction before the blocks and a one-line closing after
         bindHeader(); watchSize(root);
         if (!root.getAttribute('data-nr')) {
             root.setAttribute('data-nr', '1');
-            root.innerHTML = '<div class="nr-hero" id="nr-hero"><h3>What do you want to learn?</h3><p>Ask anything. Nova answers first, then videos, web results, Wikipedia and books, all on one page.</p></div>'
-                + '<div id="nr-home"></div><div id="nr-res" hidden></div>';
+            root.innerHTML = '<div id="nr-home"></div><div id="nr-res" hidden></div>';
             root.addEventListener('click', onClick);
             root.addEventListener('keydown', onKey);
             root.addEventListener('input', function (e) { if (e.target && e.target.id === 'nr-q') { syncX(); var sf = $('nr-sf'); if (sf) sf.classList.remove('bad'); } });
@@ -42416,6 +42606,277 @@ html:has(#nova-mentor-view:not(.hidden-view)) #nova-fab,html:has(#nova-research-
 .nr-dk{position:relative;bottom:auto;flex:none}
 }
 @media(prefers-reduced-motion:reduce){.nr-vs,.nr-vsk .nr-vstage,.nr-vsk .nr-vrail i{animation:none!important}.nr-vposter img,.nr-vplay{transition:none!important}}
+</style>
+<style id="nr-css-v5">/* ===== Nova Research v5 (2026-11-28): light video player for every screen, Google AI Overview look on PHONES only,
+   Edge Copilot-style side pane on TABLETS only (700-1199px wide). Desktop (1200px+) and short landscape phones keep the v3/v4 layout. ===== */
+.nv-rs{--nrSpk:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234285f4'/%3E%3Cstop offset='.55' stop-color='%239b72f3'/%3E%3Cstop offset='1' stop-color='%23d96570'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='M12 1.5Q13.2 10.8 22.5 12Q13.2 13.2 12 22.5Q10.8 13.2 1.5 12Q10.8 10.8 12 1.5Z'/%3E%3C/svg%3E")}
+/* new parts are hidden unless the phone / tablet rules below turn them on */
+.nr-ovm,.nr-dive,.nr-wbc,.nr-pn,.nr-sd,.nr-disc{display:none}
+.nr-spk{flex:none;display:inline-block;width:18px;height:18px;background:var(--nrSpk) center/contain no-repeat}
+
+/* ---------- videos: light player card (all screens) ---------- */
+#nr-yt{container-type:inline-size}
+#nr-yt .nr-vs{background:#fff;color:#1f2937;border:1px solid #e6eaf2;border-radius:24px;box-shadow:0 1px 2px rgba(16,24,40,.04),0 16px 32px -26px rgba(16,24,40,.35)}
+#nr-yt .nr-vhd{padding:14px 14px 12px 16px}
+#nr-yt .nr-vlogo{width:36px;height:36px;border-radius:11px;background:#fff1f1;color:#ff0033;font-size:18px}
+#nr-yt .nr-vhd b{color:#111827;font-size:15.5px}
+#nr-yt .nr-vhd small{color:#6b7280}
+#nr-yt .nr-vmore,#nr-yt .nr-vopen{border:1px solid #e3e8f1;background:#f6f8fc;color:#1a56db}
+#nr-yt .nr-vopen{color:#374151}
+@media(hover:hover){#nr-yt .nr-vmore:hover,#nr-yt .nr-vopen:hover{background:#eef3fc}}
+#nr-yt .nr-vmore:focus-visible,#nr-yt .nr-vopen:focus-visible,#nr-yt .nr-vposter:focus-visible,#nr-yt .nr-vc:focus-visible{outline:2px solid #1a73e8;outline-offset:2px}
+#nr-yt .nr-vstage{border-radius:18px;background:#eef1f6;box-shadow:0 0 0 1px rgba(16,24,40,.05)}
+#nr-yt .nr-vposter{background:#eef1f6}
+#nr-yt .nr-vposter:after{height:38%;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.28))}
+#nr-yt .nr-vplay{width:68px;height:48px;margin:-24px 0 0 -34px;padding-left:3px;border-radius:15px;background:#ff0033;color:#fff;font-size:19px;box-shadow:0 10px 22px -10px rgba(255,0,51,.75)}
+#nr-yt .nr-vinfo{padding:12px 14px 4px 16px}
+#nr-yt .nr-vinfo b{color:#111827}
+#nr-yt .nr-vinfo small{color:#6b7280}
+#nr-yt .nr-vrail{padding:12px 14px 16px}
+#nr-yt .nr-vc{width:160px;color:#374151}
+#nr-yt .nr-vc .tx{display:block}
+#nr-yt .nr-vc .th{border-radius:12px;background:#eef1f6;box-shadow:0 0 0 1px rgba(16,24,40,.06)}
+#nr-yt .nr-vc.on .th{box-shadow:0 0 0 2px #1a73e8}
+#nr-yt .nr-vc .np{background:rgba(17,24,39,.78)}
+#nr-yt .nr-vc b{color:#1f2937;font-weight:600}
+#nr-yt .nr-vc.on b{color:#1a56db}
+#nr-yt .nr-vc small{display:block;margin-top:3px;font-size:11.5px;font-weight:600;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(hover:hover){#nr-yt .nr-vc:hover:not(.on) .th{box-shadow:0 0 0 2px #c7d7f5}}
+#nr-yt .nr-vsk .nr-vrail i{background:#eef1f6}
+/* wide video card: big player on the left, "up next" list on the right */
+@container (min-width:680px){
+#nr-yt .nr-vs{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(210px,1fr);grid-template-areas:"hd hd" "st rl" "in rl"}
+#nr-yt .nr-vhd{grid-area:hd}
+#nr-yt .nr-vstage{grid-area:st;margin:0 0 0 14px}
+#nr-yt .nr-vinfo{grid-area:in;padding:12px 6px 16px 16px}
+#nr-yt .nr-vrail{grid-area:rl;contain:size;flex-direction:column;gap:4px;overflow-x:hidden;overflow-y:auto;padding:0 10px 12px 12px;scroll-snap-type:y proximity;scrollbar-width:thin}
+#nr-yt .nr-vc{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;align-items:start;width:auto;padding:6px;border-radius:14px;transition:background .2s}
+#nr-yt .nr-vc.on{background:#eef4ff}
+@media(hover:hover){#nr-yt .nr-vc:hover:not(.on){background:#f6f8fc}}
+#nr-yt .nr-vc b{margin-top:1px;font-size:12.5px}
+#nr-yt .nr-vsk .nr-vrail i{width:auto;height:66px}
+}
+
+/* ---------- PHONES: Nova answer looks like Google's AI Overview ---------- */
+@media(max-width:699px) and (min-height:521px),(max-width:639px){
+#nova-research-view #nr-res .nr-wb{max-height:none;margin:0 0 16px;border:1px solid #e3e8f0;border-radius:24px;background:#fff;box-shadow:0 1px 2px rgba(60,64,67,.1),0 2px 6px rgba(60,64,67,.06);overflow:hidden}
+#nova-research-view #nr-res .nr-wbh{display:none}
+#nova-research-view #nr-res .nr-wb #nr-thread{flex:none;overflow:visible;max-height:none;padding:0}
+#nova-research-view #nr-res .nr-wb.nr-clip:not(.nr-open) #nr-thread{max-height:360px;overflow:hidden}
+#nova-research-view #nr-res .nr-wb.nr-ovf #nr-thread{-webkit-mask-image:linear-gradient(#000 62%,rgba(0,0,0,0));mask-image:linear-gradient(#000 62%,rgba(0,0,0,0))}
+.nr-wb.nr-ovf .nr-ovm{display:flex;align-items:center;justify-content:center;gap:8px;width:calc(100% - 28px);height:44px;margin:-6px 14px 14px;border:0;border-radius:99px;background:#eef2f9;color:#1f1f1f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s,transform .25s var(--ios)}
+.nr-wb.nr-ovf .nr-ovm i{font-size:12px;color:#444746}
+.nr-wb.nr-ovf .nr-ovm:active{transform:scale(.98);background:#e3e9f5}
+.nr-ovm:focus-visible,.nr-dive:focus-visible{outline:2px solid var(--nrA);outline-offset:2px}
+.nr-wb.nr-ovf .nr-dk,.nr-wb.nr-clip:not(.nr-open) .nr-dive{display:none!important}
+/* answer */
+.nr-wb .nr-turn{padding:0}
+.nr-wb .nr-ov{margin:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.nr-wb .nr-turn+.nr-turn .nr-ov{border-top:0}
+.nr-wb .nr-oh{gap:9px;padding:16px 16px 2px}
+.nr-wb .nr-oh .nr-av{width:22px;height:22px;padding:0;border-radius:0;background:var(--nrSpk) center/contain no-repeat}
+.nr-wb .nr-oh .nr-av img{display:none}
+.nr-wb .nr-oh>div{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 10px}
+.nr-wb .nr-oh b{font-size:15.5px;font-weight:700;letter-spacing:-.01em;color:#1f1f1f}
+.nr-wb .nr-oh small{margin:0;font-size:12px}
+.nr-wb .nr-typing{background:transparent;padding:6px 0}
+.nr-wb .nr-b2{padding:8px 16px 6px;font-size:15.5px;line-height:1.62;color:#1f1f1f}
+.nr-wb .nr-b2>p:first-child{font-size:16px;line-height:1.6;font-weight:500;color:#1f1f1f}
+.nr-wb .nr-b2 b{color:#1f1f1f;font-weight:700}
+.nr-wb .nr-b2 li{padding-left:18px;margin-bottom:9px}
+.nr-wb .nr-b2 ul>li:before{left:4px;top:.72em;width:5px;height:5px;background:#1f1f1f}
+.nr-wb .nr-b2 sup.nr-c a{min-width:18px;height:18px;border-radius:6px;background:#e8eefa;color:#1f4fae}
+.nr-wb .nr-sk i{background:linear-gradient(90deg,#e8eefa 25%,#f3e9fb 45%,#e8eefa 65%);background-size:400% 100%}
+/* follow-up question bubble */
+.nr-wb .nr-q{margin:18px 14px 2px auto;padding:10px 15px;border-radius:20px 20px 6px 20px;background:#eef2f9;color:#1f1f1f;box-shadow:none;font-weight:500}
+/* source cards, swiped sideways */
+.nr-wb .nr-srcs{padding:6px 0 12px}
+.nr-wb .nr-srcs .nr-lbl{padding:0 16px;font-size:12.5px;color:#444746}
+.nr-wb .nr-srow{gap:8px;padding:0 16px 2px;scroll-snap-type:x proximity;scroll-padding:0 16px}
+.nr-wb .nr-s{flex:none;flex-direction:column;align-items:stretch;justify-content:space-between;gap:10px;width:188px;max-width:none;min-height:104px;padding:12px 13px;border:0;border-radius:16px;background:#f1f4f9;color:#1f1f1f;scroll-snap-align:start}
+.nr-wb .nr-s em{display:none}
+.nr-wb .nr-s span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:normal;font-size:13px;font-weight:600;line-height:1.38}
+.nr-wb .nr-s .nr-sd{display:flex;align-items:center;gap:7px;min-width:0;font-size:11.5px;font-weight:500;color:#444746;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nr-sfi{position:relative;flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#dfe7f6;color:#1f4fae;font-size:9.5px;font-style:normal;font-weight:800;overflow:hidden}
+.nr-sfi img{position:absolute;inset:0;width:100%;height:100%;padding:2px;box-sizing:border-box;border-radius:50%;background:#fff}
+/* ask next, actions, disclaimer */
+.nr-wb .nr-rel{padding:2px 16px 10px}
+.nr-wb .nr-rel button{margin:0;padding:13px 2px;border:0;border-top:1px solid #eceff4;border-radius:0;background:transparent;color:#1f1f1f;font-weight:500}
+.nr-wb .nr-rel button i{color:#5f6368}
+.nr-wb .nr-act{gap:6px;padding:8px 12px 4px;border-top:0}
+.nr-wb .nr-act button{padding:8px 12px;background:transparent;border:1px solid #e3e8f0;color:#444746;font-weight:600}
+.nr-wb .nr-act button.on{background:#e8f0fe;border-color:#c9dafb;color:#1a56db}
+.nr-wb .nr-disc{display:block;margin:4px 16px 14px;font-size:11.5px;line-height:1.4;color:#70757a}
+/* follow-up box, like Google AI Mode */
+#nova-research-view #nr-res .nr-wb .nr-dk{position:relative;bottom:auto;padding:4px 14px 10px;background:transparent;border-top:0;-webkit-backdrop-filter:none;backdrop-filter:none}
+.nr-wb .nr-dkc{margin:0 -14px 10px;padding:0 14px 2px}
+.nr-wb .nr-dkc button{height:34px;border-color:#e3e8f0;color:#1f1f1f;font-weight:600}
+.nr-wb .nr-dkr{padding:4px 4px 4px 18px;border:0;background:#f1f4f9}
+.nr-wb .nr-dkr:focus-within{box-shadow:0 0 0 2px #c9dafb}
+.nr-wb .nr-dkr .send{width:40px;height:40px;background:#1f1f1f;box-shadow:none}
+.nr-wb.nr-open .nr-dive,.nr-wb:not(.nr-clip) .nr-dive{display:flex;align-items:center;justify-content:center;gap:9px;width:calc(100% - 28px);height:44px;margin:2px 14px 14px;border:1px solid #d6dee9;border-radius:99px;background:#fff;color:#1f1f1f;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background .2s,transform .25s var(--ios)}
+.nr-wb .nr-dive i{font-size:12px;color:#5f6368}
+.nr-wb .nr-dive:active{transform:scale(.98);background:#f6f8fc}
+.nr-wb .nr-ask{padding:24px 18px 18px}
+}
+
+/* ---------- TABLETS: Nova as a side pane, like Copilot in Microsoft Edge ---------- */
+@media(min-width:700px) and (max-width:1199px) and (min-height:521px){
+#nova-research-view{--nr-pw:clamp(320px,39vw,410px)}
+#nova-research-view.nr-has-res #nr-root.nv-bd{max-width:none;padding-top:0;padding-right:0;padding-bottom:0}
+#nova-research-view.nr-has-res.nr-pane-off #nr-root.nv-bd{padding-right:max(16px,env(safe-area-inset-right,0px))}
+#nova-research-view #nr-res:not([hidden]){display:grid;grid-template-columns:minmax(0,1fr) var(--nr-pw);grid-template-rows:auto 1fr;gap:0 20px;align-items:start;max-width:none;margin:0}
+#nova-research-view #nr-res .nr-wa{grid-column:1;grid-row:1;order:0;padding-top:16px;min-width:0}
+#nova-research-view #nr-res .nr-wc{grid-column:1;grid-row:2;order:0;min-width:0;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 28px)}
+#nova-research-view.nr-pane-off #nr-res:not([hidden]){grid-template-columns:minmax(0,1fr);max-width:860px;margin:0 auto}
+#nova-research-view.nr-pane-off #nr-res .nr-wb{display:none}
+#nova-research-view.nr-has-res.nr-pane-off .nr-pn{display:flex}
+/* the pane */
+#nova-research-view #nr-res .nr-wb{grid-column:2;grid-row:1/span 2;order:0;position:sticky;top:0;align-self:start;height:var(--nr-vh,calc(100dvh - 150px));max-height:none;margin:0;border:0;border-left:1px solid #e3e6ee;border-radius:0;padding-right:env(safe-area-inset-right,0px);
+  background:radial-gradient(120% 50% at 100% 0%,rgba(198,214,255,.45),rgba(198,214,255,0) 60%),radial-gradient(90% 40% at 0% 100%,rgba(255,221,204,.38),rgba(255,221,204,0) 70%),linear-gradient(180deg,#f7f8fd 0%,#fbfaf8 100%);
+  box-shadow:-14px 0 30px -28px rgba(30,41,59,.55);animation:nrPane .45s var(--ios) both}
+@keyframes nrPane{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+#nova-research-view #nr-res .nr-wbh{gap:10px;padding:12px 10px 10px 16px;background:transparent;border-bottom:1px solid rgba(15,23,42,.06)}
+#nova-research-view #nr-res .nr-wbh .av{width:32px;height:32px}
+#nova-research-view #nr-res .nr-wbh .av img{border-width:1.5px;box-shadow:none}
+#nova-research-view #nr-res .nr-wbh .av:after{width:10px;height:10px}
+#nova-research-view #nr-res .nr-wbh .tx b{font-size:15px}
+#nova-research-view #nr-res .nr-wbh .tx small{font-size:12px}
+#nova-research-view #nr-res .nr-wbx,#nova-research-view #nr-res .nr-wbc{display:flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:0;border-radius:10px;background:transparent;color:#374151;font-size:14px;cursor:pointer;transition:background .2s}
+#nova-research-view #nr-res .nr-wbx span{display:none}
+#nova-research-view #nr-res .nr-wbc{font-size:16px}
+@media(hover:hover){#nova-research-view #nr-res .nr-wbx:hover,#nova-research-view #nr-res .nr-wbc:hover{background:rgba(15,23,42,.06)}}
+#nova-research-view #nr-res .nr-wbx:active,#nova-research-view #nr-res .nr-wbc:active{background:rgba(15,23,42,.1)}
+.nr-wbc:focus-visible{outline:2px solid var(--nrA);outline-offset:1px}
+/* conversation: Nova writes on the page, the student's words sit in a soft bubble */
+#nova-research-view #nr-res .nr-wb #nr-thread{flex:1 1 auto;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:6px 0 10px;scrollbar-width:thin}
+.nr-wb .nr-turn{padding:0}
+.nr-wb .nr-ov{margin:6px 0 0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.nr-wb .nr-oh{gap:9px;padding:14px 16px 0}
+.nr-wb .nr-oh .nr-av{width:26px;height:26px;padding:1.5px}
+.nr-wb .nr-oh b{font-size:14px}
+.nr-wb .nr-typing{background:rgba(26,115,232,.08)}
+.nr-wb .nr-b2{padding:6px 16px 4px;font-size:15px;line-height:1.66;color:#1f2733}
+.nr-wb .nr-b2>p:first-child{font-size:15.5px;font-weight:500;color:#111827}
+.nr-wb .nr-b2 b{color:#111827}
+.nr-wb .nr-q{max-width:86%;margin:16px 16px 2px auto;padding:10px 15px;border-radius:20px;background:#e6ebf8;color:#111827;font-weight:500;box-shadow:none}
+.nr-wb .nr-srcs{padding:4px 16px 8px}
+.nr-wb .nr-srow{flex-wrap:wrap;overflow:visible}
+.nr-wb .nr-s{max-width:100%;padding:5px 11px 5px 6px;border:1px solid #e1e6f0;background:rgba(255,255,255,.85)}
+.nr-wb .nr-rel{padding:2px 16px 8px}
+.nr-wb .nr-rel button{padding:10px 13px;border-color:#dfe5f1;background:rgba(255,255,255,.8);color:#1f2a44;font-weight:600}
+.nr-wb .nr-act{gap:2px;padding:4px 10px 2px;border-top:0}
+.nr-wb .nr-act button{padding:7px 10px;background:transparent;color:#4b5563;font-weight:600}
+@media(hover:hover){.nr-wb .nr-act button:hover{background:rgba(15,23,42,.06)}}
+.nr-wb .nr-act button.on{background:#e6ebf8;color:#1a56db}
+.nr-wb .nr-disc{display:block;margin:2px 16px 8px;font-size:11px;color:#8a94a6}
+.nr-wb .nr-ask{flex:1 1 auto;justify-content:center;padding:24px 22px;background:transparent}
+/* composer at the bottom of the pane */
+#nova-research-view #nr-res .nr-wb .nr-dk{position:relative;bottom:auto;flex:none;padding:8px 12px calc(env(safe-area-inset-bottom,0px) + 12px);background:linear-gradient(rgba(251,250,248,0),rgba(251,250,248,.92) 30%);border-top:0;-webkit-backdrop-filter:none;backdrop-filter:none}
+.nr-wb .nr-dkc{gap:6px;margin:0 -12px 10px;padding:0 12px 2px}
+.nr-wb .nr-dkc button{height:32px;padding:0 12px;border-color:#dde3ef;background:rgba(255,255,255,.9);color:#1f2a44;font-size:12px}
+.nr-wb .nr-dkr{min-height:54px;padding:6px 6px 6px 18px;border:1px solid #dfe4ee;border-radius:24px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.05),0 10px 24px -18px rgba(15,23,42,.45)}
+.nr-wb .nr-dkr:focus-within{border-color:#b9c9ec;box-shadow:0 0 0 3px rgba(26,115,232,.12),0 10px 24px -18px rgba(15,23,42,.45)}
+.nr-wb .nr-dkr input{font-weight:500}
+.nr-wb .nr-dkr .send{width:40px;height:40px;border-radius:14px;background:#111827;box-shadow:none}
+/* header button that opens the pane again */
+#nova-research-view.nr-has-res.nr-pane-off .nr-pn{order:3}
+#nova-research-view .nr-hd>div:nth-child(2){flex:0 0 auto}
+}
+@media(prefers-reduced-motion:reduce){#nova-research-view #nr-res .nr-wb{animation:none!important}}
+</style>
+<style id="nr-css-v6">/* ===== Nova Research v6 (2026-11-28): quick answer box at the top (calculator + Tavily advanced answer), videos blend into the page (no box),
+   web results as clean cards with site name + link path and no "Web results" heading ===== */
+
+/* ---------- quick answer box ---------- */
+#nr-ia{margin:0 0 14px}
+/* v6b: research home has no 'What do you want to learn?' hero and no 'Pick a subject' row, so the first section starts at the top */
+#nr-home>.nr-h:first-child{margin-top:4px}
+#nr-ia[hidden]{display:none!important}
+#nr-ia,#nr-ia *{box-sizing:border-box}
+.nr-ia{padding:15px 18px 14px;border:1px solid #e3e8f0;border-radius:24px;background:#fff;box-shadow:0 1px 2px rgba(60,64,67,.08),0 14px 30px -26px rgba(26,86,219,.45);animation:nrIn .4s var(--ios) both}
+.nr-iah{display:flex;align-items:center;gap:9px;margin:0 0 10px}
+.nr-iai{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:9px;background:#eef4ff;color:#1a56db;font-size:13px}
+.nr-iam .nr-iai{background:#fff3e6;color:#c2410c}
+.nr-iah b{font-size:13.5px;font-weight:700;color:#1f1f1f}
+.nr-iah small{margin-left:auto;font-size:11.5px;font-weight:600;color:#70757a;white-space:nowrap}
+.nr-iax{font-size:15px;line-height:1.4;color:#5f6368;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.nr-iar{margin-top:2px;font-size:clamp(30px,8vw,42px);font-weight:600;letter-spacing:-.02em;line-height:1.15;color:#1f1f1f;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.nr-iat{position:relative;font-size:15.5px;line-height:1.62;color:#1f1f1f;overflow-wrap:anywhere}
+.nr-iat p{margin:0 0 8px}
+.nr-iat>p:first-child{font-size:17px;font-weight:500;line-height:1.5}
+.nr-iat ul,.nr-iat ol{margin:0 0 8px;padding-left:20px}
+.nr-iat li{margin:0 0 5px}
+.nr-ia.long:not(.open) .nr-iat{max-height:8.4em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 58%,rgba(0,0,0,0));mask-image:linear-gradient(#000 58%,rgba(0,0,0,0))}
+.nr-iaf{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.nr-iaf button,.nr-iasrc{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border:1px solid #e3e8f0;border-radius:99px;background:#fff;color:#444746;font-family:inherit;font-size:12.5px;font-weight:600;line-height:1;text-decoration:none;cursor:pointer;transition:background .2s,transform .25s var(--ios)}
+.nr-iaf button i{font-size:12px}
+.nr-ia.open [data-a=iamore] i{transform:rotate(180deg)}
+.nr-iasrc{min-width:0;max-width:62%;padding-left:8px}
+.nr-iasrc span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nr-iaf button:active,.nr-iasrc:active{transform:scale(.96)}
+@media(hover:hover){.nr-iaf button:hover,.nr-iasrc:hover{background:#f4f7fc}}
+.nr-iaf button:focus-visible,.nr-iasrc:focus-visible{outline:2px solid var(--nrA);outline-offset:2px}
+.nr-ia.ld .nr-sk{padding:0}
+.nr-ia.ld .nr-sk i{margin:9px 0}
+
+/* box placement in the two-column layouts: box on top of the left column, Nova still beside everything */
+@media(min-width:900px),(orientation:landscape) and (max-height:520px) and (min-width:640px),(min-width:700px) and (min-height:521px){
+#nova-research-view #nr-res.ia-on:not([hidden]){grid-template-rows:auto auto 1fr}
+#nova-research-view #nr-res.ia-on .nr-wi{grid-column:1;grid-row:1;min-width:0}
+#nova-research-view #nr-res.ia-on .nr-wa{grid-row:2}
+#nova-research-view #nr-res.ia-on .nr-wc{grid-row:3}
+#nova-research-view #nr-res.ia-on .nr-wb{grid-row:1/span 3}
+}
+@media(min-width:700px) and (max-width:1199px) and (min-height:521px){
+#nova-research-view #nr-res.ia-on .nr-wi{padding-top:16px}
+#nova-research-view #nr-res.ia-on .nr-wa{padding-top:0}
+}
+
+/* ---------- videos: part of the page, no box around them ---------- */
+#nr-yt .nr-vs{overflow:visible;border:0;border-radius:0;background:transparent;box-shadow:none}
+#nr-yt .nr-vhd{gap:10px;padding:2px 2px 10px}
+#nr-yt .nr-vlogo{width:auto;height:auto;border-radius:0;background:none;color:#ff0033;font-size:21px}
+#nr-yt .nr-vhd b{font-size:16px;font-weight:800;letter-spacing:-.02em;color:var(--ink)}
+#nr-yt .nr-vhd small{font-size:12px;color:#6b7280}
+#nr-yt .nr-vmore{height:32px;padding:0 4px 0 10px;border:0;background:transparent;color:#1a56db}
+@media(hover:hover){#nr-yt .nr-vmore:hover{background:transparent;text-decoration:underline}}
+#nr-yt .nr-vstage{margin:0;border-radius:20px;box-shadow:0 0 0 1px rgba(16,24,40,.05),0 16px 32px -26px rgba(16,24,40,.6)}
+#nr-yt .nr-vinfo{padding:11px 2px 0}
+#nr-yt .nr-vopen{background:#fff}
+#nr-yt .nr-vrail{margin:0 -16px;padding:12px 16px 4px;scroll-padding:0 16px}
+#nr-yt .nr-vc .th{background:#e9edf4}
+@container (min-width:680px){
+#nr-yt .nr-vs{column-gap:16px}
+#nr-yt .nr-vstage{margin:0}
+#nr-yt .nr-vinfo{padding:11px 2px 0}
+#nr-yt .nr-vrail{margin:0;padding:0 2px 2px 0}
+#nr-yt .nr-vc{padding:6px}
+#nr-yt .nr-vc.on{background:rgba(26,86,219,.07)}
+@media(hover:hover){#nr-yt .nr-vc:hover:not(.on){background:rgba(16,24,40,.04)}}
+}
+#nr-yt{margin:4px 0 22px}
+
+/* ---------- web results: cards with site name and link path ---------- */
+#nr-gg{margin-top:2px}
+#nr-gg .nr-br6{display:block;margin:0 0 10px;padding:14px 16px 15px;border:1px solid #e6ebf3;border-radius:20px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.03);transition:border-color .2s,box-shadow .2s;animation:nrIn .4s var(--ios) both}
+@media(hover:hover){#nr-gg .nr-br6:hover{border-color:#cfdcf5;box-shadow:0 12px 26px -22px rgba(26,86,219,.5)}}
+#nr-gg .nr-br6 .nr-bl{display:block;color:inherit;text-decoration:none}
+#nr-gg .nr-br6 .nr-fv{gap:10px;margin:0 0 9px}
+#nr-gg .nr-br6 .nr-fi{width:30px;height:30px;border:1px solid #e6ebf3;background:#f3f6fb;font-size:13px}
+#nr-gg .nr-br6 .nr-fi img{width:100%;height:100%;padding:5px;background:#fff}
+#nr-gg .nr-fvt{display:flex;flex-direction:column;min-width:0;white-space:normal;overflow:hidden}
+#nr-gg .nr-fvt b,#nr-gg .nr-fvt small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#nr-gg .nr-fvt b{font-size:13.5px;font-weight:600;line-height:1.25;color:#202124}
+#nr-gg .nr-fvt small{margin-top:1px;font-size:12px;line-height:1.3;color:#5f6368}
+#nr-gg .nr-br6 h5{margin:0;font-size:18px;font-weight:500;line-height:1.35;letter-spacing:-.005em;color:#1a0dab;overflow-wrap:anywhere}
+#nr-gg .nr-br6 .nr-bl:hover h5{text-decoration:underline}
+#nr-gg .nr-br6 .nr-bl:focus-visible{outline:2px solid var(--nrA);outline-offset:4px;border-radius:8px}
+#nr-gg .nr-br6 p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin:6px 0 0;font-size:14px;line-height:1.56;color:#4d5156}
+#nr-gg .nr-pg{margin-top:6px}
+#nr-gg .nr-pg .nr-mr{width:100%;max-width:360px;height:44px;border-radius:99px;font-weight:600}
+@media(max-width:420px){#nr-gg .nr-br6{padding:13px 14px 14px;border-radius:18px}#nr-gg .nr-br6 h5{font-size:17px}}
+@media(prefers-reduced-motion:reduce){.nr-ia,#nr-gg .nr-br6{animation:none!important}}
 </style>
 <style id="nm-css">/* ===== Nova Mentor page (2026-11-28): search first, three tool buttons, no recent searches ===== */
 #nova-mentor-view.nm-v{--nmInk:#0f172a;--nmMut:#64748b;--nmLn:#e3e9f6;background:radial-gradient(70% 36% at 8% 6%,rgba(122,92,255,.10),transparent 72%),radial-gradient(60% 34% at 96% 24%,rgba(47,123,255,.09),transparent 72%),#f6f8fc}
